@@ -169,7 +169,8 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
       'conflict.detected',
       res.conflicts[0].conflictId,
       expect.objectContaining({ type: 'device_offline' }),
-      null,
+      // NEST-107：SSE 事件携带推导上下文 orgId（testOrgContext → org1）。
+      'org1',
       undefined,
       expect.objectContaining({ entityType: 'conflict' }),
     );
@@ -200,7 +201,9 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
       'conflict.resolved',
       conflictId,
       expect.objectContaining({ status: 'RESOLVED', resolution: 'auto_cleared' }),
-      null,
+      // NEST-107（2026-08-17）：SSE 事件携带推导上下文 orgId（此前恒 null 被
+      // 全局放行）；reconcileNow(testOrgContext()) 的 org 即 org1。
+      'org1',
       undefined,
       expect.anything(),
     );
@@ -239,6 +242,7 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
       'conflict.acknowledged',
       conflictId,
       expect.objectContaining({ status: 'ACKNOWLEDGED' }),
+      // NEST-107：SSE 事件携带 orgId（人工转移路径 ctx 未传 → null 保持全局语义）。
       null,
       undefined,
       expect.anything(),

@@ -31,10 +31,8 @@ declare module '*.ico' {
   export default value;
 }
 
-declare module '*.json' {
-  const value: any;
-  export default value;
-}
+// CLI-612：`*.json` 的 any 模块声明已删除——tsconfig.app.json 已启用
+// resolveJsonModule，JSON 导入由编译器推断真实字面量类型，不再退化为 any。
 
 declare module '*.md' {
   const value: string;

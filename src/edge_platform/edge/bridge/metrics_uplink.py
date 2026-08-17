@@ -43,6 +43,16 @@ MAX_BACKOFF_SEC = 300
 DEFAULT_INTERVAL_SEC = 60
 
 
+def _runtime_mode() -> str:
+    """读取运行时模式（EDGE-041：production 判定；读取失败按 development 宽松）。"""
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 class MetricsUplink:
     """边缘指标快照 → 云侧 /api/observability/edge-metrics 周期上行。"""
 
@@ -62,6 +72,14 @@ class MetricsUplink:
         self._org_id = org_id
         self._edge_id = edge_id or "edge-default"
         self._interval = max(5.0, float(interval_sec))
+        # EDGE-041：production 下 X-Ingest-Key 禁止明文 http 传输，显式禁用。
+        self._disabled_reason = ""
+        if self._url.startswith(("http://", "//")) and _runtime_mode() == "production":
+            self._disabled_reason = "insecure_http_in_production"
+            logger.error(
+                "metrics uplink: production 下拒绝明文 http 上行（X-Ingest-Key 会暴露），已禁用: %s",
+                self._url,
+            )
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
@@ -76,13 +94,14 @@ class MetricsUplink:
 
     @property
     def enabled(self) -> bool:
-        return bool(self._url)
+        return bool(self._url) and not self._disabled_reason
 
     def health(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "enabled": self.enabled,
                 "url": self._url,
+                "disabled_reason": self._disabled_reason or None,
                 "edge_id": self._edge_id,
                 "interval_sec": self._interval,
                 "stats": dict(self._stats),
@@ -119,6 +138,9 @@ class MetricsUplink:
 
     def start(self) -> None:
         if self._running:
+            return
+        if self._disabled_reason:  # EDGE-041：production 明文 http → 拒绝启动
+            logger.error("metrics uplink: 已禁用（%s），start() 不生效", self._disabled_reason)
             return
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="metrics-uplink")

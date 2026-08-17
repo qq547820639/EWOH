@@ -116,14 +116,25 @@ function getApiBaseUrl(): string {
  * 探测后端连通性：请求 public 的 /health/live。可注入 fetchImpl 与 baseUrl 便于测试。
  * 待后端/现场接入，当前未启用：真实环境探测（Docker/K8s/Helm/对象存储/真实设备）
  * 需后端提供对应接口。
+ *
+ * CLI-548：维持独立 fetch（该端点为 public 健康探针，不应走 axiosForBackend 的
+ * Authorization 头注入与 401 刷新拦截），但补 AbortController 超时（5s），
+ * 避免网络黑洞时探针悬挂。
  */
+export const PROBE_TIMEOUT_MS = 5_000;
+
 export async function probeBackendConnectivity(
   fetchImpl: typeof fetch = fetch,
   baseUrl: string = getApiBaseUrl(),
 ): Promise<BackendProbeResult> {
   const start = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(`${baseUrl}/health/live`, { method: 'GET' });
+    const res = await fetchImpl(`${baseUrl}/health/live`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
     const latencyMs = Date.now() - start;
     if (!res.ok) {
       return { reachable: false, latencyMs, error: `HTTP ${res.status}` };
@@ -132,8 +143,15 @@ export async function probeBackendConnectivity(
   } catch (error) {
     return {
       reachable: false,
-      error: error instanceof Error ? error.message : '后端不可达',
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? `探针超时（${PROBE_TIMEOUT_MS}ms）`
+          : error instanceof Error
+            ? error.message
+            : '后端不可达',
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

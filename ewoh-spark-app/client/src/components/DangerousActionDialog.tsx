@@ -63,16 +63,16 @@ export function DangerousActionDialog({
                 ? `将${impact.irreversible ? '不可逆地' : ''}${impact.summary}（影响 ${impact.affectedCount} 项）。`
                 : '等待操作…'}
             {impact?.irreversible && (
-              <span className="block text-sm font-medium text-red-600">
+              <span className="block text-sm font-medium text-destructive">
                 此操作不可撤销，请确认无误后再执行。
               </span>
             )}
             {failed && error && (
-              <span className="block text-sm font-medium text-red-600">
+              <span className="block text-sm font-medium text-destructive">
                 操作失败：{error}
               </span>
             )}
-            <span className="block text-xs text-[hsl(218_10%_42%)]">
+            <span className="block text-xs text-muted-foreground">
               {dangerousPhaseLabel(phase)}
             </span>
           </AlertDialogDescription>
@@ -90,7 +90,15 @@ export function DangerousActionDialog({
                   event.preventDefault();
                   onConfirm();
                 }}
-                disabled={busy || previewing || (phase !== 'confirm' && phase !== 'confirming' && !failed)}
+                // CLI-304：确认按钮仅在 confirm（待用户确认）/ confirming（执行中，
+                // busy 兜底禁用）/ failed（允许重试）阶段可用；idle / previewing /
+                // executed / undone 均禁用。DangerousPhase 类型同时包含
+                // 'confirm' 与 'confirming'（dangerousModel.ts），非恒真条件。
+                disabled={
+                  busy ||
+                  previewing ||
+                  (phase !== 'confirm' && phase !== 'confirming' && !failed)
+                }
               >
                 {confirming ? '执行中…' : '确认执行'}
               </AlertDialogAction>

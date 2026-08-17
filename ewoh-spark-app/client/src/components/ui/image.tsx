@@ -51,7 +51,17 @@ function applyParamsToUrl(
 }
 
 function isTargetSrc(originSrc: string) {
-  return SRC_ALLOWLIST.some((item) => originSrc.includes(item));
+  // CLI-412：includes 子串匹配可被 evil.com/?/runtime/api/... 绕过，
+  // 改为 URL 解析后比对 pathname 前缀。
+  try {
+    const parsed = new URL(originSrc, globalThis.location?.href);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return false;
+    }
+    return SRC_ALLOWLIST.some((prefix) => parsed.pathname.startsWith(prefix));
+  } catch {
+    return false;
+  }
 }
 
 function supportWebp() {
@@ -128,7 +138,7 @@ export const Image = React.forwardRef<HTMLImageElement, ImageProps>(
           sizes={sizes}
           srcSet={userSrcSet}
           className={cn(
-            'bg-linear-to-b from-gray-50/20 to-gray-200/20',
+            'bg-linear-to-b from-muted/20 to-border/20',
             className,
           )}
           loading={loading}
@@ -168,7 +178,7 @@ export const Image = React.forwardRef<HTMLImageElement, ImageProps>(
         sizes={sizes}
         srcSet={srcSet}
         className={cn(
-          'bg-linear-to-b from-gray-50/20 to-gray-200/20',
+          'bg-linear-to-b from-muted/20 to-border/20',
           className,
         )}
         loading={loading}

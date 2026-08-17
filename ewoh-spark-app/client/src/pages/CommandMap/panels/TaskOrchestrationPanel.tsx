@@ -124,12 +124,19 @@ const TaskOrchestrationPanel = ({
       }),
     onSuccess: (data) => {
       setResult(data);
-      setNodes(data.nodes ?? nodes);
+      // CLI-112：后端 nodes 为 null/缺失时显式提示并保留本地编排（不静默替换）。
+      if (data.nodes == null || data.nodes.length === 0) {
+        toast.warning('后端未返回工序节点，保留本地编排视图');
+      } else {
+        setNodes(data.nodes);
+      }
       setLatestPlanId(data.planId ?? null);
       toast.success('节拍模拟完成');
     },
-    onError: () => {
-      toast.error('节拍模拟失败');
+    onError: (err) => {
+      toast.error('节拍模拟失败', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     },
   });
 
@@ -154,6 +161,20 @@ const TaskOrchestrationPanel = ({
   const handleSimulate = () => {
     if (nodes.length === 0) {
       toast.error('请先添加工序');
+      return;
+    }
+    // CLI-109：数值输入显式校验（原 Number(value)||0 静默回退，0/非法值无提示）。
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('请输入有效的生产数量（正整数）');
+      return;
+    }
+    const invalidTakt = nodes.some(
+      (n) =>
+        n.estimatedTakt != null &&
+        (!Number.isFinite(n.estimatedTakt) || n.estimatedTakt <= 0),
+    );
+    if (invalidTakt) {
+      toast.error('存在节拍无效的工序：预计节拍需为正数（秒）');
       return;
     }
     orchestrateMutation.mutate();
@@ -285,8 +306,13 @@ const TaskOrchestrationPanel = ({
         />
         <Input
           type="number"
+          min={1}
           value={quantity}
-          onChange={(e) => setQuantity(Number(e.target.value) || 0)}
+          onChange={(e) => {
+            // CLI-109：非法/空输入显式回退 0（提交时校验拒绝，不静默吞）。
+            const n = Number(e.target.value);
+            setQuantity(Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+          }}
           placeholder="数量"
           className="h-6 w-20 text-[10px] bg-white/5 border-white/10 text-white"
         />
@@ -691,8 +717,13 @@ function NodeEditor({
           <label className="text-[10px] text-white/70">顺序</label>
           <Input
             type="number"
+            min={1}
             value={order}
-            onChange={(e) => setOrder(Number(e.target.value) || 1)}
+            onChange={(e) => {
+              // CLI-109：非法/空输入显式回退 1（保存时以正序为准，不静默吞）。
+              const n = Number(e.target.value);
+              setOrder(Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1);
+            }}
             className="h-7 text-xs bg-white/5 border-white/10 text-white"
           />
         </div>
@@ -730,8 +761,13 @@ function NodeEditor({
           <label className="text-[10px] text-white/70">预计节拍(秒)</label>
           <Input
             type="number"
+            min={0}
             value={takt}
-            onChange={(e) => setTakt(Number(e.target.value) || 0)}
+            onChange={(e) => {
+              // CLI-109：非法/空输入显式回退 0（模拟提交时校验拒绝）。
+              const n = Number(e.target.value);
+              setTakt(Number.isFinite(n) && n >= 0 ? n : 0);
+            }}
             className="h-7 text-xs bg-white/5 border-white/10 text-white"
           />
         </div>

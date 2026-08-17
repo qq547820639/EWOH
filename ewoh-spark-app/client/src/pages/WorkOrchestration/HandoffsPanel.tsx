@@ -12,7 +12,9 @@ type HandoffAction = 'accepted' | 'rejected' | 'closed';
 
 const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement => {
   const queryClient = useQueryClient();
-  const [handoffFrom, setHandoffFrom] = useState('AG-00');
+  // CLI-201：来源 Agent 默认空串 + 必填校验（原预填伪造 actor 'AG-00'，
+  // 未改动即提交会冒充真实数据）。
+  const [handoffFrom, setHandoffFrom] = useState('');
   const [handoffTo, setHandoffTo] = useState('');
   const [handoffScope, setHandoffScope] = useState('');
   const [handoffAcceptance, setHandoffAcceptance] = useState('');
@@ -43,6 +45,12 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
       setHandoffAcceptance('');
       toast.success('交接已登记');
     },
+    // CLI-215：登记失败显式反馈（§33 失败不静默）。
+    onError: (err) => {
+      toast.error('交接登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const handoffStateMutation = useMutation({
     mutationFn: ({ handoffId, status, reason }: { handoffId: string; status: HandoffAction; reason?: string }) =>
@@ -50,6 +58,12 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workHandoffs });
       toast.success('交接状态已更新');
+    },
+    // CLI-215：状态更新失败显式反馈。
+    onError: (err) => {
+      toast.error('交接状态更新失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -98,7 +112,12 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
             />
             <button
               type="button"
-              disabled={!handoffTo.trim() || !handoffScope.trim() || handoffMutation.isPending}
+              disabled={
+                !handoffFrom.trim() ||
+                !handoffTo.trim() ||
+                !handoffScope.trim() ||
+                handoffMutation.isPending
+              }
               onClick={() => setPendingCreate(true)}
               className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-40"
             >

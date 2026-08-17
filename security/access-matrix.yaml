@@ -64,5 +64,6 @@ rules:
 notes:
   - "system center: GET /api/system/config is available to global_admin and safety_admin; PUT is global_admin only, matching UI visibility and write sensitivity."
   - "device contract routes: /api/devices is enforced as global_admin/dispatcher/device_ops."
-  - "worker centers my-tasks/my-risk are planned but not routed or implemented; worker is a valid authenticated role with /api/me access only."
+  - "worker centers my-tasks/my-risk are planned but not routed or implemented; worker has no routed UI center."
+  - "worker API surface (aligned to enforced controller roles on 2026-08-17, audit CFG-006): /api/me plus all ANY_AUTHENTICATED_ROLES controllers (timeline, workorder, quality, workflow, notification, knowledge, reasoning, inference, exo, agent, simulation, etc.); worker is also explicitly included in @Roles on /api/mobile/* (mobile workbench facade, worker/device_ops perspective) and /api/operations/* (operations.controller.ts)."
   - "command-map is available to all five operational roles in the current UI."

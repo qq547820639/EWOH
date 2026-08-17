@@ -57,6 +57,8 @@ const DEFAULT_MAX_CONSECUTIVE_ERRORS = 3;
 const DEFAULT_RECONNECT_INTERVAL_MS = 15_000;
 /** Task 11/11.1：高频事件合并窗口（ms），快速突发（遥测/位置）合并为一次 store 写出。 */
 const DEFAULT_BATCH_WINDOW_MS = 80;
+/** CLI-704：连续失败计数的时间窗——窗口外的旧失败衰减清零。 */
+const ERROR_WINDOW_MS = 60_000;
 
 function streamUrl(): string {
   const base = (import.meta as unknown as { env?: Record<string, string> }).env
@@ -131,6 +133,8 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
   const lastSequenceRef = useRef<number>(0);
   const lastEventIdRef = useRef<string | null>(null);
   const consecutiveErrorsRef = useRef<number>(0);
+  // CLI-704：连续失败计数的时间窗起点——跨窗口的间歇失败不累计切轮询。
+  const errorStreakStartRef = useRef<number>(0);
   const pollingRef = useRef<boolean>(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -416,6 +420,16 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
 
     function handleStreamEnd(reason: string): void {
       if (abort.signal.aborted) return;
+      // CLI-704：失败计数按时间窗衰减——窗口（ERROR_WINDOW_MS）之外的
+      // 旧失败不计入本次连续计数，避免长周期偶发瞬断逐步累积而误切轮询；
+      // 只有窗口内的密集失败才达到 maxConsecutiveErrors 触发降级。
+      const now = Date.now();
+      if (consecutiveErrorsRef.current > 0 && now - errorStreakStartRef.current > ERROR_WINDOW_MS) {
+        consecutiveErrorsRef.current = 0;
+      }
+      if (consecutiveErrorsRef.current === 0) {
+        errorStreakStartRef.current = now;
+      }
       consecutiveErrorsRef.current += 1;
       if (consecutiveErrorsRef.current >= maxConsecutiveErrors && !pollingRef.current) {
         startPolling();
@@ -438,8 +452,11 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     connect();
     return () => {
       // Task 11/11.1：卸载前 flush 积压（丢失最后窗口的事件），随后释放批处理器。
+      // CLI-703：dispose 后置 null——enabled true→false→true 重新启用时，
+      // 懒创建分支会重建 batcher；否则事件会被 push 进已 dispose 的实例而丢失。
       batcherRef.current?.flush();
       batcherRef.current?.dispose();
+      batcherRef.current = null;
       abortRef.current?.abort();
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);

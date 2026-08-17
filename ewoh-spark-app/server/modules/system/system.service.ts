@@ -1,9 +1,13 @@
 import { Injectable, Inject, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 
-const SENSITIVE_KEY = /(password|passwd|secret|token|credential|apikey|accesskey|authconfig|privatekey)/i;
+/**
+ * NEST-615（2026-08-17 审计整改）：敏感键正则补 [_-]? 可选分隔变体
+ * （api_key / access-key / auth_config / private.key 等此前漏网）。
+ */
+const SENSITIVE_KEY = /(password|passwd|secret|token|credential|api[_-]?key|access[_-]?key|auth[_-]?config|private[_-]?key)/i;
 
 export function maskSensitiveConfig(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -56,8 +60,29 @@ function parseFeatureFlag(row: {
 export class SystemService {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async listConfigs() {
-    const rows = await this.db.select().from(ewohSchedulerConfig).orderBy(desc(ewohSchedulerConfig.updatedAt));
+  /**
+   * NEST-614（2026-08-17 审计整改）：配置/特性开关查询带 org 谓词
+   * （global_admin 放行，与 RLS 例外路径一致）。
+   */
+  private orgCondition(actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }) {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: system config operations require tenant context',
+      );
+    }
+    return eq(ewohSchedulerConfig.orgId, orgId);
+  }
+
+  async listConfigs(actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }) {
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulerConfig)
+      .where(this.orgCondition(actor))
+      .orderBy(desc(ewohSchedulerConfig.updatedAt));
     return rows.map((row) => ({
       id: row.id,
       configKey: row.configKey,
@@ -68,11 +93,16 @@ export class SystemService {
     }));
   }
 
-  async getConfig(key: string) {
+  async getConfig(key: string, actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }) {
+    const orgCond = this.orgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, key));
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulerConfig.configKey, key), orgCond)
+          : eq(ewohSchedulerConfig.configKey, key),
+      );
     if (!row) {
       throw new NotFoundException(`Config ${key} not found`);
     }
@@ -86,7 +116,12 @@ export class SystemService {
     };
   }
 
-  async setConfig(key: string, configValue: unknown, updatedBy?: string) {
+  async setConfig(
+    key: string,
+    configValue: unknown,
+    updatedBy?: string,
+    orgId?: string,
+  ) {
     if (!key?.trim()) {
       throw new BadRequestException('configKey is required');
     }
@@ -94,12 +129,15 @@ export class SystemService {
       throw new UnauthorizedException('Authenticated user context is required');
     }
     const actor = updatedBy.trim();
+    // NEST-642：insert 显式携带 orgId（冲突目标含 orgId 但 values 原先不带，
+    // 依赖 GUC 默认；显式写入后不依赖请求级 GUC 状态）。
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey: key.trim(),
         configValue: configValue as Record<string, unknown>,
         updatedBy: actor,
+        ...(orgId?.trim() ? { orgId: orgId.trim() } : {}),
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -119,23 +157,33 @@ export class SystemService {
     };
   }
 
-  async listFeatureFlags() {
+  async listFeatureFlags(actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }) {
+    const orgCond = this.orgCondition(actor);
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, 'feature.%'))
+      .where(
+        orgCond
+          ? and(like(ewohSchedulerConfig.configKey, 'feature.%'), orgCond)
+          : like(ewohSchedulerConfig.configKey, 'feature.%'),
+      )
       .orderBy(desc(ewohSchedulerConfig.updatedAt));
     return rows.map((row) => parseFeatureFlag(row));
   }
 
-  async getFeatureFlag(key: string) {
+  async getFeatureFlag(key: string, actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }) {
     if (!key?.startsWith('feature.')) {
       throw new BadRequestException('feature flag key must start with feature.');
     }
+    const orgCond = this.orgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, key));
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulerConfig.configKey, key), orgCond)
+          : eq(ewohSchedulerConfig.configKey, key),
+      );
     if (!row) {
       throw new NotFoundException(`Feature flag ${key} not found`);
     }
@@ -147,6 +195,7 @@ export class SystemService {
     enabled: boolean,
     metadata: Record<string, unknown>,
     updatedBy?: string,
+    orgId?: string,
   ) {
     if (!key?.startsWith('feature.')) {
       throw new BadRequestException('feature flag key must start with feature.');
@@ -155,6 +204,7 @@ export class SystemService {
       key,
       { enabled: Boolean(enabled), metadata: metadata ?? {} },
       updatedBy,
+      orgId,
     );
     return parseFeatureFlag(saved);
   }
@@ -162,8 +212,9 @@ export class SystemService {
   async evaluateFeatureFlags(
     keys?: string[],
     context: FlagEvaluationContext = {},
+    actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean },
   ) {
-    const flags = await this.listFeatureFlags();
+    const flags = await this.listFeatureFlags(actor);
     const requested = keys && keys.length > 0 ? keys : flags.map((flag) => flag.key);
     return requested.map((key) => {
       const flag = flags.find((candidate) => candidate.key === key);

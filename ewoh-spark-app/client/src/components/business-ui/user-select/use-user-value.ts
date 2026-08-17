@@ -2,20 +2,20 @@
 
 import { useCallback, useMemo } from 'react';
 
-import { useUsersByIds } from '@client/src/components/business-ui/api/users/queries';
+import { useUsersByIds } from '@/components/business-ui/api/users/queries';
 import type {
   AccountType,
   UserSelectItemValue,
   UserSelectValue,
   ValueType,
-} from '@client/src/components/business-ui/user-select/types';
+} from '@/components/business-ui/user-select/types';
 import {
   extractIdsFromValue,
   userInfoToUser,
   createUnknownUser,
-} from '@client/src/components/business-ui/user-select/utils';
-import { getI18nText } from '@client/src/components/business-ui/utils/user';
-import type { User } from '@client/src/components/business-ui/types/user';
+} from '@/components/business-ui/user-select/utils';
+import { getI18nText } from '@/components/business-ui/utils/user';
+import type { User } from '@/components/business-ui/types/user';
 
 /**
  * 将 User 转换为 UserSelectItemValue
@@ -143,11 +143,14 @@ export function useUserValue(
         return String((internalVal as UserSelectItemValue).id);
       }
 
-      // Object 模式：提取 raw 数据，返回标准 User 类型
+      // Object 模式：提取 raw 数据，返回标准 User 类型。
+      // CLI-423：raw 可能缺失（占位用户），显式判空兜底构造，替代非空断言。
+      const rawOf = (u: UserSelectItemValue): User =>
+        u.raw ?? { user_id: u.id, name: u.name, avatar: u.avatar };
       if (isMultiple) {
-        return (internalVal as UserSelectItemValue[]).map((u) => u.raw!);
+        return (internalVal as UserSelectItemValue[]).map(rawOf);
       }
-      return (internalVal as UserSelectItemValue).raw!;
+      return rawOf(internalVal as UserSelectItemValue);
     },
     [isIdMode],
   );

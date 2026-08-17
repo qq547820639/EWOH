@@ -138,10 +138,15 @@ describe('leakAudit: 会话 scope 释放', () => {
     const timerCb = jest.fn();
     trackTimeout(lifecycle, timerCb, 1000);
     lifecycle.createScope();
+    // CLI-726：fake timers 以 try/finally 与恢复配对——原先恢复调用在断言
+    // 之后，断言一旦失败假定时器会泄漏到后续用例。
     jest.useFakeTimers();
-    lifecycle.disposeAll();
-    jest.advanceTimersByTime(5000);
-    expect(timerCb).not.toHaveBeenCalled();
-    jest.useRealTimers();
+    try {
+      lifecycle.disposeAll();
+      jest.advanceTimersByTime(5000);
+      expect(timerCb).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

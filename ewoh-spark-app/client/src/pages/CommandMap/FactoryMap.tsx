@@ -17,6 +17,17 @@ import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { getEntityColor, getDeviceColor, priorityLevelColor, resourceStatusColor, isExoDevice } from './entityColors';
 import {
+  cameraFovPoints,
+  computeViewBox,
+  formatEta,
+  getStaticStyle,
+  mergeDevices,
+  mergePersons,
+  STATIC_ORDER,
+  type DynPoint,
+  type ViewBox,
+} from './factoryMapUtils';
+import {
   cullByBounds,
   cullPaddingFor,
   isPointWithinBounds,
@@ -24,16 +35,6 @@ import {
   type PanZoomTransformState,
   type VisibleBounds,
 } from './store/viewportCulling';
-
-/** P0：ETA 格式化（后端秒 → 分:秒 / 分钟）；缺失返回空串（不前端估算）。 */
-function formatEta(etaSeconds: number): string {
-  if (!Number.isFinite(etaSeconds) || etaSeconds < 0) return '';
-  const total = Math.round(etaSeconds);
-  if (total < 60) return `${total}s`;
-  const min = Math.floor(total / 60);
-  const sec = total % 60;
-  return sec > 0 ? `${min}m${sec}s` : `${min}m`;
-}
 
 interface FactoryMapProps {
   entities: SpatialEntity[];
@@ -67,152 +68,8 @@ interface FactoryMapProps {
   onVisibleBoundsChange?: (bounds: VisibleBounds | null) => void;
 }
 
-/** 摄像头视锥三角形顶点（yaw=0 朝右，按 yaw 旋转） */
-function cameraFovPoints(x: number, y: number, yaw: number, fovDeg: number, range: number): string {
-  const yawRad = (yaw * Math.PI) / 180;
-  const halfFov = (fovDeg * Math.PI) / 360;
-  const p1x = x + range * Math.cos(yawRad - halfFov);
-  const p1y = y + range * Math.sin(yawRad - halfFov);
-  const p2x = x + range * Math.cos(yawRad + halfFov);
-  const p2y = y + range * Math.sin(yawRad + halfFov);
-  return `${x},${y} ${p1x},${p1y} ${p2x},${p2y}`;
-}
-
 /** 设备是否为外骨骼装备（按实体名/ID 含 EXO 判断） */
-interface StaticStyle {
-  fill: string;
-  stroke: string;
-  dash?: string;
-}
-
-function getStaticStyle(type: string): StaticStyle {
-  switch (type) {
-    case 'workshop':
-      return { fill: 'rgba(59,130,246,0.15)', stroke: 'rgba(59,130,246,0.5)' };
-    case 'production_line':
-      return { fill: 'rgba(168,85,247,0.10)', stroke: 'rgba(168,85,247,0.4)' };
-    case 'route':
-      return { fill: 'rgba(148,163,184,0.06)', stroke: 'rgba(148,163,184,0.3)' };
-    case 'restricted_zone':
-      return { fill: 'rgba(239,68,68,0.12)', stroke: 'rgba(239,68,68,0.6)', dash: '4 4' };
-    case 'zone':
-    default:
-      return { fill: 'rgba(59,130,246,0.08)', stroke: 'rgba(59,130,246,0.4)' };
-  }
-}
-
-/** 合并 worldState 与静态 entities 的人员/设备位置 */
-interface DynPoint {
-  entityId: string;
-  name: string;
-  x: number;
-  y: number;
-  status: string;
-  loadScore?: number;
-  deviceId?: string;
-  workerId?: string;
-}
-
-function mergePersons(
-  entities: SpatialEntity[],
-  worldState: CurrentWorldState | null,
-): DynPoint[] {
-  const map = new Map<string, DynPoint>();
-  if (worldState) {
-    for (const p of worldState.persons) {
-      map.set(p.entityId, {
-        entityId: p.entityId,
-        name: p.name,
-        x: p.x,
-        y: p.y,
-        status: p.status,
-        loadScore: p.loadScore,
-        deviceId: p.deviceId,
-      });
-    }
-  }
-  for (const e of entities) {
-    if (e.entityType !== 'person') continue;
-    if (map.has(e.entityId)) continue;
-    map.set(e.entityId, {
-      entityId: e.entityId,
-      name: e.name,
-      x: e.x,
-      y: e.y,
-      status: e.status,
-    });
-  }
-  return Array.from(map.values());
-}
-
-function mergeDevices(
-  entities: SpatialEntity[],
-  worldState: CurrentWorldState | null,
-): DynPoint[] {
-  const map = new Map<string, DynPoint>();
-  if (worldState) {
-    for (const d of worldState.devices) {
-      map.set(d.entityId, {
-        entityId: d.entityId,
-        name: d.name,
-        x: d.x,
-        y: d.y,
-        status: d.status,
-        deviceId: d.deviceId,
-        workerId: d.workerId,
-      });
-    }
-  }
-  for (const e of entities) {
-    if (e.entityType !== 'device') continue;
-    if (map.has(e.entityId)) continue;
-    map.set(e.entityId, {
-      entityId: e.entityId,
-      name: e.name,
-      x: e.x,
-      y: e.y,
-      status: e.status,
-    });
-  }
-  return Array.from(map.values());
-}
-
-const STATIC_ORDER = ['route', 'zone', 'production_line', 'workshop', 'restricted_zone'];
-
-interface ViewBox {
-  minX: number;
-  minY: number;
-  w: number;
-  h: number;
-}
-
 type ZoomToElement = ReactZoomPanPinchRef['zoomToElement'];
-
-/** 依据实体空间范围自适应计算 viewBox，避免实体挤在画布左上角。 */
-function computeViewBox(entities: SpatialEntity[]): ViewBox {
-  const fallback: ViewBox = { minX: 0, minY: 0, w: 1000, h: 700 };
-  if (!entities.length) return fallback;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const e of entities) {
-    const hw = (e.bboxW ?? 0) / 2;
-    const hh = (e.bboxH ?? 0) / 2;
-    minX = Math.min(minX, e.x - hw);
-    minY = Math.min(minY, e.y - hh);
-    maxX = Math.max(maxX, e.x + hw);
-    maxY = Math.max(maxY, e.y + hh);
-  }
-  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return fallback;
-  const pad = 24;
-  return {
-    minX: minX - pad,
-    minY: minY - pad,
-    w: Math.max(maxX - minX + pad * 2, 120),
-    h: Math.max(maxY - minY + pad * 2, 80),
-  };
-}
 
 const FactoryMap = ({
   entities,
@@ -324,10 +181,18 @@ const FactoryMap = ({
     for (let i = 0; i < sorted.length - 1; i++) {
       const a = sorted[i];
       const b = sorted[i + 1];
-      // 用 occupancy 作为节拍代理：占用率高=节拍慢
+      // 用 occupancy 作为节拍代理：占用率高=节拍慢。
+      // CLI-011：occupancy 缺失（工位无世界状态）→ 灰色（显式 unknown，不伪造 0.5）。
       const aState = worldState?.workstations?.find((w) => w.entityId === a.entityId);
-      const occupancy = aState?.occupancy ?? 0.5;
-      const taktColor = occupancy < 0.4 ? '#10b981' : occupancy < 0.7 ? '#f59e0b' : '#ef4444';
+      const occupancy = aState?.occupancy;
+      const taktColor =
+        occupancy == null
+          ? 'rgba(148,163,184,0.6)'
+          : occupancy < 0.4
+            ? '#10b981'
+            : occupancy < 0.7
+              ? '#f59e0b'
+              : '#ef4444';
       lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, takt: taktColor });
     }
     return lines;
@@ -931,12 +796,20 @@ const FactoryMap = ({
           mode === 'production' &&
           workstations.map((w) => {
             const wsState = worldState?.workstations?.find((ws) => ws.entityId === w.entityId);
-            const occupancy = wsState?.occupancy ?? 0.5;
-            const wip = Math.round(occupancy * 10);
-            const taktColor = occupancy < 0.4 ? '#10b981' : occupancy < 0.7 ? '#f59e0b' : '#ef4444';
+            // CLI-011：occupancy 缺失 → 显式 unknown（灰色），不再默认 0.5。
+            const occupancy = wsState?.occupancy;
+            const taktColor =
+              occupancy == null
+                ? 'rgba(148,163,184,0.6)'
+                : occupancy < 0.4
+                  ? '#10b981'
+                  : occupancy < 0.7
+                    ? '#f59e0b'
+                    : '#ef4444';
             return (
               <g key={`wip-${w.entityId}`} pointerEvents="none">
-                {/* WIP 数量气泡 */}
+                {/* WIP 数量气泡（CLI-012：后端无真实 WIP 字段，显示 unknown
+                    占位 '—'，不再由 occupancy*10 伪造在制品数量） */}
                 <circle
                   cx={w.x + w.bboxW / 2 + 4}
                   cy={w.y - w.bboxH / 2 - 4}
@@ -953,9 +826,9 @@ const FactoryMap = ({
                   fontSize="9"
                   fontWeight="bold"
                 >
-                  {wip}
+                  —
                 </text>
-                {/* 节拍脉冲环 */}
+                {/* 节拍脉冲环（真实 occupancy；缺失时静态低透明度） */}
                 <rect
                   x={w.x - w.bboxW / 2 - 2}
                   y={w.y - w.bboxH / 2 - 2}
@@ -970,7 +843,7 @@ const FactoryMap = ({
                   <animate
                     attributeName="opacity"
                     values="0.4;0.1;0.4"
-                    dur={`${Math.max(1, (1 - occupancy) * 4)}s`}
+                    dur={`${Math.max(1, (1 - (occupancy ?? 0.5)) * 4)}s`}
                     repeatCount="indefinite"
                   />
                 </rect>

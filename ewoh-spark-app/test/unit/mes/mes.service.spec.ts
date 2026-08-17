@@ -97,11 +97,15 @@ describe('MesService SOP registry and confirmation gating', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new MesService({ insert } as never, audit as never);
 
-    const result = await service.registerSop({
-      title: '上料 SOP',
-      version: '1.0.0',
-      steps: [{ name: '准备工具', mandatory: true, tools: ['扳手'] }],
-    });
+    const result = await service.registerSop(
+      {
+        title: '上料 SOP',
+        version: '1.0.0',
+        steps: [{ name: '准备工具', mandatory: true, tools: ['扳手'] }],
+      },
+      // W4：MES 写操作显式租户上下文。
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
 
     expect(result.packageId).toBe('SOP-1');
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
@@ -229,13 +233,16 @@ describe('MesService quality schemes', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new MesService({ insert } as never, audit as never);
 
-    const result = await service.registerQualityScheme({
-      name: '首检方案',
-      version: '1.0.0',
-      stage: 'first',
-      checkItems: [{ itemId: 'CHK-1', name: '外观', required: true }],
-      deviceIds: ['EXO-1'],
-    });
+    const result = await service.registerQualityScheme(
+      {
+        name: '首检方案',
+        version: '1.0.0',
+        stage: 'first',
+        checkItems: [{ itemId: 'CHK-1', name: '外观', required: true }],
+        deviceIds: ['EXO-1'],
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
 
     expect(result.packageId).toBe('QS-1');
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
@@ -346,6 +353,8 @@ describe('MesService quality schemes', () => {
           returning: jest.fn().mockResolvedValue([]),
         })),
       })),
+      // NEST-321：step 更新与 quality 事件同事务落库。
+      transaction: jest.fn(async (op: (tx: unknown) => Promise<unknown>) => op(db)),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new MesService(db as never, audit as never);
@@ -424,10 +433,13 @@ describe('MesService work order creation', () => {
     }));
     const { db } = createGetDb([scheduleRow], [], []);
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
-    const service = new MesService(
-      { ...db, insert } as never,
-      audit as never,
-    );
+    // NEST-322：工单 + 工序同事务落库。
+    const txDb = {
+      ...db,
+      insert,
+      transaction: jest.fn(async (op: (tx: unknown) => Promise<unknown>) => op(txDb)),
+    };
+    const service = new MesService(txDb as never, audit as never);
 
     const result = await service.createWorkOrder(
       {
@@ -596,6 +608,8 @@ describe('MesService materials and quality', () => {
       insert: jest.fn((_table: unknown) => ({
         values: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([]) })),
       })),
+      // NEST-321：step 更新与 quality 事件同事务落库。
+      transaction: jest.fn(async (op: (tx: unknown) => Promise<unknown>) => op(dbWithUpdate)),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new MesService(dbWithUpdate as never, audit as never);

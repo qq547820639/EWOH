@@ -7,20 +7,21 @@ import {
   searchUsers,
   convertExternalContact,
   type AccountType,
-} from '@client/src/components/business-ui/api/users/service';
-import { BaseCombobox } from '@client/src/components/business-ui/entity-combobox/base-combobox';
-import { useEntityComboboxContext } from '@client/src/components/business-ui/entity-combobox/context';
+} from '@/components/business-ui/api/users/service';
+import { BaseCombobox } from '@/components/business-ui/entity-combobox/base-combobox';
+import { useEntityComboboxContext } from '@/components/business-ui/entity-combobox/context';
 import type {
+  User,
   UserSelectItemValue,
   UserSelectProps,
-} from '@client/src/components/business-ui/user-select/types';
-import { useUserValue } from '@client/src/components/business-ui/user-select/use-user-value';
-import { UserItem } from '@client/src/components/business-ui/user-select/user-item';
-import { UserSelectTag } from '@client/src/components/business-ui/user-select/user-select-tag';
+} from '@/components/business-ui/user-select/types';
+import { useUserValue } from '@/components/business-ui/user-select/use-user-value';
+import { UserItem } from '@/components/business-ui/user-select/user-item';
+import { UserSelectTag } from '@/components/business-ui/user-select/user-select-tag';
 import {
   searchUserInfoToUser,
   isUnregisteredExternalContact,
-} from '@client/src/components/business-ui/user-select/utils';
+} from '@/components/business-ui/user-select/utils';
 
 function createUsersFetcher(options: { accountType?: AccountType; pageSize?: number } = {}) {
   const { accountType = 'apaas', pageSize = 100 } = options;
@@ -193,6 +194,16 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
    * onChange 门卫：过滤掉未注册外部联系人，不允许未开户用户进入选中列表。
    * 同时设置 pendingConvertRef 标记，阻止 handleOpenChange 关闭下拉。
    */
+  // CLI-422：UserSelectProps 为判别联合，onChange 参数类型随 valueType/multiple
+  // 组合变化；toExternalValue 已按当前组合产出正确类型。在边界处收敛为一次
+  // 受控分发，替代原先散落 4 处的 (onChange as (value: unknown) => void) 断言。
+  const emitChange = useCallback(
+    (next: string | string[] | User | User[] | null) => {
+      (onChange as ((value: typeof next) => void) | undefined)?.(next);
+    },
+    [onChange],
+  );
+
   const handleChange = useCallback(
     (newValue: UserSelectItemValue | UserSelectItemValue[] | null) => {
       if (!onChange) return;
@@ -203,8 +214,7 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
           pendingConvertRef.current = true;
         }
         const filtered = newValue.filter((u) => !isUnregisteredExternalContact(u));
-        const externalValue = toExternalValue(filtered, multiple);
-        (onChange as (value: unknown) => void)(externalValue);
+        emitChange(toExternalValue(filtered, multiple));
       } else if (!multiple) {
         const user = newValue as UserSelectItemValue | null;
         if (user && isUnregisteredExternalContact(user)) {
@@ -212,11 +222,10 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
           pendingConvertRef.current = true;
           return;
         }
-        const externalValue = toExternalValue(newValue, multiple);
-        (onChange as (value: unknown) => void)(externalValue);
+        emitChange(toExternalValue(newValue, multiple));
       }
     },
-    [onChange, multiple, toExternalValue],
+    [onChange, multiple, toExternalValue, emitChange],
   );
 
   /**
@@ -257,11 +266,9 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
               const current = Array.isArray(internalValueRef.current)
                 ? internalValueRef.current
                 : [];
-              const externalValue = toExternalValue([...current, convertedUser], multiple);
-              (onChange as (value: unknown) => void)(externalValue);
+              emitChange(toExternalValue([...current, convertedUser], multiple));
             } else {
-              const externalValue = toExternalValue(convertedUser, multiple);
-              (onChange as (value: unknown) => void)(externalValue);
+              emitChange(toExternalValue(convertedUser, multiple));
             }
           }
           // 开户成功后关闭下拉（单选）
@@ -284,7 +291,7 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
         }
       })();
     },
-    [onSelect, onChange, multiple, toExternalValue, convertingSet],
+    [onSelect, onChange, multiple, toExternalValue, convertingSet, emitChange],
   );
 
   const renderTagWithLoading = useCallback(
@@ -356,4 +363,4 @@ export const UserSelect: React.FC<UserSelectProps> = (props) => {
 
 export { type UserSelectItemValue as UserValue };
 
-export { ItemPill } from '@client/src/components/business-ui/entity-combobox/item-pill';
+export { ItemPill } from '@/components/business-ui/entity-combobox/item-pill';

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 调度可观测指标（Phase 3.2）。
@@ -10,11 +10,24 @@ import { Injectable } from '@nestjs/common';
  * 设计约束：不修改任何受保护文件（plan.service / solver.service 等），
  * 本服务仅提供指标的记录方法；调用方在需要埋点处调用对应 record* 方法即可。
  * 日志与调用方负责携带 runId/planId/snapshotVersion/policyVersion/solverVersion。
+ *
+ * NEST-138 修复（2026-08-17）：
+ * 1. 标签值清洗（sanitizeLabel：拒绝并转义 `"`/`\`/换行）——Prometheus
+ *    text 格式的 label 注入（值含 `"` 可伪造额外序列/HELP 行）不再可能；
+ * 2. 有界计数器 Map（MAX_CARDINALITY 上限 + FIFO 淘汰最老键）——长期运行
+ *    的无界 label 组合（solverStatus/type 等外部输入）不再内存泄漏；
+ * 3. 高基数标签移除：planId 不再作为 label（此前 plan_approved_total
+ *    {plan_id=...} 每个 plan 一个键，等价于无界）；planId 参数保留兼容
+ *    调用方签名，仅写日志不再入键。
  */
 @Injectable()
 export class SchedulerMetricsService {
-  /** 计数器：metricName{label="value",...} -> count。 */
+  private readonly logger = new Logger(SchedulerMetricsService.name);
+
+  /** 计数器：metricName{label="value",...} -> count。有界（NEST-138）。 */
   private readonly counters = new Map<string, number>();
+  /** NEST-138：计数器键基数上限（超限淘汰最老键并留痕）。 */
+  private static readonly MAX_CARDINALITY = 2000;
   /** 直方图桶（ms）：scheduler_run_duration_ms 使用固定桶。 */
   private readonly durationBucketsMs = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
   /** 直方图累计 sum（ms）。 */
@@ -23,7 +36,20 @@ export class SchedulerMetricsService {
   /** gauge：名称 -> 值。 */
   private readonly gauges = new Map<string, number>();
 
+  /** NEST-138：label 值清洗——转义反斜杠/引号并截断换行（防 text 格式注入）。 */
+  private sanitizeLabel(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 128);
+  }
+
   private inc(key: string, by = 1): void {
+    if (!this.counters.has(key) && this.counters.size >= SchedulerMetricsService.MAX_CARDINALITY) {
+      // 有界化：淘汰最老键（Map 迭代序=插入序，近似 FIFO；牺牲最早的低频序列）。
+      const oldest = this.counters.keys().next().value as string;
+      this.counters.delete(oldest);
+      this.logger.warn(
+        `metrics cardinality cap (${SchedulerMetricsService.MAX_CARDINALITY}) reached; evicted oldest series ${oldest}`,
+      );
+    }
     this.counters.set(key, (this.counters.get(key) ?? 0) + by);
   }
 
@@ -38,8 +64,9 @@ export class SchedulerMetricsService {
     solverVersion?: string;
     solverStatus?: string;
   }): void {
-    const solverVersion = opts.solverVersion ?? 'unknown';
-    const solverStatus = opts.solverStatus ?? 'unknown';
+    // NEST-138：label 值清洗（solverVersion/solverStatus 为外部输入）。
+    const solverVersion = this.sanitizeLabel(opts.solverVersion ?? 'unknown');
+    const solverStatus = this.sanitizeLabel(opts.solverStatus ?? 'unknown');
     const feasible = opts.feasible ? 'true' : 'false';
     this.inc(`scheduler_run_total{solver_version="${solverVersion}",status="${solverStatus}"}`);
     this.inc(`scheduler_run_total{solver_version="${solverVersion}",status="${solverStatus}",feasible="${feasible}"}`);
@@ -69,19 +96,25 @@ export class SchedulerMetricsService {
     this.inc('scheduler_fallback_total');
   }
 
-  /** 记录一次方案确认。 */
+  /**
+   * 记录一次方案确认。
+   * NEST-138：planId 高基数标签移除（每 plan 一键等价无界）；参数保留兼容。
+   */
   recordPlanApproved(planId?: string): void {
-    this.inc(planId ? `plan_approved_total{plan_id="${planId}"}` : 'plan_approved_total');
+    if (planId) this.logger.debug(`plan approved: ${planId}`);
+    this.inc('plan_approved_total');
   }
 
-  /** 记录一次方案驳回。 */
+  /** 记录一次方案驳回（NEST-138：planId 不再作 label）。 */
   recordPlanRejected(planId?: string): void {
-    this.inc(planId ? `plan_rejected_total{plan_id="${planId}"}` : 'plan_rejected_total');
+    if (planId) this.logger.debug(`plan rejected: ${planId}`);
+    this.inc('plan_rejected_total');
   }
 
-  /** 记录一次方案判定为 stale。 */
+  /** 记录一次方案判定为 stale（NEST-138：planId 不再作 label）。 */
   recordPlanStale(planId?: string): void {
-    this.inc(planId ? `plan_stale_total{plan_id="${planId}"}` : 'plan_stale_total');
+    if (planId) this.logger.debug(`plan stale: ${planId}`);
+    this.inc('plan_stale_total');
   }
 
   /** 记录一次重排（replan）。 */
@@ -91,23 +124,27 @@ export class SchedulerMetricsService {
 
   // ---- Phase 4 / P4-OBS：生产可观测扩展（§二十四指标清单） ----
 
-  /** 记录一次执行状态转换（execution.started/updated/completed/deviation 等）。 */
+  /** 记录一次执行状态转换（execution.started/updated/completed/deviation 等）。NEST-138：label 清洗。 */
   recordExecutionTransition(status: string): void {
-    this.inc(`scheduler_execution_transition_total{status="${status}"}`);
+    this.inc(`scheduler_execution_transition_total{status="${this.sanitizeLabel(status)}"}`);
   }
 
-  /** 记录一次执行偏差（execution deviation，带类型）。 */
+  /** 记录一次执行偏差（execution deviation，带类型）。NEST-138：label 清洗。 */
   recordExecutionDeviation(deviationType?: string | null): void {
     this.inc(
       deviationType
-        ? `scheduler_execution_deviation_total{type="${deviationType}"}`
+        ? `scheduler_execution_deviation_total{type="${this.sanitizeLabel(deviationType)}"}`
         : 'scheduler_execution_deviation_total',
     );
   }
 
-  /** 记录一次 SSE gap（Last-Event-ID 缺口触发 resync）。 */
+  /** 记录一次 SSE gap（Last-Event-ID 缺口触发 resync）。NEST-138：label 清洗。 */
   recordSseGap(reason?: string): void {
-    this.inc(reason ? `scheduler_sse_gap_total{reason="${reason}"}` : 'scheduler_sse_gap_total');
+    this.inc(
+      reason
+        ? `scheduler_sse_gap_total{reason="${this.sanitizeLabel(reason)}"}`
+        : 'scheduler_sse_gap_total',
+    );
   }
 
   // ---- Realtime 可观测（Task 3 / P2 增量：实时链路计数器） ----
@@ -129,11 +166,11 @@ export class SchedulerMetricsService {
     this.inc(ok ? 'scheduler_dispatch_total' : 'scheduler_dispatch_failure_total');
   }
 
-  /** 记录一次冲突产生（带类型）。 */
+  /** 记录一次冲突产生（带类型）。NEST-138：label 清洗。 */
   recordConflictDetected(type?: string): void {
     this.inc(
       type
-        ? `scheduler_conflict_total{type="${type}"}`
+        ? `scheduler_conflict_total{type="${this.sanitizeLabel(type)}"}`
         : 'scheduler_conflict_total',
     );
   }

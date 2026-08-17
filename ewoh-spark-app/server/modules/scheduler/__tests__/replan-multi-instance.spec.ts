@@ -200,22 +200,21 @@ describe('P0-5 降级路径（advisory lock 不可用）', () => {
 });
 
 describe('P0-5 durable 幂等（ewoh_replan_trigger.triggerKey 唯一键）', () => {
-  /** ewohReplanTrigger / ewohSchedulingRun 最小 fake db（TriggerService.evaluate 真实路径）。 */
+  /**
+   * ewohReplanTrigger / ewohSchedulingRun 最小 fake db（TriggerService.evaluate 真实路径）。
+   * NESP-103/119（2026-08-17）：NEST-147 后幂等去重并入 INSERT ... ON CONFLICT
+   * (trigger_key) DO NOTHING——不再有独立去重 SELECT，fake 的 select 恒为冷却
+   * 查询（无最近触发，cooldownMs=0）；触发表 insert 的 onConflictDoNothing 链
+   * 模拟唯一键语义（同键已存在 → 空行集 = 合并）。
+   */
   function makeTriggerDb(opts: { dedupBlind?: boolean }) {
     const triggerRows: Array<Record<string, unknown>> = [];
-    let selectNo = 0;
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
           where: jest.fn(() => {
-            // 冷却查询走 orderBy→limit；去重查询直接 limit（两条链共享同一 limit 计数）。
-            const limit = jest.fn(() => {
-              selectNo += 1;
-              if (selectNo % 2 === 1) return Promise.resolve([]); // 冷却查询：恒无最近触发（cooldownMs=0）
-              // 幂等去重查询：模拟 triggerKey 已存在检查。
-              if (opts.dedupBlind) return Promise.resolve([]); // 竞态窗口：存在性检查未命中
-              return Promise.resolve([...triggerRows].reverse().slice(0, 1));
-            });
+            // 冷却查询（唯一 SELECT）：恒无最近触发（cooldownMs=0）。
+            const limit = jest.fn(() => Promise.resolve([]));
             return { orderBy: jest.fn(() => ({ limit })), limit };
           }),
         })),
@@ -224,20 +223,33 @@ describe('P0-5 durable 幂等（ewoh_replan_trigger.triggerKey 唯一键）', ()
         values: (values: unknown) => {
           if (table === ewohReplanTrigger) {
             const v = values as Record<string, unknown>;
-            if (triggerRows.some((r) => r.triggerKey === v.triggerKey)) {
-              // 唯一约束硬后盾：并发同键插入被拦截（23505）。evaluate 对 trigger
-              // 插入只 await values(...)，故在此直接 reject。
-              return Promise.reject(
-                Object.assign(
-                  new Error(
-                    'duplicate key value violates unique constraint "ewoh_replan_trigger_trigger_key_key"',
-                  ),
-                  { code: '23505' },
+            const conflict = triggerRows.some((r) => r.triggerKey === v.triggerKey);
+            return {
+              // NEST-147：ON CONFLICT DO NOTHING——同键已存在返回空行集（合并）。
+              onConflictDoNothing: jest.fn(() => ({
+                returning: jest.fn(() =>
+                  conflict
+                    ? Promise.resolve([])
+                    : (triggerRows.push({ ...v, createdAt: new Date() }),
+                      Promise.resolve([{ ...v }])),
                 ),
-              );
-            }
-            triggerRows.push({ ...v, createdAt: new Date() });
-            return Promise.resolve([]);
+              })),
+              returning: jest.fn(() => {
+                // 无 ON CONFLICT 路径（历史行为）：撞唯一约束 → 23505 reject。
+                if (conflict) {
+                  return Promise.reject(
+                    Object.assign(
+                      new Error(
+                        'duplicate key value violates unique constraint "ewoh_replan_trigger_trigger_key_key"',
+                      ),
+                      { code: '23505' },
+                    ),
+                  );
+                }
+                triggerRows.push({ ...v, createdAt: new Date() });
+                return Promise.resolve([{ ...v }]);
+              }),
+            };
           }
           if (table === ewohSchedulingRun) {
             return {
@@ -272,7 +284,7 @@ describe('P0-5 durable 幂等（ewoh_replan_trigger.triggerKey 唯一键）', ()
     return svc;
   }
 
-  it('用例 3a：同一 (org, triggerType, entityId) 顺序重复触发被已存在检查拦截（不创建重复 run）', async () => {
+  it('用例 3a：同一 (org, triggerType, entityId) 顺序重复触发被 ON CONFLICT 拦截（不创建重复 run）', async () => {
     const { db } = makeTriggerDb({ dedupBlind: false });
     const svc = makeTriggerService(db);
     const ctx = { userId: 'u1', primaryOrgId: 'org1' };
@@ -283,25 +295,26 @@ describe('P0-5 durable 幂等（ewoh_replan_trigger.triggerKey 唯一键）', ()
     // 仅 1 条 ewoh_replan_trigger、1 条 run 被插入。
     expect(db.insert).toHaveBeenCalledTimes(2); // 1 × trigger + 1 × run
 
-    // 同键重复触发：存在性检查命中 → 返回 null（幂等抑制，无新 run）。
+    // 同键重复触发：ON CONFLICT DO NOTHING 返回空 → null（幂等抑制，无新 run）。
     const second = await svc.evaluate('DEVICE_OFFLINE', 'd1', ctx);
     expect(second).toBeNull();
-    // 第二次 evaluate 未再插入任何行（仍只有 2 次 insert）。
-    expect(db.insert).toHaveBeenCalledTimes(2);
+    // 第二次 evaluate 未再插入 run（run 表仍只 1 次）。
+    const insertTargets = db.insert.mock.calls.map((c) => c[0]);
+    expect(insertTargets.filter((t) => t === ewohSchedulingRun)).toHaveLength(1);
   });
 
-  it('用例 3b：并发竞态窗口下重复插入被唯一约束（23505）拦截，不创建重复 run', async () => {
+  it('用例 3b：并发竞态窗口下重复插入被 ON CONFLICT 合并（不抛 23505、不创建重复 run）', async () => {
     const { db } = makeTriggerDb({ dedupBlind: true });
     const svc = makeTriggerService(db);
     const ctx = { userId: 'u1', primaryOrgId: 'org1' };
 
     await svc.evaluate('DEVICE_OFFLINE', 'd1', ctx);
 
-    // 模拟另一实例已提交同 triggerKey（存在性检查被盲化），再次插入撞唯一约束。
-    await expect(svc.evaluate('DEVICE_OFFLINE', 'd1', ctx)).rejects.toMatchObject({
-      code: '23505',
-    });
-    // 冲突发生在 ewoh_replan_trigger 插入处：从未创建第二个 run。
+    // NEST-147：竞态窗口（另一实例已提交同 triggerKey）由 INSERT ... ON
+    // CONFLICT 原子合并——不再抛 23505，而是返回 null（幂等抑制）。
+    const second = await svc.evaluate('DEVICE_OFFLINE', 'd1', ctx);
+    expect(second).toBeNull();
+    // 从未创建第二个 run。
     const insertTargets = db.insert.mock.calls.map((c) => c[0]);
     expect(insertTargets.filter((t) => t === ewohSchedulingRun)).toHaveLength(1);
   });

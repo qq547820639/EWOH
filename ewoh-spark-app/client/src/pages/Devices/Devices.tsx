@@ -97,11 +97,16 @@ const Devices = (): React.ReactElement => {
     return m;
   }, [entities]);
 
-  const batteryData = (devices || []).map((d) => ({
-    name: d.deviceId,
-    battery: d.batteryPct,
-    online: d.online,
-  }));
+  // CLI-104：useMemo 包裹（配合 30s refetchInterval，避免每次重渲重算 map）。
+  const batteryData = useMemo(
+    () =>
+      (devices || []).map((d) => ({
+        name: d.deviceId,
+        battery: d.batteryPct,
+        online: d.online,
+      })),
+    [devices],
+  );
 
   const batteryColor = (pct: number) =>
     pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : '#ef4444';
@@ -265,8 +270,8 @@ const Devices = (): React.ReactElement => {
                   <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
                   <Tooltip />
                   <Bar dataKey="battery" name="电量(%)" radius={[4, 4, 0, 0]}>
-                    {batteryData.map((entry, index) => (
-                      <Cell key={index} fill={batteryColor(entry.battery)} />
+                    {batteryData.map((entry) => (
+                      <Cell key={entry.name} fill={batteryColor(entry.battery)} />
                     ))}
                   </Bar>
                 </BarChart>

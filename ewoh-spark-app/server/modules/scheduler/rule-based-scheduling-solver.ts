@@ -250,7 +250,21 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
       solverVersion: RULE_BASED_SOLVER_VERSION,
       snapshotVersion: opts.snapshotVersion,
       rejectedHard,
-      hardConstraints: ['skill-match', 'certification-valid', 'capacity', 'safety', 'eligibility'],
+      // NEST-169 修复（2026-08-17）：hardConstraints 不再纯硬编码——由本次候选池
+      // 实际执行/触发的硬约束（rejectReasons）派生并集固定执行类，随方案可审计；
+      // 后续接入 constraintIR（run-orchestrator 已在 assignment 级透传）。
+      hardConstraints: Array.from(
+        new Set([
+          'skill-match',
+          'certification-valid',
+          'capacity',
+          'safety',
+          'eligibility',
+          ...pool.flatMap((c) =>
+            c.eligible ? [] : c.rejectReasons.map((r) => `eligibility:${String(r)}`),
+          ),
+        ]),
+      ).sort(),
       weightsSnapshot: { ...policy.weights },
     };
     return {

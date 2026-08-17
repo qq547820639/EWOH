@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -8,7 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import {
   ewohControlRequest,
   ewohControlCommand,
@@ -210,17 +211,33 @@ export class ControlService {
       commandId;
     // ADR-077：命令行归属 = 请求行 org（§3 单一事实源）。
     const cmdOrg = requestRow.orgId ?? actor?.primaryOrgId ?? null;
-    await this.db.insert(ewohControlCommand).values({
-      commandId,
-      requestId,
-      rootCommandId,
-      attemptNo,
-      commandKey,
-      status: 'sent',
-      sentAt: new Date(),
-      idempotencyKey: requestRow.idempotencyKey,
-      ...(cmdOrg ? { orgId: cmdOrg } : {}),
-    });
+    try {
+      // NEST-425：attemptNo 由 DB 侧子查询原子生成（max+1），配合
+      // standalone_058 唯一约束 (request_id, command_key, attempt_no)——
+      // 并发 send 同 commandKey 的重复序号在 DB 层显式冲突（23505），
+      // 不再依赖内存 filter.length+1 的读-算-写窗口。
+      await this.db.insert(ewohControlCommand).values({
+        commandId,
+        requestId,
+        rootCommandId,
+        attemptNo: sql`(select coalesce(max(${ewohControlCommand.attemptNo}), 0) + 1
+                        from ${ewohControlCommand}
+                        where ${ewohControlCommand.requestId} = ${requestId}
+                          and ${ewohControlCommand.commandKey} = ${commandKey})`,
+        commandKey,
+        status: 'sent',
+        sentAt: new Date(),
+        idempotencyKey: requestRow.idempotencyKey,
+        ...(cmdOrg ? { orgId: cmdOrg } : {}),
+      });
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException(
+          `Concurrent send for commandKey ${commandKey} on request ${requestId}`,
+        );
+      }
+      throw error;
+    }
     const attempt: ControlAttempt = {
       attemptId: commandId,
       commandKey,
@@ -254,8 +271,10 @@ export class ControlService {
     commandKey: string,
     result: 'executed' | 'failed',
     receipt?: Record<string, unknown>,
+    actor?: OrgContext,
   ): Promise<ControlRequest> {
-    const request = await this.getRequest(requestId);
+    // NEST-423：读回带 actor（org 守卫；NULL legacy 行放行与getRequest一致）。
+    const request = await this.getRequest(requestId, actor);
     const requestStatus = aggregateControlStatus(request.attempts);
     if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
       throw new BadRequestException(
@@ -312,7 +331,11 @@ export class ControlService {
   async revoke(requestId: string, actor?: OrgContext): Promise<ControlRequest> {
     const request = await this.getRequest(requestId, actor);
     const status = aggregateControlStatus(request.attempts);
-    if (['executed', 'failed', 'timeout'].includes(status)) {
+    // NEST-424：control.yaml terminal 含 partial_success——mixed 结果的请求
+    // 已有命令执行成功，revoke 不再把 partial_success 当可撤销状态放行。
+    if (
+      ['executed', 'failed', 'timeout', 'partial_success'].includes(status)
+    ) {
       throw new BadRequestException(`Cannot revoke terminal request ${requestId}`);
     }
     await this.db

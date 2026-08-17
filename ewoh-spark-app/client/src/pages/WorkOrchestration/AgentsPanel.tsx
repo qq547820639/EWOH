@@ -37,8 +37,9 @@ const AgentsPanel = (): React.ReactElement => {
   const agents = graph?.actors ?? [];
 
   // 基于 graph 数据推导各 Agent 的负载/失败率/等待/最近交接。
-  const metrics = useMemo(() => {
-    if (!graph) return new Map<string, ReturnType<typeof deriveAgentMetrics> extends Map<infer K, infer V> ? V : never>();
+  // CLI-225：简化不可读的条件类型体操为具名 Map 类型。
+  const metrics = useMemo<Map<string, AgentMetrics>>(() => {
+    if (!graph) return new Map<string, AgentMetrics>();
     return deriveAgentMetrics(graph.actors, graph.items, graph.evidence, graph.handoffs);
   }, [graph]);
 

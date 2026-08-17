@@ -1,9 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { currentRequestContext } from '../../common/request-context';
 import { ewohSchedulingKpi, ewohSchedulingRun } from '@server/database/schema';
 import type { SchedulerKpiSnapshot } from '@shared/api.interface';
 import { ExecutionService } from './execution.service';
@@ -45,6 +46,14 @@ export class KpiService {
     dataQuality?: SchedulerKpiSnapshot['dataQuality'];
     persist?: boolean;
   }): Promise<SchedulerKpiSnapshot> {
+    // NEST-018 修复（2026-08-17）：HTTP 请求上下文内 orgId 必传（无 org 即
+    // 全租户聚合，KPI 泄露）；系统后台流（无 request context）保持可选
+    // orgId=null 的全量系统语义（GUC/RLS 兜底）。
+    if (!opts?.orgId && currentRequestContext()) {
+      throw new BadRequestException(
+        'orgId required for KPI aggregation（NEST-018：HTTP 聚合必须租户作用域）',
+      );
+    }
     const endMs = opts?.periodEndMs ?? Date.now();
     const startMs = opts?.periodStartMs ?? endMs - 24 * 60 * 60 * 1000;
     const orgId = opts?.orgId ?? null;
@@ -86,7 +95,9 @@ export class KpiService {
     } catch {
       feedbackKpis = null;
     }
-    const replanCount = feedbackKpis?.replanCount ?? periodExec.length;
+    // NEST-019 修复（2026-08-17）：replanCount 不再用 periodExec.length（执行数）
+    // 冒充重排数——KPI 语义失真。无事实来源时显式 0（无重排记录）。
+    const replanCount = feedbackKpis?.replanCount ?? 0;
     const fallbackRate = feedbackKpis?.fallbackRate ?? null;
     const solverRuntimeAvg = feedbackKpis?.solverRuntimeMs ?? null;
     const conflictRate = feedbackKpis?.conflictRate ?? null;

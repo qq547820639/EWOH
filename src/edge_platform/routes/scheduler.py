@@ -11,16 +11,37 @@ PATCH /api/tasks/{id}。
 逻辑自 server.py 原 Handler 机械抽取：self→h、闭包 ctx→显式参数，响应契约不变。
 """
 
+import concurrent.futures
 import json
+import threading
+import time
 
 from edge_platform import server, services
 from edge_platform.config import Settings
 from edge_platform.scheduler.cpsat import solver as cpsat_solver
+from edge_platform.scheduler.cpsat import worker as cpsat_worker
 from edge_platform.scheduler.cpsat.contract import SolverRequest
 from edge_platform.scheduler.repository import ReadonlyModeError
 
 from . import STREAM, Route, affix, dispatch_routes, exact, sub_path
 from ._util import now_iso, resolve_actor
+
+# ---- EDGE-006：SSE 连接资源上限（防线程耗尽 DoS） ----
+MAX_SSE_CONNECTIONS = 20  # 同时存活的事件流连接上限（超限 503）
+SSE_MAX_DURATION_SEC = 3600.0  # 单连接最长存活（超时后服务端主动断开）
+_sse_lock = threading.Lock()
+_sse_active = 0
+
+# ---- EDGE-010：/api/scheduler/v2/solve 输入规模与超时上限 ----
+# 复用 cpsat worker 的规模上限常量（env 可调，语义与独立 worker 一致）。
+_SOLVE_MAX_TASKS = cpsat_worker.CPSAT_WORKER_MAX_TASKS
+_SOLVE_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="cpsat-solve"
+)
+
+# ---- EDGE-022：调度请求 task_ids 校验上限 ----
+MAX_REQUEST_TASK_IDS = 200
+_TASK_ID_MAX_LEN = 64
 
 
 def _sched(ctx, h):
@@ -43,45 +64,61 @@ def api_command_map_stream(ctx, h, req_meta):
 
     P1 安全修复：production 下事件流要求有效 Bearer token（fail-closed），
     防止匿名订阅调度/派工/资源事件；development/simulation 保留离线演示直连。
+    EDGE-006：全局并发连接数上限（默认 20，超限 503）+ 单连接最长存活
+    （默认 1h，到期服务端主动断开，客户端按 retry 指引重连），防线程耗尽 DoS。
     """
+    global _sse_active
     if Settings.load().runtime_mode == "production":
         actor = h._actor() if hasattr(h, "_actor") else None
         if actor is None:
             return h._new_error("unauthorized", "production 事件流必须携带有效 Bearer token", 401)
+    with _sse_lock:
+        if _sse_active >= MAX_SSE_CONNECTIONS:
+            return h._new_error(
+                "sse_saturated", f"事件流连接数已达上限（{MAX_SSE_CONNECTIONS}），请稍后重试", 503
+            )
+        _sse_active += 1
     bus = ctx.event_bus
-    h.send_response(200)
-    h.send_header("Content-Type", "text/event-stream; charset=utf-8")
-    h.send_header("Cache-Control", "no-cache")
-    h.send_header("X-Accel-Buffering", "no")
-    h.end_headers()
+    deadline = time.monotonic() + SSE_MAX_DURATION_SEC
     try:
-        h.wfile.write(b"retry: 3000\n\n")
-        h.wfile.flush()
-    except Exception:
-        return STREAM
-    if bus is None:
-        return STREAM
-    sub = bus.subscribe()
-    try:
-        while True:
-            try:
-                event = sub.get(timeout=15)
-            except Exception:
-                # 心跳：保持连接存活
+        h.send_response(200)
+        h.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        h.send_header("Cache-Control", "no-cache")
+        h.send_header("X-Accel-Buffering", "no")
+        h.end_headers()
+        try:
+            h.wfile.write(b"retry: 3000\n\n")
+            h.wfile.flush()
+        except Exception:
+            return STREAM
+        if bus is None:
+            return STREAM
+        sub = bus.subscribe()
+        try:
+            while True:
+                if time.monotonic() >= deadline:
+                    break  # EDGE-006：连接 TTL 到期，服务端主动收口
                 try:
-                    h.wfile.write(b": ping\n\n")
+                    event = sub.get(timeout=15)
+                except Exception:
+                    # 心跳：保持连接存活
+                    try:
+                        h.wfile.write(b": ping\n\n")
+                        h.wfile.flush()
+                    except Exception:
+                        break
+                    continue
+                data = json.dumps(event, ensure_ascii=False)
+                try:
+                    h.wfile.write(f"event: {event['event_type']}\ndata: {data}\n\n".encode())
                     h.wfile.flush()
                 except Exception:
                     break
-                continue
-            data = json.dumps(event, ensure_ascii=False)
-            try:
-                h.wfile.write(f"event: {event['event_type']}\ndata: {data}\n\n".encode())
-                h.wfile.flush()
-            except Exception:
-                break
+        finally:
+            bus.unsubscribe(sub)
     finally:
-        bus.unsubscribe(sub)
+        with _sse_lock:
+            _sse_active -= 1
     return STREAM
 
 
@@ -135,7 +172,11 @@ def _task_field(payload, key):
 
 
 def api_create_task(ctx, h, payload):
-    """POST /api/tasks — 创建任务。"""
+    """POST /api/tasks — 创建任务。
+
+    EDGE-023：不接受客户端指定 task_id（服务端 new_id 生成），
+    防止 INSERT OR REPLACE 覆盖既有任务。
+    """
     try:
         sched = _sched(ctx, h)
     except RuntimeError as e:
@@ -143,7 +184,7 @@ def api_create_task(ctx, h, payload):
     actor = h._actor()
     fields = {}
     for key in (
-        "task_id", "task_type", "priority", "status", "station_id", "zone_id",
+        "task_type", "priority", "status", "station_id", "zone_id",
         "required_skills", "required_device_capabilities", "release_at", "earliest_start",
         "due_at", "estimated_duration_sec", "predecessor_task_ids", "exclusive_resource_ids",
         "load_level", "safety_critical",
@@ -206,11 +247,21 @@ def api_create_scheduling_request(ctx, h, payload):
     except RuntimeError as e:
         return h._new_error("not_ready", str(e), 503)
     task_ids = payload.get("task_ids") or []
+    # EDGE-022：task_ids 规模/元素合法性校验（列表、≤200、元素为非空短字符串）。
+    if not isinstance(task_ids, list) or not task_ids:
+        return h._new_error("invalid_params", "task_ids 必须为非空列表", 400)
+    if len(task_ids) > MAX_REQUEST_TASK_IDS:
+        return h._new_error(
+            "invalid_params", f"task_ids 数量超限（最多 {MAX_REQUEST_TASK_IDS}）", 400
+        )
+    for tid in task_ids:
+        if not isinstance(tid, str) or not tid.strip() or len(tid) > _TASK_ID_MAX_LEN:
+            return h._new_error(
+                "invalid_params", f"task_id 非法（须为 1..{_TASK_ID_MAX_LEN} 字符字符串）: {tid!r}", 400
+            )
     trigger_type = payload.get("trigger_type") or "manual"
     policy_id = payload.get("policy_id") or ""
     created_by = resolve_actor(h, payload, "created_by")
-    if not task_ids:
-        return h._new_error("invalid_params", "task_ids 不能为空", 400)
     req = sched.create_request(task_ids, trigger_type, policy_id, created_by)
     plans = sched.generate_plans(req.request_id, storage=ctx.storage)
     return h.send_json(
@@ -474,13 +525,44 @@ def route_assignment_override(ctx, h, req_meta):
 
 
 def route_solve(ctx, h, req_meta):
+    """POST /api/scheduler/v2/solve — 进程内 CP-SAT 求解。
+
+    EDGE-010：输入规模上限（tasks ≤ CPSAT_WORKER_MAX_TASKS）+ 求解超时
+    （线程池 + future 超时，触顶返回 TIMEOUT 形状响应，不长期占用请求线程）。
+    EDGE-047：错误分类——请求构造 ValueError → 400（保留错误类型上下文），
+    其余异常 → 500（内部日志记录详情，外部响应脱敏）。
+    """
     p = req_meta.path
     try:
-        resp = cpsat_solver.solve(SolverRequest.from_dict(req_meta.body))
+        request = SolverRequest.from_dict(req_meta.body)
+    except (ValueError, TypeError, KeyError) as e:
+        return h._new_error("invalid_request", f"求解请求非法: {e}", 400)
+    # EDGE-010：问题规模上限（与独立 cpsat worker 同一常量口径）
+    if len(request.tasks) > _SOLVE_MAX_TASKS:
+        return h._new_error(
+            "problem_too_large",
+            f"tasks={len(request.tasks)} exceeds CPSAT_WORKER_MAX_TASKS={_SOLVE_MAX_TASKS}",
+            413,
+        )
+    budget_ms = cpsat_worker._time_budget_ms(request)
+    future = _SOLVE_EXECUTOR.submit(cpsat_solver.solve, request)
+    try:
+        resp = future.result(timeout=budget_ms / 1000.0)
         return h.send_json({"ok": True, "response": resp.to_dict()})
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        # 超时返回与 solver/worker 一致的 TIMEOUT 形状（不悬挂请求线程）
+        return h.send_json(
+            {"ok": True, "response": cpsat_worker._timeout_payload(request)}
+        )
+    except ValueError as e:
+        # EDGE-047：业务校验类错误 → 400，保留类型上下文
+        return h._new_error("invalid_request", str(e), 400)
     except Exception as e:
         server._log_internal_error("POST", p, h._request_id, e)
-        return h._new_error("solver_error", "求解器调用失败", 500)
+        return h._new_error(
+            "solver_error", f"求解器调用失败（{e.__class__.__name__}）", 500
+        )
 
 
 def route_update_task(ctx, h, req_meta):

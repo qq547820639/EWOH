@@ -6,7 +6,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@client/src/components/ui/tooltip';
+} from '@/components/ui/tooltip';
 
 export interface OverflowTooltipTextProps extends React.HTMLAttributes<HTMLSpanElement> {
   text: string;
@@ -80,7 +80,7 @@ export function OverflowTooltipText({
         <TooltipTrigger asChild>{textNode}</TooltipTrigger>
         <TooltipContent
           sideOffset={4}
-          className="bg-[rgb(31,35,41)] text-white ring-0"
+          className="bg-surface-inverse text-white ring-0"
         >
           {text}
         </TooltipContent>

@@ -1,10 +1,11 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohSpatialEntity, ewohTopology } from '@server/database/schema';
 import { eq, and, isNull, sql } from 'drizzle-orm';
 import { isValidSpatialKind } from '@shared/location';
 import { DomainContractError } from '@shared/risk';
 import type { SpatialEntity, Topology, SpatialHierarchyNode } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 @Injectable()
 export class SpatialService {
@@ -12,9 +13,29 @@ export class SpatialService {
 
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async getEntities(filters?: { type?: string; parentId?: string }): Promise<SpatialEntity[]> {
+  /**
+   * NEST-622（2026-08-17 审计整改）：spatial 查询带 org 谓词
+   * （global_admin 显式放行，与 RLS 例外路径一致）。
+   */
+  private orgCondition(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) return undefined;
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: spatial queries require tenant context',
+      );
+    }
+    return eq(ewohSpatialEntity.orgId, orgId);
+  }
+
+  async getEntities(
+    filters?: { type?: string; parentId?: string },
+    actor?: OrgContext,
+  ): Promise<SpatialEntity[]> {
     try {
       const conditions = [];
+      const orgCond = this.orgCondition(actor);
+      if (orgCond) conditions.push(orgCond);
       if (filters?.type) {
         conditions.push(eq(ewohSpatialEntity.entityType, filters.type));
       }
@@ -54,12 +75,17 @@ export class SpatialService {
     }
   }
 
-  async getEntity(entityId: string): Promise<SpatialEntity | null> {
+  async getEntity(entityId: string, actor?: OrgContext): Promise<SpatialEntity | null> {
     try {
+      const orgCond = this.orgCondition(actor);
       const rows = await this.db
         .select()
         .from(ewohSpatialEntity)
-        .where(eq(ewohSpatialEntity.entityId, entityId))
+        .where(
+          orgCond
+            ? and(eq(ewohSpatialEntity.entityId, entityId), orgCond)
+            : eq(ewohSpatialEntity.entityId, entityId),
+        )
         .limit(1);
       if (rows.length === 0) return null;
       return this.mapEntity(rows[0]);
@@ -69,9 +95,13 @@ export class SpatialService {
     }
   }
 
-  async getTopology(): Promise<Topology[]> {
+  async getTopology(actor?: OrgContext): Promise<Topology[]> {
     try {
-      const rows = await this.db.select().from(ewohTopology);
+      const orgCond = this.orgCondition(actor);
+      const rows = await this.db
+        .select()
+        .from(ewohTopology)
+        .where(orgCond ? and(eq(ewohTopology.orgId, actor!.primaryOrgId!)) : undefined);
       return rows.map((r) => ({
         id: r.id,
         fromEntity: r.fromEntity,
@@ -86,9 +116,13 @@ export class SpatialService {
     }
   }
 
-  async getHierarchy(): Promise<SpatialHierarchyNode[]> {
+  async getHierarchy(actor?: OrgContext): Promise<SpatialHierarchyNode[]> {
     try {
-      const rows = await this.db.select().from(ewohSpatialEntity);
+      const orgCond = this.orgCondition(actor);
+      const rows = await this.db
+        .select()
+        .from(ewohSpatialEntity)
+        .where(orgCond);
       const entities = rows.map((r) => this.mapEntity(r));
 
       // 按 entityId 索引

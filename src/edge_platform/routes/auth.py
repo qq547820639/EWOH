@@ -6,15 +6,19 @@ GET /api/me、GET /api/security/policy、POST /api/auth/login、POST /api/auth/r
 逻辑自 server.py 原 Handler 机械抽取：self→h、闭包 ctx→显式参数，响应契约不变。
 """
 
+import threading
 import time
 import uuid
 
-from edge_platform import server
 from edge_platform.config import Settings
 from edge_platform.rbac import check_export_role
 
-from . import NOT_HANDLED, Route, dispatch_routes, exact
+from . import Route, dispatch_routes, exact
 from ._util import now_iso, session_manager
+
+# EDGE-024：同 token 并发 refresh 的原子段锁（verify+revoke+create），
+# 防止两个并发请求均 verify 成功后各自 revoke+create 造成会话翻倍。
+_refresh_lock = threading.Lock()
 
 
 def bearer_token(h):
@@ -64,10 +68,12 @@ def enforce_export_role(ctx, h):
     return False
 
 
-def api_auth_login(ctx, h, payload):
+def api_auth_login(ctx, h, payload, client_ip=None):
     """POST /api/auth/login — {username, password} → {token, user}。
 
     auth 模块未就绪时使用演示用 token（uuid4 hex）；auth 就绪后委派 SessionManager。
+    EDGE-017：登录失败计数同时按用户名与来源 IP 维度（SessionManager 内实现），
+    旋转用户名无法绕过锁定。
     """
     username = (payload.get("username") or "").strip()
     password = (payload.get("password") or "").strip()
@@ -77,7 +83,7 @@ def api_auth_login(ctx, h, payload):
     h._audit_target_id = username
     sm = session_manager()
     if sm is not None:
-        token = sm.login(username, password)
+        token = sm.login(username, password, client_ip=client_ip)
         if token is None:
             return h._new_error("invalid_credentials", "用户名或密码错误或已锁定", 401)
         session = sm.verify(token)
@@ -88,10 +94,11 @@ def api_auth_login(ctx, h, payload):
         return h._new_error(
             "auth_unavailable", "认证服务未就绪，拒绝登录（production 不提供演示凭据）", 503
         )
-    # 非 production（development/simulation）：演示用简单 token（L2：24h 过期 + 惰性清理）
+    # 非 production（development/simulation）：演示用简单 token（L2：24h 过期 + 惰性清理）。
+    # EDGE-027：演示 token 角色由 admin 收敛为 operator（受限角色，无规则/模型/派工管理权）。
     h._demo_token_cleanup()
     token = uuid.uuid4().hex
-    user = {"user_id": username, "username": username, "role": "admin"}
+    user = {"user_id": username, "username": username, "role": "operator"}
     with h._tokens_lock:
         h._tokens[token] = {"user": user, "exp": time.time() + h._TOKEN_TTL}
     return h.send_json({"token": token, "user": user})
@@ -104,16 +111,18 @@ def api_auth_refresh(ctx, h, req_meta):
         return h._new_error("unauthorized", "缺少 Authorization Bearer token", 401)
     sm = session_manager()
     if sm is not None:
-        session = sm.verify(token)
-        if session is None:
-            return h._new_error("unauthorized", "token 无效或已过期", 401)
-        sm.revoke(token)
-        # 用同一用户身份创建新会话
-        from edge_platform.auth import User  # noqa: F401
+        # EDGE-024：verify+revoke+create 原子段——并发刷新只有一个成功。
+        with _refresh_lock:
+            session = sm.verify(token)
+            if session is None:
+                return h._new_error("unauthorized", "token 无效或已过期", 401)
+            sm.revoke(token)
+            # 用同一用户身份创建新会话
+            from edge_platform.auth import User  # noqa: F401
 
-        new_token = sm.create(
-            User(user_id=session.user_id, username=session.user_id, role=session.role, display_name="")
-        )
+            new_token = sm.create(
+                User(user_id=session.user_id, username=session.user_id, role=session.role, display_name="")
+            )
         user = {"user_id": session.user_id, "role": session.role}
         h._audit_target_type = "auth"
         h._audit_target_id = session.user_id
@@ -143,7 +152,11 @@ def api_me(ctx, h, req_meta):
         if session is None:
             return h._new_error("unauthorized", "token 无效或已过期", 401)
         return h.send_json({"user": {"user_id": session.user_id, "role": session.role}})
-    # fallback：演示用 token（L2：校验过期）
+    # EDGE-052：production 下认证服务未就绪必须 fail-closed（503），
+    # 不落演示 token 分支（生产环境不提供演示凭据）。
+    if Settings.load().runtime_mode == "production":
+        return h._new_error("auth_unavailable", "认证服务未就绪，拒绝身份查询", 503)
+    # fallback：演示用 token（L2：校验过期；仅 development/simulation）
     with h._tokens_lock:
         entry = h._tokens.get(token)
     if not entry or entry.get("exp", 0) <= time.time():
@@ -178,7 +191,8 @@ def api_security_policy(ctx, h, req_meta):
 
 
 def route_auth_login(ctx, h, req_meta):
-    return api_auth_login(ctx, h, req_meta.body)
+    client_ip = req_meta.client[0] if getattr(req_meta, "client", None) else None
+    return api_auth_login(ctx, h, req_meta.body, client_ip=client_ip)
 
 
 DOMAIN_ROUTES = [

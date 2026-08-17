@@ -137,13 +137,13 @@ export function PlanDiffDrawer({
         <SnapshotBlock title="After" snap={entry.after} />
       </div>
 
-      {/* Reasons（后端解释） */}
+      {/* Reasons（后端解释，CLI-033：内容作稳定 key） */}
       {reasons.length > 0 && (
         <div className="mt-2">
           <div className="text-[9px] text-white/50">原因</div>
           <div className="mt-0.5 space-y-0.5">
-            {reasons.map((r, i) => (
-              <div key={i} className="text-[9.5px] text-white/60">
+            {Array.from(new Set(reasons)).map((r) => (
+              <div key={`reason-${r}`} className="text-[9.5px] text-white/60">
                 · {r}
               </div>
             ))}

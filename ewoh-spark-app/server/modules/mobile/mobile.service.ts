@@ -1,6 +1,6 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ewohScheduleTaskStep } from '@server/database/schema';
 import { MesService } from '../mes/mes.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -61,13 +61,26 @@ export class MobileService {
     if (!personId?.trim() || !actor?.primaryOrgId) {
       return [];
     }
+    // NEST-412：水平越权收敛——仅本人（或 global_admin/管理角色）可查工作台，
+    // 任意已认证用户传他人 personId 枚举他人工序的面关闭。
+    const roles = actor?.roles ?? [];
+    const isPrivileged =
+      roles.includes('global_admin') ||
+      roles.includes('dispatcher') ||
+      roles.includes('workshop_lead');
+    if (!isPrivileged && actor.userId !== personId) {
+      throw new ForbiddenException(
+        'workbench queries are limited to the caller (personId mismatch)',
+      );
+    }
+    // NEST-444：raw SQL org 谓词改 eq()（drizzle 惯用写法，列类型由 schema 保证）。
     return this.db
       .select()
       .from(ewohScheduleTaskStep)
       .where(
         and(
           eq(ewohScheduleTaskStep.assignedPersonId, personId),
-          sql`${ewohScheduleTaskStep}.org_id = ${actor.primaryOrgId}::uuid`,
+          eq(ewohScheduleTaskStep.orgId, actor.primaryOrgId),
           inArray(ewohScheduleTaskStep.status, [
             'pending',
             'in_progress',

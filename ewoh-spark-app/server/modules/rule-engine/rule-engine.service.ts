@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohEvent, ewohEventChain, ewohTelemetry, ewohDevice } from '@server/database/schema';
 import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { normalizeSeverity } from '@shared/risk';
 import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
 
@@ -38,7 +39,8 @@ export class RuleEngineService {
 
   /**
    * 评估单条遥测，按需触发事件
-   * @param row 已写入 ewoh_telemetry 的记录（含 id/deviceId/pitchDeg/loadScore/batteryPct/sourceType/recordId/dataQuality 等）
+   * @param row 已写入 ewoh_telemetry 的记录（含 id/deviceId/pitchDeg/loadScore/batteryPct/sourceType/recordId/dataQuality 等；
+   * NEST-621：可选 orgId 随事件落库，缺省时依赖请求级 GUC 默认）
    * @returns 触发的事件数量
    */
   async evaluate(row: {
@@ -51,6 +53,7 @@ export class RuleEngineService {
     recordId?: string | null;
     dataQuality?: string | null;
     packetLossPct?: number | null;
+    orgId?: string | null;
   }): Promise<number> {
     let triggered = 0;
     const sourceType = row.sourceType ?? 'simulated';
@@ -102,12 +105,17 @@ export class RuleEngineService {
   }
 
   /**
-   * 主动触发设备离线事件（供 SimulatorService / IngestionService 在判定离线时调用）
+   * 主动触发设备离线事件（供 SimulatorService / IngestionService 在判定离线时调用；
+   * NEST-621：可选 orgId 随事件落库）。
    */
-  async fireDeviceOffline(deviceId: string, sourceType = 'simulated'): Promise<void> {
+  async fireDeviceOffline(
+    deviceId: string,
+    sourceType = 'simulated',
+    orgId?: string | null,
+  ): Promise<void> {
     await this.tryFire(
       'DEVICE_OFFLINE',
-      { deviceId, sourceType },
+      { deviceId, sourceType, orgId },
       sourceType,
       'L3',
       'device',
@@ -145,7 +153,7 @@ export class RuleEngineService {
    */
   private async tryFire(
     eventCode: string,
-    row: { deviceId: string; sourceType?: string | null; recordId?: string | null },
+    row: { deviceId: string; sourceType?: string | null; recordId?: string | null; orgId?: string | null },
     sourceType: string,
     severity: string,
     eventType: string,
@@ -201,6 +209,8 @@ export class RuleEngineService {
         createdAt: now,
         sourceType,
         triggerRecordId: row.recordId ?? null,
+        // NEST-621：事件显式 orgId（缺省依赖 GUC 默认，不再写 NULL 全局行）。
+        ...(row.orgId ? { orgId: row.orgId } : {}),
         evidenceJson: {
           ...evidence,
           telemetry_id: row.recordId ?? null,
@@ -216,6 +226,7 @@ export class RuleEngineService {
         causalType: 'triggered',
         description: title,
         createdAt: now,
+        ...(row.orgId ? { orgId: row.orgId } : {}),
       });
       return true;
     } catch (error) {
@@ -255,15 +266,7 @@ export class RuleEngineService {
   }
 
   private genEventId(): string {
-    return `EVT-${Math.floor(Date.now() / 1000)}-${this.randomSuffix(4)}`;
-  }
-
-  private randomSuffix(len: number): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < len; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
+    // NEST-644：ID 后缀密码学化（Math.random 非密码学安全，同秒碰撞可预测）。
+    return `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   }
 }

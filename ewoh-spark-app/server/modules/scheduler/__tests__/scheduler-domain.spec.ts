@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { EligibilityService } from '../eligibility.service';
 import { SolverService, type SolverConstraint, type SolveOptions } from '../solver.service';
 import { RoutingService } from '../routing.service';
@@ -457,12 +458,26 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
 
   it('快照仍新鲜时审批通过（不抛异常）', async () => {
     // 当前世界状态（空 person/task/device，仅 low open 事件）经 entityVersion
-    // 序列化得到的 safety 指纹，与快照捕获时刻一致 → 视为新鲜。
+    // 序化得到的 safety 指纹，与快照捕获时刻一致 → 视为新鲜。
+    // NEST-149（2026-08-17）：entityVersion 哈希 djb2 → SHA-256 48-bit 折叠——
+    // 期望指纹按同一算法计算（非硬编码常量，防算法再漂移时假绿）。
+    const safetyObject = {
+      safetyBlockedPersonIds: [],
+      safetyBlockedDeviceIds: [],
+      forbiddenZones: [],
+    };
+    const safetyFingerprint = parseInt(
+      createHash('sha256')
+        .update(JSON.stringify(safetyObject))
+        .digest('hex')
+        .slice(0, 12),
+      16,
+    );
     const freshSnapshotRow = {
       snapshotVersion: 'WS-OLD',
       snapshotJson: {
         ...snapshotObj,
-        entityVersions: { safety: 70619738 },
+        entityVersions: { safety: safetyFingerprint },
       },
       createdAt: new Date(),
     };

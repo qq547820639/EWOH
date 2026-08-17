@@ -166,7 +166,24 @@ export class ImpactAnalyzer {
         case 'PERSON_UNAVAILABLE':
           candidates = candidates.filter((t) => t.assigneeId === entityId);
           break;
-        case 'SAFETY_EVENT':
+        case 'SAFETY_EVENT': {
+          // NEST-020 修复（2026-08-17）：SAFETY_EVENT 的 entityId 可能是
+          // person/device 而非 zone——仅按 zoneId 过滤会圈不中人员/设备维度
+          // 的受影响任务。按三维度过滤：entityId 命中人员（其待处理任务）/
+          // 设备（其待处理任务）/ 快照安全禁区（zone 内任务）。
+          const forbiddenZones = new Set(
+            snapshot.forbiddenZones.map((z) => z.zoneId),
+          );
+          const safetyPersons = new Set(snapshot.safetyBlockedPersonIds ?? []);
+          const safetyDevices = new Set(snapshot.safetyBlockedDeviceIds ?? []);
+          candidates = candidates.filter(
+            (t) =>
+              (t.zoneId != null && forbiddenZones.has(t.zoneId)) ||
+              (safetyPersons.has(entityId) && t.assigneeId === entityId) ||
+              (safetyDevices.has(entityId) && t.deviceId === entityId),
+          );
+          break;
+        }
         case 'ZONE_RESTRICTED': {
           const forbiddenZones = new Set(
             snapshot.forbiddenZones.map((z) => z.zoneId),

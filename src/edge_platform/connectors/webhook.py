@@ -26,8 +26,14 @@ def verify_webhook_signature(
     secret: str,
     algorithm: str = "sha256",
 ) -> bool:
-    """Verify an HMAC webhook signature (constant-time)."""
+    """Verify an HMAC webhook signature (constant-time).
+
+    EDGE-208：哈希算法白名单（sha256/sha1/sha384/sha512）——非法算法名
+    直接拒绝（False），不再把任意字符串透传 getattr(hashlib, ...)。
+    """
     if not isinstance(payload, (bytes, bytearray)) or not isinstance(signature, str):
+        return False
+    if algorithm not in ("sha256", "sha1", "sha384", "sha512"):
         return False
     digest = hmac.new(
         secret.encode("utf-8"),

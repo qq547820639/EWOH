@@ -9,18 +9,21 @@ const DEFAULT_SCOPE = 'default';
 /**
  * DB-backed idempotency store. Durable across restarts and instances, using the
  * unique (scope, idempotency_key) constraint to deduplicate replay / retries.
+ *
+ * NEST-518 修复（2026-08-17）：get/set 接受可选 scope 参数——不同业务域可使
+ * 用各自 scope，同名 key 不再跨域碰撞；不传时回退 DEFAULT_SCOPE（既有行为）。
  */
 @Injectable()
 export class DbIdempotencyStore implements IdempotencyStore {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async get<T>(key: string): Promise<IdempotencyRecord<T> | undefined> {
+  async get<T>(key: string, scope = DEFAULT_SCOPE): Promise<IdempotencyRecord<T> | undefined> {
     const [row] = await this.db
       .select()
       .from(ewohIdempotencyKeys)
       .where(
         and(
-          eq(ewohIdempotencyKeys.scope, DEFAULT_SCOPE),
+          eq(ewohIdempotencyKeys.scope, scope),
           eq(ewohIdempotencyKeys.idempotencyKey, key),
         ),
       );
@@ -30,19 +33,19 @@ export class DbIdempotencyStore implements IdempotencyStore {
     return { key, response: row.response as T, createdAt };
   }
 
-  async set<T>(key: string, response: T): Promise<IdempotencyRecord<T>> {
+  async set<T>(key: string, response: T, scope = DEFAULT_SCOPE): Promise<IdempotencyRecord<T>> {
     const now = new Date();
     await this.db
       .insert(ewohIdempotencyKeys)
       .values({
-        scope: DEFAULT_SCOPE,
+        scope,
         idempotencyKey: key,
         response: response as unknown,
         createdAt: now,
         updatedAt: now,
       })
       .onConflictDoNothing();
-    const existing = await this.get<T>(key);
+    const existing = await this.get<T>(key, scope);
     return (
       existing ?? { key, response, createdAt: now }
     );

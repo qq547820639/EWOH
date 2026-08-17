@@ -24,7 +24,7 @@
       else if (r.kind === 'task' || r.kind === 'plan') label = id;
       else if (r.kind === 'assignment') label = id;
     }
-    return '<span class="cm-bind-link" data-id="' + id + '">' + CM.esc(label) + '</span>';
+    return '<span class="cm-bind-link" data-id="' + CM.esc(id) + '">' + CM.esc(label) + '</span>';
   }
 
   // ===== 调度实体解析（Phase 7.5）：Task / Plan / Assignment 不在 CM.DATA.entities 中 =====
@@ -210,36 +210,36 @@
     _extras: function (e) {
       var h = '<div class="cm-field-group"><div class="cm-field-group-title">扩展属性</div><div class="cm-field-row">';
       if (e.device) {
-        h += subRow('型号', e.device.model);
-        h += subRow('固件', e.device.firmware);
+        h += subRow('型号', CM.esc(e.device.model));
+        h += subRow('固件', CM.esc(e.device.firmware));
         h += subRow('电量', e.device.battery + '%');
         h += subRow('温度', e.device.temp + '℃');
         h += subRow('在线', e.device.online ? '是' : '否');
-        h += subRow('故障码', e.device.fault_code || '无');
-        if (e.device.model_version) h += subRow('推理模型版本', e.device.model_version);
-        if (e.device.action_label) h += subRow('最近动作', e.device.action_label + ' (' + ((e.device.action_confidence || 0) * 100).toFixed(0) + '%)');
-        if (e.device.quality_status) h += subRow('数据质量', e.device.quality_status);
+        h += subRow('故障码', CM.esc(e.device.fault_code || '无'));
+        if (e.device.model_version) h += subRow('推理模型版本', CM.esc(e.device.model_version));
+        if (e.device.action_label) h += subRow('最近动作', CM.esc(e.device.action_label) + ' (' + ((e.device.action_confidence || 0) * 100).toFixed(0) + '%)');
+        if (e.device.quality_status) h += subRow('数据质量', CM.esc(e.device.quality_status));
       } else if (e.person) {
-        h += subRow('匿名编号', (e.anonymized_name || e.entity_id));
-        h += subRow('当前动作', e.person.action);
-        h += subRow('技能', e.person.skill);
+        h += subRow('匿名编号', CM.esc(e.anonymized_name || e.entity_id));
+        h += subRow('当前动作', CM.esc(e.person.action));
+        h += subRow('技能', CM.esc(e.person.skill));
         h += subRow('负荷等级', e.person.load_level.toFixed(2));
         h += subRow('疲劳趋势', e.person.fatigue_trend.toFixed(2));
         h += subRow('连续作业', e.person.work_minutes + ' 分');
-        if (e.consent_status) h += subRow('授权状态', e.consent_status);
+        if (e.consent_status) h += subRow('授权状态', CM.esc(e.consent_status));
       } else if (e.station) {
-        h += subRow('所属产线', e.station.line);
+        h += subRow('所属产线', CM.esc(e.station.line));
         h += subRow('节拍', e.station.takt + 's');
-        h += subRow('占用', e.station.occupancy);
-        h += subRow('积压', e.station.backlog + ' 任务');
+        h += subRow('占用', CM.esc(e.station.occupancy));
+        h += subRow('积压', CM.esc(e.station.backlog) + ' 任务');
       } else if (e.zone) {
-        h += subRow('区域类型', e.zone_type);
+        h += subRow('区域类型', CM.esc(e.zone_type));
         h += subRow('温度', e.env.temp + '℃');
-        h += subRow('振动', e.env.vibration);
-        h += subRow('噪声', e.env.noise + 'dB');
+        h += subRow('振动', CM.esc(e.env.vibration));
+        h += subRow('噪声', CM.esc(e.env.noise) + 'dB');
       } else if (e.route) {
         h += subRow('路径点数', e.route.path.length);
-        h += subRow('状态', e.status);
+        h += subRow('状态', CM.esc(e.status));
       } else {
         return '';
       }
@@ -428,7 +428,7 @@
         if (!extra) return;
         var dist = p.action_distribution_24h || {};
         var distRows = Object.keys(dist).map(function (k) {
-          return '<div class="cm-sub-field"><div class="cm-sub-label">' + CM.esc(k) + '</div><div class="cm-sub-value">' + dist[k] + ' 次</div></div>';
+          return '<div class="cm-sub-field"><div class="cm-sub-label">' + CM.esc(k) + '</div><div class="cm-sub-value">' + CM.esc(dist[k]) + ' 次</div></div>';
         }).join('') || '<div class="cm-empty">无动作分布数据</div>';
         var skills = (p.skills || []).join('、') || '--';
         var m = p.metrics || {};
@@ -441,14 +441,14 @@
         var device = p.device || {};
         extra.innerHTML = '<div class="cm-field-group-title">人员画像（/api/person/profile）</div>' +
           '<div class="cm-field-row">' +
-          subRow('技能', skills) +
+          subRow('技能', CM.esc(skills)) +
           subRow('当前负荷', m.current_load != null ? m.current_load.toFixed(3) : '--') +
           subRow('连续作业分钟', m.work_minutes != null ? m.work_minutes.toFixed(1) : '--') +
           subRow('未处置事件', m.open_events != null ? m.open_events : '--') +
           subRow('高风险事件', m.open_high_events != null ? m.open_high_events : '--') +
           subRow('近期风险评分', m.risk_recent != null ? m.risk_recent.toFixed(3) : '--') +
-          subRow('数据质量', quality) +
-          subRow('绑定设备', device.device_id || '--') +
+          subRow('数据质量', CM.esc(quality)) +
+          subRow('绑定设备', CM.esc(device.device_id || '--')) +
           '</div>' +
           '<div class="cm-sub-field"><div class="cm-sub-label">24h 动作分布</div><div class="cm-sub-value cm-field-row">' + distRows + '</div></div>' +
           '<div class="cm-sub-field"><div class="cm-sub-label">最近事件</div><div class="cm-sub-value"><ul class="cm-ev-mini">' + evList + '</ul></div></div>';
@@ -484,11 +484,11 @@
         ex.innerHTML = '<div class="cm-field-group-title">设备健康（/api/devices/{id}/health）</div>' +
           '<div class="cm-field-row">' +
           subRow('在线', h.online ? '是' : '否') +
-          subRow('最后通信', h.last_seen || '--') +
+          subRow('最后通信', CM.esc(h.last_seen || '--')) +
           subRow('电量', h.battery_pct != null ? h.battery_pct + '%' : '--') +
           subRow('故障', h.fault ? '是' : '否') +
           subRow('丢包率', h.packet_loss_pct != null ? h.packet_loss_pct + '%' : '--') +
-          subRow('数据质量', h.quality_status || 'unknown') +
+          subRow('数据质量', CM.esc(h.quality_status || 'unknown')) +
           '</div>';
       }).catch(function (err) {
         var ex = document.getElementById('health-extra');

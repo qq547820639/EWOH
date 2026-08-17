@@ -6,14 +6,15 @@
         [--suppressions security/bandit-suppressions.json]
 
 行为：
-- 读取 bandit `-f json` 输出，统计 HIGH 级发现数量。
-- 对照豁免清单 security/bandit-suppressions.json 计算“未被豁免的 HIGH 数”。
-- 任一 HIGH 未被豁免（unbounded HIGH > 0）即 exit 1，阻断合并。
+- 读取 bandit `-f json` 输出，统计 CRITICAL/HIGH 级发现数量（SCR-018：CRITICAL 纳入门禁）。
+- 对照豁免清单 security/bandit-suppressions.json 计算“未被豁免的 CRITICAL/HIGH 数”。
+- 任一 CRITICAL/HIGH 未被豁免（unbounded > 0）即 exit 1，阻断合并。
 - 若 bandit 报告缺失（视为工具未运行/未安装），直接失败，绝不假装通过。
 - 豁免清单 schema 校验：每条豁免必须含非空 reason/owner/expiresAt，且
   expiresAt 为合法 ISO 日期且未过期；违反即 exit 3（配置错误）。
+- 豁免路径匹配为精确匹配（SCR-017）：豁免 path 必须等于 finding 的仓库相对路径。
 
-退出码：0=通过；1=存在未豁免 HIGH（阻断）；2=报告缺失/无法解析；3=豁免配置非法。
+退出码：0=通过；1=存在未豁免 CRITICAL/HIGH（阻断）；2=报告缺失/无法解析；3=豁免配置非法。
 """
 
 from __future__ import annotations
@@ -25,6 +26,20 @@ from datetime import date
 from pathlib import Path
 
 SUPPRESSION_SCHEMA_FIELDS = ("reason", "owner", "expiresAt")
+# SCR-018: 阻断级别同时覆盖 CRITICAL 与 HIGH。
+BLOCKING_SEVERITIES = ("CRITICAL", "HIGH")
+_REPO_ROOT = Path.cwd()
+
+
+def _repo_relative(finding_path: str) -> str:
+    """将 finding 文件名归一化为仓库相对路径（绝对路径尽可能转为相对）。"""
+    p = Path(finding_path)
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(_REPO_ROOT)
+        except ValueError:
+            return str(p)
+    return str(p)
 
 
 def _load_bandit_report(path: Path) -> dict:
@@ -88,24 +103,27 @@ def load_suppressions(path: Path) -> list:
 
 
 def _unbounded(findings: list, entries: list) -> list:
-    """返回未被豁免覆盖的 HIGH 发现列表。"""
+    """返回未被豁免覆盖的 CRITICAL/HIGH 发现列表。"""
     covered_ids = set()
     for entry in entries:
         rule_id = str(entry.get("ruleId") or "").strip()
         path_sub = str(entry.get("path") or "").strip()
         if not rule_id:
+            # SCR-035: 无 ruleId 的豁免条目无法定位发现，不再静默跳过——显式告警。
+            print(f"::warning::豁免条目缺少 ruleId，未生效：{entry}")
             continue
         for idx, finding in enumerate(findings):
             if str(finding.get("test_id") or "") != rule_id:
                 continue
-            if path_sub and path_sub not in str(finding.get("filename") or ""):
+            # SCR-017: 精确路径匹配（仓库相对路径相等），避免子串误匹配过宽抑制。
+            if path_sub and _repo_relative(str(finding.get("filename") or "")) != path_sub:
                 continue
             covered_ids.add(idx)
     return [f for i, f in enumerate(findings) if i not in covered_ids]
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Bandit HIGH 门禁")
+    parser = argparse.ArgumentParser(description="Bandit CRITICAL/HIGH 门禁")
     parser.add_argument("report", help="bandit -f json 输出文件路径")
     parser.add_argument(
         "--suppressions",
@@ -118,25 +136,25 @@ def main(argv=None) -> int:
     entries = load_suppressions(Path(args.suppressions))
 
     results = data.get("results", [])
-    high_findings = [
-        r for r in results if str(r.get("issue_severity", "")).upper() == "HIGH"
+    blocking_findings = [
+        r for r in results if str(r.get("issue_severity", "")).upper() in BLOCKING_SEVERITIES
     ]
-    unbounded = _unbounded(high_findings, entries)
+    unbounded = _unbounded(blocking_findings, entries)
 
     total = data.get("total_issues", len(results))
-    print(f"bandit_gate: total_issues={total} high={len(high_findings)} "
-          f"suppressed={len(high_findings) - len(unbounded)} "
-          f"unbounded_high={len(unbounded)}")
+    print(f"bandit_gate: total_issues={total} critical+high={len(blocking_findings)} "
+          f"suppressed={len(blocking_findings) - len(unbounded)} "
+          f"unbounded={len(unbounded)}")
 
     if unbounded:
         for f in unbounded:
-            print(f"::error::未豁免 HIGH: {f.get('test_id')} "
+            print(f"::error::未豁免 {str(f.get('issue_severity', '')).upper()}: {f.get('test_id')} "
                   f"{f.get('filename')}:{f.get('line_number')} "
                   f"{f.get('issue_text', '')[:120]}")
-        print("::error::存在未豁免的 HIGH 级安全发现，阻断合并（Task 7 门禁）。")
+        print("::error::存在未豁免的 CRITICAL/HIGH 级安全发现，阻断合并（Task 7 门禁）。")
         return 1
 
-    print("bandit_gate: PASS —— 未发现未豁免的 HIGH 级安全问题。")
+    print("bandit_gate: PASS —— 未发现未豁免的 CRITICAL/HIGH 级安全问题。")
     return 0
 
 

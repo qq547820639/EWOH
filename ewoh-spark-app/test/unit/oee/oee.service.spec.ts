@@ -6,7 +6,7 @@ import {
 import { ewohNotification } from '@server/database/schema';
 
 describe('OEE calculation', () => {
-  it('computes availability and downtime breakdown', () => {
+  it('computes availability and downtime breakdown; missing output → performance/oee null (NEST-634)', () => {
     const metrics = computeOee(
       [
         { evidenceJson: { status: 'running', durationSec: 60 } },
@@ -16,11 +16,35 @@ describe('OEE calculation', () => {
       100,
     );
     expect(metrics.availability).toBeCloseTo(0.6, 3);
-    expect(metrics.oee).toBeCloseTo(0.6, 3);
+    // NEST-634：无 outputQty/idealRatePerSec 证据 → performance/oee 显式 null
+    // （不再默认 performance=1 掩盖缺口）。
+    expect(metrics.performance).toBeNull();
+    expect(metrics.oee).toBeNull();
     expect(metrics.downtimeBreakdown[0]).toEqual({
       reason: 'fault',
       seconds: 30,
     });
+  });
+
+  it('computes performance and OEE when output and ideal rate evidence is present', () => {
+    const metrics = computeOee(
+      [
+        {
+          evidenceJson: {
+            status: 'running',
+            durationSec: 60,
+            outputQty: 60,
+            idealRatePerSec: 1,
+          },
+        },
+        { evidenceJson: { status: 'fault', durationSec: 30 } },
+        { evidenceJson: { status: 'idle', durationSec: 10 } },
+      ],
+      100,
+    );
+    expect(metrics.availability).toBeCloseTo(0.6, 3);
+    expect(metrics.performance).toBeCloseTo(1, 3);
+    expect(metrics.oee).toBeCloseTo(0.6, 3);
   });
 
   it('uses recorded durations as planned time when not supplied', () => {
@@ -129,7 +153,9 @@ describe('OeeService persistence', () => {
       'ANDON-1',
       'acknowledge',
       undefined,
-      { userId: 'user-1', primaryOrgId: 'org-1' },
+      // SH-004 联动：andon 复用 alert 状态机（fail-closed），必须携带
+      // roles 数组（AccessTokenGuard 注入形态）。
+      { userId: 'user-1', primaryOrgId: 'org-1', roles: ['dispatcher'] },
     );
 
     expect(result.status).toBe('acknowledged');

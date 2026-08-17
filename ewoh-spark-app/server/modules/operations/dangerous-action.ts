@@ -101,6 +101,8 @@ export interface CompensationPlan {
  * must be treated as irreversible.
  */
 export function buildCompensation(action: DangerousActionKind): CompensationPlan {
+  // NEST-225：DangerousActionKind 已穷举，移除不可达 default；新增 kind 时
+  // 由 exhaustive check 在编译期强制补齐补偿语义。
   switch (action) {
     case 'transfer':
       return {
@@ -119,11 +121,15 @@ export function buildCompensation(action: DangerousActionKind): CompensationPlan
       };
     case 'delete':
     case 'cancel':
-    default:
       return {
         kind: 'noop',
         description: '该操作不可撤销，请在确认前核对影响范围。',
       };
+    default: {
+      // Exhaustive check：未来新增 kind 未处理时此处编译期即暴露。
+      const exhaustive: never = action;
+      throw new Error(`unsupported dangerous action kind: ${String(exhaustive)}`);
+    }
   }
 }
 

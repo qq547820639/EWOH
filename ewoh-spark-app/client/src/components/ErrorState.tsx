@@ -14,6 +14,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@client/src/components/ui/button';
+import { sanitizeUserText } from '@client/src/components/AppErrorState';
 import {
   parseError,
   type ErrorKind,
@@ -44,35 +45,39 @@ const KIND_PRESENTATION: Record<
   permission: {
     icon: ShieldX,
     title: '权限不足',
-    containerClass: 'border-amber-200 bg-amber-50',
-    iconClass: 'text-amber-600',
+    containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
+    iconClass: 'text-risk-degraded',
   },
   validation: {
     icon: CircleAlert,
     title: '操作未通过校验',
-    containerClass: 'border-yellow-200 bg-yellow-50',
-    iconClass: 'text-yellow-600',
+    containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
+    iconClass: 'text-risk-degraded',
   },
   connection: {
     icon: WifiOff,
     title: '网络连接失败',
-    containerClass: 'border-sky-200 bg-sky-50',
-    iconClass: 'text-sky-600',
+    containerClass: 'border-risk-offline-border bg-risk-offline-soft',
+    iconClass: 'text-risk-offline',
   },
   server: {
     icon: ServerCrash,
     title: '服务器暂时不可用',
-    containerClass: 'border-red-200 bg-red-50',
-    iconClass: 'text-red-600',
+    containerClass: 'border-risk-blocked-border bg-risk-blocked-soft',
+    iconClass: 'text-risk-blocked',
   },
   unknown: {
     icon: TriangleAlert,
     title: '操作失败',
-    containerClass: 'border-red-200 bg-red-50',
-    iconClass: 'text-red-600',
+    containerClass: 'border-risk-blocked-border bg-risk-blocked-soft',
+    iconClass: 'text-risk-blocked',
   },
 };
 
+/**
+ * 仅使用 Clipboard API 复制文本；不可用或失败时返回 false（CLI-311：移除已
+ * 废弃的 document.execCommand('copy') 回退路径，由调用方提示手动复制）。
+ */
 async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -80,21 +85,9 @@ async function copyText(text: string): Promise<boolean> {
       return true;
     }
   } catch {
-    // 继续走回退方案
+    // 忽略并交由调用方提示手动复制
   }
-  try {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(textarea);
-    return ok;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 const ErrorState = ({
@@ -123,6 +116,11 @@ const ErrorState = ({
     };
   }, [error, errorMessage]);
 
+  // CLI-305：message / recommendedAction 可能携带原始堆栈 / JSON 片段，
+  // 展示前必须经 sanitizeUserText 清洗（复用 AppErrorState 的实现）。
+  const messageText = sanitizeUserText(parsed.message) || '操作失败，请稍后重试。';
+  const recommendedText = sanitizeUserText(parsed.recommendedAction);
+
   const presentation = KIND_PRESENTATION[parsed.kind];
   const Icon = presentation.icon;
 
@@ -138,8 +136,8 @@ const ErrorState = ({
     const text =
       `错误码：${parsed.code || '未知'}\n` +
       `请求ID：${parsed.requestId || '未知'}\n` +
-      `错误信息：${parsed.message}\n` +
-      `推荐操作：${parsed.recommendedAction || '无'}`;
+      `错误信息：${messageText}\n` +
+      `推荐操作：${recommendedText || '无'}`;
     const ok = await copyText(text);
     if (ok) {
       toast.success('已复制诊断信息');
@@ -157,21 +155,21 @@ const ErrorState = ({
       <div className="flex items-start gap-2">
         <Icon className={`mt-0.5 size-5 shrink-0 ${presentation.iconClass}`} />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">
+          <p className="font-semibold text-foreground">
             {presentation.title}
           </p>
-          <p className="mt-0.5 text-[hsl(220_14%_14%)]">{parsed.message}</p>
-          {parsed.recommendedAction && (
-            <p className="mt-1 text-[hsl(218_10%_42%)]">
+          <p className="mt-0.5 text-foreground">{messageText}</p>
+          {recommendedText && (
+            <p className="mt-1 text-muted-foreground">
               <span className="font-medium">推荐操作：</span>
-              {parsed.recommendedAction}
+              {recommendedText}
             </p>
           )}
           <span
             className={`mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${
               parsed.retryable
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] text-[hsl(218_10%_42%)]'
+                ? 'border-risk-normal-border bg-risk-normal-soft text-risk-normal'
+                : 'border-border bg-muted text-muted-foreground'
             }`}
           >
             {parsed.retryable ? '可安全重试' : '不可重试'}
@@ -180,7 +178,7 @@ const ErrorState = ({
       </div>
 
       {(parsed.code || parsed.requestId) && (
-        <div className="grid gap-0.5 rounded bg-white/60 p-2 font-mono text-xs text-[hsl(218_10%_42%)]">
+        <div className="grid gap-0.5 rounded bg-white/60 p-2 font-mono text-xs text-muted-foreground">
           {parsed.code && (
             <div>
               <span className="font-medium">错误码：</span>

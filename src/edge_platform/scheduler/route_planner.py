@@ -161,7 +161,14 @@ class EuclideanRoutePlanner(RoutePlanner):
             )
         tx, ty = to_xy
         if tx is None or ty is None:
-            tx, ty = (x + 1.0, y + 1.0)  # 无目标坐标时按单位距离占位
+            # EDGE-123：无目标坐标时不再伪造 (x+1, y+1) 占位坐标——
+            # 目标不可达必须如实 reachable=False（占位坐标会产出虚假距离/ETA）。
+            return Route(
+                from_id="",
+                to_id=to_station_id,
+                blocked_reason="缺少目标坐标，无法计算欧氏路线（不伪造占位坐标）",
+                reachable=False,
+            )
         d = distance(Pose(x=float(x), y=float(y)), Pose(x=float(tx), y=float(ty)))
         return Route(
             from_id="",

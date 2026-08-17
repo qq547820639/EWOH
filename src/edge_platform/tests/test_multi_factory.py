@@ -268,7 +268,10 @@ class CrossFactorySchedulerStubTest(unittest.TestCase):
         self.assertEqual(factory_ids, ["F1", "F2"])
         for r in results:
             self.assertTrue(r["cross_factory"])
-            self.assertEqual(r["status"], "STUB")  # V2.0 未实现完整逻辑
+            # EDT-018：status="STUB" 是 CrossFactorySchedulerStub 的**现行契约**
+            # （V2.0 完整跨厂调度未实现；本测试验证 stub 的过滤/审计行为本身，
+            # 保持活性不标 skip——完整实现落地时应把此断言更新为真实状态值）。
+            self.assertEqual(r["status"], "STUB")  # V2.0 未实现完整逻辑（现行契约）
             self.assertTrue(r["candidate_id"])
         # 审计记录
         self.assertTrue(any(r["op"] == "propose_cross_factory" for r in stub.audit_log()))

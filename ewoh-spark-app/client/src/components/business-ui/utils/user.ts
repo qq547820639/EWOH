@@ -1,6 +1,6 @@
 // client/src/utils/user.ts
 
-import type { I18nText, User, UserInput } from '../types/user';
+import type { I18nText, User, UserInput, UserType } from '../types/user';
 
 /**
  * 获取国际化文本的显示值
@@ -18,10 +18,13 @@ export function getI18nText(
 }
 
 /**
- * 将任意格式的用户数据转换为标准 User 类型（下划线命名）
+ * 将任意格式的用户数据转换为标准 User 类型（下划线命名）。
+ * CLI-421：UserInput 联合已显式声明驼峰/下划线两套字段，无需 any 断言。
  */
 export function normalizeUser(input: UserInput): User {
-  const data = input as any;
+  // CLI-421：UserInput 联合已显式声明驼峰/下划线两套字段，交叉断言即可，
+  // 不再使用 any。
+  const data = input as User & { userId?: string; userType?: UserType };
 
   // 提取 user_id（兼容驼峰和下划线）
   const user_id = data.user_id || data.userId || '';

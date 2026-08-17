@@ -13,17 +13,46 @@ type Row = Record<string, unknown>;
 
 function makeFakeDb(rows: Row[] = []) {
   const state = { rows: [...rows] };
-  const selectResult = () => {
-    const thenable = Promise.resolve(state.rows) as Promise<Row[]> & {
+  /**
+   * NEST-447：fake.where 尊重 org 谓词——条件含 org-* 值且与行 orgId 不同
+   * 则行不可见（跨租户解析/注册读回返回空，租户隔离可被真实断言）。
+   */
+  const collectStrings = (
+    node: unknown,
+    out: string[] = [],
+    seen = new Set<unknown>(),
+  ): string[] => {
+    if (node === null || node === undefined) return out;
+    if (typeof node === 'string') {
+      out.push(node);
+      return out;
+    }
+    if (typeof node !== 'object' || seen.has(node)) return out;
+    seen.add(node);
+    for (const child of Object.values(node as Record<string, unknown>)) {
+      collectStrings(child, out, seen);
+    }
+    return out;
+  };
+  const filterByCondition = (condition: unknown): Row[] => {
+    const orgValues = collectStrings(condition).filter((value) =>
+      /^org-[0-9]+$/.test(value),
+    );
+    if (orgValues.length === 0) return state.rows;
+    return state.rows.filter((row) => orgValues.includes(String(row.orgId)));
+  };
+  const selectResult = (condition?: unknown) => {
+    const filtered = condition === undefined ? state.rows : filterByCondition(condition);
+    const thenable = Promise.resolve(filtered) as Promise<Row[]> & {
       limit: jest.Mock;
     };
-    thenable.limit = jest.fn(() => Promise.resolve(state.rows));
+    thenable.limit = jest.fn(() => Promise.resolve(filtered));
     return thenable;
   };
   const fake = {
     select: jest.fn(() => fake),
     from: jest.fn(() => fake),
-    where: jest.fn(() => selectResult()),
+    where: jest.fn((condition?: unknown) => selectResult(condition)),
     insert: jest.fn(() => ({
       values: jest.fn((v: Row) => ({
         returning: jest.fn(() => {
@@ -100,6 +129,12 @@ describe('IdentityService', () => {
     await expect(service.resolveMapping('mes', 'WO-1', 'org-1')).resolves.toBe(
       'order:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11',
     );
+  });
+
+  it('NEST-447：跨租户解析返回 null（fake.where 尊重 org 谓词）', async () => {
+    // 行属 org-1；org-2 上下文解析同一 (system, id) 不可见 → null（fail-closed）。
+    const service = new IdentityService(makeFakeDb([{ ...BASE_ROW }]) as never);
+    await expect(service.resolveMapping('mes', 'WO-1', 'org-2')).resolves.toBeNull();
   });
 
   it('解析冲突 fail-closed：ambiguous_identity 抛错', async () => {

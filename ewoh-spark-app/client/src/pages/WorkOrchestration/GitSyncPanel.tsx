@@ -164,7 +164,8 @@ const GitSyncPanel = (): React.ReactElement => {
   };
 
   const ci = providerData.ci;
-  const CiIcon = CI_LABEL[ci.status].icon;
+  // CLI-212：未知 CI 状态 fallback（原直接索引 .icon，异常 status 抛 TypeError 崩溃）。
+  const CiIcon = (CI_LABEL[ci.status] ?? CI_LABEL.unknown).icon;
 
   return (
     <QueryState
@@ -271,7 +272,7 @@ const GitSyncPanel = (): React.ReactElement => {
             <h3 className="font-semibold text-[hsl(220_14%_14%)]">CI 状态回写</h3>
             <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-[hsl(218_10%_42%)]">
               <CiIcon className={`size-3.5 ${ciClass(ci.status)}`} />
-              {CI_LABEL[ci.status].text} · {ci.total} 项检查
+              {(CI_LABEL[ci.status] ?? CI_LABEL.unknown).text} · {ci.total} 项检查
             </span>
           </div>
           {providerData.providerConnected ? (

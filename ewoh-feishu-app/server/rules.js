@@ -5,7 +5,6 @@
 // v1.1.0 加固（设计决策 D5）：
 //   - 规则配置（阈值/持续门槛/冷却/标题/描述）以 DB `rules` 表为唯一事实源，
 //     rules.js 不再硬编码第二份配置，消除双源漂移；
-//   - DEFAULT_RULES 仅为「DB 表为空时」的兜底默认值（seed 之后不会触发）；
 //   - 每条规则评估前从 DB 读取当前启用状态与最新参数，支持运行时调参。
 
 const events = require('./events');
@@ -14,28 +13,13 @@ const feishu = require('./feishu');
 const sync = require('./sync');
 
 // 兜底默认规则（仅当 DB rules 表为空时使用；seedData 会写入等价的 4 条）
-const DEFAULT_RULES = [
-  {
-    rule_id: 'R001', event_code: 'POSTURE_BEND_LONG', event_type: 'L1', severity: 'high',
-    title: '深弯腰持续过久', description: 'pitch > 45° 持续 ≥10s，存在腰部损伤风险',
-    param: 'pitch_deg', op: '>', value: 45, threshold_sec: 10, cooldown_sec: 30,
-  },
-  {
-    rule_id: 'R002', event_code: 'LOAD_CONTINUOUS', event_type: 'L2', severity: 'medium',
-    title: '持续高负荷', description: 'torque > 20Nm 持续 ≥8s，助力系统负荷过高',
-    param: 'torque_nm', op: '>', value: 20, threshold_sec: 8, cooldown_sec: 30,
-  },
-  {
-    rule_id: 'R003', event_code: 'LOW_BATTERY', event_type: 'L1', severity: 'high',
-    title: '电量过低', description: 'battery < 15%，设备即将断电',
-    param: 'battery_pct', op: '<', value: 15, threshold_sec: 0, cooldown_sec: 60,
-  },
-  {
-    rule_id: 'R004', event_code: 'SENSOR_DEGRADED', event_type: 'L1', severity: 'high',
-    title: '传感器降级', description: 'quality_status != good 持续 ≥5s，数据可信度下降',
-    param: 'quality_status', op: '!=', value: 'good', threshold_sec: 5, cooldown_sec: 30,
-  },
-];
+// FS-017：单一事实源为 db.js 的 SEED_RULES —— 本数组由其派生
+//（config 字段平铺 + severity 提升），消除两份阈值分别维护的漂移风险。
+const DEFAULT_RULES = dbm.SEED_RULES.map((r) => ({
+  rule_id: r.rule_id,
+  severity: r.severity,
+  ...(r.config || {}),
+}));
 
 // 状态机：key = `${event_code}::${device_id}`
 // value = { condition_met, condition_start_ts, duration_sec, last_trigger_ts }
@@ -175,13 +159,20 @@ function evaluateRules(db, telemetry) {
             Promise.resolve(feishu.sendAlertCard(cfg.chat_id, ev))
               .then((card) => {
                 if (card && card.message_id) {
-                  // 将 message_id 回写事件 evidence，便于卡片回调时定位更新
-                  const cur = events.getEvent(db, ev.event_id);
-                  const evidence = (cur && cur.evidence) || {};
-                  evidence.feishu_message_id = card.message_id;
-                  db.prepare('UPDATE events SET evidence = ?, updated_at = ? WHERE event_id = ?')
-                    .run(JSON.stringify(evidence), new Date().toISOString(), ev.event_id);
-                  ev.feishu_message_id = card.message_id;
+                  // 将 message_id 回写事件 evidence（FS-019：单条 UPDATE 原子化）。
+                  // 原先"getEvent 读 → 改 evidence → UPDATE 整字段"的读-改-写会覆盖
+                  // 并发写入的其他 evidence 键；json_set 仅设置自身键，天然无竞态。
+                  try {
+                    db.prepare(
+                      `UPDATE events
+                       SET evidence = json_set(COALESCE(evidence, '{}'), '$.feishu_message_id', ?),
+                           updated_at = ?
+                       WHERE event_id = ?`
+                    ).run(card.message_id, new Date().toISOString(), ev.event_id);
+                    ev.feishu_message_id = card.message_id;
+                  } catch (e) {
+                    console.error('[rules] 回写 feishu_message_id 失败:', e.message);
+                  }
                 }
               })
               .catch((e) => console.error('[rules] sendAlertCard 失败:', e.message));

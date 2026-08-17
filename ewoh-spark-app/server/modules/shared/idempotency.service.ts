@@ -10,8 +10,10 @@ export interface IdempotencyRecord<T = unknown> {
 }
 
 export interface IdempotencyStore {
-  get<T>(key: string): Promise<IdempotencyRecord<T> | undefined>;
-  set<T>(key: string, response: T): Promise<IdempotencyRecord<T>>;
+  /** NEST-518（2026-08-17）：可选 scope 维度——不同业务域的同名 key 不再碰撞；
+   * 不传 scope 时各实现回退自身默认（内存实现用复合键，DB 实现用 scope 列）。 */
+  get<T>(key: string, scope?: string): Promise<IdempotencyRecord<T> | undefined>;
+  set<T>(key: string, response: T, scope?: string): Promise<IdempotencyRecord<T>>;
 }
 
 /**
@@ -48,13 +50,13 @@ export class InMemoryPayloadStore implements PayloadStore {
 export class InMemoryIdempotencyStore implements IdempotencyStore {
   private readonly records = new Map<string, IdempotencyRecord<unknown>>();
 
-  async get<T>(key: string): Promise<IdempotencyRecord<T> | undefined> {
-    return this.records.get(key) as IdempotencyRecord<T> | undefined;
+  async get<T>(key: string, scope = 'default'): Promise<IdempotencyRecord<T> | undefined> {
+    return this.records.get(`${scope}:${key}`) as IdempotencyRecord<T> | undefined;
   }
 
-  async set<T>(key: string, response: T): Promise<IdempotencyRecord<T>> {
+  async set<T>(key: string, response: T, scope = 'default'): Promise<IdempotencyRecord<T>> {
     const record: IdempotencyRecord<T> = { key, response, createdAt: new Date() };
-    this.records.set(key, record as IdempotencyRecord<unknown>);
+    this.records.set(`${scope}:${key}`, record as IdempotencyRecord<unknown>);
     return record;
   }
 

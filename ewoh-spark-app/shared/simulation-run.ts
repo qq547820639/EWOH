@@ -207,7 +207,11 @@ export function evaluateCapacity(
     return { stationId, capacityPerHour: capacity };
   });
   const lineThroughput = Math.min(...normalized.map((s) => s.capacityPerHour));
-  const bottleneck = normalized.find((s) => s.capacityPerHour === lineThroughput)!;
+  // SH-017：显式判空替代 ! 非空断言（浮点精度下 find 可能失配，避免运行时 crash）。
+  const bottleneck = normalized.find((s) => s.capacityPerHour === lineThroughput);
+  if (bottleneck == null) {
+    throw new Error('容量瓶颈工位解析失败（stations 不能为空）');
+  }
   const utilization = Math.round((demandPerHour / lineThroughput) * 1e6) / 1e6;
   return {
     bottleneckStationId: bottleneck.stationId,

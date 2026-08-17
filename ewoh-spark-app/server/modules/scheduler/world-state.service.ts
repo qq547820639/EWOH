@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Inject, Logger, ConflictException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -13,7 +14,7 @@ import {
   ewohResourceReservation,
   ewohDeviceBinding,
 } from '@server/database/schema';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, sql, isNull, type AnyColumn, type SQL } from 'drizzle-orm';
 import { validateCloudWorldSnapshot } from '@shared/world-contract';
 import type {
   SchedulingEventImpact,
@@ -34,6 +35,16 @@ import {
 export class WorldStateSnapshotService {
   private readonly logger = new Logger(WorldStateSnapshotService.name);
 
+  /**
+   * NEST-123（2026-08-17）：锁定/排除重排的任务状态集合——只认契约状态
+   * （contracts/state-machines/task.yaml：executing/dispatched），
+   * 剔除非契约的 'in_progress'（task.yaml 无此状态，属历史拼写漂移）。
+   */
+  private static readonly LOCKED_TASK_STATUSES: ReadonlySet<string> = new Set([
+    'executing',
+    'dispatched',
+  ]);
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly requestDatabaseContext: RequestDatabaseContext,
@@ -44,11 +55,23 @@ export class WorldStateSnapshotService {
   ) {}
 
   /**
+   * NEST-101（2026-08-17）：读面 org 条件构造器。ctx 携带非空 primaryOrgId 时
+   * 返回 `org_id IS NULL OR org_id = primaryOrgId`（与 RLS USING 等价的分层
+   * 过滤；NULL 分支覆盖存量行过渡期）；ctx 缺省返回 undefined——仅限系统
+   * 后台流（GUC/RLS 兜底），HTTP 路径必须传 ctx。
+   */
+  private orgCondition(column: AnyColumn, ctx: OrgContext | undefined): SQL | undefined {
+    const orgId = ctx?.primaryOrgId;
+    if (!orgId) return undefined;
+    return or(isNull(column), eq(column, orgId));
+  }
+
+  /**
    * 基于实时的 ewoh 表状态构建并持久化一个世界状态快照。
    * 快照版本形如 WS-YYYYMMDD-NNNN（按天递增）。
    */
   async buildSnapshot(ctx: OrgContext): Promise<WorldStateSnapshot> {
-    const state = await this.collectState();
+    const state = await this.collectState(ctx);
     const snapshot = await this.allocateAndPersistSnapshot(state, ctx);
     this.logger.log(`world state snapshot built: ${snapshot.snapshotVersion}`);
     return snapshot;
@@ -79,6 +102,8 @@ export class WorldStateSnapshotService {
             await this.db.insert(ewohWorldStateSnapshot).values({
               snapshotVersion,
               snapshotJson: snapshot as unknown as Record<string, unknown>,
+              // NEST-036 配套（standalone_057 血缘列）：记录构建上下文 org。
+              orgId: ctx.primaryOrgId || null,
               createdAt: new Date(),
             });
             return snapshot;
@@ -110,11 +135,15 @@ export class WorldStateSnapshotService {
     return code === '23505' || code === '40001';
   }
 
-  /** 汇总当前世界状态（不持久化快照）。供只读查询（如候选资源）复用同一真实状态。 */
-  async getCurrentWorldState(): Promise<
+  /**
+   * 汇总当前世界状态（不持久化快照）。供只读查询（如候选资源）复用同一真实状态。
+   * NEST-101（2026-08-17）：ctx 可选——HTTP 读路径必须透传认证上下文（org
+   * 过滤）；缺省仅限系统后台流（GUC/RLS 兜底）。
+   */
+  async getCurrentWorldState(ctx?: OrgContext): Promise<
     Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>
   > {
-    return this.collectState();
+    return this.collectState(ctx);
   }
 
   async getSnapshot(
@@ -133,14 +162,20 @@ export class WorldStateSnapshotService {
   /**
    * 判断给定快照是否仍然新鲜：比较 entityVersions 映射与 reservations 列表，
    * 两者完全一致才视为新鲜（基于实体版本，而非粗略计数）。
+   * NEST-159 配套：current 可由调用方传入（批量场景一次 collectState 复用，
+   * 消除逐 plan 的 N+1 全量状态收集）。
    */
-  async isSnapshotFresh(snapshotVersion: string): Promise<boolean> {
+  async isSnapshotFresh(
+    snapshotVersion: string,
+    ctx?: OrgContext,
+    current?: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
+  ): Promise<boolean> {
     const snapshot = await this.getSnapshot(snapshotVersion);
     if (!snapshot) return false;
-    const current = await this.collectState();
+    const currentState = current ?? await this.collectState(ctx);
     return (
-      this.mapsEqual(snapshot.entityVersions, current.entityVersions) &&
-      this.reservationsEqual(snapshot.reservations, current.reservations)
+      this.mapsEqual(snapshot.entityVersions, currentState.entityVersions) &&
+      this.reservationsEqual(snapshot.reservations, currentState.reservations)
     );
   }
 
@@ -149,24 +184,37 @@ export class WorldStateSnapshotService {
    * 返回 true 表示绑定到该快照的方案已过期，审批应拒绝。
    * 与 isSnapshotFresh 互为反义，语义上更贴近"方案过期"判定。
    */
-  async isPlanStale(snapshotVersion: string): Promise<boolean> {
-    return !(await this.isSnapshotFresh(snapshotVersion));
+  async isPlanStale(
+    snapshotVersion: string,
+    ctx?: OrgContext,
+    current?: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
+  ): Promise<boolean> {
+    return !(await this.isSnapshotFresh(snapshotVersion, ctx, current));
   }
 
   /**
    * 审批前的快照新鲜度强校验；过期时抛出 PLAN_STALE 冲突。
    */
-  async assertFreshForApprove(snapshotVersion: string): Promise<void> {
-    const fresh = await this.isSnapshotFresh(snapshotVersion);
+  async assertFreshForApprove(snapshotVersion: string, ctx?: OrgContext): Promise<void> {
+    const fresh = await this.isSnapshotFresh(snapshotVersion, ctx);
     if (!fresh) {
       throw new ConflictException('PLAN_STALE');
     }
   }
 
-  /** 汇总当前世界状态（不持久化）。 */
-  private async collectState(): Promise<
+  /** 汇总当前世界状态（不持久化）。NEST-101：全部 7 表读路径按 ctx 加 org 条件。 */
+  private async collectState(ctx?: OrgContext): Promise<
     Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>
   > {
+    // NEST-101（2026-08-17）：org 过滤（org 匹配或 NULL 存量，与 RLS USING
+    // 等价）。ctx 缺省/空 org = 系统后台流（GUC/RLS 兜底，HTTP 路径必须传
+    // ctx）——无 org 条件时不调用 .where（保持无 where 能力的测试替身兼容）。
+    const tasksQuery = this.db.select().from(ewohProductionTask);
+    const spatialQuery = this.db.select().from(ewohSpatialEntity);
+    const eventsQuery = this.db.select().from(ewohEvent);
+    const routeNodesQuery = this.db.select().from(ewohRouteNode);
+    const routeEdgesQuery = this.db.select().from(ewohRouteEdge);
+
     const [
       tasks,
       spatialEntities,
@@ -176,18 +224,39 @@ export class WorldStateSnapshotService {
       reservations,
       deviceBindings,
     ] = await Promise.all([
-      this.db.select().from(ewohProductionTask),
-      this.db.select().from(ewohSpatialEntity),
-      this.db.select().from(ewohEvent),
-      this.db.select().from(ewohRouteNode),
-      this.db.select().from(ewohRouteEdge),
+      ctx?.primaryOrgId
+        ? tasksQuery.where(
+            this.orgCondition(ewohProductionTask.orgId, ctx) as SQL,
+          )
+        : tasksQuery,
+      ctx?.primaryOrgId
+        ? spatialQuery.where(
+            this.orgCondition(ewohSpatialEntity.orgId, ctx) as SQL,
+          )
+        : spatialQuery,
+      ctx?.primaryOrgId
+        ? eventsQuery.where(this.orgCondition(ewohEvent.orgId, ctx) as SQL)
+        : eventsQuery,
+      ctx?.primaryOrgId
+        ? routeNodesQuery.where(
+            this.orgCondition(ewohRouteNode.orgId, ctx) as SQL,
+          )
+        : routeNodesQuery,
+      ctx?.primaryOrgId
+        ? routeEdgesQuery.where(
+            this.orgCondition(ewohRouteEdge.orgId, ctx) as SQL,
+          )
+        : routeEdgesQuery,
       this.db
         .select()
         .from(ewohResourceReservation)
         .where(
-          or(
-            eq(ewohResourceReservation.status, 'reserved'),
-            eq(ewohResourceReservation.status, 'active'),
+          and(
+            or(
+              eq(ewohResourceReservation.status, 'reserved'),
+              eq(ewohResourceReservation.status, 'active'),
+            ),
+            this.orgCondition(ewohResourceReservation.orgId, ctx),
           ),
         ),
       this.db
@@ -197,6 +266,7 @@ export class WorldStateSnapshotService {
           and(
             eq(ewohDeviceBinding.targetType, 'person'),
             eq(ewohDeviceBinding.status, 'active'),
+            this.orgCondition(ewohDeviceBinding.orgId, ctx),
           ),
         ),
     ]);
@@ -206,7 +276,8 @@ export class WorldStateSnapshotService {
 
     // T02 / P0-1（G1）：persons/devices/stations 资源视图单一事实源（必选）。
     // 统一消费 projectForSnapshot()（与 resources/state 同源），消除双轨直读。
-    const resourceView = await this.resourceProjectionService.projectForSnapshot();
+    // NEST-102（2026-08-17）：资源投影同 ctx 透传（org 过滤同源一致）。
+    const resourceView = await this.resourceProjectionService.projectForSnapshot(ctx);
     const persons = resourceView.persons;
     const stations = resourceView.stations;
     const deviceList = resourceView.devices;
@@ -369,9 +440,7 @@ export class WorldStateSnapshotService {
       .map((se) => ({ zoneId: se.entityId, reason: 'restricted_zone' }));
 
     const lockedAssignments = taskList
-      .filter((t) =>
-        ['executing', 'dispatched', 'in_progress'].includes(t.status),
-      )
+      .filter((t) => WorldStateSnapshotService.LOCKED_TASK_STATUSES.has(t.status))
       .map((t) => ({
         taskId: t.id,
         personId: t.assigneeId,
@@ -414,7 +483,10 @@ export class WorldStateSnapshotService {
           reasons.push(`device ${deviceId} has no spatial entity to resolve zone`);
         }
       } else {
-        reasons.push('no deviceId');
+        // NEST-151（2026-08-17）：无 deviceId 的安全事件不再只留 warn——先从
+        // 证据链显式推导禁区/受影响人员/设备（affectedZoneIds 与可选
+        // locationZoneId）；证据也不可解析时才降级 warn（fail-safe 不臆造禁区）。
+        reasons.push('no deviceId; deriving scope from evidence only');
       }
 
       // 证据链中可选的影响范围，合并进 blocked 集合
@@ -426,6 +498,10 @@ export class WorldStateSnapshotService {
         safetyBlockedDeviceIds.add(did);
       }
       for (const zid of this.asStringArray(evidence.affectedZoneIds)) {
+        safetyForbiddenZones.add(zid);
+      }
+      // NEST-151：证据链位置区域（单值字段，事件源携带的位置语义）。
+      for (const zid of this.asStringArray(evidence.locationZoneId)) {
         safetyForbiddenZones.add(zid);
       }
 
@@ -478,7 +554,7 @@ export class WorldStateSnapshotService {
       // 传播到任务：设备/工位/区域任一匹配的任务，且未锁定（skip 已派出/执行中）。
       const relatedTaskIds = new Set<string>();
       for (const t of taskList) {
-        if (['executing', 'dispatched', 'in_progress'].includes(t.status)) continue;
+        if (WorldStateSnapshotService.LOCKED_TASK_STATUSES.has(t.status)) continue;
         const related =
           (deviceId != null && t.deviceId === deviceId) ||
           (t.stationId != null && affectedStationIds.includes(t.stationId)) ||
@@ -594,10 +670,20 @@ export class WorldStateSnapshotService {
       forbiddenZones,
     });
 
-    // 粗略的单调标量，用于展示/排序；权威新鲜度信号见 entityVersions 精确比较。
-    let versionSum = 0;
-    for (const v of Object.values(entityVersions)) versionSum += v;
-    const worldVersion = 1000 + versionSum + reservationList.length;
+    // 粗略的整体版本标量，用于展示/排序；权威新鲜度信号见 entityVersions 精确比较。
+    // NEST-148 修复（2026-08-17）：数值累加（1000+versionSum+len）在大实体集下
+    // 超出 Number 安全整数精度且不同状态可碰撞。改为全部实体版本摘要的 SHA-256
+    // 48-bit 折叠（契约 world-contract 冻结 worldVersion: number，故取无符号
+    // 48-bit 整数而非字符串；碰撞概率 2^-48，且仅影响展示排序不影响新鲜度判定）。
+    const versionDigest = createHash('sha256')
+      .update(
+        Object.entries(entityVersions)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([k, v]) => `${k}:${v}`)
+          .join('|'),
+      )
+      .digest('hex');
+    const worldVersion = parseInt(versionDigest.slice(0, 12), 16);
 
     const snapshot = {
       worldVersion,
@@ -698,22 +784,40 @@ export class WorldStateSnapshotService {
   }
 
   /**
+   * NEST-170（2026-08-17）：安全关键任务类型关键词白名单提取为命名常量
+   * （派生语义仅兜底 safetyCritical 列 NULL 的存量行；策略化配置属
+   * SchedulingPolicy 演进项，本常量与 deriveRequiredDeviceCapabilities 同源）。
+   */
+  private static readonly SAFETY_CRITICAL_TASK_TYPES: readonly string[] = [
+    'lift',
+    'carry',
+    'heavy_lift',
+    'material_handling',
+    '搬运',
+    '重体力',
+    '物料搬运',
+    'lifting',
+  ];
+
+  /** 优先级 → 生产影响度映射（NEST-170：命名常量，替代散落 switch 字面量）。 */
+  private static readonly PRIORITY_PRODUCTION_IMPACT: ReadonlyMap<string, number> =
+    new Map([
+      ['urgent', 1.0],
+      ['critical', 1.0],
+      ['high', 0.7],
+      ['medium', 0.4],
+      ['low', 0.1],
+    ]);
+
+  /**
    * v0.7 A1：从任务类型派生安全关键语义（重体力/搬运类），保守默认 false。
    * 仅作白名单匹配，未命中的任务绝不被误判为安全关键（避免误阻断）。
    */
   private deriveSafetyCritical(taskType: string): boolean {
-    const criticalTypes = [
-      'lift',
-      'carry',
-      'heavy_lift',
-      'material_handling',
-      '搬运',
-      '重体力',
-      '物料搬运',
-      'lifting',
-    ];
     const t = (taskType ?? '').toLowerCase();
-    return criticalTypes.some((k) => t.includes(k.toLowerCase()));
+    return WorldStateSnapshotService.SAFETY_CRITICAL_TASK_TYPES.some((k) =>
+      t.includes(k.toLowerCase()),
+    );
   }
 
   /**
@@ -721,19 +825,11 @@ export class WorldStateSnapshotService {
    * urgent/critical 视为最高影响；缺省 0 保持向后兼容。
    */
   private deriveProductionImpact(priority: string): number {
-    switch ((priority ?? '').toLowerCase()) {
-      case 'urgent':
-      case 'critical':
-        return 1.0;
-      case 'high':
-        return 0.7;
-      case 'medium':
-        return 0.4;
-      case 'low':
-        return 0.1;
-      default:
-        return 0;
-    }
+    return (
+      WorldStateSnapshotService.PRIORITY_PRODUCTION_IMPACT.get(
+        (priority ?? '').toLowerCase(),
+      ) ?? 0
+    );
   }
 
   /**
@@ -772,13 +868,17 @@ export class WorldStateSnapshotService {
     return [];
   }
 
-  /** djb2 字符串哈希。 */
+  /**
+   * NEST-149 修复（2026-08-17）：djb2 32-bit 哈希 → SHA-256 48-bit 折叠。
+   * 契约（world-contract）冻结 entityVersions: Record<string, number>，故取
+   * digest 前 12 个 hex（48-bit 无符号整数，< 2^53 安全整数域）；不同状态
+   * 摘要碰撞概率 2^-48，替代 djb2 在结构化输入下可构造的 32-bit 碰撞。
+   */
   private hash(str: string): number {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-    }
-    return h >>> 0;
+    return parseInt(
+      createHash('sha256').update(str).digest('hex').slice(0, 12),
+      16,
+    );
   }
 
   /** 基于对象 JSON 序列化内容的实体版本。 */
@@ -796,16 +896,21 @@ export class WorldStateSnapshotService {
     return aKeys.every((k) => b[k] === a[k]);
   }
 
-  /** 精确比较两个 reservations 列表（id/type/时间窗一致）。 */
+  /**
+   * 精确比较两个 reservations 列表（id/type/时间窗一致）。
+   * NEST-150 修复（2026-08-17）：按 reservationId 建 Map 比较（顺序无关）——
+   * 旧实现按数组下标配对，列表顺序变化（无 ORDER BY 的并发读）会误判 stale。
+   */
   private reservationsEqual(
     a: WorldStateSnapshot['reservations'],
     b: WorldStateSnapshot['reservations'],
   ): boolean {
     if (a.length !== b.length) return false;
-    return a.every((ra, i) => {
-      const rb = b[i];
+    const byId = new Map(b.map((r) => [r.reservationId, r]));
+    return a.every((ra) => {
+      const rb = byId.get(ra.reservationId);
       return (
-        ra.reservationId === rb.reservationId &&
+        rb != null &&
         ra.resourceId === rb.resourceId &&
         ra.resourceType === rb.resourceType &&
         ra.startMs === rb.startMs &&

@@ -1,5 +1,14 @@
 /* eslint-disable */
 /** auto generated, do not edit */
+/**
+ * org_id 列类型策略（NEST-502/512 裁决，2026-08-17，最小破坏方案）：
+ * 多数表 orgId 为 varchar(255)（本文件多数派）；001 创建的少数表
+ * （ewohSchedulerConfig / ewohNotification / ewohWorldSnapshot / ewohAuditLog）
+ * 为 uuid，与真实 DB 列类型保持一致（不做破坏性 ALTER TYPE 改列）。
+ * RLS 侧配套：standalone_057 提供 ewoh_org_visible(text) 重载——varchar 列的
+ * policy 走 text 版直等比较，uuid 列继续走 uuid 版函数；两版语义一致，
+ * varchar 列不再做 ::uuid 强制 cast（非 UUID 值运行时抛错的根因已消除）。
+ */
 import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint, doublePrecision } from "drizzle-orm/pg-core"
 
@@ -64,7 +73,17 @@ export const fileAttachment = customType<{
   },
 });
 
+/**
+ * NEST-517 加固（2026-08-17）：仅用于 userProfile/fileAttachment 自定义类型的
+ * sql.raw 数组拼接。除单引号转义外，显式拒绝反斜杠输入——当前提是
+ * standard_conforming_strings=on（PG 默认，反斜杠无转义义）；若集群被改为
+ * off（escape string syntax），反斜杠可逃逸字面量。拒绝而非转义是保守选择：
+ * 平台 user id / bucket 路径不应包含反斜杠。
+ */
 export function escapeLiteral(str: string): string {
+  if (str.includes('\\')) {
+    throw new Error(`escapeLiteral: input contains backslash (rejected, NEST-517): ${str.slice(0, 32)}`);
+  }
   return "'" + str.replace(/'/g, "''") + "'";
 }
 
@@ -1038,7 +1057,9 @@ export const ewohDevice = pgTable("ewoh_device", {
   /** 组织归属（ADR-075：001 ewoh_org_visible RLS 对齐；null=存量/legacy 行）。 */
   orgId: varchar("org_id", { length: 255 }),
 }, (table) => [
-  uniqueIndex("ewoh_device_device_id_key").on(table.deviceId),
+  // NEST-205 配套（standalone_057）：deviceId 单列唯一 → (org_id, device_id)
+  // 租户复合唯一（跨租户可复用同一 device_id；同 org 内唯一）。
+  uniqueIndex("uq_ewoh_device_org_device").on(table.orgId, table.deviceId),
   index("idx_ewoh_device_online").on(table.online),
 ]);
 
@@ -1252,7 +1273,8 @@ export const ewohSchedulingRun = pgTable("ewoh_scheduling_run", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_scheduling_run_run_id_key").on(table.runId),
+  // NEST/SQL-013（standalone_057）：run_id 单列唯一 → (org_id, run_id) 复合唯一。
+  uniqueIndex("uq_ewoh_scheduling_run_org_run_id").on(table.orgId, table.runId),
   index("idx_ewoh_scheduling_run_status").on(table.status),
   index("idx_ewoh_scheduling_run_trigger").on(table.triggerType, table.triggerEntityId),
   index("idx_ewoh_scheduling_run_org_status").on(table.orgId, table.status),
@@ -1298,7 +1320,8 @@ export const ewohSchedulingPlanAssignment = pgTable("ewoh_scheduling_plan_assign
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_scheduling_plan_assignment_assignment_id_key").on(table.assignmentId),
+  // NEST/SQL-014（standalone_057）：assignment_id 单列唯一 → (org_id, assignment_id)。
+  uniqueIndex("uq_ewoh_scheduling_plan_assignment_org_assignment").on(table.orgId, table.assignmentId),
   index("idx_ewoh_scheduling_plan_assignment_plan").on(table.planId),
   index("idx_ewoh_scheduling_plan_assignment_task").on(table.taskId),
   index("idx_ewoh_scheduling_plan_assignment_person").on(table.personId),
@@ -1334,7 +1357,8 @@ export const ewohSchedulingConstraint = pgTable("ewoh_scheduling_constraint", {
   /** 软删除操作人。 */
   deactivatedBy: varchar("deactivated_by", { length: 255 }),
 }, (table) => [
-  uniqueIndex("ewoh_scheduling_constraint_constraint_id_key").on(table.constraintId),
+  // NEST/SQL-015（standalone_057）：constraint_id 单列唯一 → (org_id, constraint_id)。
+  uniqueIndex("uq_ewoh_scheduling_constraint_org_constraint").on(table.orgId, table.constraintId),
   index("idx_ewoh_scheduling_constraint_plan").on(table.planId),
   index("idx_ewoh_scheduling_constraint_task").on(table.taskId),
   index("idx_ewoh_scheduling_constraint_type").on(table.type),
@@ -1346,10 +1370,13 @@ export const ewohWorldStateSnapshot = pgTable("ewoh_world_state_snapshot", {
   id: uuid("id").primaryKey().defaultRandom(),
   snapshotVersion: varchar("snapshot_version", { length: 255 }).notNull().unique(),
   snapshotJson: jsonb("snapshot_json").notNull(),
+  /** 租户血缘（standalone_057 补列，GLOBAL_SHARED：仅记录不隔离）。 */
+  orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("ewoh_world_state_snapshot_snapshot_version_key").on(table.snapshotVersion),
+  index("idx_ewoh_world_state_snapshot_org").on(table.orgId),
 ]);
 
 // --- 世界状态游标 / 增量日志 / 快照版本计数器 ---
@@ -1954,7 +1981,8 @@ export const ewohSchedulingConflict = pgTable("ewoh_scheduling_conflict", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_scheduling_conflict_conflict_id_key").on(table.conflictId),
+  // NEST/SQL-021（standalone_057）：conflict_id 单列唯一 → (org_id, conflict_id)。
+  uniqueIndex("uq_ewoh_scheduling_conflict_org_conflict").on(table.orgId, table.conflictId),
   index("idx_ewoh_scheduling_conflict_status").on(table.status, table.detectedAt),
   index("idx_ewoh_scheduling_conflict_type").on(table.type),
   index("idx_ewoh_scheduling_conflict_org").on(table.orgId),
@@ -1989,7 +2017,8 @@ export const ewohRouteCostMatrix = pgTable("ewoh_route_cost_matrix", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_route_cost_matrix_matrix_id_key").on(table.matrixId),
+  // NEST/SQL-022（standalone_057）：matrix_id 单列唯一 → (org_id, matrix_id)。
+  uniqueIndex("uq_ewoh_route_cost_matrix_org_matrix").on(table.orgId, table.matrixId),
   uniqueIndex("uq_ewoh_route_cost_matrix_task_snapshot").on(table.taskId, table.snapshotVersion),
   index("idx_ewoh_route_cost_matrix_task").on(table.taskId),
   index("idx_ewoh_route_cost_matrix_snapshot").on(table.snapshotVersion),
@@ -2035,7 +2064,8 @@ export const ewohRouteEdge = pgTable("ewoh_route_edge", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_route_edge_edge_id_key").on(table.edgeId),
+  // NEST/SQL-017（standalone_057）：edge_id 单列唯一 → (org_id, edge_id)。
+  uniqueIndex("uq_ewoh_route_edge_org_edge").on(table.orgId, table.edgeId),
   index("idx_ewoh_route_edge_from").on(table.fromNodeId),
   index("idx_ewoh_route_edge_to").on(table.toNodeId),
   index("idx_ewoh_route_edge_status").on(table.status),
@@ -2057,12 +2087,20 @@ export const ewohAssignmentEvent = pgTable("ewoh_assignment_event", {
    * @type { Record<string, unknown> }
    */
   payloadJson: jsonb("payload_json"),
+  /**
+   * 租户归属（NEST-501 修复，2026-08-17，standalone_028 已加列）：列由派生
+   * 触发器 trg_assignment_event_derive_org 从归属 assignment/plan 推导
+   * （DERIVED_TENANT_OWNERSHIP，ADR-004——RLS 关闭的全局审计流，可空=归属
+   * 不可解析时的诚实值）。
+   */
+  orgId: varchar("org_id", { length: 255 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("ewoh_assignment_event_event_id_key").on(table.eventId),
   index("idx_ewoh_assignment_event_assignment").on(table.assignmentId),
   index("idx_ewoh_assignment_event_task").on(table.taskId),
+  index("idx_ewoh_assignment_event_org").on(table.orgId),
 ]);
 
 /** 资源预占（ResourceReservation）：reserve/renew/release/expire，唯一约束防双重占用。 */
@@ -2087,6 +2125,9 @@ export const ewohResourceReservation = pgTable("ewoh_resource_reservation", {
   index("idx_ewoh_resource_reservation_resource").on(table.resourceType, table.resourceId),
   index("idx_ewoh_resource_reservation_plan").on(table.planId),
   index("idx_ewoh_resource_reservation_task").on(table.taskId),
+  // NEST-521（2026-08-17，standalone_057 同步）：补 org 维度索引，与其他
+  // 调度表 idx_xxx_org_* 口径一致（RLS org 过滤走索引）。
+  index("idx_ewoh_resource_reservation_org").on(table.orgId),
 ]);
 
 /** Outbox：可靠领域事件，先写 outbox 再发布，保证 dispatch 与事件一致。 */
@@ -2204,7 +2245,8 @@ export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("ewoh_scheduling_feedback_feedback_id_key").on(table.feedbackId),
+  // NEST/SQL-020（standalone_057）：feedback_id 单列唯一 → (org_id, feedback_id)。
+  uniqueIndex("uq_ewoh_scheduling_feedback_org_feedback").on(table.orgId, table.feedbackId),
   index("idx_ewoh_scheduling_feedback_plan").on(table.planId),
   index("idx_ewoh_scheduling_feedback_assignment").on(table.assignmentId),
   index("idx_ewoh_scheduling_feedback_task").on(table.taskId),
@@ -2321,7 +2363,10 @@ export const ewohSchedulingExecution = pgTable("ewoh_scheduling_execution", {
   index("idx_ewoh_scheduling_execution_assignment").on(table.assignmentId),
   index("idx_ewoh_scheduling_execution_task").on(table.taskId),
   index("idx_ewoh_scheduling_execution_status").on(table.status),
-  uniqueIndex("uq_ewoh_scheduling_execution_assignment").on(table.assignmentId),
+  // NEST/SQL-023（standalone_057）：execution_id/assignment_id 单列唯一 → 复合
+  // (org_id, execution_id) / (org_id, assignment_id)。
+  uniqueIndex("uq_ewoh_scheduling_execution_org_execution").on(table.orgId, table.executionId),
+  uniqueIndex("uq_ewoh_scheduling_execution_org_assignment").on(table.orgId, table.assignmentId),
 ]);
 
 // ============================================================================
@@ -2340,6 +2385,8 @@ export const ewohSchedulingKpi = pgTable("ewoh_scheduling_kpi", {
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  // NEST/SQL-024（standalone_057）：kpi_id 单列唯一 → (org_id, kpi_id)。
+  uniqueIndex("uq_ewoh_scheduling_kpi_org_kpi").on(table.orgId, table.kpiId),
   uniqueIndex("uq_ewoh_scheduling_kpi_org_period").on(table.orgId, table.periodStart, table.periodEnd),
   index("idx_ewoh_scheduling_kpi_org").on(table.orgId),
 ]);
@@ -2363,6 +2410,8 @@ export const ewohPolicyReplay = pgTable("ewoh_policy_replay", {
   completedAt: customTimestamptz("completed_at", { precision: 3 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  // NEST/SQL-027（standalone_057）：replay_id 单列唯一 → (org_id, replay_id)。
+  uniqueIndex("uq_ewoh_policy_replay_org_replay").on(table.orgId, table.replayId),
   index("idx_ewoh_policy_replay_candidate").on(table.candidatePolicyVersion),
   index("idx_ewoh_policy_replay_org").on(table.orgId),
 ]);
@@ -2386,6 +2435,8 @@ export const ewohPolicyActivation = pgTable("ewoh_policy_activation", {
   status: varchar("status", { length: 50 }).notNull().default('ACTIVATED'),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  // NEST/SQL-025（standalone_057）：activation_id 单列唯一 → (org_id, activation_id)。
+  uniqueIndex("uq_ewoh_policy_activation_org_activation").on(table.orgId, table.activationId),
   index("idx_ewoh_policy_activation_policy").on(table.policyVersion),
   index("idx_ewoh_policy_activation_org").on(table.orgId),
 ]);
@@ -2448,7 +2499,15 @@ export const ewohControlCommand = pgTable("ewoh_control_command", {
   idempotencyKey: varchar("idempotency_key", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  // NEST-425 配套（standalone_058）：并发重试的 attemptNo 唯一
+  // （同 request + commandKey 维度；application 层 max+1 子查询原子生成）。
+  uniqueIndex("uq_ewoh_control_command_attempt").on(
+    table.requestId,
+    table.commandKey,
+    table.attemptNo,
+  ),
+]);
 
 export const ewohControlResult = pgTable("ewoh_control_result", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -2494,3 +2553,19 @@ export const ewohAuditLog = pgTable("ewoh_audit_log", {
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+/**
+ * NEST-513 标注（2026-08-17）：以下 managed 表（schema-manifest.yaml 登记）由
+ * standalone_001/005 创建并有 RLS/CHECK/唯一约束（DB 层强制），但当前无任何
+ * server 服务消费，故本文件**有意不提供** Drizzle 映射（避免无人维护的死映射
+ * 与 001 列定义漂移；审计建议「补齐或标注未使用」二选一，此处选标注）：
+ *   ewoh_system_config / ewoh_knowledge_base / ewoh_event_rule /
+ *   ewoh_event_action / ewoh_event_subscription / ewoh_skill / ewoh_role /
+ *   ewoh_person_skill / ewoh_person_role / ewoh_device_capability /
+ *   ewoh_spatial_relation / ewoh_spatial_hierarchy / ewoh_model_asset /
+ *   ewoh_model_binding / ewoh_workstation / ewoh_workstation_device /
+ *   ewoh_workstation_person / ewoh_workstation_skill /
+ *   ewoh_workstation_relation / ewoh_task_skill_req / ewoh_schedule_assignment。
+ * 首个消费这些表的功能落地时，必须按 db/migrations/standalone_001_schema.sql
+ * 的列定义补 pgTable 映射并同步本标注清单。
+ */

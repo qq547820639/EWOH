@@ -311,8 +311,14 @@ export function computeEffectivePriorityResults(
   }
 
   // P0-2：快照内排序 rank（1-based，score 越小越靠前）。
-  const ranked = Array.from(results.values()).sort((a, b) => a.score - b.score);
-  ranked.forEach((r, idx) => {
+  // NEST-166 修复（2026-08-17）：同分 tie-break 加 taskId 次键——旧 sort 对
+  // 相同 score 的比较返回 0（依赖引擎不稳定序），跨进程/跨版本 rank 非确定；
+  // taskId 字典序使同分排名确定（可重放）。
+  const ranked = Array.from(results.entries()).sort((a, b) => {
+    if (a[1].score !== b[1].score) return a[1].score - b[1].score;
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  });
+  ranked.forEach(([, r], idx) => {
     r.rank = idx + 1;
   });
 

@@ -109,8 +109,10 @@ export class SchedulerEventApplicationService {
           .previewReplan(body.trigger, body.entityId ? [body.entityId] : [], ctx)
           .catch(() => null);
         if (this.outboxService) {
-          Promise.resolve(
-            this.outboxService.enqueue(
+          // NEST-137（2026-08-17）：审批事件（人工介入触发）属关键事件——
+          // await 落库（失败留痕但不阻断返回；此前 fire-and-forget 可能静默丢失）。
+          try {
+            await this.outboxService.enqueue(
               'replan.approval_required',
               body.entityId ?? 'ALL',
               {
@@ -121,12 +123,12 @@ export class SchedulerEventApplicationService {
                 occurredAt: new Date().toISOString(),
               },
               ctx.primaryOrgId || null,
-            ),
-          ).catch((e) => {
+            );
+          } catch (e) {
             this.logger.warn(
               `replan.approval_required enqueue failed: ${e instanceof Error ? e.message : String(e)}`,
             );
-          });
+          }
         }
         return {
           run: null,
@@ -286,8 +288,10 @@ export class SchedulerEventApplicationService {
     // v0.7 B3：执行偏差实时推送（SSE execution.deviation），供地图执行偏差图层消费。
     // 观测型：推送失败仅记日志，不影响回填主流程。
     if (this.outboxService) {
-      Promise.resolve(
-        this.outboxService.enqueue(
+      // NEST-137（2026-08-17）：执行偏差事件 await 落库（关键观测事件，
+      // 丢失会断地图偏差图层；失败留痕不阻断回填主流程）。
+      try {
+        await this.outboxService.enqueue(
           'execution.deviation',
           input.taskId ?? input.assignmentId ?? 'unknown',
           {
@@ -300,16 +304,20 @@ export class SchedulerEventApplicationService {
             actualWait: input.actualWait ?? null,
           },
           ctx.primaryOrgId || null,
-        ),
-      ).catch((e) => {
+        );
+      } catch (e) {
         this.logger.warn(`execution.deviation enqueue failed: ${(e as Error).message}`);
-      });
+      }
     }
-    // recordActuals 为更新语义（无行则不写）；matched 交由调用方以查询反馈行确认，
-    // 此处统一返回 ok（观测型回填不阻断执行方）；推进 summary additive 透出（NO-13a）。
+    // recordActuals 为更新语义（无行则不写）；推进 summary additive 透出（NO-13a）。
+    // NEST-121 修复（2026-08-17）：matched 不再无条件 true——feedbackService
+    // recordActuals 以 UPDATE ... RETURNING 统计 matchedRows（真实命中行数）；
+    // 旧 stub 无该字段时保守回退 true（向后兼容，避免旧测试误判）。
+    const matchedRows = (advancement as { matchedRows?: number }).matchedRows;
+    const matched = matchedRows != null ? matchedRows > 0 : true;
     return {
       ok: true,
-      matched: true,
+      matched,
       advancedAssignments: advancement.advancedAssignments,
       advancedTaskSteps: advancement.advancedTaskSteps,
       skips: advancement.skips,

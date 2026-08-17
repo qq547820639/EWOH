@@ -231,7 +231,7 @@ describe('AgentService（NO-06b：注册 + 执行）', () => {
     ).rejects.toThrow(/command_not_allowed:dispatch_task/);
   });
 
-  it('执行：budget 超步数 fail-closed 拒绝', async () => {
+  it('执行：budget 超步数 fail-closed 拒绝（NEST-329：服务端累计计数，payload 不可绕过）', async () => {
     const { service } = createAgentDb([
       {
         orgId: 'ORG-1', agentId: AGENT_ID, name: 'a', version: 1, role: 'FactorySupervisor',
@@ -240,12 +240,20 @@ describe('AgentService（NO-06b：注册 + 执行）', () => {
         manifestJson: makeManifest(),
       },
     ]);
+    // maxSteps=8：先耗尽 8 步（每次成功执行 +1），第 9 次拒绝。
+    for (let i = 0; i < 8; i += 1) {
+      const step = await service.executeCommand('ORG-1', AGENT_ID, {
+        command: 'record_evidence',
+        payload: { stepsUsed: 0 }, // NEST-329 后 payload.stepsUsed 不再被信任
+      });
+      expect(step.executed).toBe(true);
+    }
     await expect(
       service.executeCommand('ORG-1', AGENT_ID, {
         command: 'record_evidence',
-        payload: { stepsUsed: 8 },
+        payload: { stepsUsed: 0 },
       }),
-    ).rejects.toThrow(/budget_exceeded/);
+    ).rejects.toThrow(/budget_exceeded:maxSteps=8/);
   });
 
   it('执行：L0 Agent 无写命令能力（advisory_only）', async () => {
@@ -338,7 +346,7 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: { kind: 'advisory' },
     });
-    const result = await service.resolveApproval(proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
     expect(result.executed).toBe(true);
     expect(result.outcome).toBe('executed');
     expect(events.some((e) => e.eventType === 'AgentDecisionRecorded')).toBe(true);
@@ -354,7 +362,7 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval(proposed.approvalId!, false);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false);
     expect(result.executed).toBe(false);
     expect(result.outcome).toBe('rejected');
     const decisionEvents = events.filter((e) => e.eventType === 'AgentDecisionRecorded');
@@ -457,7 +465,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     // 推进台账 created_at 模拟 25h 前创建（过期是台账事实，跨重启同样生效）
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     (row as Record<string, unknown>).createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    const result = await service.resolveApproval(proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
     expect(result.outcome).toBe('rejected');
     expect(result.detail).toContain('approval_expired');
     expect(row?.status).toBe('expired'); // 台账落 expired（§33 显式不静默）
@@ -476,7 +484,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval(proposed.approvalId!, true, { userId: 'u1' });
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'u1' });
     expect(result.outcome).toBe('executed');
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
@@ -503,7 +511,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval(proposed.approvalId!, false, { userId: 'u2' });
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2' });
     expect(result.outcome).toBe('rejected');
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
@@ -512,7 +520,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     expect((decision.selected as Record<string, unknown>).optionId).toBe('opt:reject');
     expect(validateDecision(decision)).toEqual([]);
     // 重复解析 CAS 未命中 → 不再追加第二条决策（确定性幂等）。
-    await expect(service.resolveApproval(proposed.approvalId!, false, { userId: 'u2' }))
+    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2' }))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -529,7 +537,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     });
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     (row as Record<string, unknown>).createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    const result = await service.resolveApproval(proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
     expect(result.outcome).toBe('rejected');
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
     expect(decision.status).toBe('rejected');
@@ -592,7 +600,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     expect(proposed.outcome).toBe('proposed');
     expect(knowledge.registerEntry).not.toHaveBeenCalled();
     expect(approvals.some((a) => a.approvalId === proposed.approvalId && a.status === 'pending')).toBe(true);
-    const executed = await service.resolveApproval(proposed.approvalId!, true);
+    const executed = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
     expect(executed.outcome).toBe('executed');
     expect(knowledge.registerEntry).toHaveBeenCalledWith(payload, 'ORG-1');
     expect(approvals.some((a) => a.approvalId === proposed.approvalId && a.status === 'approved')).toBe(true);
@@ -715,7 +723,7 @@ describe('AgentService（NO-12f/ADR-030：待批清单 + 通知闭环）', () =>
     expect(mine).toHaveLength(1);
     expect((mine[0] as Record<string, unknown>).approvalId).toBe(proposed.approvalId);
     // 跨重启可解析（批准 → 执行闭环）
-    const resolved = await restarted.service.resolveApproval(proposed.approvalId!, true);
+    const resolved = await restarted.service.resolveApproval('ORG-1', proposed.approvalId!, true);
     expect(resolved.outcome).toBe('executed');
     expect(restarted.approvals[0]?.status).toBe('approved');
   });
@@ -730,9 +738,9 @@ describe('AgentService（NO-12f/ADR-030：待批清单 + 通知闭环）', () =>
       command: 'propose_plan',
       payload: {},
     });
-    const first = await ctx.service.resolveApproval(proposed.approvalId!, false);
+    const first = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false);
     expect(first.outcome).toBe('rejected');
-    await expect(ctx.service.resolveApproval(proposed.approvalId!, false))
+    await expect(ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -115,12 +115,22 @@ export function createIdleTracker(
 type LogoutListener = () => void;
 const listeners = new Set<LogoutListener>();
 let channel: BroadcastChannel | null = null;
+/**
+ * CLI-516：最近一次本地广播的时刻。BroadcastChannel 规范不把消息回环给
+ * 发送方，但部分 polyfill / storage 桥接会回环；短窗口内抑制回环触发的
+ * 监听调用，保证同一次登出广播本地只生效一次。
+ */
+const LOCAL_EMIT_DEDUP_MS = 50;
+let lastLocalEmitAt = 0;
 
 function getChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel === 'undefined') return null;
   if (!channel) {
     channel = new BroadcastChannel(LOGOUT_CHANNEL_NAME);
     channel.onmessage = () => {
+      if (Date.now() - lastLocalEmitAt < LOCAL_EMIT_DEDUP_MS) {
+        return; // 本 tab 刚广播过的回环，抑制
+      }
       for (const listener of listeners) {
         listener();
       }
@@ -144,6 +154,9 @@ export function broadcastLogout(): void {
   if (localChannel) {
     localChannel.postMessage('logout');
   }
+  // CLI-516：本地监听者显式触发（规范下 channel 不回环到发送方）；
+  // 若环境存在回环，由 getChannel 内的窗口抑制保证不双重登出。
+  lastLocalEmitAt = Date.now();
   for (const listener of listeners) {
     listener();
   }
@@ -164,7 +177,13 @@ const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'scroll'] as co
 /**
  * 最小化接线：监听用户活动以重置空闲计时，并订阅远程登出广播。
  * 返回清理函数。非浏览器环境退化为空操作。
+ *
+ * CLI-515：共享登出频道按引用计数管理——多个组件（或多次）init 时，
+ * 只有最后一个 init 的清理才关闭 channel，避免先卸载的一方把仍在
+ * 使用频道的监听者孤立。
  */
+let initRefCount = 0;
+
 export function initSessionSecurity(config: SessionSecurityConfig = {}): () => void {
   if (typeof window === 'undefined') return () => {};
 
@@ -181,13 +200,18 @@ export function initSessionSecurity(config: SessionSecurityConfig = {}): () => v
 
   const unsubscribeLogout = subscribeLogout(() => config.onRemoteLogout?.());
 
+  initRefCount += 1;
+
   return () => {
     for (const event of ACTIVITY_EVENTS) {
       window.removeEventListener(event, onActivity);
     }
     unsubscribeLogout();
     tracker.stop();
-    closeLogoutChannel();
+    initRefCount = Math.max(0, initRefCount - 1);
+    if (initRefCount === 0) {
+      closeLogoutChannel();
+    }
   };
 }
 

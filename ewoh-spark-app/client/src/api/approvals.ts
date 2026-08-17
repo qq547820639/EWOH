@@ -75,7 +75,7 @@ export async function resolveAgentApproval(
   approved: boolean,
 ): Promise<Record<string, unknown>> {
   const res = await axiosForBackend({
-    url: `/api/agents/approvals/${approvalId}/resolve`,
+    url: `/api/agents/approvals/${encodeURIComponent(approvalId)}/resolve`,
     method: 'POST',
     data: { approved },
   });
@@ -89,7 +89,7 @@ export async function stepApprovalAction(
   reason?: string,
 ): Promise<Record<string, unknown>> {
   const res = await axiosForBackend({
-    url: `/api/approvals/${approvalId}/steps/${stepId}/state`,
+    url: `/api/approvals/${encodeURIComponent(approvalId)}/steps/${encodeURIComponent(stepId)}/state`,
     method: 'POST',
     params: { action },
     data: { reason },

@@ -11,6 +11,7 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 
 import { uploadFile } from '@/components/business-ui/api/files/service';
+import { isDownloadUrl } from '@/lib/urlSafety';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { FileAeColorfulIcon } from '@/components/ui/icons/file-ae-colorful-icon';
@@ -205,6 +206,13 @@ function AttachmentNodeView(props: NodeViewProps) {
     e.preventDefault();
     if (!effectiveUrl || uploading) return;
 
+    // CLI-402：附件 URL 来自编辑器节点 attrs（可被粘贴 HTML 注入），
+    // 仅 http/https/blob 允许进入下载 sink。
+    if (!isDownloadUrl(effectiveUrl)) {
+      toast.error('附件链接协议不被允许，已阻止下载');
+      return;
+    }
+
     const downloadUrl = withDownloadParam(effectiveUrl);
 
     const filename =
@@ -226,6 +234,11 @@ function AttachmentNodeView(props: NodeViewProps) {
   const handlePreview = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!effectiveUrl || uploading) return;
+    // CLI-403：window.open 前校验 URL scheme（http/https/blob）。
+    if (!isDownloadUrl(effectiveUrl)) {
+      toast.error('附件链接协议不被允许，已阻止预览');
+      return;
+    }
     window.open(effectiveUrl, '_blank');
   };
 

@@ -15,12 +15,12 @@
 
   function sevBadge(s) {
     var cls = s === 'critical' ? 'cm-badge-danger' : s === 'warning' ? 'cm-badge-warning' : 'cm-badge-info';
-    return '<span class="cm-badge ' + cls + '">' + (SEV_LABEL[s] || s) + '</span>';
+    return '<span class="cm-badge ' + cls + '">' + CM.esc(SEV_LABEL[s] || s) + '</span>';
   }
   function statusBadge(s) {
     var cls = s === 'open' ? 'cm-badge-danger' : s === 'confirmed' ? 'cm-badge-warning' :
               s === 'closed' ? 'cm-badge-success' : 'cm-badge-muted';
-    return '<span class="cm-badge ' + cls + '">' + (STATUS_LABEL[s] || s) + '</span>';
+    return '<span class="cm-badge ' + cls + '">' + CM.esc(STATUS_LABEL[s] || s) + '</span>';
   }
 
   // 时间过滤选项（按开始时间）
@@ -138,18 +138,18 @@
 
     _list: function () {
       return this._filtered().map(function (e) {
-        return '<div class="cm-ev-item' + (CM.eventCenter.selectedEvent === e.event_id ? ' active' : '') + '" data-id="' + e.event_id + '">' +
+        return '<div class="cm-ev-item' + (CM.eventCenter.selectedEvent === e.event_id ? ' active' : '') + '" data-id="' + CM.esc(e.event_id) + '">' +
           '<div class="cm-ev-item-head">' +
             sevBadge(e.severity) +
             '<span class="cm-ev-title">' + CM.esc(e.title) + '</span>' +
             statusBadge(e.status) +
           '</div>' +
           '<div class="cm-ev-item-meta">' +
-            '<span class="cm-mono">' + (e.time || '').replace('T', ' ') + '</span>' +
+            '<span class="cm-mono">' + CM.esc((e.time || '').replace('T', ' ')) + '</span>' +
             CM.srcTag(e.source_type) +
-            '<span>' + (e.person_id || e.device_id || e.station_id || '系统') + '</span>' +
+            '<span>' + CM.esc(e.person_id || e.device_id || e.station_id || '系统') + '</span>' +
           '</div>' +
-          '<div class="cm-ev-item-id">' + e.event_id + ' · ' + e.code + '</div>' +
+          '<div class="cm-ev-item-id">' + CM.esc(e.event_id) + ' · ' + CM.esc(e.code) + '</div>' +
         '</div>';
       }).join('') || '<div class="cm-ev-empty">无匹配事件。</div>';
     },
@@ -197,10 +197,10 @@
           sevBadge(e.severity) +
           statusBadge(e.status) +
           '</div>' +
-          '<div class="cm-ev-d-id cm-mono">' + e.event_id + ' · ' + e.code + '</div>' +
+          '<div class="cm-ev-d-id cm-mono">' + CM.esc(e.event_id) + ' · ' + CM.esc(e.code) + '</div>' +
         '</div>' +
-        '<div class="cm-ev-d-row"><span>触发时间</span><b class="cm-mono">' + (e.time || '').replace('T', ' ') + '</b></div>' +
-        (e.end_time ? '<div class="cm-ev-d-row"><span>结束时间</span><b class="cm-mono">' + e.end_time.replace('T', ' ') + '</b></div>' : '') +
+        '<div class="cm-ev-d-row"><span>触发时间</span><b class="cm-mono">' + CM.esc((e.time || '').replace('T', ' ')) + '</b></div>' +
+        (e.end_time ? '<div class="cm-ev-d-row"><span>结束时间</span><b class="cm-mono">' + CM.esc(e.end_time.replace('T', ' ')) + '</b></div>' : '') +
         '<div class="cm-ev-d-row"><span>关联人员</span><b>' + CM.esc(e.person_id || '--') + '</b></div>' +
         '<div class="cm-ev-d-row"><span>关联设备</span><b>' + CM.esc(e.device_id || '--') + '</b></div>' +
         '<div class="cm-ev-d-row"><span>关联工位</span><b>' + CM.esc(e.station_id || (e.zone_id || '--')) + '</b></div>' +
@@ -223,9 +223,9 @@
 
       // 跳转按钮
       html += '<div class="cm-ev-d-actions">' +
-        (e.person_id ? '<button class="cm-btn" data-jump="' + e.person_id + '">定位人员</button>' : '') +
-        (e.device_id ? '<button class="cm-btn" data-jump="' + e.device_id + '">定位设备</button>' : '') +
-        (e.station_id ? '<button class="cm-btn" data-jump="' + e.station_id + '">定位工位</button>' : '') +
+        (e.person_id ? '<button class="cm-btn" data-jump="' + CM.esc(e.person_id) + '">定位人员</button>' : '') +
+        (e.device_id ? '<button class="cm-btn" data-jump="' + CM.esc(e.device_id) + '">定位设备</button>' : '') +
+        (e.station_id ? '<button class="cm-btn" data-jump="' + CM.esc(e.station_id) + '">定位工位</button>' : '') +
       '</div>';
 
       // 处置动作（人在回路：未关闭事件可确认/关闭/驳回；可评论）

@@ -25,13 +25,16 @@ export class ScaleController {
   }
 
   @Get('templates')
-  listTemplates() {
-    return this.scaleService.listTemplates();
+  listTemplates(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listTemplates(request.userContext);
   }
 
   @Get('templates/:id')
-  getTemplate(@Param('id') id: string) {
-    return this.scaleService.getTemplate(id);
+  getTemplate(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.getTemplate(id, request.userContext);
   }
 
   @Post('templates/:id/state')
@@ -56,13 +59,14 @@ export class ScaleController {
   diffPreview(
     @Param('id') id: string,
     @Body() body: { config?: Record<string, unknown> },
+    @Req() request: { userContext?: OrgContext },
   ) {
-    return this.scaleService.diffPreview(id, body);
+    return this.scaleService.diffPreview(id, body, request.userContext);
   }
 
   @Get('profiles')
-  listProfiles() {
-    return this.scaleService.listProfiles();
+  listProfiles(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listProfiles(request.userContext);
   }
 
   @Post('profiles/:id/replay')
@@ -82,8 +86,8 @@ export class ScaleController {
   }
 
   @Get('connectors')
-  listConnectors() {
-    return this.scaleService.listConnectors();
+  listConnectors(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listConnectors(request.userContext);
   }
 
   @Post('scenario-packs')
@@ -95,8 +99,8 @@ export class ScaleController {
   }
 
   @Get('scenario-packs')
-  listScenarioPacks() {
-    return this.scaleService.listScenarioPacks();
+  listScenarioPacks(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listScenarioPacks(request.userContext);
   }
 
   @Post('mappings')
@@ -108,13 +112,16 @@ export class ScaleController {
   }
 
   @Get('mappings')
-  listMappings() {
-    return this.scaleService.listMappings();
+  listMappings(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listMappings(request.userContext);
   }
 
   @Get('mappings/:id')
-  getMapping(@Param('id') id: string) {
-    return this.scaleService.getMapping(id);
+  getMapping(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.getMapping(id, request.userContext);
   }
 
   @Post('mappings/:id/dry-run')
@@ -170,18 +177,18 @@ export class ScaleController {
   }
 
   @Get('fleet/status')
-  fleetStatus() {
-    return this.scaleService.fleetStatus();
+  fleetStatus(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.fleetStatus(request.userContext);
   }
 
   @Get('compatibility')
-  compatibilityCatalog() {
-    return this.scaleService.compatibilityCatalog();
+  compatibilityCatalog(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.compatibilityCatalog(request.userContext);
   }
 
   @Get('metrics')
-  scaleMetrics() {
-    return this.scaleService.scaleMetrics();
+  scaleMetrics(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.scaleMetrics(request.userContext);
   }
 
   @Post('differences')
@@ -196,8 +203,8 @@ export class ScaleController {
   }
 
   @Get('differences')
-  listFactoryDifferences() {
-    return this.scaleService.listFactoryDifferences();
+  listFactoryDifferences(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listFactoryDifferences(request.userContext);
   }
 
   @Post('differences/:key/resolve')
@@ -233,13 +240,16 @@ export class ScaleController {
   }
 
   @Get('assets')
-  listAssetPackages() {
-    return this.scaleService.listAssetPackages();
+  listAssetPackages(@Req() request: { userContext?: OrgContext }) {
+    return this.scaleService.listAssetPackages(request.userContext);
   }
 
   @Get('assets/:id')
-  getAssetPackage(@Param('id') id: string) {
-    return this.scaleService.getAssetPackage(id);
+  getAssetPackage(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.scaleService.getAssetPackage(id, request.userContext);
   }
 
   @Post('assets/:id/conformance')

@@ -43,4 +43,12 @@ describe('command map query state helpers', () => {
     expect(queries[0].refetch).toHaveBeenCalled();
     expect(queries[1].refetch).toHaveBeenCalled();
   });
+
+  it('CLI-729：does NOT refetch healthy (isError=false) queries', () => {
+    const healthy = snapshot({ key: 'ok', isError: false });
+    const failed = snapshot({ key: 'bad', isError: true });
+    retryAll([healthy, failed]);
+    expect(healthy.refetch).not.toHaveBeenCalled();
+    expect(failed.refetch).toHaveBeenCalled();
+  });
 });

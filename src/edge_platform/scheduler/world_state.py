@@ -32,14 +32,14 @@ def _safe_call(storage, *names, default=None, **kwargs):
     """按顺序尝试调用 storage 上存在的方法，缺失返回 default（容错）。
 
     kwargs 会透传给目标方法（如 list_events(limit=200)）。
+    EDGE-119：移除 TypeError 时 ``fn(storage)`` 的错误兜底——把 storage 传给
+    storage 方法属语义错误（可能抛未捕获 TypeError），统一按异常回落 default。
     """
     for name in names:
         fn = getattr(storage, name, None)
         if fn is not None:
             try:
                 return fn(**kwargs)
-            except TypeError:
-                return fn(storage) if callable(getattr(storage, name, None)) else default
             except Exception:
                 return default
     return default

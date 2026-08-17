@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql, eq, and, desc } from 'drizzle-orm';
@@ -19,6 +20,12 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 const ERP_ORDER = 'ERP_ORDER';
 const ERP_OUTBOUND = 'ERP_OUTBOUND';
 
+/**
+ * NEST-445：findByEvidence 的 jsonb 键白名单（键名为 SQL 插值点，虽当前
+ * 仅硬编码两值，仍显式收敛防未来把用户输入接进来）。
+ */
+const EVIDENCE_KEYS: ReadonlySet<string> = new Set(['externalOrderId', 'outboundId']);
+
 @Injectable()
 export class ErpService {
   constructor(
@@ -26,6 +33,17 @@ export class ErpService {
     private readonly auditService: AuditService,
     private readonly mesService: MesService,
   ) {}
+
+  /** NEST-406/407/408：org 上下文强制（缺失 401，绝不静默写全局/全量读）。 */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：ERP 读写必须带租户上下文',
+      );
+    }
+    return orgId;
+  }
 
   async receiveOrder(
     body: {
@@ -46,10 +64,12 @@ export class ErpService {
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw new BadRequestException('quantity must be a positive number');
     }
+    const orgId = this.requireOrgId(actor);
     const existing = await this.findByEvidence(
       ERP_ORDER,
       'externalOrderId',
       body.externalOrderId,
+      orgId,
     );
     if (existing) {
       return { duplicate: true, order: existing };
@@ -99,6 +119,8 @@ export class ErpService {
         status: 'received',
         createdAt: now,
         sourceType: 'real',
+        // NEST-406：写入显式携带 orgId。
+        orgId,
         evidenceJson: {
           externalOrderId: body.externalOrderId,
           productCode: body.productCode,
@@ -126,11 +148,24 @@ export class ErpService {
     return { duplicate: false, order, workOrderId };
   }
 
-  async listOrders() {
+  /** NEST-407：列表 org 过滤（global_admin 放行）。 */
+  async listOrders(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) {
+      return this.db
+        .select()
+        .from(ewohEvent)
+        .where(eq(ewohEvent.eventCode, ERP_ORDER))
+        .orderBy(desc(ewohEvent.createdAt));
+    }
     return this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventCode, ERP_ORDER))
+      .where(
+        and(
+          eq(ewohEvent.eventCode, ERP_ORDER),
+          eq(ewohEvent.orgId, this.requireOrgId(actor)),
+        ),
+      )
       .orderBy(desc(ewohEvent.createdAt));
   }
 
@@ -148,10 +183,12 @@ export class ErpService {
         'outboundId and externalOrderId are required',
       );
     }
+    const orgId = this.requireOrgId(actor);
     const existing = await this.findByEvidence(
       ERP_OUTBOUND,
       'outboundId',
       body.outboundId,
+      orgId,
     );
     if (existing) {
       return { duplicate: true, outbound: existing };
@@ -168,6 +205,8 @@ export class ErpService {
         status: 'pending',
         createdAt: new Date(),
         sourceType: 'real',
+        // NEST-408：写入显式携带 orgId。
+        orgId,
         evidenceJson: {
           outboundId: body.outboundId,
           type: body.type,
@@ -194,11 +233,24 @@ export class ErpService {
     return { duplicate: false, outbound };
   }
 
-  async listOutbound() {
+  /** NEST-407：列表 org 过滤（global_admin 放行）。 */
+  async listOutbound(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) {
+      return this.db
+        .select()
+        .from(ewohEvent)
+        .where(eq(ewohEvent.eventCode, ERP_OUTBOUND))
+        .orderBy(desc(ewohEvent.createdAt));
+    }
     return this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventCode, ERP_OUTBOUND))
+      .where(
+        and(
+          eq(ewohEvent.eventCode, ERP_OUTBOUND),
+          eq(ewohEvent.orgId, this.requireOrgId(actor)),
+        ),
+      )
       .orderBy(desc(ewohEvent.createdAt));
   }
 
@@ -219,6 +271,7 @@ export class ErpService {
     if (!row) {
       throw new NotFoundException(`ERP outbound ${eventId} not found`);
     }
+    // NEST-426：读-改-写 evidenceJson 加 status CAS（并发 ack 丢更新收敛为 409）。
     const evidence = {
       ...((row.evidenceJson as Record<string, unknown> | null) ?? {}),
     };
@@ -235,7 +288,12 @@ export class ErpService {
     const [updated] = await this.db
       .update(ewohEvent)
       .set({ status, evidenceJson: evidence, handlerAction: status })
-      .where(eq(ewohEvent.eventId, eventId))
+      .where(
+        and(
+          eq(ewohEvent.eventId, eventId),
+          eq(ewohEvent.status, row.status ?? 'pending'),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
@@ -252,10 +310,10 @@ export class ErpService {
     return updated;
   }
 
-  async reconcile() {
+  async reconcile(actor?: OrgContext) {
     const [orders, outbound] = await Promise.all([
-      this.listOrders(),
-      this.listOutbound(),
+      this.listOrders(actor),
+      this.listOutbound(actor),
     ]);
     const completedWorkOrders = await this.db
       .select()
@@ -264,6 +322,10 @@ export class ErpService {
         and(
           eq(ewohScheduleTask.source, 'erp'),
           eq(ewohScheduleTask.status, 'completed'),
+          // NEST-407：工单核对同 org 作用域（global_admin 放行）。
+          ...(actor?.isGlobalAdmin
+            ? []
+            : [eq(ewohScheduleTask.orgId, this.requireOrgId(actor))]),
         ),
       );
     const countByStatus = (rows: Array<{ status: string | null }>) =>
@@ -289,14 +351,21 @@ export class ErpService {
     eventCode: string,
     key: string,
     value: string,
+    orgId: string,
   ) {
-    // ADR-079：drizzle 类型安全（raw SQL 完整清零）。
+    // NEST-445：jsonb 键名白名单（插值点显式收敛）。
+    if (!EVIDENCE_KEYS.has(key)) {
+      throw new BadRequestException(`unsupported evidence key: ${key}`);
+    }
+    // ADR-079：drizzle 类型安全（raw SQL 完整清零）；
+    // NEST-406/408：幂等查询加 org 维度（跨租户同单号互不干扰）。
     const rows = await this.db
       .select()
       .from(ewohEvent)
       .where(
         and(
           eq(ewohEvent.eventCode, eventCode),
+          eq(ewohEvent.orgId, orgId),
           sql`evidence_json->>${key} = ${value}`,
         ),
       )

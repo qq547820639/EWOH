@@ -145,6 +145,24 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
         simulationErrorCount: 0,
       };
     }
+    // NEST-619（2026-08-17 审计整改）：手动 start() 同样受
+    // EWOH_SIMULATOR_ENABLED 显式授权（原先 HTTP 可在未配置 ENABLED 的
+    // 环境直接拉起仿真器，绕过 fail-closed 启动门）。
+    if (process.env.EWOH_SIMULATOR_ENABLED !== '1') {
+      this.logger.log(
+        'Simulator 手动启动被拒绝（fail-closed）：需显式 EWOH_SIMULATOR_ENABLED=1',
+      );
+      return {
+        running: false,
+        startedAt: null,
+        tickCount: 0,
+        lastTickAt: null,
+        deviceCount: 0,
+        personCount: 0,
+        eventCount: 0,
+        simulationErrorCount: 0,
+      };
+    }
     try {
       await this.loadInitialState();
       this.running = true;
@@ -454,7 +472,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
     // 批量写入遥测
     if (telemetryRows.length > 0) {
       await this.db.insert(ewohTelemetry).values(telemetryRows);
-      // 规则引擎评估（大脑-感知层）
+      // 规则引擎评估（大脑-感知层；NEST-621：orgId 随事件落库）
       for (const row of telemetryRows) {
         await this.ruleEngine.evaluate({
           deviceId: row.deviceId,
@@ -464,6 +482,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
           sourceType: row.sourceType,
           recordId: row.recordId,
           dataQuality: row.dataQuality,
+          orgId: row.orgId,
         });
       }
     }
@@ -536,17 +555,22 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleDeviceOffline(device: DeviceRuntime): Promise<void> {
+    const orgId = this.simulatorOrgId();
     await this.db
       .update(ewohDevice)
       .set({ online: false })
       .where(eq(ewohDevice.deviceId, device.deviceId));
-    await this.ruleEngine.fireDeviceOffline(device.deviceId, 'simulated');
+    // NEST-621：离线事件显式 orgId。
+    await this.ruleEngine.fireDeviceOffline(device.deviceId, 'simulated', orgId);
   }
 
   private async upsertDevice(device: DeviceRuntime, now: Date): Promise<void> {
     const workerName = this.workerNameMap.get(device.workerId) ?? '';
     const deviceModel = this.deviceModelMap.get(device.deviceId) ?? '';
     const batteryPct = Math.round(device.battery);
+    // NEST-205 配套（standalone_057）：ewoh_device 唯一键改 (org_id, device_id)
+    // ——upsert 冲突目标与插入值同步带 orgId（单列 deviceId 冲突目标已无索引）。
+    const orgId = this.simulatorOrgId();
     await this.db
       .insert(ewohDevice)
       .values({
@@ -556,9 +580,10 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
         batteryPct,
         online: true,
         lastTelemetryAt: now,
+        orgId,
       })
       .onConflictDoUpdate({
-        target: ewohDevice.deviceId,
+        target: [ewohDevice.orgId, ewohDevice.deviceId],
         set: {
           batteryPct,
           online: true,
@@ -612,6 +637,8 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
     if (!this.canTrigger(params.dedupKey)) return;
     const eventId = this.genEventId();
     const now = new Date();
+    // NEST-621：模拟事件显式 orgId（模拟器 org 上下文）。
+    const orgId = this.simulatorOrgId();
     await this.db.insert(ewohEvent).values({
       eventId,
       deviceId: params.deviceId,
@@ -622,6 +649,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
       status: 'open',
       createdAt: now,
       sourceType: 'simulated',
+      orgId,
       evidenceJson: { simulator_event: true, device_id: params.deviceId },
     });
     await this.db.insert(ewohEventChain).values({
@@ -630,6 +658,7 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
       causalType: 'triggered',
       description: params.title,
       createdAt: now,
+      orgId,
     });
     this.markTriggered(params.dedupKey);
   }
@@ -646,16 +675,8 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
   // ===== 工具方法 =====
 
   private genEventId(): string {
-    return `EVT-${Math.floor(Date.now() / 1000)}-${this.randomSuffix(4)}`;
-  }
-
-  private randomSuffix(len: number): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < len; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
+    // NEST-645：ID 后缀密码学化（Math.random 同秒+同后缀碰撞风险）。
+    return `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
   }
 
   private rand(min: number, max: number): number {

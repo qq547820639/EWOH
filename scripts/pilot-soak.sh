@@ -23,14 +23,21 @@ section() { printf '\n== %s ==\n' "$1"; }
 
 step() {
   local name="$1"; shift
-  if "$@" >/dev/null 2>&1; then
+  local log
+  log="$(mktemp -t pilot-soak-step-XXXX)"
+  if "$@" >"$log" 2>&1; then
     REPORT+="PASS  $name\n"
     echo "PASS  $name"
   else
     FAILED=$((FAILED + 1))
     REPORT+="FAIL  $name\n"
     echo "FAIL  $name"
+    # SCR-033: 失败时打印输出尾部，不再全程丢弃 stdout/stderr。
+    echo "---- $name 失败输出尾部 ----"
+    tail -n 20 "$log"
+    echo "----------------------------"
   fi
+  rm -f "$log"
 }
 
 blocked() {
@@ -47,11 +54,16 @@ step "production 装配门禁" env PYTHONPATH=src python3 -m pytest tests/test_p
 step "连接器 TCK" env PYTHONPATH=src python3 scripts/connector-tck.py
 step "AAS TCK" env PYTHONPATH=src python3 scripts/aas-tck.py
 step "Rego TCK" env PYTHONPATH=src python3 scripts/rego-tck.py
-# 已知 lint 存量债（cpsat/*.py 等，见走读报告 §6）——soak 只告警不阻断，
-# 待存量清理后收紧为 step。
+# SCR-034: 已知 lint 存量债（cpsat/*.py 等）——缺省 WARN 不阻断；
+# 设 EWOH_SOAK_RUFF_STRICT=1 收紧为阻断（存量清理完成后应默认开启）。
 if ruff check src/edge_platform >/dev/null 2>&1; then
   REPORT+="PASS  edge ruff\n"
   echo "PASS  edge ruff"
+elif [ "${EWOH_SOAK_RUFF_STRICT:-0}" = "1" ]; then
+  FAILED=$((FAILED + 1))
+  REPORT+="FAIL  edge ruff（EWOH_SOAK_RUFF_STRICT=1）\n"
+  echo "FAIL  edge ruff（严格模式：lint 失败即阻断）"
+  ruff check src/edge_platform 2>/dev/null | tail -n 5 || true
 else
   RUFF_N="$(ruff check src/edge_platform 2>/dev/null | grep -c '^src')"
   REPORT+="WARN  edge ruff（存量 $RUFF_N 处，不阻断 soak）\n"

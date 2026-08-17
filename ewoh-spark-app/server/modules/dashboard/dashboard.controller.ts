@@ -1,5 +1,10 @@
-import { Controller, Get, Post, Patch, Delete, Param, Query, Body, ParseIntPipe, BadRequestException, Req } from '@nestjs/common';
-import { DashboardService } from './dashboard.service';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body, BadRequestException, Req } from '@nestjs/common';
+import {
+  DashboardService,
+  parseBatteryParam,
+  parseLimitParam,
+  parsePageParam,
+} from './dashboard.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   DeviceSearchQuery,
@@ -15,13 +20,13 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('overview')
-  async getOverview() {
-    return this.dashboardService.getOverview();
+  async getOverview(@Req() request?: { userContext?: OrgContext }) {
+    return this.dashboardService.getOverview(request?.userContext);
   }
 
   @Get('environment/summary')
-  async getEnvironmentSummary() {
-    return this.dashboardService.getEnvironmentSummary();
+  async getEnvironmentSummary(@Req() request?: { userContext?: OrgContext }) {
+    return this.dashboardService.getEnvironmentSummary(request?.userContext);
   }
 
   @Get('devices')
@@ -33,16 +38,20 @@ export class DashboardController {
     @Query('sourceType') sourceType?: string,
     @Query('model') model?: string,
     @Query('orderby') orderby?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
     const query: DeviceSearchQuery = {};
     if (keyword) query.keyword = keyword;
     if (online !== undefined) query.online = online === 'true';
-    if (batteryMin) query.batteryMin = parseInt(batteryMin);
-    if (batteryMax) query.batteryMax = parseInt(batteryMax);
+    // NEST-349：NaN 显式拒绝（不再把 NaN 传给 gte/lte）。
+    const batteryMinNum = parseBatteryParam(batteryMin, 'batteryMin');
+    const batteryMaxNum = parseBatteryParam(batteryMax, 'batteryMax');
+    if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
+    if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
     if (model) query.model = model;
     if (orderby) query.orderby = orderby;
-    return this.dashboardService.getDevices(query);
+    return this.dashboardService.getDevices(query, request?.userContext);
   }
 
   @Get('devices/search')
@@ -60,22 +69,32 @@ export class DashboardController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('orderby') orderby?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
     const query: DeviceSearchQuery = {};
     if (keyword) query.keyword = keyword;
     if (online !== undefined) query.online = online === 'true';
-    if (batteryMin) query.batteryMin = parseInt(batteryMin);
-    if (batteryMax) query.batteryMax = parseInt(batteryMax);
+    const batteryMinNum = parseBatteryParam(batteryMin, 'batteryMin');
+    const batteryMaxNum = parseBatteryParam(batteryMax, 'batteryMax');
+    if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
+    if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
     if (model) query.model = model;
     if (firmwareVersion) query.firmwareVersion = firmwareVersion;
     if (protocolVersion) query.protocolVersion = protocolVersion;
     if (faultCode) query.faultCode = faultCode;
     if (bindingStatus === 'bound' || bindingStatus === 'unbound') query.bindingStatus = bindingStatus;
-    if (page) query.page = parseInt(page);
-    if (pageSize) query.pageSize = parseInt(pageSize);
+    const pageNum = parsePageParam(page);
+    if (page !== undefined && page !== '') query.page = pageNum;
+    if (pageSize !== undefined && pageSize !== '') {
+      const sizeNum = Number.parseInt(pageSize, 10);
+      if (!Number.isFinite(sizeNum) || sizeNum < 1) {
+        throw new BadRequestException(`invalid pageSize: ${pageSize}`);
+      }
+      query.pageSize = sizeNum;
+    }
     if (orderby) query.orderby = orderby;
-    return this.dashboardService.searchDevices(query);
+    return this.dashboardService.searchDevices(query, request?.userContext);
   }
 
   @Post('devices')
@@ -90,24 +109,34 @@ export class DashboardController {
   async updateDevice(
     @Param('deviceId') deviceId: string,
     @Body() body: UpdateDeviceDto,
-    @Req() request: { userContext?: OrgContext },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.dashboardService.updateDevice(deviceId, body, request.userContext);
+    return this.dashboardService.updateDevice(deviceId, body, request?.userContext);
   }
 
   @Get('devices/:deviceId/bindings')
-  async getDeviceBindings(@Param('deviceId') deviceId: string) {
-    return this.dashboardService.getDeviceBindings(deviceId);
+  async getDeviceBindings(
+    @Param('deviceId') deviceId: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.getDeviceBindings(deviceId, request?.userContext);
   }
 
   @Post('devices/:deviceId/bindings')
-  async bindDevice(@Param('deviceId') deviceId: string, @Body() body: BindDeviceRequest) {
-    return this.dashboardService.bindDevice(deviceId, body);
+  async bindDevice(
+    @Param('deviceId') deviceId: string,
+    @Body() body: BindDeviceRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.bindDevice(deviceId, body, request?.userContext);
   }
 
   @Delete('devices/:deviceId/bindings')
-  async unbindDevice(@Param('deviceId') deviceId: string) {
-    await this.dashboardService.unbindDevice(deviceId);
+  async unbindDevice(
+    @Param('deviceId') deviceId: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    await this.dashboardService.unbindDevice(deviceId, request?.userContext);
     return { success: true };
   }
 
@@ -115,21 +144,22 @@ export class DashboardController {
   async getEvents(
     @Query('limit') limit?: string,
     @Query('status') status?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    const limitNum = limit ? parseInt(limit) : 50;
-    return this.dashboardService.getEvents(limitNum, status);
+    const limitNum = parseLimitParam(limit, 50);
+    return this.dashboardService.getEvents(limitNum, status, request?.userContext);
   }
 
   @Get('events/stats')
-  async getEventStats() {
-    return this.dashboardService.getEventStats();
+  async getEventStats(@Req() request?: { userContext?: OrgContext }) {
+    return this.dashboardService.getEventStats(request?.userContext);
   }
 
   @Post('events/:eventId/handle')
   async handleEvent(
     @Param('eventId') eventId: string,
     @Body() body: { handlerAction?: string; handlerNote?: string; operator?: string },
-    @Req() request: { userContext?: OrgContext },
+    @Req() request?: { userContext?: OrgContext },
   ) {
     if (!body.handlerAction || !body.handlerAction.trim()) {
       throw new BadRequestException('handlerAction is required');
@@ -139,7 +169,7 @@ export class DashboardController {
       body.handlerAction,
       body.handlerNote,
       body.operator,
-      request.userContext,
+      request?.userContext,
     );
   }
 
@@ -147,13 +177,14 @@ export class DashboardController {
   async getTelemetry(
     @Param('deviceId') deviceId: string,
     @Query('limit') limit?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    const limitNum = limit ? parseInt(limit) : 50;
-    return this.dashboardService.getTelemetry(deviceId, limitNum);
+    const limitNum = parseLimitParam(limit, 50);
+    return this.dashboardService.getTelemetry(deviceId, limitNum, request?.userContext);
   }
 
   @Get('workers')
-  async getWorkers() {
-    return this.dashboardService.getWorkers();
+  async getWorkers(@Req() request?: { userContext?: OrgContext }) {
+    return this.dashboardService.getWorkers(request?.userContext);
   }
 }

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   buildApprovalPacket,
   buildDryRunPreview,
@@ -192,7 +194,15 @@ describe('gitSync 幂等键', () => {
     const c = createIdempotencyKey('merge_pr', 'W1', 'dev');
     expect(a).toBe(b);
     expect(a).not.toBe(c);
-    expect(a).toMatch(/^[0-9a-f]{8}$/);
+    // CLI-518：FNV-1a 32 位（8 hex）升级为 SHA-256（64 hex），消除碰撞面。
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('CLI-518: 幂等键与 node:crypto SHA-256 一致（实现正确性）', () => {
+    const expected = createHash('sha256')
+      .update('merge_pr:W1:main')
+      .digest('hex');
+    expect(createIdempotencyKey('merge_pr', 'W1', 'main')).toBe(expected);
   });
 });
 

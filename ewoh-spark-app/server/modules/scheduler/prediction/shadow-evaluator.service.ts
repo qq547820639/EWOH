@@ -1,10 +1,12 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { eq, and, desc, gte, isNull, lt, type SQL } from 'drizzle-orm';
 import { predictionShadowObservation } from '@server/database/schema';
+import { currentRequestContext } from '../../../common/request-context';
+import { DETERMINISTIC_MODEL_VERSION } from './prediction-provider';
 import type {
   PredictionConfig,
   PredictionShadowAggregate,
@@ -312,8 +314,10 @@ export class ShadowEvaluatorService {
       n > 0 ? Math.max(0, 1 - Math.min(mae, 1)) : 0;
 
     // fallbackRate：confidence < 阈值或 source=deterministic 的样本占比。
+    // NEST-045（2026-08-17）：引用 DETERMINISTIC_MODEL_VERSION 常量（与
+    // prediction-provider 单一事实源，替代硬编码字符串漂移）。
     const fallbackSamples = buffer.filter(
-      (s) => s.confidence < 0.5 || s.modelVersion === 'deterministic-v1',
+      (s) => s.confidence < 0.5 || s.modelVersion === DETERMINISTIC_MODEL_VERSION,
     );
     const fallbackRate =
       buffer.length > 0 ? fallbackSamples.length / buffer.length : 0;
@@ -346,7 +350,15 @@ export class ShadowEvaluatorService {
       this.logger.debug('listObservations: no db injected, returning []');
       return [];
     }
+    // NEST-043 修复（2026-08-17）：HTTP 请求上下文内强制 org 作用域（本表为
+    // GLOBAL_SHARED advisory 观测，null=全局采样是**系统**语义——HTTP 无 ctx
+    // 的调用不再放行全租户观察；后台/分析流显式走 opts.orgId/系统路径）。
     const orgKey = ctx?.primaryOrgId || 'ALL';
+    if (orgKey === 'ALL' && !opts.orgId && currentRequestContext()) {
+      throw new BadRequestException(
+        'org scope required for shadow observations（NEST-043）',
+      );
+    }
     const conditions: SQL[] = [];
     const orgFilter = opts.orgId ?? (orgKey === 'ALL' ? undefined : orgKey);
     if (orgFilter) conditions.push(eq(predictionShadowObservation.orgId, orgFilter));
@@ -417,7 +429,11 @@ export class ShadowEvaluatorService {
     const p95 = n > 0 ? this.percentile(errors, 0.95) : 0;
     const calibration = n > 0 ? Math.max(0, 1 - Math.min(mae, 1)) : 0;
     const fallbackSamples = rows.filter(
-      (s) => s.confidence == null || s.confidence < 0.5 || s.modelVersion === 'deterministic-v1',
+      // NEST-045：引用常量（同上）。
+      (s) =>
+        s.confidence == null ||
+        s.confidence < 0.5 ||
+        s.modelVersion === DETERMINISTIC_MODEL_VERSION,
     );
     const fallbackRate =
       rows.length > 0 ? fallbackSamples.length / rows.length : 0;
@@ -429,13 +445,31 @@ export class ShadowEvaluatorService {
   /**
    * Task 7：保留清理——删除 created_at < now − olderThanMs 的持久化观察，
    * 返回删除行数。advisory-only：只清理观测数据，不影响任何生产表。
+   *
+   * NEST-044 修复（2026-08-17）：可选 orgId 作用域——提供时仅清理该 org 的
+   * 观察行；缺省 = 全局保留清理（advisory 观测表的系统维护语义，
+   * standalone_057 裁决 GLOBAL_SHARED），但 HTTP 请求上下文内必须显式传
+   * orgId 或走系统任务（防止租户请求触发全租户清理）。
    */
-  async pruneObservations(olderThanMs: number): Promise<number> {
+  async pruneObservations(
+    olderThanMs: number,
+    orgId?: string | null,
+  ): Promise<number> {
     if (!this.db) return 0;
+    if (!orgId && currentRequestContext()) {
+      throw new BadRequestException(
+        'org scope required for observation prune in HTTP context（NEST-044；全局清理走系统任务）',
+      );
+    }
     const cutoff = new Date(Date.now() - olderThanMs);
     const deleted = await this.db
       .delete(predictionShadowObservation)
-      .where(lt(predictionShadowObservation.createdAt, cutoff))
+      .where(
+        and(
+          lt(predictionShadowObservation.createdAt, cutoff),
+          orgId ? eq(predictionShadowObservation.orgId, orgId) : undefined,
+        ),
+      )
       .returning({ id: predictionShadowObservation.id });
     return Array.isArray(deleted) ? deleted.length : 0;
   }

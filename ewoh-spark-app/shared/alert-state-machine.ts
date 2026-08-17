@@ -33,9 +33,12 @@ const HANDLER_ROLES: ReadonlySet<string> = new Set([
   'dispatcher', 'workshop_lead', 'device_ops',
 ]);
 
-function roleSatisfies(required: string, actorRole: string | undefined): boolean {
+// SH-004：actorRole 缺失（undefined）收敛 fail-closed——alert.yaml 的
+// role 约束无条件放行分支；调用方（alert.service/oee.service）必须携带
+// 认证上下文角色，未认证/无角色的一律拒绝。
+export function roleSatisfies(required: string, actorRole: string | undefined): boolean {
   if (required === 'handler') {
-    return actorRole == null || HANDLER_ROLES.has(actorRole);
+    return actorRole != null && HANDLER_ROLES.has(actorRole);
   }
   return actorRole === required;
 }
@@ -43,9 +46,9 @@ function roleSatisfies(required: string, actorRole: string | undefined): boolean
 /**
  * 状态转移判定（角色条件机器执行，ADR-031 决策 3）：
  * - reopen 仅 safety_admin；
- * - handler 条件映射 dispatcher/workshop_lead/device_ops（缺省放行——
- *   与既有 authenticated 处置语义兼容）；
- * - 非法转移返回 null。
+ * - handler 条件映射 dispatcher/workshop_lead/device_ops；
+ * - actorRole 未提供或不在许可集 → 拒绝（SH-004 fail-closed）；
+ * - 非法转移返回 false。
  */
 export function alertStateTransitionAllowed(
   from: string,

@@ -53,7 +53,7 @@ describe('CP-SAT 畸形响应（Task 15.1 fault-injection）', () => {
 
   const opts = { ...baseSolveOpts, policy: defaultPolicy() };
 
-  it('(a) 非 JSON 垃圾 body → 不 crash，UNAVAILABLE + fallbackReason 提及 malformed + 指标记录', async () => {
+  it('(a) 非 JSON 垃圾 body → 不 crash，FALLBACK（NEST-023：worker 已应答仅 body 畸形 ≠ 不可达）+ fallbackReason 提及 malformed + 指标记录', async () => {
     const { solver, metricsService } = makeSolver({
       workerUrl: 'http://127.0.0.1:8000',
       timeoutMs: 50,
@@ -65,7 +65,10 @@ describe('CP-SAT 畸形响应（Task 15.1 fault-injection）', () => {
     });
     const plan = await solver.solve(snapshot, [], opts);
 
-    expect(plan.solverStatus).toBe('UNAVAILABLE');
+    // NEST-023（2026-08-17）：worker HTTP 层已应答（reachable），仅 body 非
+    // JSON——语义是"服务在但响应畸形"= FALLBACK；UNAVAILABLE 保留给真正的
+    // 传输层不可达/超时。
+    expect(plan.solverStatus).toBe('FALLBACK');
     expect(plan.solverVersion).not.toBe('cpsat-v1');
     expect(plan.fallbackReason).toMatch(/malformed/i);
     // 15.6：降级可观测 —— 指标被记录 + 显式状态字段。

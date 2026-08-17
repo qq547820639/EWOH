@@ -75,19 +75,32 @@ class CpsatWorkerContractTest(unittest.TestCase):
         self.assertIn("note", payload)
 
     def test_solve_empty_request_returns_unavailable_when_no_ortools(self):
+        """TEST-011 拆分：仅无 ortools 环境执行，严格断言 UNAVAILABLE（不冒充成功）。"""
+        if cpsat_worker.is_available():
+            self.skipTest("ortools 已安装，UNAVAILABLE 路径不适用")
         request = {
             "tasks": [], "persons": [], "devices": [], "stations": [],
             "reservations": [], "frozenAssignments": [], "constraints": [],
-            "weights": {}, "nowMs": 0, "horizonEndMs": 0,
+            "weights": {}, "nowMs": 0, "horizonMinutes": 480,
         }
         status, payload = self._post("/api/scheduler/v2/solve", json.dumps(request))
         self.assertEqual(status, 200)
-        # 无 ortools 环境 → UNAVAILABLE（云侧据此回退 heuristic）
+        self.assertEqual(payload["solverStatus"], "UNAVAILABLE")
+        self.assertEqual(payload["solverVersion"], SOLVER_VERSION)
+
+    def test_solve_empty_request_returns_solver_status_when_ortools_present(self):
+        """TEST-011 拆分：仅 ortools 可用环境执行，空请求可被求解并返回合法状态。"""
         if not cpsat_worker.is_available():
-            self.assertEqual(payload["solverStatus"], "UNAVAILABLE")
-            self.assertEqual(payload["solverVersion"], SOLVER_VERSION)
-        else:
-            self.assertIn(payload["solverStatus"], {"OPTIMAL", "FEASIBLE", "INFEASIBLE"})
+            self.skipTest("ortools 未安装，求解路径不适用")
+        request = {
+            "tasks": [], "persons": [], "devices": [], "stations": [],
+            "reservations": [], "frozenAssignments": [], "constraints": [],
+            "weights": {}, "nowMs": 0, "horizonMinutes": 480,
+        }
+        status, payload = self._post("/api/scheduler/v2/solve", json.dumps(request))
+        self.assertEqual(status, 200)
+        self.assertIn(payload["solverStatus"], {"OPTIMAL", "FEASIBLE", "INFEASIBLE"})
+        self.assertEqual(payload["solverVersion"], SOLVER_VERSION)
 
     def test_solve_invalid_json_returns_400(self):
         req = urllib.request.Request(

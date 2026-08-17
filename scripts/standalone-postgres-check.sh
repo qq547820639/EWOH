@@ -17,32 +17,41 @@ echo "== generate standalone DDL =="
 node scripts/generate-ddl-package.js
 node scripts/generate-standalone-ddl.js
 
+# SCR-023: 专项迁移清单单一来源——后缀在此定义一次，apply 按序展开、
+# rollback 由同一列表逆序派生（apply-standalone-<x> ↔ rollback-standalone-<x>）。
+# 新增迁移只需在 STANDALONE_SUFFIXES 追加一项，不再手工同步回滚清单。
+STANDALONE_SUFFIXES=(
+  identity-mapping
+  maintenance-quality
+  work-order
+  event-dedup
+  agent-manifest
+  agent-task
+  knowledge-entry
+  inference-result
+  learning-evaluation
+  trace-span
+  dead-letter
+  simulation-run
+  learning-proposal
+  exo-session
+  outcome-annotation
+  shadow-plan-isolation
+  agent-approval
+  decision-records
+  exo-config
+  agent-approval-decision
+  learning-proposal-decision
+  policy-activation-decision
+  route-org-isolation
+)
+
 apply_and_verify() {
   echo "== apply standalone schema =="
   node db/runner/run_migrations.js --apply-standalone
-  node db/runner/run_migrations.js --apply-standalone-identity-mapping
-  node db/runner/run_migrations.js --apply-standalone-maintenance-quality
-  node db/runner/run_migrations.js --apply-standalone-work-order
-  node db/runner/run_migrations.js --apply-standalone-event-dedup
-  node db/runner/run_migrations.js --apply-standalone-agent-manifest
-  node db/runner/run_migrations.js --apply-standalone-agent-task
-  node db/runner/run_migrations.js --apply-standalone-knowledge-entry
-  node db/runner/run_migrations.js --apply-standalone-inference-result
-  node db/runner/run_migrations.js --apply-standalone-learning-evaluation
-  node db/runner/run_migrations.js --apply-standalone-trace-span
-  node db/runner/run_migrations.js --apply-standalone-dead-letter
-  node db/runner/run_migrations.js --apply-standalone-simulation-run
-  node db/runner/run_migrations.js --apply-standalone-learning-proposal
-  node db/runner/run_migrations.js --apply-standalone-exo-session
-  node db/runner/run_migrations.js --apply-standalone-outcome-annotation
-  node db/runner/run_migrations.js --apply-standalone-shadow-plan-isolation
-  node db/runner/run_migrations.js --apply-standalone-agent-approval
-  node db/runner/run_migrations.js --apply-standalone-decision-records
-  node db/runner/run_migrations.js --apply-standalone-exo-config
-  node db/runner/run_migrations.js --apply-standalone-agent-approval-decision
-  node db/runner/run_migrations.js --apply-standalone-learning-proposal-decision
-  node db/runner/run_migrations.js --apply-standalone-policy-activation-decision
-  node db/runner/run_migrations.js --apply-standalone-route-org-isolation
+  for s in "${STANDALONE_SUFFIXES[@]}"; do
+    node db/runner/run_migrations.js "--apply-standalone-${s}"
+  done
   node db/runner/run_migrations.js --verify-standalone
   node db/runner/run_migrations.js --seed-standalone
   node db/runner/run_migrations.js --apply-standalone-users
@@ -51,29 +60,9 @@ apply_and_verify() {
 
   echo "== idempotent reapply =="
   node db/runner/run_migrations.js --apply-standalone
-  node db/runner/run_migrations.js --apply-standalone-identity-mapping
-  node db/runner/run_migrations.js --apply-standalone-maintenance-quality
-  node db/runner/run_migrations.js --apply-standalone-work-order
-  node db/runner/run_migrations.js --apply-standalone-event-dedup
-  node db/runner/run_migrations.js --apply-standalone-agent-manifest
-  node db/runner/run_migrations.js --apply-standalone-agent-task
-  node db/runner/run_migrations.js --apply-standalone-knowledge-entry
-  node db/runner/run_migrations.js --apply-standalone-inference-result
-  node db/runner/run_migrations.js --apply-standalone-learning-evaluation
-  node db/runner/run_migrations.js --apply-standalone-trace-span
-  node db/runner/run_migrations.js --apply-standalone-dead-letter
-  node db/runner/run_migrations.js --apply-standalone-simulation-run
-  node db/runner/run_migrations.js --apply-standalone-learning-proposal
-  node db/runner/run_migrations.js --apply-standalone-exo-session
-  node db/runner/run_migrations.js --apply-standalone-outcome-annotation
-  node db/runner/run_migrations.js --apply-standalone-shadow-plan-isolation
-  node db/runner/run_migrations.js --apply-standalone-agent-approval
-  node db/runner/run_migrations.js --apply-standalone-decision-records
-  node db/runner/run_migrations.js --apply-standalone-exo-config
-  node db/runner/run_migrations.js --apply-standalone-agent-approval-decision
-  node db/runner/run_migrations.js --apply-standalone-learning-proposal-decision
-  node db/runner/run_migrations.js --apply-standalone-policy-activation-decision
-  node db/runner/run_migrations.js --apply-standalone-route-org-isolation
+  for s in "${STANDALONE_SUFFIXES[@]}"; do
+    node db/runner/run_migrations.js "--apply-standalone-${s}"
+  done
   node db/runner/run_migrations.js --apply-standalone-users
   node db/runner/run_migrations.js --apply-standalone-runtime-role
   node db/runner/run_migrations.js --verify-standalone
@@ -87,31 +76,11 @@ apply_and_verify
 echo "== destructive rollback =="
 node db/runner/run_migrations.js --rollback-standalone-runtime-role
 node db/runner/run_migrations.js --rollback-standalone-users
-# 专项迁移（032/034/035/036/037/038/039/040/041/042/043/044/045/046/047/048/049/050/051/052/053/054/056）由独立 apply 创建，必须显式成对回滚——
+# 专项迁移由独立 apply 创建，必须显式成对回滚（SCR-023：逆序派生自 STANDALONE_SUFFIXES）——
 # 否则 base --rollback-standalone 之后仍有 EWOH 对象残留，破坏"回滚到 0 对象"断言。
-node db/runner/run_migrations.js --rollback-standalone-agent-approval
-node db/runner/run_migrations.js --rollback-standalone-decision-records
-node db/runner/run_migrations.js --rollback-standalone-exo-config
-node db/runner/run_migrations.js --rollback-standalone-agent-approval-decision
-node db/runner/run_migrations.js --rollback-standalone-learning-proposal-decision
-node db/runner/run_migrations.js --rollback-standalone-policy-activation-decision
-node db/runner/run_migrations.js --rollback-standalone-route-org-isolation
-node db/runner/run_migrations.js --rollback-standalone-shadow-plan-isolation
-node db/runner/run_migrations.js --rollback-standalone-outcome-annotation
-node db/runner/run_migrations.js --rollback-standalone-exo-session
-node db/runner/run_migrations.js --rollback-standalone-learning-proposal
-node db/runner/run_migrations.js --rollback-standalone-simulation-run
-node db/runner/run_migrations.js --rollback-standalone-dead-letter
-node db/runner/run_migrations.js --rollback-standalone-trace-span
-node db/runner/run_migrations.js --rollback-standalone-learning-evaluation
-node db/runner/run_migrations.js --rollback-standalone-inference-result
-node db/runner/run_migrations.js --rollback-standalone-knowledge-entry
-node db/runner/run_migrations.js --rollback-standalone-agent-task
-node db/runner/run_migrations.js --rollback-standalone-agent-manifest
-node db/runner/run_migrations.js --rollback-standalone-event-dedup
-node db/runner/run_migrations.js --rollback-standalone-work-order
-node db/runner/run_migrations.js --rollback-standalone-maintenance-quality
-node db/runner/run_migrations.js --rollback-standalone-identity-mapping
+for ((i=${#STANDALONE_SUFFIXES[@]}-1; i>=0; i--)); do
+  node db/runner/run_migrations.js "--rollback-standalone-${STANDALONE_SUFFIXES[i]}"
+done
 node db/runner/run_migrations.js --rollback-standalone
 
 node --input-type=module - <<'NODE'

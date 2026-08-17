@@ -4,19 +4,46 @@ import {
   Delete,
   Get,
   Param,
-  Patch,
   Post,
   Put,
   Query,
   Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { OperationsService } from './operations.service';
 import { RoleWorkbenchService } from './role-workbench.service';
 import { WorkbenchExportService } from './workbench-export.service';
+import type { WorkbenchExportSpec } from './workbench-export.service';
 import { WorkbenchViewService } from './workbench-view.service';
-import { DangerousActionService } from './dangerous-action.service';
+import {
+  DangerousActionService,
+  type DangerousConfirmInput,
+} from './dangerous-action.service';
+import type { DangerousActionSpec } from './dangerous-action';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
+
+/**
+ * NEST-213：OrgContext 缺失时 401（绝不回退 anonymous/'org-unknown' 占位
+ * 写入污染租户数据）。RBAC helper 需要的 actor 形状由此唯一入口派生。
+ */
+function actorOf(context?: OrgContext): {
+  userId: string;
+  primaryOrgId: string;
+  roles?: string[];
+} {
+  const orgId = context?.primaryOrgId?.trim();
+  if (!orgId || !context?.userId) {
+    throw new UnauthorizedException(
+      'org 上下文缺失：operations 写入/读取需要认证租户上下文',
+    );
+  }
+  return {
+    userId: context.userId,
+    primaryOrgId: orgId,
+    roles: context.roles ?? [],
+  };
+}
 
 @Controller('api/operations')
 @Roles('workshop_lead', 'dispatcher', 'device_ops', 'safety_admin', 'global_admin', 'worker')
@@ -62,12 +89,12 @@ export class OperationsController {
 
   @Post('workbench/export')
   createExport(
-    @Body() body: { role: string; listKey: string; filter?: string },
+    @Body() body: WorkbenchExportSpec,
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.workbenchExportService.createExportTask(
       actorOf(request.userContext),
-      body as never,
+      body,
     );
   }
 
@@ -121,19 +148,20 @@ export class OperationsController {
   }
 
   // ===== 危险操作：影响预览 / 幂等确认 / 撤销补偿 =====
+  // NEST-212：Record<string, never> + as never 绕过类型检查 → 显式 DTO 形状。
   @Post('dangerous/impact')
-  dangerousImpact(@Body() body: Record<string, never>) {
-    return this.dangerousActionService.preview(body as never);
+  dangerousImpact(@Body() body: DangerousActionSpec) {
+    return this.dangerousActionService.preview(body);
   }
 
   @Post('dangerous/confirm')
   dangerousConfirm(
-    @Body() body: Record<string, never>,
+    @Body() body: DangerousConfirmInput,
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.dangerousActionService.confirm(
       actorOf(request.userContext),
-      body as never,
+      body,
     );
   }
 
@@ -154,18 +182,28 @@ export class OperationsController {
 
   @Post('assets')
   registerAsset(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      assetId?: string;
+      name: string;
+      category?: string;
+      location?: string;
+      strategy?: string;
+      intervalDays?: number;
+      nextDueAt?: string;
+      description?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.registerAsset(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('assets')
-  listAssets() {
-    return this.operationsService.listAssets();
+  listAssets(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listAssets(request.userContext);
   }
 
   @Post('assets/:id/state')
@@ -183,18 +221,30 @@ export class OperationsController {
 
   @Post('tasks')
   registerMaintenanceTask(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      taskId?: string;
+      assetId?: string;
+      title: string;
+      taskType?: string;
+      priority?: string;
+      assigneeId?: string;
+      scheduledStart?: string;
+      scheduledEnd?: string;
+      description?: string;
+      spareParts?: Array<{ name: string; quantity: number }>;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.registerMaintenanceTask(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('tasks')
-  listMaintenanceTasks() {
-    return this.operationsService.listMaintenanceTasks();
+  listMaintenanceTasks(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listMaintenanceTasks(request.userContext);
   }
 
   @Post('tasks/:id/state')
@@ -214,18 +264,27 @@ export class OperationsController {
 
   @Post('tools')
   registerTool(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      toolId?: string;
+      name: string;
+      category?: string;
+      lifespanLimit?: number;
+      usageCount?: number;
+      calibrationIntervalDays?: number;
+      lastCalibratedAt?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.registerTool(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('tools')
-  listTools() {
-    return this.operationsService.listTools();
+  listTools(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listTools(request.userContext);
   }
 
   @Post('tools/:id/state')
@@ -243,72 +302,86 @@ export class OperationsController {
 
   @Post('work-centers')
   upsertWorkCenter(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      workCenterId?: string;
+      name: string;
+      location?: string;
+      capabilities?: string[];
+      flags?: Partial<Record<string, boolean>>;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.upsertWorkCenter(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('work-centers')
-  listWorkCenters() {
-    return this.operationsService.listWorkCenters();
+  listWorkCenters(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listWorkCenters(request.userContext);
   }
 
   @Post('standard-hours')
   registerStandardHour(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      standardHourId?: string;
+      workCenterId: string;
+      operationCode: string;
+      operationName: string;
+      standardMinutes: number;
+      skillLevel?: string;
+      effectiveFrom?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.registerStandardHour(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('standard-hours')
-  listStandardHours() {
-    return this.operationsService.listStandardHours();
+  listStandardHours(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listStandardHours(request.userContext);
   }
 
   @Post('efficiency')
   registerEfficiencyEntry(
-    @Body() body: Record<string, never>,
+    @Body()
+    body: {
+      entryId?: string;
+      workerId: string;
+      workCenterId: string;
+      operationCode: string;
+      actualMinutes: number;
+      standardMinutes?: number;
+      completedAt?: string;
+      reason?: string;
+      source?: string;
+    },
     @Req() request: { userContext?: OrgContext },
   ) {
     return this.operationsService.registerEfficiencyEntry(
-      body as never,
+      body,
       request.userContext,
     );
   }
 
   @Get('efficiency')
-  listEfficiencyEntries() {
-    return this.operationsService.listEfficiencyEntries();
+  listEfficiencyEntries(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.listEfficiencyEntries(request.userContext);
   }
 
   @Get('efficiency/summary')
-  efficiencySummary() {
-    return this.operationsService.efficiencySummary();
+  efficiencySummary(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.efficiencySummary(request.userContext);
   }
 
   @Get('summary')
-  summary() {
-    return this.operationsService.summary();
+  summary(@Req() request: { userContext?: OrgContext }) {
+    return this.operationsService.summary(request.userContext);
   }
-}
-
-/** Normalises an optional OrgContext into the actor shape the RBAC helpers expect. */
-function actorOf(context?: OrgContext): {
-  userId: string;
-  primaryOrgId: string;
-  roles?: string[];
-} {
-  return {
-    userId: context?.userId ?? 'anonymous',
-    primaryOrgId: context?.primaryOrgId ?? 'org-unknown',
-    roles: context?.roles ?? [],
-  };
 }

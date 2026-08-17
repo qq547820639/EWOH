@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS rules (
   severity TEXT,
   description TEXT
 );
+-- FS-020：config.$.event_code 表达式索引（getRuleByCode 走索引查询；
+-- 建表语句幂等，既有库重跑 initSchema 安全）
+CREATE INDEX IF NOT EXISTS idx_rules_config_event_code
+  ON rules(json_extract(config, '$.event_code'));
 
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +120,8 @@ const SEED_DEVICES = [
 // 预置规则数据（规则引擎唯一事实源；rules.js 从本表读取配置并兜底使用默认常量）
 // v1.1.0 D5：阈值参数（value / threshold_sec / cooldown_sec / op）全部收敛到 config，
 // rules.js 不再硬编码第二份，消除双源漂移。
+// FS-017：本数组是全仓唯一的规则事实源——rules.js 的 DEFAULT_RULES 由本数组
+// 派生（见 rules.js 头部），不得在此之外另行维护第二份阈值。
 const SEED_RULES = [
   {
     rule_id: 'R001', rule_version: 1, enabled: 1, severity: 'high',
@@ -279,9 +285,15 @@ function getLatestTelemetryByDevice(db, deviceId) {
   ).get(deviceId);
 }
 
+// 全部设备各自的最新一帧
+// FS-020：原实现先 listDevices 再逐设备查询（N+1）；改为单条 SQL
+//（相关子查询走 idx_telem_device_ts 索引取每设备 MAX(ts)）。
 function getLatestTelemetryAll(db) {
-  const devices = listDevices(db);
-  return devices.map((d) => getLatestTelemetryByDevice(db, d.device_id)).filter(Boolean);
+  return db.prepare(
+    `SELECT t.* FROM telemetry t
+     WHERE t.ts = (SELECT MAX(t2.ts) FROM telemetry t2 WHERE t2.device_id = t.device_id)
+     ORDER BY t.device_id`
+  ).all();
 }
 
 // ============ 规则 CRUD ============
@@ -301,15 +313,17 @@ function getRule(db, ruleId) {
 }
 
 // 按 event_code 反查规则
+// FS-020：原实现全表扫描后逐行 JSON.parse + JS 过滤；改为索引化 SQL
+//（json_extract 走 idx_rules_config_event_code 表达式索引，单行返回）。
 function getRuleByCode(db, eventCode) {
-  const rows = db.prepare('SELECT * FROM rules').all();
-  for (const r of rows) {
-    const cfg = safeParse(r.config);
-    if (cfg && cfg.event_code === eventCode) {
-      return { ...r, config: cfg, enabled: !!r.enabled };
-    }
+  const r = db.prepare(
+    `SELECT * FROM rules WHERE json_extract(config, '$.event_code') = ? LIMIT 1`
+  ).get(eventCode);
+  if (r) {
+    r.config = safeParse(r.config);
+    r.enabled = !!r.enabled;
   }
-  return undefined;
+  return r;
 }
 
 // ============ 审计日志 ============

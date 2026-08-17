@@ -126,7 +126,11 @@ function isFiniteNumber(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function isNonEmptyStringList(value: unknown): boolean {
+// SH-008：原命名 isNonEmptyStringList 名实不符（空数组 every() 恒 true）。
+// 裁决取「重命名」而非加 length>0：Python decision.py 对 reasons/
+// hardConstraints/evidence 均允许空列表（仅逐项非空串），加长度校验会
+// 引入新的 TS↔Python 漂移并破坏共享向量，故正名为 isStringList。
+function isStringList(value: unknown): boolean {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.trim() !== '');
 }
 
@@ -175,7 +179,7 @@ export function validateDecision(record: unknown): string[] {
         return ['bad_options'];
       }
       const reasons = opt.reasons ?? [];
-      if (!isNonEmptyStringList(reasons)) return ['bad_options'];
+      if (!isStringList(reasons)) return ['bad_options'];
     }
   }
 
@@ -210,7 +214,7 @@ export function validateDecision(record: unknown): string[] {
     }
   }
 
-  if (r.hardConstraints !== undefined && !isNonEmptyStringList(r.hardConstraints)) {
+  if (r.hardConstraints !== undefined && !isStringList(r.hardConstraints)) {
     return ['bad_hard_constraints'];
   }
   const weights = r.weightsSnapshot;
@@ -220,7 +224,7 @@ export function validateDecision(record: unknown): string[] {
       if (!isFiniteNumber(value)) return ['bad_weights'];
     }
   }
-  if (r.evidence !== undefined && !isNonEmptyStringList(r.evidence)) return ['bad_evidence'];
+  if (r.evidence !== undefined && !isStringList(r.evidence)) return ['bad_evidence'];
 
   // 审批判定事实：human 决策或 approved/rejected 状态必带 approver。
   const approver = r.approver;

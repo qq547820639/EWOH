@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, AlertTriangle, X, Eye, Zap } from 'lucide-react';
 import dayjs from 'dayjs';
+import dayjsUtc from 'dayjs/plugin/utc';
+import dayjsTimezone from 'dayjs/plugin/timezone';
 import { getEvents } from '@client/src/api/dashboard';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import type { EventInfo } from '@shared/api.interface';
@@ -12,24 +14,34 @@ import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 
+dayjs.extend(dayjsUtc);
+dayjs.extend(dayjsTimezone);
+
 interface AlertToastProps {
   onViewEvent: (eventId: string) => void;
   onHandleEvent: (eventId: string) => void;
 }
 
-const POLL_INTERVAL_MS = 3000;
+/** CLI-307：L3 轮询由 3s 放宽到 10s，降低后端压力（聚合窗口仍为 10s）。 */
+const POLL_INTERVAL_MS = 10_000;
 const RECENT_WINDOW_MS = 10_000;
 const TOAST_DURATION_MS = 5000;
+/** 展示用固定时区（全站统一 Asia/Shanghai，CLI-327）。 */
+const DISPLAY_TZ = 'Asia/Shanghai';
+
+function formatClock(dateStr: string, pattern: 'HH:mm:ss' | 'HH:mm'): string {
+  return dayjs(dateStr).tz(DISPLAY_TZ).format(pattern);
+}
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return '—';
   const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 0) return dayjs(dateStr).format('HH:mm:ss');
+  if (diff < 0) return formatClock(dateStr, 'HH:mm:ss');
   const sec = Math.floor(diff / 1000);
   if (sec < 60) return `${sec}s 前`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m 前`;
-  return dayjs(dateStr).format('HH:mm');
+  return formatClock(dateStr, 'HH:mm');
 }
 
 const AlertToast = ({
@@ -65,7 +77,9 @@ const AlertToast = ({
   );
 
   // Track which aggregation batches (latest event ids) we have already toasted.
-  const toastedRef = useRef<Set<string>>(new Set());
+  // CLI-330：记录 id → 首次弹出时间，窗口外（RECENT_WINDOW_MS）的条目定期
+  // 清理，避免长时运行下无界增长。
+  const toastedRef = useRef<Map<string, number>>(new Map());
   const [activeToast, setActiveToast] = useState<AggregatedCriticalEvents | null>(null);
   const [unread, setUnread] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
@@ -84,16 +98,28 @@ const AlertToast = ({
     }
   }, [expanded]);
 
+  // CLI-306：展开即全部已读的副作用从 setExpanded updater 中移出，
+  // 由该 effect 承担（StrictMode 下 updater 必须保持纯函数）。
+  useEffect(() => {
+    if (expanded) setUnread(new Set());
+  }, [expanded]);
+
   // Detect newly-arrived L3 aggregation batches（同设备同批次只弹一次）。
   useEffect(() => {
     if (aggregatedL3.length === 0) return;
+    // CLI-330：清理已滑出最近窗口的已弹记录。
+    const cutoff = Date.now() - RECENT_WINDOW_MS;
+    for (const [id, at] of toastedRef.current) {
+      if (at < cutoff) toastedRef.current.delete(id);
+    }
     const fresh = aggregatedL3.find((agg) => !toastedRef.current.has(agg.latest.eventId));
     if (!fresh) return;
     // 将本批次全部事件标记为已弹（同一设备多条只占一张卡）。
+    const now = Date.now();
     const batchIds = recentL3
       .filter((e) => (e.deviceId || '未知设备') === fresh.deviceLabel)
       .map((e) => e.eventId);
-    batchIds.forEach((id) => toastedRef.current.add(id));
+    batchIds.forEach((id) => toastedRef.current.set(id, now));
     setUnread((prev) => {
       const next = new Set(prev);
       next.add(fresh.latest.eventId);
@@ -139,16 +165,7 @@ const AlertToast = ({
     handleDismissToast();
   };
 
-  const toggleExpanded = () => {
-    setExpanded((prev) => {
-      const next = !prev;
-      if (next) {
-        // Mark all as read when expanded.
-        setUnread(new Set());
-      }
-      return next;
-    });
-  };
+  const toggleExpanded = () => setExpanded((prev) => !prev);
 
   const unreadCount = unread.size;
 
@@ -163,17 +180,17 @@ const AlertToast = ({
             animate={{ opacity: 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, x: 40, scale: 0.95 }}
             transition={{ duration: 0.25 }}
-            className="pointer-events-auto w-80 rounded-lg border border-red-500/40 bg-[hsl(0_60%_12%)]/95 backdrop-blur-sm shadow-lg shadow-red-900/30 p-3"
+            className="pointer-events-auto w-80 rounded-lg border border-destructive/40 bg-surface-danger-inverse/95 backdrop-blur-sm shadow-lg shadow-destructive/30 p-3"
             role="status"
             aria-live="polite"
           >
             <div className="flex items-start gap-2">
-              <div className="w-7 h-7 shrink-0 rounded-md bg-red-500/20 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-red-400" />
+              <div className="w-7 h-7 shrink-0 rounded-md bg-destructive/20 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-destructive" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <Badge className="text-[9px] px-1 py-0 bg-red-500/20 text-red-400 border-red-500/30">
+                  <Badge className="text-[9px] px-1 py-0 bg-destructive/20 text-destructive border-destructive/30">
                     L3{activeToast.count > 1 ? ` ×${activeToast.count}` : ''}
                   </Badge>
                   <span className="text-xs font-semibold text-white truncate">
@@ -212,7 +229,7 @@ const AlertToast = ({
               </Button>
               <Button
                 size="sm"
-                className="h-6 text-[10px] px-2 flex-1 bg-red-500/80 hover:bg-red-500 border-red-400/40"
+                className="h-6 text-[10px] px-2 flex-1 bg-destructive/80 hover:bg-destructive border-destructive/40"
                 onClick={() => handleHandle(activeToast.latest.eventId)}
                 aria-label={`${UI_ARIA_LABELS.handleAlert}：${activeToast.latest.title}`}
               >
@@ -233,7 +250,7 @@ const AlertToast = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="pointer-events-auto w-80 rounded-lg border border-white/10 bg-[hsl(220_14%_12%)]/95 backdrop-blur-sm shadow-lg p-2"
+            className="pointer-events-auto w-80 rounded-lg border border-white/10 bg-surface-inverse/95 backdrop-blur-sm shadow-lg p-2"
             ref={alertListRef}
             tabIndex={-1}
             role="region"
@@ -243,7 +260,7 @@ const AlertToast = ({
           >
             <div className="flex items-center justify-between px-1 pb-1.5 border-b border-white/10">
               <div className="flex items-center gap-1.5">
-                <AlertTriangle className="w-3 h-3 text-red-400" />
+                <AlertTriangle className="w-3 h-3 text-destructive" />
                 <span className="text-[10px] text-white/70">L3 告警列表</span>
               </div>
               <span className="text-[9px] text-white/60 tabular-nums">
@@ -273,7 +290,7 @@ const AlertToast = ({
                               key={ev.id}
                               className="flex items-start gap-1.5 px-1.5 py-1 mx-1 rounded bg-white/5 hover:bg-white/10"
                             >
-                              <div className="w-1 self-stretch rounded-full bg-red-500 shrink-0" />
+                              <div className="w-1 self-stretch rounded-full bg-destructive shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <div className="text-[10px] text-white/90 truncate">
                                   {ev.title}
@@ -291,7 +308,7 @@ const AlertToast = ({
                                   详情
                                 </button>
                                 <button
-                                  className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300"
+                                  className="text-[9px] px-1 py-0.5 rounded bg-destructive/20 hover:bg-destructive/30 text-destructive"
                                   onClick={() => handleHandle(ev.eventId)}
                                   aria-label={`${UI_ARIA_LABELS.handleAlert}：${ev.title}`}
                                 >
@@ -315,7 +332,7 @@ const AlertToast = ({
         ref={bellButtonRef}
         onClick={toggleExpanded}
         className={cn(
-          'pointer-events-auto relative w-9 h-9 rounded-full border border-white/10 bg-[hsl(220_14%_14%)]/95 backdrop-blur-sm shadow-md flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors',
+          'pointer-events-auto relative w-9 h-9 rounded-full border border-white/10 bg-surface-inverse-raised/95 backdrop-blur-sm shadow-md flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors',
           expanded && 'bg-white/10 text-white',
         )}
         title={expanded ? '收起告警' : '展开告警'}
@@ -325,7 +342,7 @@ const AlertToast = ({
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-white text-[9px] font-bold flex items-center justify-center">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

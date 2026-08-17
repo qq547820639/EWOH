@@ -162,11 +162,13 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
         cpsat_worker.CPSAT_WORKER_TIMEOUT_MARGIN_MS = 50
 
         def slow_solve(_request):
-            time.sleep(1.0)
+            # EDT-008：睡眠 2s（>> 排队等待 300ms + 线程启动抖动），保证 6 个
+            # 并发请求必然在占用窗口内到达，saturation 断言不受 CI 负载抖动影响。
+            time.sleep(2.0)
             return SolverResponse(
                 solverVersion="cpsat-v1",
                 solverStatus="OPTIMAL",
-                solveDurationMs=1000,
+                solveDurationMs=2000,
                 objective=1.0,
             )
 

@@ -75,12 +75,28 @@ class OfflineIdentityBackendTest(unittest.TestCase):
         backend = OfflineIdentityBackend()
         self.assertIsNone(backend.authenticate("nobody", "whatever"))
 
-    def test_salt_is_random_per_instance(self):
-        # 两个实例的同一账号 salt 应不同（随机生成）
+    def test_salt_and_hash_invariants(self):
+        """EDGE-007 整改后的盐/哈希不变量（原 per-instance salt 设计改为进程级缓存）。
+
+        - 不同账号 salt 互不相同（随机生成）；
+        - 种子校验器进程内缓存复用（两个实例共享同一 salt/hash——PBKDF2 派生
+          成本百毫秒级，避免每次构造重复派生）；
+        - 哈希为 PBKDF2-HMAC-SHA256 派生（≠ 快速 sha256(salt+password)，算法升级生效）；
+        - 同一实例同一密码校验一致。
+        """
+        import hashlib as _hashlib
+
         b1 = OfflineIdentityBackend()
         b2 = OfflineIdentityBackend()
-        self.assertNotEqual(b1._users["admin"]["salt"], b2._users["admin"]["salt"])
-        # 但同一实例同一密码校验一致
+        salts = {b1._users[u]["salt"] for u in ("admin", "safety_officer", "operator")}
+        self.assertEqual(len(salts), 3, "不同账号的 salt 应互不相同")
+        # 进程级缓存：两实例共享种子校验器（派生一次，构造零成本）
+        self.assertEqual(b1._users["admin"]["salt"], b2._users["admin"]["salt"])
+        # 算法升级：哈希不再是快速 sha256(salt+password)
+        fast = _hashlib.sha256(
+            (b1._users["admin"]["salt"] + "admin123").encode("utf-8")
+        ).hexdigest()
+        self.assertNotEqual(b1._users["admin"]["hash"], fast, "必须使用 PBKDF2 而非快速 sha256")
         self.assertIsNotNone(b1.authenticate("admin", "admin123"))
 
     def test_add_user_then_authenticate(self):

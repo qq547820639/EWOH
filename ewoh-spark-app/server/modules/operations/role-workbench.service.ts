@@ -99,6 +99,8 @@ function mapStepRow(row: {
 @Injectable()
 export class RoleWorkbenchService {
   private readonly logger = new Logger(RoleWorkbenchService.name);
+  /** NEST-227：source_unavailable 降级计数（可观测告警信号，测试/指标可读）。 */
+  private sourceUnavailableTotal = 0;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -202,8 +204,14 @@ export class RoleWorkbenchService {
       return await fn();
     } catch (err) {
       this.logger.error(`Workbench aggregate '${source}' failed`, err as Error);
+      this.sourceUnavailableTotal += 1;
       return this.availability('source_unavailable', null, source, dataRange);
     }
+  }
+
+  /** NEST-227：累计降级次数（告警/指标消费）。 */
+  sourceUnavailableCount(): number {
+    return this.sourceUnavailableTotal;
   }
 
   /** operator: caller-owned active steps with SOP / exception flags. */
@@ -760,10 +768,12 @@ const LIST_SOURCES: Record<string, WorkbenchPgListSource> = {
     },
     defaultSort: { column: ewohScheduleTaskStep.updatedAt, key: 'updatedAt', type: 'timestamptz', dir: 'desc' },
     mapRow: (row) => {
+      // NEST-207：drizzle 返回 camelCase 键（stepId/scheduleTaskId/...），
+      // 旧 snake_case 读取导致列表字段恒 undefined。
       const result = resultJson(row);
       return {
-        stepId: row.step_id,
-        scheduleTaskId: row.schedule_task_id,
+        stepId: row.stepId,
+        scheduleTaskId: row.scheduleTaskId,
         name: row.name,
         status: row.status,
         sopPending:
@@ -798,10 +808,11 @@ const LIST_SOURCES: Record<string, WorkbenchPgListSource> = {
     },
     defaultSort: { column: ewohScheduleTask.planEnd, key: 'planEnd', type: 'timestamptz', dir: 'asc' },
     mapRow: (row) => ({
-      scheduleTaskId: row.schedule_task_id,
+      // NEST-207：camelCase 键对齐 drizzle 映射。
+      scheduleTaskId: row.scheduleTaskId,
       title: row.title,
       status: row.status,
-      planEnd: iso(row.plan_end as Date | string | null),
+      planEnd: iso(row.planEnd as Date | string | null),
     }),
     columns: [
       { key: 'scheduleTaskId', label: '工单号' },
@@ -826,7 +837,8 @@ const LIST_SOURCES: Record<string, WorkbenchPgListSource> = {
     },
     defaultSort: { column: ewohSpatialEntity.name, key: 'name', type: 'text', dir: 'asc' },
     mapRow: (row) => ({
-      entityId: row.entity_id,
+      // NEST-207：camelCase 键对齐 drizzle 映射。
+      entityId: row.entityId,
       name: row.name,
       status: row.status,
     }),
@@ -853,10 +865,11 @@ const LIST_SOURCES: Record<string, WorkbenchPgListSource> = {
     },
     defaultSort: { column: ewohEvent.createdAt, key: 'createdAt', type: 'timestamptz', dir: 'desc' },
     mapRow: (row) => ({
-      eventId: row.event_id,
+      // NEST-207：camelCase 键对齐 drizzle 映射。
+      eventId: row.eventId,
       title: row.title,
       status: row.status,
-      createdAt: iso(row.created_at as Date | string | null),
+      createdAt: iso(row.createdAt as Date | string | null),
     }),
     columns: [
       { key: 'eventId', label: '事件' },

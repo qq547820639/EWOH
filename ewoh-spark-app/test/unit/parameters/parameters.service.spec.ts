@@ -6,28 +6,34 @@ interface ConfigRow {
   configValue: unknown;
   updatedBy: string | null;
   updatedAt: Date;
+  orgId?: string | null;
 }
 
-function extractConditionValue(condition: unknown): string | null {
-  const chunks = (condition as { queryChunks?: unknown[] } | undefined)?.queryChunks;
-  if (!Array.isArray(chunks)) return null;
-  let value: string | null = null;
-  for (const chunk of chunks) {
-    if (chunk && typeof chunk === 'object') {
-      const candidate = (chunk as Record<string, unknown>).value;
-      if (Array.isArray(candidate)) continue;
+/** 收集 where 条件里全部标量绑定值（and(eq(orgId), eq/like(configKey)) 复合语义）。 */
+function extractConditionValues(condition: unknown): string[] {
+  const values: string[] = [];
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (node != null && typeof node === 'object') {
+      const candidate = (node as Record<string, unknown>).value;
       if (
         typeof candidate === 'string' ||
         typeof candidate === 'number' ||
         typeof candidate === 'boolean'
       ) {
-        value = String(candidate);
+        values.push(String(candidate));
+        return;
       }
-      continue;
+      const chunks = (node as { queryChunks?: unknown[] }).queryChunks;
+      if (Array.isArray(chunks)) chunks.forEach(visit);
+      return;
     }
-    if (chunk !== null && typeof chunk !== 'object') value = String(chunk);
-  }
-  return value;
+  };
+  visit(condition);
+  return values;
 }
 
 function createDb(initial: ConfigRow[] = []) {
@@ -37,10 +43,16 @@ function createDb(initial: ConfigRow[] = []) {
   const select = jest.fn(() => ({
     from: jest.fn(() => ({
       where: jest.fn((condition: unknown) => {
-        const value = extractConditionValue(condition) ?? '';
-        const filtered = value.endsWith('.%')
-          ? rows.filter((row) => row.configKey.startsWith(value.slice(0, -1)))
-          : rows.filter((row) => row.configKey === value);
+        // 最小语义：每个绑定值须命中 configKey（前缀 like / 精确 eq）或 orgId。
+        const values = extractConditionValues(condition);
+        const filtered = rows.filter((row) =>
+          values.every((value) => {
+            if (value.endsWith('.%')) {
+              return row.configKey.startsWith(value.slice(0, -1));
+            }
+            return row.configKey === value || row.orgId === value;
+          }),
+        );
         const promise = Promise.resolve(filtered) as Promise<ConfigRow[]> & {
           orderBy?: jest.Mock;
         };
@@ -57,12 +69,14 @@ function createDb(initial: ConfigRow[] = []) {
             configKey: string;
             configValue: unknown;
             updatedBy: string | null;
+            orgId?: string | null;
           };
           const row: ConfigRow = {
             configKey: value.configKey,
             configValue: value.configValue,
             updatedBy: value.updatedBy,
             updatedAt: new Date(Date.now() + seq++),
+            orgId: value.orgId ?? null,
           };
           const index = rows.findIndex((candidate) => candidate.configKey === row.configKey);
           if (index >= 0) rows[index] = row;
@@ -190,7 +204,7 @@ describe('ParametersService', () => {
       actor,
     );
     await service.retire(created.key, actor);
-    const summary = await service.summary();
+    const summary = await service.summary(actor);
     expect(summary.totalCount).toBe(1);
     expect(summary.statusCounts.retired).toBe(1);
     expect(summary.dataTypeCounts.boolean).toBe(1);
@@ -202,6 +216,6 @@ describe('ParametersService', () => {
       db,
       { appendAuditLog: jest.fn() } as never,
     );
-    await expect(service.get('missing')).rejects.toThrow('not found');
+    await expect(service.get('missing', actor)).rejects.toThrow('not found');
   });
 });

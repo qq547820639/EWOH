@@ -29,7 +29,7 @@ export type BaseComboboxTriggerProps = {
   size?: ComboboxSize;
   placeholder?: string;
   renderTrigger?: (props: TriggerRenderProps) => React.ReactNode;
-  maxTagCount?: number | 'responsive';
+  maxTagCount?: number; // CLI-323: 'responsive' 从未实现，已移除
   maxTagTextLength?: number;
   tagClosable?: boolean;
   classNames?: ClassNamesConfig;
@@ -110,15 +110,17 @@ export const BaseComboboxTrigger = ({
   const maxDisplayCount =
     typeof maxTagCount === 'number' ? maxTagCount : Infinity;
 
+  const selectedArray = Array.isArray(selectedValue) ? selectedValue : [];
+
   // 计算隐藏的标签
   const hiddenCount =
-    multiple && Array.isArray(selectedValue) && typeof maxTagCount === 'number'
-      ? Math.max(0, selectedValue.length - maxTagCount)
+    multiple && typeof maxTagCount === 'number'
+      ? Math.max(0, selectedArray.length - maxTagCount)
       : 0;
 
   const hiddenTags =
-    multiple && Array.isArray(selectedValue) && typeof maxTagCount === 'number'
-      ? selectedValue.slice(maxTagCount)
+    multiple && typeof maxTagCount === 'number'
+      ? selectedArray.slice(maxTagCount)
       : [];
 
   // 标签关闭回调
@@ -132,6 +134,29 @@ export const BaseComboboxTrigger = ({
       handleDeselect(value); // 多选模式删除指定项
     }
   };
+
+  // CLI-333：抽取共享渲染（可见标签 + 隐藏标签折叠为 +N tooltip），
+  // renderTag 自定义分支与默认 Badge 分支复用同一结构，消除重复代码。
+  const renderTagList = (render: (item: ItemValue) => React.ReactNode) => (
+    <>
+      {selectedArray.slice(0, maxDisplayCount).map(render)}
+      {hiddenCount > 0 && (
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="secondary"
+              className={cn('h-7 cursor-pointer text-xs', classNames?.tag)}
+            >
+              +{hiddenCount}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent className="w-auto max-w-80 p-2" align="start">
+            <div className="flex flex-wrap gap-1">{hiddenTags.map(render)}</div>
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -158,96 +183,22 @@ export const BaseComboboxTrigger = ({
                 {(selectedValue as ItemValue).name}
               </Badge>
             )
-          ) : multiple &&
-            Array.isArray(selectedValue) &&
-            selectedValue.length > 0 ? (
-            <>
-              {renderTag ? (
-                <>
-                  {selectedValue
-                    .slice(0, maxDisplayCount)
-                    .map((item) =>
-                      renderTag(
-                        item,
-                        handleTagClose,
-                        getOptionDisabled?.(item),
-                      ),
-                    )}
-                  {hiddenCount > 0 && (
-                    <Tooltip delayDuration={200}>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            'h-7 cursor-pointer text-xs',
-                            classNames?.tag,
-                          )}
-                        >
-                          +{hiddenCount}
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        className="w-auto max-w-80 p-2"
-                        align="start"
-                      >
-                        <div className="flex flex-wrap gap-1">
-                          {hiddenTags.map((item) =>
-                            renderTag(
-                              item,
-                              handleTagClose,
-                              getOptionDisabled?.(item),
-                            ),
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </>
-              ) : (
-                <>
-                  {selectedValue.slice(0, maxDisplayCount).map((item) => (
-                    <Badge
-                      key={item.id}
-                      variant="secondary"
-                      className={cn('h-7 text-xs', classNames?.tag)}
-                    >
-                      {item.name}
-                    </Badge>
-                  ))}
-                  {hiddenCount > 0 && (
-                    <Tooltip delayDuration={200}>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            'h-7 cursor-pointer text-xs',
-                            classNames?.tag,
-                          )}
-                        >
-                          +{hiddenCount}
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        className="w-auto max-w-80 p-2"
-                        align="start"
-                      >
-                        <div className="flex flex-wrap gap-1">
-                          {hiddenTags.map((item) => (
-                            <Badge
-                              key={item.id}
-                              variant="secondary"
-                              className={cn('h-7 text-xs', classNames?.tag)}
-                            >
-                              {item.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </>
-              )}
-            </>
+          ) : multiple && selectedArray.length > 0 ? (
+            renderTag ? (
+              renderTagList((item) =>
+                renderTag(item, handleTagClose, getOptionDisabled?.(item)),
+              )
+            ) : (
+              renderTagList((item) => (
+                <Badge
+                  key={item.id}
+                  variant="secondary"
+                  className={cn('h-7 text-xs', classNames?.tag)}
+                >
+                  {item.name}
+                </Badge>
+              ))
+            )
           ) : null}
         </>
       )}

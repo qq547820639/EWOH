@@ -17,15 +17,16 @@ import os
 import shutil
 import sys
 import tempfile
-import threading
 import unittest
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
 # 支持 PYTHONPATH=src 与直接运行两种方式
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# EDT-014：共享 server fixture（本目录加入 path 后可导入）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _fixtures import _ServerFixture  # noqa: E402
 
 from edge_platform import server, stubs  # noqa: E402
 
@@ -34,94 +35,12 @@ def _iso(dt):
     return dt.astimezone().isoformat(timespec="milliseconds")
 
 
-class _ServerFixture:
-    """真实 HTTP server（随机端口），与 test_api_endpoints 相同的装配方式。"""
-
-    def __init__(self):
-        self.tmp = tempfile.mkdtemp(prefix="ewoh_routes_")
-        self.db_path = Path(self.tmp) / "test.db"
-        self.storage = stubs.Storage(self.db_path)
-        stubs.seed_base(self.storage)
-        now = datetime.now().astimezone()
-        self.storage.insert_telemetry(
-            {
-                "record_id": "TS-RT-001",
-                "device_id": "EXO-001",
-                "timestamp": _iso(now),
-                "sequence": 1,
-                "source_type": "simulated",
-                "telemetry": {"pitch_deg": 5.0, "load_score": 0.3, "battery_pct": 85},
-                "quality": {"status": "good"},
-            }
-        )
-        self.storage.insert_event(
-            {
-                "event_id": "EVT-RT0001",
-                "event_code": "LOAD_CONTINUOUS",
-                "severity": "L2",
-                "status": "open",
-                "person_id": "P-001",
-                "device_id": "EXO-001",
-                "start_time": _iso(now),
-                "trigger": {"type": "rule", "condition": "连续高负荷"},
-                "evidence": {"window_before_sec": 30, "window_after_sec": 30},
-                "source_type": "simulated",
-            }
-        )
-        bus = stubs.Bus()
-        registry = stubs.ModelRegistry(Path(self.tmp) / "models")
-        rules = stubs.RuleEngine("risk-rule-stub-0.1", {})
-        pipeline = stubs.InferencePipeline(self.storage, bus, registry, rules)
-        manager = stubs.AdapterManager(self.storage, bus)
-        self.ctx = server.Context(
-            self.storage, bus=bus, pipeline=pipeline, registry=registry, rules=rules, manager=manager
-        )
-        self.httpd = server.build_server(("127.0.0.1", 0), self.ctx)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
-        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
-
-    def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=3)
-        self.storage.close()
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def req(self, path, method="GET", body=None, headers=None):
-        """发起请求，返回 (status, headers, body_dict)。"""
-        data = json.dumps(body).encode() if body is not None else None
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=data, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                raw = resp.read().decode()
-                return resp.status, resp.headers, (json.loads(raw) if raw else {})
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode()
-            return e.code, e.headers, (json.loads(raw) if raw else {})
-
-    def raw(self, path, method="GET", body_bytes=None, headers=None):
-        """发起原始字节请求，返回 (status, headers, body_bytes)。"""
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=body_bytes, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                return resp.status, resp.headers, resp.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.headers, e.read()
-
-
 class RouteContractCharacterizationTest(unittest.TestCase):
     """重构后关键端点契约：状态码 + 响应形状 + 错误信封 + 回退行为。"""
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_routes_", telemetry_record_id="TS-RT-001", event_id="EVT-RT0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -212,14 +131,59 @@ class RouteContractCharacterizationTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("items", body)
 
-    def test_post_tasks_confirm_envelope(self):
+    def test_post_tasks_confirm_success_200(self):
+        """EDT-004：成功确认路径钉死 200（原 assertIn((200,409)) 双解接受）。
+
+        前置：关闭种子事件 EVT-RT0001（P-001 的未处置 L2 事件会触发
+        "高风险未解除"硬约束拦截——那是 409 拦截路径，在下方独立用例钉死）。
+        """
+        self.fx.storage.update_event_status(
+            "EVT-RT0001", "closed", {"handled_by": "leader1", "action": "close"}
+        )
         status, _, body = self.fx.req(
             "/api/tasks/confirm",
             method="POST",
-            body={"task_id": "T-CONF", "required_skill": "搬运", "zone_id": "月台A"},
+            body={
+                "task_id": "T-CONF-OK",
+                "person_id": "P-001",
+                "required_skill": "搬运",
+                "zone_id": "月台A",
+                "confirmer": "leader1",
+            },
         )
-        self.assertIn(status, (200, 409))
-        self.assertIn("ok", body)
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["assignment"]["person_id"], "P-001")
+        self.assertEqual(body["assignment"]["status"], "confirmed")
+
+    def test_post_tasks_confirm_hard_constraint_409(self):
+        """EDT-004：硬约束拦截（高风险未解除）→ 钉死 409 + blocked_by 可解释。"""
+        status, _, body = self.fx.req(
+            "/api/tasks/confirm",
+            method="POST",
+            body={
+                "task_id": "T-CONF-BLOCK",
+                "person_id": "P-001",
+                "required_skill": "搬运",
+                "zone_id": "月台A",
+                "confirmer": "leader1",
+            },
+        )
+        self.assertEqual(status, 409, body)
+        self.assertFalse(body["ok"])
+        self.assertIn("blocked_by", body)
+        self.assertTrue(any("高风险" in b for b in body["blocked_by"]))
+
+    def test_post_tasks_confirm_missing_confirmer_409(self):
+        """EDT-004：缺确认人被拒 → 钉死 409（禁止自动派工）。"""
+        status, _, body = self.fx.req(
+            "/api/tasks/confirm",
+            method="POST",
+            body={"task_id": "T-CONF-409", "required_skill": "搬运", "zone_id": "月台A"},
+        )
+        self.assertEqual(status, 409, body)
+        self.assertFalse(body["ok"])
+        self.assertIn("确认人", body["error"])
 
     def test_get_tasks_without_scheduler_503_envelope(self):
         # 未装配调度服务：业务层返回 503 not_ready，统一错误信封结构稳定
@@ -261,10 +225,12 @@ class RouteContractCharacterizationTest(unittest.TestCase):
         self.assertEqual(body, {"error": "not found"})
 
     def test_get_unknown_api_path_static_fallback(self):
-        # 原 do_GET 未命中分支：super().do_GET() 静态文件回退（/api/* → index.html，200）
-        status, headers, _ = self.fx.raw("/api/no-such-route")
-        self.assertEqual(status, 200)
-        self.assertIn("text/html", headers.get("Content-Type", ""))
+        # EDGE-025 整改后契约：未命中的 /api/* GET 返回 404 JSON（不再回退 SPA
+        # index.html 200——与 POST 未命中 404 JSON 口径一致，消除 GET/POST 不对称）。
+        status, headers, body = self.fx.raw("/api/no-such-route")
+        self.assertEqual(status, 404)
+        self.assertIn("application/json", headers.get("Content-Type", ""))
+        self.assertEqual(json.loads(body), {"error": "not found"})
 
     def test_post_unknown_body_too_large_precedence(self):
         # 1MB 上限判定先于路由分发（原 do_POST 先 read_json 再派发）

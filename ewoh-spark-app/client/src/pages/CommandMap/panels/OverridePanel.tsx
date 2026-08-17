@@ -512,7 +512,18 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
       </ScrollArea>
 
       {/* Task 10 / 10.2：执行前预览 Dialog（previewOverrides dry-run，确认后才真正提交） */}
-      <Dialog open={previewOpen} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          // CLI-026：关闭时重置全部 preview 状态（loading/error 一并清除，
+          // 原实现仅 setPreview(null)，previewLoading 残留导致按钮持续禁用）。
+          if (!open) {
+            setPreview(null);
+            setPreviewError(null);
+            setPreviewLoading(false);
+          }
+        }}
+      >
         <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-white">覆盖影响预览</DialogTitle>

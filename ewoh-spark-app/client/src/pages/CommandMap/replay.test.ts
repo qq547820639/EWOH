@@ -34,6 +34,25 @@ describe('replay helpers', () => {
     expect(findNearestSnapshot([], '2026-08-03T00:00:00.000Z')).toBeNull();
   });
 
+  it('CLI-730：covers out-of-range and single-element snapshots', () => {
+    // 目标时间早于全部快照 → 最近的仍是第一张。
+    expect(findNearestSnapshot(snapshots, '2026-08-02T23:00:00.000Z')?.ts).toBe(
+      '2026-08-03T00:00:00.000Z',
+    );
+    // 目标时间晚于全部快照 → 最近的仍是最后一张。
+    expect(findNearestSnapshot(snapshots, '2026-08-03T12:00:00.000Z')?.ts).toBe(
+      '2026-08-03T00:02:00.000Z',
+    );
+    // 单元素快照：任何目标时间都命中唯一一张。
+    const single: ReplaySnapshot[] = [snapshots[1]];
+    expect(findNearestSnapshot(single, '2026-08-03T00:00:30.000Z')?.ts).toBe(
+      '2026-08-03T00:01:00.000Z',
+    );
+    expect(findNearestSnapshot(single, '2026-08-03T00:01:00.000Z')?.ts).toBe(
+      '2026-08-03T00:01:00.000Z',
+    );
+  });
+
   it('advances to the next snapshot and wraps around', () => {
     expect(advanceReplayTime(snapshots, '2026-08-03T00:00:00.000Z')).toBe(
       '2026-08-03T00:01:00.000Z',

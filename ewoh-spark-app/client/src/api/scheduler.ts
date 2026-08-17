@@ -73,7 +73,7 @@ export async function injectSchedulingEvent(
 
 /** 查询调度运行记录。 */
 export async function getRun(runId: string): Promise<SchedulingRun | null> {
-  const res = await axiosForBackend({ url: `/api/scheduler/runs/${runId}`, method: 'GET' });
+  const res = await axiosForBackend({ url: `/api/scheduler/runs/${encodeURIComponent(runId)}`, method: 'GET' });
   return res.data;
 }
 
@@ -124,7 +124,7 @@ export async function getSchedulerContext(): Promise<SchedulingContextResponse> 
 
 /** 获取完整方案（含分配明细）。 */
 export async function getPlan(planId: string): Promise<SchedulingPlanV2> {
-  const res = await axiosForBackend({ url: `/api/scheduler/plans/${planId}`, method: 'GET' });
+  const res = await axiosForBackend({ url: `/api/scheduler/plans/${encodeURIComponent(planId)}`, method: 'GET' });
   return res.data;
 }
 
@@ -134,7 +134,7 @@ export async function approvePlan(
   body: ApprovePlanRequest,
 ): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/approve`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/approve`,
     method: 'POST',
     data: body,
   });
@@ -147,7 +147,7 @@ export async function rejectPlanV2(
   body: RejectPlanRequest,
 ): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/reject`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/reject`,
     method: 'POST',
     data: body,
   });
@@ -160,7 +160,7 @@ export async function dispatchPlanV2(
   operator?: string,
 ): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/dispatch`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/dispatch`,
     method: 'POST',
     data: operator ? { operator } : {},
   });
@@ -173,7 +173,7 @@ export async function replan(
   body: ReplanRequest,
 ): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/replan`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/replan`,
     method: 'POST',
     data: body,
   });
@@ -205,7 +205,7 @@ export async function applyPlanOverrides(
   body: PlanOverrideRequest,
 ): Promise<PlanOverrideResponse> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/overrides`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/overrides`,
     method: 'POST',
     data: body,
   });
@@ -222,7 +222,7 @@ export async function previewOverrides(
   body: PlanOverrideRequest,
 ): Promise<OverridePreviewResponse> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/overrides/preview`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/overrides/preview`,
     method: 'POST',
     data: body,
   });
@@ -235,7 +235,7 @@ export async function comparePlans(
   otherPlanId: string,
 ): Promise<Record<string, unknown>> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/plans/${planId}/compare/${otherPlanId}`,
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/compare/${encodeURIComponent(otherPlanId)}`,
     method: 'GET',
   });
   return res.data;
@@ -322,7 +322,7 @@ export async function getConflictDetail(
   conflictId: string,
 ): Promise<SchedulingConflict> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/conflicts/${conflictId}`,
+    url: `/api/scheduler/conflicts/${encodeURIComponent(conflictId)}`,
     method: 'GET',
   });
   return res.data;
@@ -334,7 +334,7 @@ export async function acknowledgeConflict(
   body: { operator: string; reason: string },
 ): Promise<SchedulingConflict> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/conflicts/${conflictId}/acknowledge`,
+    url: `/api/scheduler/conflicts/${encodeURIComponent(conflictId)}/acknowledge`,
     method: 'POST',
     data: body,
   });
@@ -347,7 +347,7 @@ export async function resolveConflict(
   body: { operator: string; reason: string; resolution?: string },
 ): Promise<SchedulingConflict> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/conflicts/${conflictId}/resolve`,
+    url: `/api/scheduler/conflicts/${encodeURIComponent(conflictId)}/resolve`,
     method: 'POST',
     data: body,
   });
@@ -360,7 +360,7 @@ export async function suppressConflict(
   body: { operator: string; reason: string; suppressUntilMs?: number },
 ): Promise<SchedulingConflict> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/conflicts/${conflictId}/suppress`,
+    url: `/api/scheduler/conflicts/${encodeURIComponent(conflictId)}/suppress`,
     method: 'POST',
     data: body,
   });
@@ -407,7 +407,7 @@ export async function comparePolicyVersion(
   version: number,
 ): Promise<SchedulingPolicyComparison> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/versions/${version}/compare`,
+    url: `/api/scheduler/policy/versions/${encodeURIComponent(version)}/compare`,
     method: 'GET',
   });
   return res.data;
@@ -419,7 +419,7 @@ export async function activatePolicyVersion(
   operator?: string,
 ): Promise<{ config: SchedulingPolicyConfig }> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/versions/${version}/activate`,
+    url: `/api/scheduler/policy/versions/${encodeURIComponent(version)}/activate`,
     method: 'POST',
     data: operator ? { operator } : {},
   });
@@ -508,7 +508,7 @@ export async function enableShadowPolicy(
   operator?: string,
 ): Promise<{ ok: boolean; status: string; policyVersion: number }> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/${version}/shadow`,
+    url: `/api/scheduler/policy/${encodeURIComponent(version)}/shadow`,
     method: 'POST',
     data: operator ? { operator } : {},
   });
@@ -519,7 +519,7 @@ export async function generateShadowPlan(
   version: number,
 ): Promise<{ shadowPlan: SchedulingPlanV2; compare: PlanCompareResult | null }> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/${version}/shadow/plan`,
+    url: `/api/scheduler/policy/${encodeURIComponent(version)}/shadow/plan`,
     method: 'POST',
   });
   return res.data;
@@ -530,7 +530,7 @@ export async function evaluatePolicyGate(
   replayId?: string,
 ): Promise<PolicyGateEvaluation> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/${version}/gate`,
+    url: `/api/scheduler/policy/${encodeURIComponent(version)}/gate`,
     method: 'POST',
     data: replayId ? { replayId } : {},
   });
@@ -542,7 +542,7 @@ export async function activatePolicy(
   body: { operator: string; reason?: string; replayId?: string },
 ): Promise<PolicyActivationRecord> {
   const res = await axiosForBackend({
-    url: `/api/scheduler/policy/${version}/activate`,
+    url: `/api/scheduler/policy/${encodeURIComponent(version)}/activate`,
     method: 'POST',
     data: body,
   });

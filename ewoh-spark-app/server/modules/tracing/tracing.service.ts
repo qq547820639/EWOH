@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, lt, asc, sql } from 'drizzle-orm';
+import { desc, eq, lt, asc, sql, and } from 'drizzle-orm';
 import { ewohTraceSpan, ewohEvent, ewohAuditLog } from '@server/database/schema';
 
 export interface TraceRecord {
@@ -113,19 +113,32 @@ export class TracingService {
     }
   }
 
-  /** 三面缝合（§19）：spans + events（envelope correlationId）+ audit（request_id）。 */
-  async getTrace(traceId: string): Promise<TraceStitch> {
+  /** 三面缝合（§19）：spans + events（envelope correlationId）+ audit（request_id）。
+   * NEST-624（2026-08-17 审计整改）：三面查询均带 org 谓词（原先按 traceId
+   * 跨租户缝合）。 */
+  async getTrace(traceId: string, actor?: { primaryOrgId?: string; isGlobalAdmin?: boolean }): Promise<TraceStitch> {
     const empty: TraceStitch = { traceId, spans: [], events: [], audit: [] };
     if (!this.db) {
       empty.spans = this.records.filter((r) => r.traceId === traceId);
       return empty;
+    }
+    const orgId = actor?.isGlobalAdmin ? null : actor?.primaryOrgId?.trim() ?? null;
+    if (orgId === null) {
+      throw new BadRequestException(
+        'org context missing: trace stitching requires tenant context',
+      );
     }
     try {
       const [spans, events, audit] = await Promise.all([
         this.db
           .select()
           .from(ewohTraceSpan)
-          .where(eq(ewohTraceSpan.traceId, traceId))
+          .where(
+            and(
+              eq(ewohTraceSpan.traceId, traceId),
+              eq(ewohTraceSpan.orgId, orgId),
+            ),
+          )
           .orderBy(desc(ewohTraceSpan.startedAt))
           .limit(200),
         // ADR-078：drizzle 类型安全路径（消除 public. 硬编码）。
@@ -140,7 +153,12 @@ export class TracingService {
             correlation_id: sql`evidence_json->'envelope'->>'correlationId'`,
           })
           .from(ewohEvent)
-          .where(sql`evidence_json->'envelope'->>'correlationId' = ${traceId}`)
+          .where(
+            and(
+              sql`evidence_json->'envelope'->>'correlationId' = ${traceId}`,
+              eq(ewohEvent.orgId, orgId),
+            ),
+          )
           .orderBy(asc(ewohEvent.createdAt))
           .limit(200),
         this.db
@@ -153,7 +171,12 @@ export class TracingService {
             request_id: ewohAuditLog.requestId,
           })
           .from(ewohAuditLog)
-          .where(eq(ewohAuditLog.requestId, traceId))
+          .where(
+            and(
+              eq(ewohAuditLog.requestId, traceId),
+              eq(ewohAuditLog.orgId, orgId),
+            ),
+          )
           .orderBy(asc(ewohAuditLog.occurredAt))
           .limit(200),
       ]);

@@ -386,7 +386,7 @@ function arbValidateWorkOrder(record) {
   }
   if (!woOriginKinds.has(origin.kind)) return ['unknown_origin_kind'];
   if (typeof origin.id !== 'string' || origin.id === '') return ['bad_origin_id'];
-  if (typeof record.subjectEntityId !== 'string' || !/^[a-z][a-z0-9_]*:[^\\s]+$/.test(record.subjectEntityId)) return ['bad_subject'];
+  if (typeof record.subjectEntityId !== 'string' || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(record.subjectEntityId)) return ['bad_subject'];
   if (typeof record.severity !== 'string') return ['unknown_severity'];
   const ladder = riskSchema.severityLadder;
   const legacy = riskSchema.legacySeverityMap;
@@ -425,7 +425,7 @@ function arbValidateInference(record) {
     if (!(field in record)) return [`missing_field:${field}`];
   }
   if (typeof record.inferenceId !== 'string' || record.inferenceId === '') return ['bad_inference_id'];
-  if (typeof record.subjectId !== 'string' || !/^[a-z][a-z0-9_]*:[^\\s]+$/.test(record.subjectId)) return ['bad_subject'];
+  if (typeof record.subjectId !== 'string' || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(record.subjectId)) return ['bad_subject'];
   if (!intelLevels.has(record.level)) return ['unknown_level'];
   for (const key of ['modelId', 'modelVersion', 'inputVersion']) {
     if (typeof record[key] !== 'string' || record[key] === '') return [`bad_${key}`];
@@ -475,7 +475,7 @@ function arbValidateReasoning(record) {
   for (const key of ['modelId', 'modelVersion', 'inputVersion']) {
     if (typeof record[key] !== 'string' || record[key] === '') return [`bad_${key}`];
   }
-  if (record.subjectId != null && (typeof record.subjectId !== 'string' || !/^[a-z][a-z0-9_]*:[^\\s]+$/.test(record.subjectId))) return ['bad_subject'];
+  if (record.subjectId != null && (typeof record.subjectId !== 'string' || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(record.subjectId))) return ['bad_subject'];
   if (typeof record.content !== 'string') return ['bad_content'];
   if (typeof record.ok !== 'boolean') return ['bad_ok'];
   if (record.ok === true) {
@@ -507,7 +507,7 @@ const traceRules = new Set(traceSchema.ruleRegistry);
 const traceSeverities = new Set(traceSchema.severityRegistry);
 const traceBases = new Set(traceSchema.confidenceBasisRegistry);
 function arbIsCanonicalId(value) {
-  return typeof value === 'string' && /^[a-z][a-z0-9_]*:[^\\s]+$/.test(value);
+  return typeof value === 'string' && /^[a-z][a-z0-9_]*:[^\s]+$/.test(value);
 }
 function arbValidateTrace(record) {
   if (record == null || typeof record !== 'object' || Array.isArray(record)) return ['record_must_be_object'];
@@ -778,14 +778,23 @@ for (const c of simVectors.records) {
     flow: jsFlow(flowCase.stations),
   };
   try {
+    // SCR-041: 用例数据经 stdin 传入（json.load(sys.stdin)），不再拼入 python -c 字符串。
+    const payload = JSON.stringify({
+      capacityStations: capacityCase.stations,
+      capacityDemand: capacityCase.demandPerHour,
+      layoutStations: layoutCase.stations,
+      layoutMoves: layoutCase.moves,
+      flowStations: flowCase.stations,
+    });
     const pyEval = execFileSync(
       'python3',
       ['-c',
         "import json,sys; sys.path.insert(0,'src'); from edge_platform.contracts import simulation_run as s; "
-        + "print(json.dumps({'capacity': s.evaluate_capacity(" + JSON.stringify(capacityCase.stations) + ", " + capacityCase.demandPerHour + "), "
-        + "'layout': s.evaluate_layout(" + JSON.stringify(layoutCase.stations) + ", " + JSON.stringify(layoutCase.moves) + "), "
-        + "'flow': s.evaluate_material_flow(" + JSON.stringify(flowCase.stations) + ")}))"],
-      { cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, PYTHONPATH: path.join(REPO_ROOT, 'src') } },
+        + "d = json.load(sys.stdin); "
+        + "print(json.dumps({'capacity': s.evaluate_capacity(d['capacityStations'], d['capacityDemand']), "
+        + "'layout': s.evaluate_layout(d['layoutStations'], d['layoutMoves']), "
+        + "'flow': s.evaluate_material_flow(d['flowStations'])}))"],
+      { cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, PYTHONPATH: path.join(REPO_ROOT, 'src') }, input: payload },
     ).trim();
     const actual = JSON.parse(pyEval);
     check('simulation_evaluator_capacity', JSON.stringify(actual.capacity) === JSON.stringify(expected.capacity), 'js vs python mismatch');
@@ -918,13 +927,15 @@ for (const c of proposalVectors.records) {
     ['loosen_high', 0.7, 0.95, shadowFacts],
   ];
   try {
+    // SCR-041: 用例数据经 stdin 传入（json.load(sys.stdin)），不再拼入 python -c 字符串。
+    const payload = JSON.stringify(shadowCases.map(([, b, c, facts]) => [b, c, facts]));
     const pyShadow = execFileSync(
       'python3',
       ['-c',
         "import json,sys; sys.path.insert(0,'src'); from edge_platform.contracts import learning_proposal as lp; "
-        + "cases = " + JSON.stringify(shadowCases.map(([name, b, c, facts]) => [b, c, facts])) + "; "
+        + "cases = json.load(sys.stdin); "
         + "print(json.dumps([lp.evaluate_rule_threshold_shadow('rule:worker-overload', b, c, f) for (b, c, f) in cases]))"],
-      { cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, PYTHONPATH: path.join(REPO_ROOT, 'src') } },
+      { cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, PYTHONPATH: path.join(REPO_ROOT, 'src') }, input: payload },
     ).trim();
     const actual = JSON.parse(pyShadow);
     for (let i = 0; i < shadowCases.length; i += 1) {
@@ -1416,7 +1427,7 @@ function arbValidateEntity(record) {
   for (const field of ['entityId', 'kind', 'tenantId', 'factoryId', 'timeSemantics', 'status', 'source', 'version']) {
     if (!(field in record)) return [`missing_field:${field}`];
   }
-  if (typeof record.entityId !== 'string' || !/^[a-z][a-z0-9_]*:[^\\s]+$/.test(record.entityId)) return ['bad_entity_id'];
+  if (typeof record.entityId !== 'string' || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(record.entityId)) return ['bad_entity_id'];
   if (!entityKinds.has(record.kind)) return ['unknown_kind'];
   // kind 前缀一致性（ADR-015 投影分工）：kind:value 的 kind 部分即实体类别。
   const prefix = String(record.entityId).split(':')[0];
@@ -1439,7 +1450,7 @@ function arbValidateEntity(record) {
   for (const key of ['refs', 'eventRefs']) {
     const refs = record[key];
     if (refs == null) continue;
-    if (!Array.isArray(refs) || refs.some((x) => typeof x !== 'string' || !/^[a-z][a-z0-9_]*:[^\\s]+$/.test(x))) return ['bad_ref'];
+    if (!Array.isArray(refs) || refs.some((x) => typeof x !== 'string' || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(x))) return ['bad_ref'];
   }
   return [];
 }

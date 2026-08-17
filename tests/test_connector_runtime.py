@@ -431,7 +431,8 @@ class TestModbus(unittest.TestCase):
 
 
 class TestWebhook(unittest.TestCase):
-    def test_signature_verification_is_constant_time(self):
+    def test_signature_verification_accepts_valid_and_rejects_wrong_secret(self):
+        # 正确性语义验证（恒时性由实现侧 hmac.compare_digest 保证，见 webhook 适配器实现）
         payload = b'{"deviceId":"CNC-01"}'
         signature = hmac.new(b"secret", payload, hashlib.sha256).hexdigest()
         self.assertTrue(verify_webhook_signature(payload, signature, "secret"))

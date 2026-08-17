@@ -90,3 +90,39 @@ test('未配置飞书 → recordFeishuSync(false, no config)（既有行为保�
   assert.strictEqual(r.error, 'no config');
   assert.strictEqual(recorded[recorded.length - 1].ok, false);
 });
+
+// FS-008：全量同步互斥 —— 上一轮仍在途时本轮跳过（skipped），且不污染健康状态
+test('FS-008: 上一轮全量同步在途 → 本轮 skipped，不调用 recordFeishuSync', async () => {
+  recorded.length = 0;
+  // 让批量写入挂起，制造"上一轮仍在进行"
+  let releaseBatch = null;
+  const oldBatch = fakeFeishu.baseRecordBatchCreate;
+  fakeFeishu.baseRecordBatchCreate = () => new Promise((resolve) => { releaseBatch = resolve; });
+  const oldSearch = fakeFeishu.baseRecordSearch;
+  fakeFeishu.baseRecordSearch = () => [];
+
+  const first = sync.syncAllToFeishu(
+    fakeDb([{ device_id: 'd1' }], [], [{ device_id: 'd1', ts: 1 }])
+  );
+  // 等待微任务推进使第一轮确实进入在途状态
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const second = await sync.syncAllToFeishu(
+    fakeDb([{ device_id: 'd1' }], [], [{ device_id: 'd1', ts: 1 }])
+  );
+  assert.strictEqual(second.skipped, true, '在途时第二轮应跳过');
+  assert.strictEqual(second.ok, false);
+  assert.strictEqual(
+    recorded.length, 0,
+    'skipped 不得计入健康状态（recordFeishuSync 不应被调用）'
+  );
+
+  // 放行第一轮并确认正常完成、健康状态如实记录
+  releaseBatch({ ok: true });
+  const r1 = await first;
+  assert.strictEqual(r1.ok, true);
+  assert.strictEqual(recorded[recorded.length - 1].ok, true);
+
+  fakeFeishu.baseRecordBatchCreate = oldBatch;
+  fakeFeishu.baseRecordSearch = oldSearch;
+});

@@ -45,6 +45,8 @@ function makeHarness(): ControllerHarness {
     start: jest.fn().mockResolvedValue(undefined),
     events: jest.fn(() => subject.asObservable()),
     replaySince: jest.fn(),
+    // NEST-113（2026-08-17）：无 org 上下文的重放路径走 currentSequence（resync）。
+    currentSequence: jest.fn().mockResolvedValue(0),
   };
   const controller = new SchedulerController(
     {} as unknown as SchedulerService,
@@ -87,11 +89,12 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     });
 
     const collected: MessageEvent[] = [];
-    const sub = controller.stream('5').subscribe((m) => collected.push(m));
+    const sub = controller.stream('5', { userContext: { userId: 'u1', primaryOrgId: 'org1' } }).subscribe((m) => collected.push(m));
     await flush();
 
     // 重放增量事件先到达（sequence 升序），无 resync。
-    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, null);
+    // NEST-113（2026-08-17）：认证订阅者 → 重放按 viewerOrg 过滤（此前匿名订阅者拿到全租户事件）。
+    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, 'org1');
     expect(collected.some((m) => m.type === 'resync')).toBe(false);
     expect(schedulingEvents(collected).map((e) => e.sequence)).toEqual([6, 7]);
 
@@ -116,10 +119,11 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     });
 
     const collected: MessageEvent[] = [];
-    const sub = controller.stream('5').subscribe((m) => collected.push(m));
+    const sub = controller.stream('5', { userContext: { userId: 'u1', primaryOrgId: 'org1' } }).subscribe((m) => collected.push(m));
     await flush();
 
-    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, null);
+    // NEST-113（2026-08-17）：认证订阅者 → 重放按 viewerOrg 过滤（此前匿名订阅者拿到全租户事件）。
+    expect(streamSvc.replaySince).toHaveBeenCalledWith(5, 5, 'org1');
     const resync = collected.find((m) => m.type === 'resync');
     expect(resync).toBeDefined();
     const data = JSON.parse(String(resync?.data)) as { currentSequence: number; reason: string };
@@ -156,7 +160,7 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     const { controller, streamSvc, subject } = makeHarness();
 
     const collected: MessageEvent[] = [];
-    const sub = controller.stream(undefined).subscribe((m) => collected.push(m));
+    const sub = controller.stream(undefined, { userContext: { userId: 'u1', primaryOrgId: 'org1' } }).subscribe((m) => collected.push(m));
     await flush();
 
     expect(streamSvc.replaySince).not.toHaveBeenCalled();

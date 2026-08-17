@@ -7,9 +7,11 @@ import { validateKnowledgeEntry } from '@shared/knowledge-entry';
 import { isCanonicalIdentity } from '@shared/identity';
 import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
 import { currentTraceId } from '@server/common/request-context';
+// NEST-434：哨兵常量统一登记（server/common/org-sentinels.ts），本模块再导出保持兼容。
+import { PLATFORM_SHARED_ORG_ID as SHARED_SENTINEL } from '@server/common/org-sentinels';
 
 /** 平台保留哨兵 org：共享层（global/industry）条目的归属（ADR-018 Amendment 1 决策 2）。 */
-export const PLATFORM_SHARED_ORG_ID = '00000000-0000-4000-8000-000000000000';
+export const PLATFORM_SHARED_ORG_ID = SHARED_SENTINEL;
 
 export const SHARED_KNOWLEDGE_SCOPES = ['global', 'industry'] as const;
 export const TENANT_KNOWLEDGE_SCOPES = ['customer', 'factory', 'private_operational'] as const;

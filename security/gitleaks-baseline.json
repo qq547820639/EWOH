@@ -1,13 +1,13 @@
 [
  {
   "RuleID": "generic-api-key",
-  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "Description": "Historical leftover, demo-only Feishu Base token (ewoh-feishu-app simulator). Rotated and removed from source at commit 762e28a per docs/reviews/close-production-truth-ux-report.md; kept as baseline entry to suppress full-history scans. Plaintext redacted 2026-08-17 (audit CFG-008); baseline matching is fingerprint-based so suppression is unaffected.",
   "StartLine": 2,
   "EndLine": 2,
   "StartColumn": 5,
   "EndColumn": 46,
-  "Match": "base_token\": \"WQmbbeplMaGffVsjtW0cTgAMn5c\"",
-  "Secret": "WQmbbeplMaGffVsjtW0cTgAMn5c",
+  "Match": "[REDACTED-2026-08-17]",
+  "Secret": "[REDACTED-2026-08-17]",
   "File": "ewoh-feishu-app/feishu-config.json",
   "SymlinkFile": "",
   "Commit": "762e28a49403a9224bc2f9a836c90c4d2bd2efad",

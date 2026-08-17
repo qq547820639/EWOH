@@ -107,6 +107,8 @@ describe('页面接线与源码一致性（fixture 佐证）', () => {
 
   it('Alerts 接线 offline（OfflineState）与 success（toast）', () => {
     expect(sourceHas('Alerts', 'OfflineState')).toBe(true);
-    expect(sourceHas('Alerts', "toast.success('告警状态已更新')")).toBe(true);
+    // CLI-228：断言改为接线模式（toast.success 调用存在），
+    // 不再绑定具体文案（文案微调即破坏测试）。
+    expect(sourceHas('Alerts', 'toast.success(')).toBe(true);
   });
 });

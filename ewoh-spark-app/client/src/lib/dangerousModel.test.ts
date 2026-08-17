@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   DANGEROUS_IDLE,
   UNDO_WINDOW_MS,
@@ -111,6 +113,13 @@ describe('dangerousModel (危险操作状态机)', () => {
     expect(createDangerIdempotencyKey('delete', 'workbench-view', 'a')).not.toBe(
       createDangerIdempotencyKey('delete', 'workbench-view', 'b'),
     );
+  });
+
+  it('CLI-517: 幂等键与 node:crypto SHA-256 一致（实现正确性）', () => {
+    const expected = createHash('sha256')
+      .update('danger:delete:workbench-view:operator.mySteps')
+      .digest('hex');
+    expect(createDangerIdempotencyKey('delete', 'workbench-view', 'operator.mySteps')).toBe(expected);
   });
 
   it('isUndoable reflects the deadline window', () => {

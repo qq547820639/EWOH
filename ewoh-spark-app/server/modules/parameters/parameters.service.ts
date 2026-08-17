@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -85,6 +85,35 @@ function plainKey(configKey: string): string {
   return configKey.startsWith('param.') ? configKey.slice('param.'.length) : configKey;
 }
 
+/**
+ * NEST-646（2026-08-17 审计整改）：管理员可配置的 pattern 做复杂度防护——
+ * 长度上限 + 量词总数上限 + 锚点包裹后再 test（把回溯爆炸风险控制在
+ * 有界输入上；恶意超复杂 pattern 显式拒绝而非静默执行）。
+ */
+const MAX_PATTERN_LENGTH = 256;
+const MAX_PATTERN_QUANTIFIERS = 32;
+
+function testPatternSafe(pattern: string, value: string): boolean {
+  if (pattern.length > MAX_PATTERN_LENGTH) {
+    throw new BadRequestException(
+      `validation.pattern too long (max ${MAX_PATTERN_LENGTH} chars)`,
+    );
+  }
+  const quantifierCount = (pattern.match(/[*+{?]/g) ?? []).length;
+  if (quantifierCount > MAX_PATTERN_QUANTIFIERS) {
+    throw new BadRequestException(
+      `validation.pattern too complex (max ${MAX_PATTERN_QUANTIFIERS} quantifiers)`,
+    );
+  }
+  try {
+    return new RegExp(pattern).test(value);
+  } catch (error) {
+    throw new BadRequestException(
+      `invalid validation.pattern: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 function validateValue(
   dataType: ParameterDataType,
   value: unknown,
@@ -116,7 +145,11 @@ function validateValue(
   if (validation?.enum && !validation.enum.some((item) => item === value)) {
     throw new BadRequestException(`value is not in allowed enum ${JSON.stringify(validation.enum)}`);
   }
-  if (validation?.pattern && typeof value === 'string' && !new RegExp(validation.pattern).test(value)) {
+  if (
+    validation?.pattern &&
+    typeof value === 'string' &&
+    !testPatternSafe(validation.pattern, value)
+  ) {
     throw new BadRequestException(`value does not match pattern ${validation.pattern}`);
   }
 }
@@ -127,6 +160,23 @@ export class ParametersService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
   ) {}
+
+  /**
+   * NEST-641（2026-08-17 审计整改）：参数读面 org 谓词（ewoh_scheduler_config
+   * 行按 (orgId, configKey) 隔离；global_admin 放行）。
+   */
+  private orgCondition(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: parameter operations require tenant context',
+      );
+    }
+    return eq(ewohSchedulerConfig.orgId, orgId);
+  }
 
   private parseParameter(row: ConfigRow): ParameterValue {
     const fallback: ParameterValue = {
@@ -155,12 +205,16 @@ export class ParametersService {
     value: ParameterValue,
     actor?: OrgContext,
   ): Promise<ParameterValue> {
+    // NEST-641：写入显式 orgId（冲突目标 (orgId, configKey)，原先 values
+    // 不带 orgId 依赖 GUC 默认）。
+    const orgId = actor?.primaryOrgId?.trim();
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey: configKeyFor(value.key),
         configValue: value as unknown as Record<string, unknown>,
         updatedBy: actor?.userId ?? 'system',
+        ...(orgId ? { orgId } : {}),
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -173,11 +227,16 @@ export class ParametersService {
     return this.parseParameter(row);
   }
 
-  private async readParameter(key: string): Promise<ParameterValue> {
+  private async readParameter(key: string, actor?: OrgContext): Promise<ParameterValue> {
+    const orgCond = this.orgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, configKeyFor(key)));
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulerConfig.configKey, configKeyFor(key)), orgCond)
+          : eq(ewohSchedulerConfig.configKey, configKeyFor(key)),
+      );
     if (!row) {
       throw new NotFoundException(`Parameter ${key} not found`);
     }
@@ -246,17 +305,23 @@ export class ParametersService {
     return saved;
   }
 
-  async list() {
+  async list(actor?: OrgContext) {
+    // NEST-641：org 过滤（global_admin 放行）。
+    const orgCond = this.orgCondition(actor);
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, 'param.%'))
+      .where(
+        orgCond
+          ? and(like(ewohSchedulerConfig.configKey, 'param.%'), orgCond)
+          : like(ewohSchedulerConfig.configKey, 'param.%'),
+      )
       .orderBy(desc(ewohSchedulerConfig.updatedAt));
     return rows.map((row) => this.parseParameter(row));
   }
 
-  async get(key: string) {
-    return this.readParameter(key);
+  async get(key: string, actor?: OrgContext) {
+    return this.readParameter(key, actor);
   }
 
   async update(
@@ -269,7 +334,7 @@ export class ParametersService {
     },
     actor?: OrgContext,
   ) {
-    const current = await this.readParameter(key);
+    const current = await this.readParameter(key, actor);
     validateValue(current.dataType, body.current, body.validation ?? current.validation);
     const now = nowIso();
     const updated: ParameterValue = {
@@ -308,7 +373,7 @@ export class ParametersService {
   }
 
   async approve(key: string, actor?: OrgContext) {
-    const current = await this.readParameter(key);
+    const current = await this.readParameter(key, actor);
     if (current.status !== 'pending') {
       throw new ConflictException(`Parameter ${key} is not pending`);
     }
@@ -327,7 +392,7 @@ export class ParametersService {
   }
 
   async rollback(key: string, actor?: OrgContext) {
-    const current = await this.readParameter(key);
+    const current = await this.readParameter(key, actor);
     if (current.history.length === 0) {
       throw new ConflictException(`Parameter ${key} has no previous version`);
     }
@@ -367,7 +432,7 @@ export class ParametersService {
   }
 
   async retire(key: string, actor?: OrgContext) {
-    const current = await this.readParameter(key);
+    const current = await this.readParameter(key, actor);
     if (current.status === 'retired') {
       throw new ConflictException(`Parameter ${key} is already retired`);
     }
@@ -385,8 +450,8 @@ export class ParametersService {
     return saved;
   }
 
-  async summary() {
-    const parameters = await this.list();
+  async summary(actor?: OrgContext) {
+    const parameters = await this.list(actor);
     const now = nowIso();
     return {
       totalCount: parameters.length,

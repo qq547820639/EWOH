@@ -12,6 +12,7 @@
 import json
 import uuid
 
+from edge_platform.config import Settings
 from edge_platform.contracts import envelope as envelope_contract
 from edge_platform.contracts.event_catalog import EVENT_CATALOG_TYPES
 
@@ -100,8 +101,34 @@ def api_exo_bind(ctx, h, req_meta):
     })
 
 
+def _session_role(h):
+    """取当前请求的会话角色（无会话/未认证返回 None；认证服务不可用返回 None）。"""
+    from edge_platform.routes._util import session_manager
+
+    sm = session_manager()
+    if sm is None:
+        return None
+    auth = (h.headers.get("Authorization", "") or "").strip()
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[len("Bearer "):].strip()
+    if not token:
+        return None
+    try:
+        session = sm.verify(token)
+    except Exception:
+        return None
+    return session.role if session else None
+
+
 def api_exo_unbind(ctx, h, req_meta):
-    """POST /api/exo/unbind — 显式归还：状态机 active→ended + ended_by 必填。"""
+    """POST /api/exo/unbind — 显式归还：状态机 active→ended + ended_by 必填。
+
+    EDGE-011（2026-08-17 审计整改）：production 下绑定归属校验——
+    endedBy 必须与绑定主体 person_id 一致，或操作者为 admin 角色；
+    否则 403（防止任意已认证用户结束他人活跃绑定）。
+    development/simulation 保持演示宽松。
+    """
     try:
         body = json.loads(req_meta.body or "{}")
     except (json.JSONDecodeError, AttributeError):
@@ -124,7 +151,20 @@ def api_exo_unbind(ctx, h, req_meta):
     if target is None:
         return h.send_json({"error": "binding_not_found", "message": "绑定不存在或已结束"}, 404)
     if target["status"] != "active":
-        return h.send_json({"error": "illegal_transition", "message": f"绑定状态 {target['status']} 不可归还（终态）"}, 409)
+        return h.send_json(
+            {"error": "illegal_transition", "message": f"绑定状态 {target['status']} 不可归还（终态）"}, 409
+        )
+    # EDGE-011：production 下校验绑定归属（本人归还或 admin 代归还）
+    if Settings.load().runtime_mode == "production":
+        role = _session_role(h)
+        if role != "admin" and ended_by != target.get("person_id"):
+            return h.send_json(
+                {
+                    "error": "binding_ownership_required",
+                    "message": "仅绑定本人或 admin 可结束该活跃绑定（EDGE-011）",
+                },
+                403,
+            )
     ended_at = now_iso()
     ok_end = storage.end_binding(target["binding_id"], ended_at, ended_by, body.get("reason") or "")
     if not ok_end:

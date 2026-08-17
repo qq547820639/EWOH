@@ -19,13 +19,17 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_user (
 CREATE INDEX IF NOT EXISTS idx_ewoh_user_org ON __EWOH_SCHEMA__.ewoh_user(org_id);
 CREATE INDEX IF NOT EXISTS idx_ewoh_user_status ON __EWOH_SCHEMA__.ewoh_user(status);
 
+-- 设计意图（审计 SQL-051 文档化，2026-08-17，spec 已裁决项）：ewoh_user 刻意
+-- 「RLS 启用 + 无 policy + REVOKE ALL」= 对全部角色全拒（fail-closed）。凭据
+-- 校验只经下方 SECURITY DEFINER 函数 ewoh_find_active_user 受控读取（显式
+-- GRANT），任何角色（含 service_role）不得直接 SELECT 密码哈希列。
 ALTER TABLE __EWOH_SCHEMA__.ewoh_user ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_user FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_user FROM
   anon_workspace_aadknm4yzbyds,
-  authenticated_workspace_aadknm4yzbyds,
-  user_authenticated_workspace_aadknm4yzbyds,
-  service_role_workspace_aadknm4yzbyds;
+  __EWOH_ROLE_AUTHENTICATED__,
+  __EWOH_ROLE_USER_AUTHENTICATED__,
+  __EWOH_ROLE_SERVICE__;
 
 CREATE OR REPLACE FUNCTION __EWOH_SCHEMA__.ewoh_find_active_user(p_username text)
 RETURNS TABLE (
@@ -49,7 +53,7 @@ $$;
 
 REVOKE ALL PRIVILEGES ON FUNCTION __EWOH_SCHEMA__.ewoh_find_active_user(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION __EWOH_SCHEMA__.ewoh_find_active_user(text)
-  TO service_role_workspace_aadknm4yzbyds;
+  TO __EWOH_ROLE_SERVICE__;
 
 -- Org scope lookup used before request GUCs are set. SECURITY DEFINER lets the
 -- non-owner runtime role resolve the hierarchy without bypassing row-level
@@ -75,7 +79,7 @@ $$;
 
 REVOKE ALL PRIVILEGES ON FUNCTION __EWOH_SCHEMA__.ewoh_find_org(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION __EWOH_SCHEMA__.ewoh_find_org(uuid)
-  TO service_role_workspace_aadknm4yzbyds;
+  TO __EWOH_ROLE_SERVICE__;
 
 CREATE OR REPLACE FUNCTION __EWOH_SCHEMA__.ewoh_find_org_children(p_parent_id uuid)
 RETURNS TABLE (
@@ -103,4 +107,4 @@ $$;
 
 REVOKE ALL PRIVILEGES ON FUNCTION __EWOH_SCHEMA__.ewoh_find_org_children(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION __EWOH_SCHEMA__.ewoh_find_org_children(uuid)
-  TO service_role_workspace_aadknm4yzbyds;
+  TO __EWOH_ROLE_SERVICE__;

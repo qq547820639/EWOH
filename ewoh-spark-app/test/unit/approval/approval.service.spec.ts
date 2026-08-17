@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ewohEvent, ewohEventChain } from '../../../server/database/schema';
 import { aggregateApprovalStatus } from '../../../server/modules/approval/approval.service';
@@ -200,11 +202,15 @@ describe('ApprovalService persistence', () => {
     const audit = createAuditMock();
     const service = new ApprovalService(db, audit as never);
 
-    const result = await service.createApproval({
-      entityType: 'task',
-      entityId: 'T-1',
-      roles: ['lead', 'safety'],
-    });
+    const result = await service.createApproval(
+      {
+        entityType: 'task',
+        entityId: 'T-1',
+        roles: ['lead', 'safety'],
+      },
+      // NEST-401：创建必须带租户上下文（orgId 显式写入 + 记录发起人）。
+      { userId: 'user-1', primaryOrgId: 'org-1', roles: [] },
+    );
 
     expect(result.id).toBeTruthy();
     expect(result.entityType).toBe('task');
@@ -220,11 +226,13 @@ describe('ApprovalService persistence', () => {
         status: 'pending',
         title: 'Approval for task T-1',
         sourceType: 'approval',
-        evidenceJson: {
+        orgId: 'org-1',
+        evidenceJson: expect.objectContaining({
           entityType: 'task',
           entityId: 'T-1',
           createdAt: result.createdAt,
-        },
+          createdBy: 'user-1',
+        }),
       }),
     );
     expect(chainInsertValues).toHaveBeenCalledTimes(1);
@@ -252,10 +260,25 @@ describe('ApprovalService persistence', () => {
     const service = new ApprovalService(db, createAuditMock() as never);
 
     const error = await service
-      .createApproval({ entityType: '', entityId: 'T-1', roles: [] })
+      .createApproval(
+        { entityType: '', entityId: 'T-1', roles: [] },
+        { userId: 'user-1', primaryOrgId: 'org-1', roles: [] },
+      )
       .catch((caught) => caught);
 
     expect(error).toBeInstanceOf(BadRequestException);
+    expect(eventInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('rejects creation without an org context (NEST-401)', async () => {
+    const { db, eventInsertValues } = createDbMock();
+    const service = new ApprovalService(db, createAuditMock() as never);
+
+    const error = await service
+      .createApproval({ entityType: 'task', entityId: 'T-1', roles: ['lead'] })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(UnauthorizedException);
     expect(eventInsertValues).not.toHaveBeenCalled();
   });
 
@@ -318,7 +341,8 @@ describe('ApprovalService persistence', () => {
       'approve',
       'ok',
       undefined,
-      { userId: 'user-1', primaryOrgId: 'org-1' },
+      // NEST-403：step 角色匹配（roles 含 step.role 'lead'）。
+      { userId: 'user-1', primaryOrgId: 'org-1', roles: ['lead'] },
     );
 
     expect(result.status).toBe('approved');
@@ -370,7 +394,11 @@ describe('ApprovalService persistence', () => {
     const service = new ApprovalService(db, audit as never);
 
     const error = await service
-      .stepAction(instanceId, 'step-1', 'approve')
+      .stepAction(instanceId, 'step-1', 'approve', undefined, undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['lead'],
+      })
       .catch((caught) => caught);
 
     expect(error).toBeInstanceOf(ConflictException);
@@ -391,7 +419,11 @@ describe('ApprovalService persistence', () => {
     const service = new ApprovalService(db, audit as never);
 
     const error = await service
-      .stepAction(instanceId, 'step-1', 'approve')
+      .stepAction(instanceId, 'step-1', 'approve', undefined, undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['lead'],
+      })
       .catch((caught) => caught);
 
     expect(error).toBeInstanceOf(ConflictException);
@@ -408,7 +440,11 @@ describe('ApprovalService persistence', () => {
     const service = new ApprovalService(db, createAuditMock() as never);
 
     const error = await service
-      .stepAction(instanceId, 'step-1', 'approve')
+      .stepAction(instanceId, 'step-1', 'approve', undefined, undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['lead'],
+      })
       .catch((caught) => caught);
 
     expect(error).toBeInstanceOf(BadRequestException);
@@ -423,10 +459,33 @@ describe('ApprovalService persistence', () => {
     const service = new ApprovalService(db, createAuditMock() as never);
 
     const error = await service
-      .stepAction(instanceId, 'step-1', 'approve')
+      .stepAction(instanceId, 'step-1', 'approve', undefined, undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['lead'],
+      })
       .catch((caught) => caught);
 
     expect(error).toBeInstanceOf(BadRequestException);
+    expect(chainUpdateWhere).not.toHaveBeenCalled();
+  });
+
+  it('rejects a step action when the actor lacks the step role (NEST-403)', async () => {
+    const { db, chainUpdateWhere } = createDbMock({
+      eventRows: [eventRow],
+      chainRows: [chainRow('step-1', 'safety_admin', 'pending')],
+    });
+    const service = new ApprovalService(db, createAuditMock() as never);
+
+    const error = await service
+      .stepAction(instanceId, 'step-1', 'approve', undefined, undefined, {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['worker'],
+      })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ForbiddenException);
     expect(chainUpdateWhere).not.toHaveBeenCalled();
   });
 
@@ -460,6 +519,8 @@ describe('ApprovalService persistence', () => {
     const result = await service.bypass(instanceId, 'urgent', {
       userId: 'user-1',
       primaryOrgId: 'org-1',
+      // NEST-404：bypass 需 high_privilege_admin（global_admin 映射）。
+      roles: ['global_admin'],
     });
 
     expect(result.status).toBe('bypassed');
@@ -489,11 +550,57 @@ describe('ApprovalService persistence', () => {
     const audit = createAuditMock();
     const service = new ApprovalService(db, audit as never);
 
-    const error = await service.bypass(instanceId, 'urgent').catch((caught) => caught);
+    const error = await service.bypass(instanceId, 'urgent', {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['global_admin'],
+      }).catch((caught) => caught);
 
-    expect(error).toBeInstanceOf(ConflictException);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(eventUpdateWhere).not.toHaveBeenCalled();
+      expect(audit.appendAuditLog).not.toHaveBeenCalled();
+    });
+
+  it('rejects bypass without high_privilege_admin (NEST-404)', async () => {
+    const { db, eventUpdateWhere } = createDbMock({
+      eventRows: [eventRow],
+      chainRows: [chainRow('step-1', 'lead', 'pending')],
+    });
+    const service = new ApprovalService(db, createAuditMock() as never);
+
+    const error = await service
+      .bypass(instanceId, 'urgent', {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['workshop_lead', 'safety_admin'],
+      })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ForbiddenException);
     expect(eventUpdateWhere).not.toHaveBeenCalled();
-    expect(audit.appendAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('rejects cancel by a non-initiator (NEST-405)', async () => {
+    const { db, eventUpdateWhere } = createDbMock({
+      eventRows: [
+        {
+          ...eventRow,
+          evidenceJson: {
+            ...eventRow.evidenceJson,
+            createdBy: 'someone-else',
+          },
+        },
+      ],
+      chainRows: [chainRow('step-1', 'lead', 'pending')],
+    });
+    const service = new ApprovalService(db, createAuditMock() as never);
+
+    const error = await service
+      .cancel(instanceId, { userId: 'user-1', primaryOrgId: 'org-1', roles: ['workshop_lead'] })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ForbiddenException);
+    expect(eventUpdateWhere).not.toHaveBeenCalled();
   });
 
   it('cancels an instance with a conditional update and audit', async () => {

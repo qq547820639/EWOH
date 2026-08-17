@@ -40,7 +40,7 @@ const RecentAccessMenu = ({ pathname }: { pathname: string }) => {
         <button
           type="button"
           aria-label="最近访问"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] hover:text-[hsl(220_14%_14%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(221_83%_53%)]"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Clock className="h-4 w-4" aria-hidden />
         </button>
@@ -56,7 +56,7 @@ const RecentAccessMenu = ({ pathname }: { pathname: string }) => {
               onSelect={() => navigate(entry.path)}
             >
               <span className="truncate">{entry.label}</span>
-              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+              <span className="ml-auto text-xs text-muted-foreground">
                 {entry.path}
               </span>
             </DropdownMenuItem>

@@ -145,13 +145,15 @@ export function validateWorldSnapshot(snapshot: unknown): string[] {
     if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) return ['bad_entity_version_value'];
   }
   if (!Array.isArray(s.states)) return ['bad_states'];
+  // SH-007：收集全部错误再返回（与 Python validate_snapshot 语义一致：
+  // 每条 state 的首错 + 区间集合错误，不因首条 state 错误中断）。
+  const errors: string[] = [];
   for (const state of s.states) {
-    const errors = validateWorldStateRecord(state);
-    if (errors.length > 0) return [errors[0]];
+    const recordErrors = validateWorldStateRecord(state);
+    if (recordErrors.length > 0) errors.push(recordErrors[0]);
   }
-  const intervalErrors = validateWorldIntervalSet(s.states as unknown[]);
-  if (intervalErrors.length > 0) return intervalErrors;
-  return [];
+  errors.push(...validateWorldIntervalSet(s.states as unknown[]));
+  return errors;
 }
 
 /** 云侧 WorldStateSnapshot 的契约校验（NO-03b：构建时自检）。

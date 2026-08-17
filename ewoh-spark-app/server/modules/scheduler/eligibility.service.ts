@@ -163,6 +163,51 @@ export class EligibilityService {
   private readonly logger = new Logger(EligibilityService.name);
 
   /**
+   * NEST-136（2026-08-17）：已占用时段的倒排索引缓存——同一 EligibilityContext
+   * 对象在候选池构建期间被逐候选复用（buildCandidatePool 构建一次 ctx、
+   * check 调用 N×M 次），此前每次 check 线性扫描全部 slots（大规模任务
+   * O(candidates × slots) ≈ O(n²)）。WeakMap 按 ctx 构建一次
+   * person/device/station → 区间列表索引，查询降为 O(该资源的区间数)。
+   * 约束：ctx 的 slots 数组在 check 之间不可变（调用方每次池构建新建 ctx，
+   * 满足该前提；rule-based 求解器每任务迭代新建池即新建 ctx）。
+   */
+  private readonly slotIndexCache = new WeakMap<
+    EligibilityContext,
+    {
+      byPerson: Map<string, Array<{ start: number; end: number }>>;
+      byDevice: Map<string, Array<{ start: number; end: number }>>;
+      byStation: Map<string, Array<{ start: number; end: number }>>;
+    }
+  >();
+
+  private slotIndexFor(ctx: EligibilityContext) {
+    let idx = this.slotIndexCache.get(ctx);
+    if (!idx) {
+      const byPerson = new Map<string, Array<{ start: number; end: number }>>();
+      for (const s of ctx.bookedTimeSlots) {
+        const list = byPerson.get(s.personId);
+        if (list) list.push({ start: s.start, end: s.end });
+        else byPerson.set(s.personId, [{ start: s.start, end: s.end }]);
+      }
+      const byDevice = new Map<string, Array<{ start: number; end: number }>>();
+      for (const s of ctx.bookedDeviceSlots ?? []) {
+        const list = byDevice.get(s.deviceId);
+        if (list) list.push({ start: s.start, end: s.end });
+        else byDevice.set(s.deviceId, [{ start: s.start, end: s.end }]);
+      }
+      const byStation = new Map<string, Array<{ start: number; end: number }>>();
+      for (const s of ctx.bookedStationSlots ?? []) {
+        const list = byStation.get(s.stationId);
+        if (list) list.push({ start: s.start, end: s.end });
+        else byStation.set(s.stationId, [{ start: s.start, end: s.end }]);
+      }
+      idx = { byPerson, byDevice, byStation };
+      this.slotIndexCache.set(ctx, idx);
+    }
+    return idx;
+  }
+
+  /**
    * NO-05d（ADR-011）：qualityFindings 中 critical/high 触发硬封锁；
    * medium/low 不封锁（仅事实可见）。未知严重度按封锁处理并留痕
    * （fail-closed，不把未知当作安全）。
@@ -251,20 +296,23 @@ export class EligibilityService {
     if (person.status !== 'AVAILABLE') reasons.push('person_unavailable');
 
     // 4) 时间冲突（人员不被双重预订，用候选时间区间判定）
+    //    NEST-136：倒排索引查询（同一 ctx 只构建一次索引，见 slotIndexFor）。
     const candidateStart = ctx.candidateStartMs;
     const candidateEnd = ctx.candidateEndMs;
-    const conflicts = ctx.bookedTimeSlots.filter((b) =>
-      this.intervalsOverlap(b.start, b.end, candidateStart, candidateEnd),
-    );
-    if (conflicts.some((b) => b.personId === person.id))
+    const slotIdx = this.slotIndexFor(ctx);
+    const personConflicts = slotIdx.byPerson.get(person.id) ?? [];
+    if (
+      personConflicts.some((b) =>
+        this.intervalsOverlap(b.start, b.end, candidateStart, candidateEnd),
+      )
+    ) {
       reasons.push('time_conflict');
+    }
 
     // 4b) 设备 reservation 冲突
     if (device) {
-      const deviceConflict = (ctx.bookedDeviceSlots ?? []).some(
-        (s) =>
-          s.deviceId === device.id &&
-          this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
+      const deviceConflict = (slotIdx.byDevice.get(device.id) ?? []).some(
+        (s) => this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
       );
       if (deviceConflict) reasons.push('device_reserved');
     }
@@ -272,10 +320,8 @@ export class EligibilityService {
     // 4c) 工位 reservation 冲突（针对候选工位，station 决策变量场景）
     const stationId = ctx.candidateStationId ?? task.stationId ?? null;
     if (stationId) {
-      const stationConflict = (ctx.bookedStationSlots ?? []).some(
-        (s) =>
-          s.stationId === stationId &&
-          this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
+      const stationConflict = (slotIdx.byStation.get(stationId) ?? []).some(
+        (s) => this.intervalsOverlap(s.start, s.end, candidateStart, candidateEnd),
       );
       if (stationConflict) reasons.push('station_reserved');
     }

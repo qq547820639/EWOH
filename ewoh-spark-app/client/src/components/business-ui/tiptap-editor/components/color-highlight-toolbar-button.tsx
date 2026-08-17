@@ -18,7 +18,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-// Design system colors matching Figma
+// CLI-347：编辑器调色板统一引用运行时必然存在的语义 CSS 变量
+// （--semantic-* / --risk-conflict / --chart-3），不再混用可能未生成的
+// Tailwind --color-red-600 等任意变量与硬编码工具类。
 const TEXT_COLORS = [
   { value: 'var(--foreground)', label: '默认', className: 'bg-foreground' },
   {
@@ -26,23 +28,23 @@ const TEXT_COLORS = [
     label: '次要',
     className: 'bg-muted-foreground',
   },
-  { value: 'var(--color-red-600)', label: '红色', className: 'bg-red-600' },
+  { value: 'var(--semantic-danger)', label: '红色', className: 'bg-destructive' },
   {
-    value: 'var(--color-orange-500)',
+    value: 'var(--semantic-warning)',
     label: '橙色',
-    className: 'bg-orange-500',
+    className: 'bg-warning',
   },
   {
-    value: 'var(--color-yellow-500)',
+    value: 'var(--chart-3)',
     label: '黄色',
-    className: 'bg-yellow-500',
+    className: 'bg-chart-3',
   },
-  { value: 'var(--color-green-500)', label: '绿色', className: 'bg-green-500' },
-  { value: 'var(--color-blue-600)', label: '蓝色', className: 'bg-blue-600' },
+  { value: 'var(--semantic-success)', label: '绿色', className: 'bg-success' },
+  { value: 'var(--semantic-info)', label: '蓝色', className: 'bg-info' },
   {
-    value: 'var(--color-purple-600)',
+    value: 'var(--risk-conflict)',
     label: '紫色',
-    className: 'bg-purple-600',
+    className: 'bg-risk-conflict',
   },
 ];
 

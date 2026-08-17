@@ -51,7 +51,7 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException('Bearer access token is required');
     }
 
-    const payload = this.authService.verifyToken(match[1]);
+    const payload = await this.authService.verifyToken(match[1]);
     let accessibleOrgIds: string[];
     try {
       const scope = await this.orgScopeService?.resolveOrgScope(payload.orgId);

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -13,6 +14,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { ewohEvent } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
 import { alertActionToState, alertStateTransitionAllowed } from '@shared/alert-state-machine';
 
 /**
@@ -31,6 +33,29 @@ export function nextAlertStatus(
     : null;
 }
 
+/**
+ * NEST-409/410：AccessTokenGuard 只挂 roles 数组（无单值 role），角色判定
+ * 改为遍历 actor.roles——任一角色满足转移即放行。
+ * SH-004 联动（W6 终态）：roles 为空时不再回退 [undefined] 缺省放行——
+ * roleSatisfies 已收敛 fail-closed，无角色信息一律拒绝（spec MODIFIED
+ * 「状态机转移校验」：调用方强制传服务端角色）。
+ */
+function nextAlertStatusForActor(
+  current: string,
+  action: string,
+  actor?: OrgContext,
+): string | null {
+  const target = alertActionToState(action);
+  if (!target) return null;
+  const roles = actor?.roles ?? [];
+  for (const role of roles) {
+    if (alertStateTransitionAllowed(current, target.to, role)) {
+      return target.to;
+    }
+  }
+  return null;
+}
+
 @Injectable()
 export class AlertService {
   constructor(
@@ -38,11 +63,26 @@ export class AlertService {
     private readonly auditService: AuditService,
   ) {}
 
-  async listAlerts() {
-    return this.db.select().from(ewohEvent).orderBy(desc(ewohEvent.createdAt));
+  /** NEST-433：列表 org 过滤（global_admin 放行；org 缺失 401）。 */
+  async listAlerts(actor?: OrgContext) {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：alert 列表必须带租户上下文',
+      );
+    }
+    if (actor?.isGlobalAdmin) {
+      return this.db.select().from(ewohEvent).orderBy(desc(ewohEvent.createdAt));
+    }
+    return this.db
+      .select()
+      .from(ewohEvent)
+      .where(eq(ewohEvent.orgId, orgId))
+      .orderBy(desc(ewohEvent.createdAt));
   }
 
-  async getAlert(eventId: string) {
+  /** NEST-433：单条读 org 守卫（NULL legacy 行放行，跨租户 404）。 */
+  async getAlert(eventId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohEvent)
@@ -50,13 +90,15 @@ export class AlertService {
     if (!row) {
       throw new NotFoundException(`Alert ${eventId} not found`);
     }
+    assertTenantVisible(row.orgId, actor, `Alert ${eventId}`);
     return row;
   }
 
   async transitionAlert(eventId: string, action: string, actor?: OrgContext) {
-    const alert = await this.getAlert(eventId);
+    const alert = await this.getAlert(eventId, actor);
     const currentStatus = alert.status ?? 'open';
-    const status = nextAlertStatus(currentStatus, action, actor?.role);
+    // NEST-409/410：actor.roles 派生（修复 safety_admin reopen 失效）。
+    const status = nextAlertStatusForActor(currentStatus, action, actor);
     if (!status) {
       throw new BadRequestException(
         `Transition ${action} not allowed from ${alert.status}`,

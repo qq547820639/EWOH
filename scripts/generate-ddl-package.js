@@ -7,12 +7,25 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const SCHEMA = '__EWOH_SCHEMA__';
 
-const ROLES = {
-  anon: 'anon_workspace_aadknm4yzbyds',
-  authenticated: 'authenticated_workspace_aadknm4yzbyds',
-  userAuthenticated: 'user_authenticated_workspace_aadknm4yzbyds',
-  service: 'service_role_workspace_aadknm4yzbyds',
-};
+// SCR-026: role 名参数化——缺省输出 __EWOH_ROLE_*__ 占位符（与 __EWOH_SCHEMA__
+// 同一下游替换机制配套），不再硬编码 Miaoda workspace token；真实角色名可经
+// EWOH_DDL_ROLES_JSON 注入（如 '{"anon":"anon_xxx",...}'）。
+const ROLES = (() => {
+  const defaults = {
+    anon: '__EWOH_ROLE_ANON__',
+    authenticated: '__EWOH_ROLE_AUTHENTICATED__',
+    userAuthenticated: '__EWOH_ROLE_USER_AUTHENTICATED__',
+    service: '__EWOH_ROLE_SERVICE__',
+  };
+  if (process.env.EWOH_DDL_ROLES_JSON) {
+    try {
+      return { ...defaults, ...JSON.parse(process.env.EWOH_DDL_ROLES_JSON) };
+    } catch (error) {
+      throw new Error(`EWOH_DDL_ROLES_JSON 解析失败（回退占位符需显式清除该 env）: ${error.message}`);
+    }
+  }
+  return defaults;
+})();
 
 const DEFAULT_ORG = '00000000-0000-4000-8000-000000000001';
 const ORG_ID_DEFAULT = `(nullif(current_setting('app.current_org_id', true), '')::uuid)`;
@@ -1819,10 +1832,13 @@ function writeOutput(rel, content) {
   fs.writeFileSync(p, content, 'utf8');
 }
 
-writeOutput('db/contracts/schema-manifest.yaml', renderManifest());
-writeOutput('db/migrations/001_ewoh_managed_tables.sql', renderMigration());
-writeOutput('db/migrations/001_ewoh_managed_tables.rollback.sql', renderRollback());
-writeOutput('db/verify/001_verify.sql', renderVerify());
-writeOutput('tmp/ddl/capability-map.csv', renderCapabilityCsv());
+// SCR-022: 加 main 守卫——require 该模块（如测试/复用 render* 函数）不得触发写文件。
+if (require.main === module) {
+  writeOutput('db/contracts/schema-manifest.yaml', renderManifest());
+  writeOutput('db/migrations/001_ewoh_managed_tables.sql', renderMigration());
+  writeOutput('db/migrations/001_ewoh_managed_tables.rollback.sql', renderRollback());
+  writeOutput('db/verify/001_verify.sql', renderVerify());
+  writeOutput('tmp/ddl/capability-map.csv', renderCapabilityCsv());
 
-console.log('Generated EWOH DDL package artifacts.');
+  console.log('Generated EWOH DDL package artifacts.');
+}

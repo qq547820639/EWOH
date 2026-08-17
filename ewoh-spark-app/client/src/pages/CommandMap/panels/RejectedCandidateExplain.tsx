@@ -34,7 +34,10 @@ export function RejectedCandidateExplain({
         </thead>
         <tbody>
           {rejected.map((r, i) => (
-            <tr key={i} className="border-t border-slate-800">
+            <tr
+              key={String(r.personId ?? r.deviceId ?? `rejected-${i}`)}
+              className="border-t border-slate-800"
+            >
               <td className="px-1 py-0.5 text-slate-300">{r.personId ?? '—'}</td>
               <td className="px-1 py-0.5 text-slate-300">{r.deviceId ?? '—'}</td>
               <td className="px-1 py-0.5 text-slate-300">{r.stationId ?? '—'}</td>

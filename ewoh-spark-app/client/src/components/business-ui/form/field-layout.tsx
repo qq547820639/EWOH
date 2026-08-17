@@ -39,7 +39,8 @@ export function FieldLayout({
     >
       {label}
       {required && (
-        <span className="text-red-500">
+        // CLI-349：必填星号使用 destructive 语义令牌。
+        <span className="text-destructive">
           <Asterisk size={12} />
         </span>
       )}

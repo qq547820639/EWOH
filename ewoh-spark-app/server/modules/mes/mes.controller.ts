@@ -17,8 +17,8 @@ export class MesController {
   constructor(private readonly mesService: MesService) {}
 
   @Get('work-orders')
-  list() {
-    return this.mesService.listWorkOrders();
+  list(@Req() request: { userContext?: OrgContext }) {
+    return this.mesService.listWorkOrders(request.userContext);
   }
 
   @Post('work-orders')
@@ -27,13 +27,13 @@ export class MesController {
   }
 
   @Get('work-orders/:id')
-  get(@Param('id') id: string) {
-    return this.mesService.getWorkOrder(id);
+  get(@Param('id') id: string, @Req() request: { userContext?: OrgContext }) {
+    return this.mesService.getWorkOrder(id, request.userContext);
   }
 
   @Get('work-orders/:id/trace')
-  trace(@Param('id') id: string) {
-    return this.mesService.getTrace(id);
+  trace(@Param('id') id: string, @Req() request: { userContext?: OrgContext }) {
+    return this.mesService.getTrace(id, request.userContext);
   }
 
   @Post('work-orders/:id/state')
@@ -82,8 +82,11 @@ export class MesController {
   }
 
   @Get('work-orders/:id/materials')
-  listMaterials(@Param('id') id: string) {
-    return this.mesService.listMaterials(id);
+  listMaterials(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.listMaterials(id, request.userContext);
   }
 
   @Post('work-orders/:id/inspections')
@@ -103,8 +106,8 @@ export class MesController {
   }
 
   @Get('sops')
-  listSops() {
-    return this.mesService.listSops();
+  listSops(@Req() request: { userContext?: OrgContext }) {
+    return this.mesService.listSops(request.userContext);
   }
 
   @Post('sops')
@@ -131,8 +134,8 @@ export class MesController {
   }
 
   @Get('sops/:id')
-  getSop(@Param('id') id: string) {
-    return this.mesService.getSop(id);
+  getSop(@Param('id') id: string, @Req() request: { userContext?: OrgContext }) {
+    return this.mesService.getSop(id, request.userContext);
   }
 
   @Post('sops/:id/publish')
@@ -144,13 +147,17 @@ export class MesController {
   }
 
   @Get('sops/:id/diff/:otherId')
-  diffSops(@Param('id') id: string, @Param('otherId') otherId: string) {
-    return this.mesService.diffSops(id, otherId);
+  diffSops(
+    @Param('id') id: string,
+    @Param('otherId') otherId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.diffSops(id, otherId, request.userContext);
   }
 
   @Get('quality-schemes')
-  listQualitySchemes() {
-    return this.mesService.listQualitySchemes();
+  listQualitySchemes(@Req() request: { userContext?: OrgContext }) {
+    return this.mesService.listQualitySchemes(request.userContext);
   }
 
   @Get('quality-schemes/match')
@@ -158,12 +165,16 @@ export class MesController {
     @Query('deviceId') deviceId?: string,
     @Query('stepType') stepType?: string,
     @Query('productCode') productCode?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.mesService.matchQualitySchemes({
-      deviceId,
-      stepType,
-      productCode,
-    });
+    return this.mesService.matchQualitySchemes(
+      {
+        deviceId,
+        stepType,
+        productCode,
+      },
+      request?.userContext,
+    );
   }
 
   @Post('quality-schemes')
@@ -189,8 +200,11 @@ export class MesController {
   }
 
   @Get('quality-schemes/:id')
-  getQualityScheme(@Param('id') id: string) {
-    return this.mesService.getQualityScheme(id);
+  getQualityScheme(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.mesService.getQualityScheme(id, request.userContext);
   }
 
   @Post('quality-schemes/:id/publish')

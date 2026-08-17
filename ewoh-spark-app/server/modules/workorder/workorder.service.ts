@@ -75,7 +75,14 @@ export class WorkOrderService {
       originKind: input.origin.kind,
       originId: input.origin.id,
       subjectEntityId: input.subjectEntityId,
-      subjectKind: input.subjectEntityId.slice(0, input.subjectEntityId.indexOf(':')),
+      // NEST-647：indexOf(':') 为 -1 时 slice(0,-1) 会截掉末字符——规范身份
+      // 必为 'kind:id'（isCanonicalIdentity 校验），无冒号时诚实保留全串。
+      subjectKind: (() => {
+        const colonAt = input.subjectEntityId.indexOf(':');
+        return colonAt > 0
+          ? input.subjectEntityId.slice(0, colonAt)
+          : input.subjectEntityId;
+      })(),
       severity: normalizeSeverity(input.severity),
       status: 'created' as WorkOrderStatus,
       scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
@@ -167,17 +174,26 @@ export class WorkOrderService {
     const set: Record<string, unknown> = { status: input.to, updatedAt: new Date() };
     if (nextCompletedAt) set.completedAt = new Date(nextCompletedAt);
     if (input.to === 'cancelled') set.cancelledReason = input.cancelledReason;
-    await this.db
+    // NEST-628：更新加 eq(status=current.status) CAS + returning——并发双
+    // 转移只有一个成功（原先 WHERE 仅 org+id，后写者覆盖先写者）。
+    const updatedRows = await this.db
       .update(ewohWorkOrder)
       .set(set)
-      .where(and(eq(ewohWorkOrder.orgId, orgId), eq(ewohWorkOrder.id, current.id)));
+      .where(
+        and(
+          eq(ewohWorkOrder.orgId, orgId),
+          eq(ewohWorkOrder.id, current.id),
+          eq(ewohWorkOrder.status, current.status),
+        ),
+      )
+      .returning();
+    if (updatedRows.length === 0) {
+      throw new BadRequestException(
+        `工单状态已被并发修改（${current.status} → ${input.to} CAS 未命中）`,
+      );
+    }
     if (input.to === 'completed' || input.to === 'closed') {
-      const updated = await this.db
-        .select()
-        .from(ewohWorkOrder)
-        .where(and(eq(ewohWorkOrder.orgId, orgId), eq(ewohWorkOrder.id, current.id)))
-        .limit(1);
-      await this.recordEvent(orgId, updated[0], 'WorkOrderCompleted');
+      await this.recordEvent(orgId, updatedRows[0], 'WorkOrderCompleted');
     }
     return { workOrderId, from: current.status, to: input.to };
   }

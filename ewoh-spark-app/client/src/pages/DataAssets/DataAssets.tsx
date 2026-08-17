@@ -16,6 +16,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+import { toast } from 'sonner';
 
 interface DataAssetsData {
   models: ModelRecord[];
@@ -61,10 +62,22 @@ const DataAssets = (): React.ReactElement => {
       setAasAssetId('');
       setAasIdShort('');
     },
+    // CLI-101：JSON.parse 抛错或后端 4xx 时不再静默，toast 透传错误信息。
+    onError: (err) => {
+      toast.error('AAS 资产导入失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const fetchSemantics = useMutation({
     mutationFn: getAasSemantics,
     onSuccess: setAasSemantics,
+    // CLI-102：语义查询失败显式反馈（§33 失败不静默）。
+    onError: (err) => {
+      toast.error('语义查询失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const data = query.data;

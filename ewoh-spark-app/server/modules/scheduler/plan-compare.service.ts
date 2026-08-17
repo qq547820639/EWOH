@@ -120,8 +120,13 @@ export class PlanCompareService {
     }
 
     // CHURN：变更任务数 / 基线任务总数（代理，与 replan churn 语义一致）。
+    // NEST-025 修复（2026-08-17）：分子双重计数——diffByTask 的键集已涵盖
+    // added/removed 任务（同 taskId 进 diff 分支），旧公式 added+removed+diff
+    // 使每个新增/删除任务计 2 次（churn=2*(A+R)+C）。churn 语义 = 发生变化的
+    // 任务占比，分子取 diffByTask.length 即可（其内已含 added/removed 任务的
+    // 字段级 diff 行）。
     const churn =
-      aByTask.size > 0 ? (added.length + removed.length + diffByTask.length) / aByTask.size : 0;
+      aByTask.size > 0 ? diffByTask.length / aByTask.size : 0;
     changeTypeCounts.CHURN = Number(churn.toFixed(4));
 
     return {

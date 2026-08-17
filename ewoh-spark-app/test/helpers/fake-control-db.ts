@@ -32,6 +32,21 @@ export function makeControlDb(seed: {
   const db = {
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: Record<string, unknown>) => {
+        if (table === ewohControlCommand) {
+          // NEST-425：attemptNo 由 DB 子查询原子生成（max+1）——fake 落库前
+          // 求值为同 (requestId, commandKey) 既有最大序号 + 1（SQL 对象不可比
+          // 较，直接存储会让 latest-attempt 聚合/排序失效）。
+          if (row.attemptNo != null && typeof row.attemptNo !== 'number') {
+            const siblings = (commandRows as Array<Record<string, unknown>>).filter(
+              (r) => r.requestId === row.requestId && r.commandKey === row.commandKey,
+            );
+            const maxNo = siblings.reduce(
+              (max, r) => Math.max(max, Number(r.attemptNo) || 0),
+              0,
+            );
+            row = { ...row, attemptNo: maxNo + 1 };
+          }
+        }
         inserts.push({ table, row });
         if (table === ewohControlRequest) requestRows.push(row);
         if (table === ewohControlCommand) commandRows.push(row);

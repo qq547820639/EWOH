@@ -210,7 +210,11 @@ export class CpSatSchedulingSolver {
         'function'
     ) {
       try {
-        eligibleByTask = await this.travelCostService.buildEligibilityMatrix(snapshot);
+        // NEST-116（2026-08-17）：矩阵构建透传 opts.orgId（org 过滤 + 落库 org_id）。
+        eligibleByTask = await this.travelCostService.buildEligibilityMatrix(
+          snapshot,
+          opts.orgId ?? null,
+        );
         // P4-GEOM + P0-4：按 eligible 候选构建 geometry 索引与权威 cost 矩阵
         //（与求解请求同源 RouteCost；cost 由矩阵层计算，worker 不再自行算欧氏）。
         geometryIndex = new Map();
@@ -220,7 +224,12 @@ export class CpSatSchedulingSolver {
           if (!task) continue;
           const candidates = elig.personIds.map((pid) => ({ personId: pid, deviceId: null, stationId: task.stationId }));
           try {
-            const matrix = await this.travelCostService.buildMatrix(snapshot, task, candidates);
+            const matrix = await this.travelCostService.buildMatrix(
+              snapshot,
+              task,
+              candidates,
+              opts.orgId ?? null,
+            );
             const byKey = new Map<string, Array<{ x: number; y: number }>>();
             const costs: Array<{
               taskId: string;
@@ -321,6 +330,10 @@ export class CpSatSchedulingSolver {
       // 绝不 crash；与"不可达"同走 UNAVAILABLE，但 fallbackReason 明确 malformed。
       if (err instanceof Error && /malformed/i.test(err.message)) {
         malformedResponse = true;
+        // NEST-023 修复（2026-08-17）：worker 已应答（HTTP 层可达），仅 body
+        // 非 JSON——reachable 置 true，下游 fallbackStatus 判 FALLBACK（而非
+        // UNAVAILABLE；语义：服务在但响应畸形 ≠ 服务不可达）。
+        reachable = true;
       }
     }
 
@@ -563,6 +576,8 @@ export class CpSatSchedulingSolver {
       solverVersion: CPSAT_VERSION,
       horizonMinutes,
       nowMs,
+      // NEST-035（2026-08-17）：确定性 replay 种子透传（policy replay 链路）。
+      seed: opts.seed,
       // Phase 2 / P2-T2：权重来自 SchedulingPolicy.weights 权威 8 权重。
       // Worker 契约字段映射：travel←weights.travel；workloadBalance←weights.workload；
       // stationWait←weights.wait；changeCost←weights.change；energyRisk←weights.energy；

@@ -26,7 +26,7 @@ describe('SchedulerMetricsService（Phase 3.2 可观测指标）', () => {
     expect(s['scheduler_feasible_ratio']).toBe(0);
   });
 
-  it('各 record* 方法正确递增对应计数器（含 planId 标签变体）', () => {
+  it('各 record* 方法正确递增对应计数器（NEST-138：planId 不再作高基数 label）', () => {
     metrics.recordSolverTimeout();
     metrics.recordFallback();
     metrics.recordPlanApproved('P-1');
@@ -40,12 +40,46 @@ describe('SchedulerMetricsService（Phase 3.2 可观测指标）', () => {
     const s = metrics.snapshot();
     expect(s['scheduler_solver_timeout_total']).toBe(1);
     expect(s['scheduler_fallback_total']).toBe(1);
-    expect(s['plan_approved_total{plan_id="P-1"}']).toBe(2);
-    expect(s['plan_rejected_total{plan_id="P-2"}']).toBe(1);
-    expect(s['plan_stale_total{plan_id="P-3"}']).toBe(1);
+    // NEST-138（2026-08-17）：planId 高基数标签移除（每 plan 一键等价无界）；
+    // 计数聚合到无标签序列，planId 仅日志。
+    expect(s['plan_approved_total']).toBe(2);
+    expect(s['plan_rejected_total']).toBe(1);
+    expect(s['plan_stale_total']).toBe(1);
     expect(s['replan_total']).toBe(1);
     expect(s['reservation_conflict_total']).toBe(1);
     expect(s['manual_override_total']).toBe(1);
+    // NEST-138 加固：不产生任何 plan_id 标签键（高基数防回归）。
+    for (const key of Object.keys(s)) {
+      expect(key).not.toMatch(/plan_id=/);
+    }
+  });
+
+  it('NEST-138：label 值清洗（引号/反斜杠/换行不破坏 text 格式）', () => {
+    metrics.recordRun({
+      durationMs: 10,
+      feasible: true,
+      solverVersion: 'evil"\\version\nHELP fake',
+      solverStatus: 'OPTIMAL',
+    });
+    const text = metrics.renderMetrics();
+    // 恶意 label 值不得伪造新的 HELP/TYPE 指令行（换行已被替换为空格，
+    // "HELP fake" 只能出现在转义后的 label 值内，不能出现在行首指令位）。
+    expect(text).not.toMatch(/\n# HELP fake/);
+    expect(text).not.toMatch(/\n# TYPE fake/);
+    // 序列行保持单行（label 值内无换行），引号被转义（合法 Prometheus text）。
+    const seriesLine = text.split('\n').find((l) => l.includes('solver_version="evil'));
+    expect(seriesLine).toBeTruthy();
+    expect(seriesLine).not.toMatch(/\n/);
+    expect(seriesLine).toMatch(/solver_version="evil\\"\\\\version HELP fake"/);
+  });
+
+  it('NEST-138：计数器基数有界（超上限淘汰最老键不无限增长）', () => {
+    for (let i = 0; i < 2100; i++) {
+      metrics.recordExecutionTransition(`status-${i}`);
+    }
+    const s = metrics.snapshot();
+    // 上限 2000：键数不得超上限（FIFO 淘汰最老序列）。
+    expect(Object.keys(s).length).toBeLessThanOrEqual(2000);
   });
 
   it('reset 清空全部指标', () => {

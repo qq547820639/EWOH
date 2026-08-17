@@ -2,16 +2,16 @@
 
 import React from 'react';
 
-import { normalizeUser, isValidUserId } from '@client/src/components/business-ui/utils/user';
-import type { UserInput } from '@client/src/components/business-ui/types/user';
-import { UserWithAvatar } from '@client/src/components/business-ui/user-display/user-with-avatar';
-import { UserProfile } from '@client/src/components/business-ui/user-profile/user-profile';
+import { normalizeUser, isValidUserId } from '@/components/business-ui/utils/user';
+import type { UserInput } from '@/components/business-ui/types/user';
+import { UserWithAvatar } from '@/components/business-ui/user-display/user-with-avatar';
+import { UserProfile } from '@/components/business-ui/user-profile/user-profile';
 import { cn } from '@/lib/utils';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@client/src/components/ui/popover';
+} from '@/components/ui/popover';
 
 export interface IUserDisplayProps {
   /**
@@ -81,14 +81,14 @@ export const UserDisplay: React.FC<IUserDisplayProps> = ({
                 data={user}
                 size={size}
                 showLabel={showLabel}
-                className="cursor-pointer hover:bg-[rgba(31,35,41,0.15)] active:bg-[rgba(31,35,41,0.2)]"
+                className="cursor-pointer hover:bg-accent active:bg-muted"
               />
             </div>
           </PopoverTrigger>
           <PopoverContent
             align="start"
             sideOffset={8}
-            className="w-[320px] border-0 border-border/50 bg-card p-0 shadow-[0px_8px_24px_8px_rgba(31,35,41,0.04),0px_6px_12px_rgba(31,35,41,0.04),0px_4px_8px_-8px_rgba(31,35,41,0.06)]"
+            className="w-[320px] border-0 border-border/50 bg-card p-0 shadow-lg"
           >
             <UserProfile value={user} />
           </PopoverContent>

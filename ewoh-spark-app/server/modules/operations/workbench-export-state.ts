@@ -11,7 +11,9 @@
  *   running → cancelling → cancelled
  *   running → cancelling → failed
  *   queued | running | failed → expired (deadline passed)
- *   failed → running                    (retry/requeue)
+ *   failed → running                    (claim path after retry)
+ *   expired → running                   (claim path after retry)
+ *   failed | expired → queued           (NEST-208: retry requeue)
  *
  * Pure / side-effect free so it can be unit-tested in isolation and reused by
  * both the in-memory and the PostgreSQL-backed stores.
@@ -37,9 +39,10 @@ const ALLOWED_TRANSITIONS: Record<
   running: new Set(['succeeded', 'failed', 'cancelling', 'expired']),
   cancelling: new Set(['cancelled', 'failed', 'expired']),
   succeeded: new Set(),
-  failed: new Set(['running', 'expired']),
+  // NEST-208：retry 先重排（→ queued，经 claim 再 → running）。
+  failed: new Set(['running', 'queued', 'expired']),
   cancelled: new Set(),
-  expired: new Set(['running']),
+  expired: new Set(['running', 'queued']),
 };
 
 export function canTransition(

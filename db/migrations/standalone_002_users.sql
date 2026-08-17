@@ -19,11 +19,14 @@ CREATE TABLE IF NOT EXISTS public.ewoh_user (
 CREATE INDEX IF NOT EXISTS idx_ewoh_user_org ON public.ewoh_user(org_id);
 CREATE INDEX IF NOT EXISTS idx_ewoh_user_status ON public.ewoh_user(status);
 
+-- 设计意图（审计 SQL-051 文档化，2026-08-17，spec 已裁决项）：ewoh_user 刻意
+-- 「RLS 启用 + 无 policy + REVOKE ALL」= 对全部角色全拒（fail-closed）。凭据
+-- 校验只经下方 SECURITY DEFINER 函数 ewoh_find_active_user 受控读取（显式
+-- GRANT），任何角色（含 service_role）不得直接 SELECT 密码哈希列。
 ALTER TABLE public.ewoh_user ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_user FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON TABLE public.ewoh_user FROM
   anon,
-  authenticated,
   authenticated,
   service_role;
 

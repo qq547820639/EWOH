@@ -79,7 +79,9 @@ class PermissionMatrixTest(unittest.TestCase):
                 self.assertIsInstance(perms[action], bool)
 
     def test_nine_actions(self):
-        self.assertEqual(len(ALL_ACTIONS), 9)
+        # EDGE-001 整改（2026-08-17）后动作集扩展为 14 种
+        # （新增 view_personnel/manage_data/manage_world/query_assistant/raise_andon）
+        self.assertEqual(len(ALL_ACTIONS), 14)
 
     def test_admin_all_true(self):
         perms = PERMISSIONS[Role.ADMIN.value]

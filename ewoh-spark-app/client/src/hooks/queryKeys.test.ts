@@ -21,10 +21,11 @@ describe('queryKeys', () => {
     expect(queryKeys.personnel({ keyword: '张' })).toEqual(['personnel', { keyword: '张' }]);
   });
 
-  it('keeps scheduler and world keys stable', () => {
+  it('keeps scheduler keys stable and shards world keys by org (CLI-715)', () => {
     expect(queryKeys.schedulerPlans()).toEqual(['scheduler-plans', 'all']);
     expect(queryKeys.schedulerPlans('confirmed')).toEqual(['scheduler-plans', 'confirmed']);
-    expect(queryKeys.worldState).toEqual(['world-state']);
-    expect(queryKeys.spatialEntities).toEqual(['spatial-entities']);
+    // CLI-715：world/spatial 键按当前登录组织分片（未登录时 no-org 段）。
+    expect(queryKeys.worldState).toEqual(['world-state', 'no-org']);
+    expect(queryKeys.spatialEntities).toEqual(['spatial-entities', 'no-org']);
   });
 });

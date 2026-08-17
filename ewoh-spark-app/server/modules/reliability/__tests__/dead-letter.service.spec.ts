@@ -100,13 +100,16 @@ function createDeadLetterDb(rows: Array<Record<string, unknown>> = []) {
     })),
     update: jest.fn((table: unknown) => ({
       set: jest.fn((patch: Record<string, unknown>) => ({
-        where: jest.fn((cond: unknown) =>
-          Promise.resolve(
+        where: jest.fn((cond: unknown) => {
+          // NEST-629/630：CAS 更新经 returning 暴露命中行（同步附加，链式可 await）。
+          const hit =
             table === ewohDeadLetter
               ? state.rows.filter((r) => matches(cond, r)).map((r) => Object.assign(r, patch))
-              : [],
-          ),
-        ),
+              : [];
+          const promise = Promise.resolve(hit);
+          (promise as unknown as { returning: jest.Mock }).returning = jest.fn(async () => hit);
+          return promise;
+        }),
       })),
     })),
     __failNextInsertWith: (err: unknown) => {

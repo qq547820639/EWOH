@@ -32,23 +32,37 @@ export function vibratePattern(kind: ScanFeedbackKind): number[] | null {
       : [200];
 }
 
-/** Plays a short WebAudio beep. Success = high tone, duplicate = mid, fail = low. */
-export function playBeep(kind: ScanFeedbackKind): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  const frequency =
-    kind === 'success' ? 880 : kind === 'duplicate' ? 440 : 220;
-  const duration = kind === 'fail' ? 300 : 120;
+/** CLI-536：AudioContext 单例——每次 beep 新建 context 会快速耗尽浏览器
+ * 的 AudioContext 数量上限；复用共享实例，仅每 NOTE 新建 oscillator。 */
+let sharedAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
   try {
     const Ctor =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext })
         .webkitAudioContext;
-    if (!Ctor) {
-      return;
+    if (!Ctor) return null;
+    if (!sharedAudioContext) {
+      sharedAudioContext = new Ctor();
     }
-    const context = new Ctor();
+    return sharedAudioContext;
+  } catch {
+    return null;
+  }
+}
+
+/** Plays a short WebAudio beep. Success = high tone, duplicate = mid, fail = low. */
+export function playBeep(kind: ScanFeedbackKind): void {
+  const frequency =
+    kind === 'success' ? 880 : kind === 'duplicate' ? 440 : 220;
+  const duration = kind === 'fail' ? 300 : 120;
+  const context = getAudioContext();
+  if (!context) {
+    return;
+  }
+  try {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.connect(gain);
@@ -62,9 +76,7 @@ export function playBeep(kind: ScanFeedbackKind): void {
     );
     oscillator.start();
     oscillator.stop(context.currentTime + duration / 1000);
-    oscillator.onended = () => {
-      void context.close();
-    };
+    // CLI-536：复用共享 context，不再在 onended 关闭。
   } catch {
     // Audio is best-effort; ignore failures.
   }

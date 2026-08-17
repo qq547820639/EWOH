@@ -24,6 +24,19 @@ type ChartContextProps = {
 
 const ChartContext = React.createContext<ChartContextProps | null>(null)
 
+/**
+ * CLI-414：dangerouslySetInnerHTML 注入 CSS 前的白名单校验。
+ * color 仅接受 hex/rgb(a)/hsl(a)/var(--x)；id/key 必须是安全 CSS 标识符，
+ * 阻断选择器与自定义属性名注入。
+ */
+const SAFE_CSS_COLOR =
+  /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[0-9.%\s,\/]+\s*\)|hsla?\(\s*[0-9.%\s,\/deg]+\s*\)|var\(\s*--[a-zA-Z0-9_-]+\s*\))$/
+const SAFE_CSS_IDENT = /^[a-zA-Z_-][a-zA-Z0-9_-]*$/
+
+function isSafeCssColor(value: string): boolean {
+  return SAFE_CSS_COLOR.test(value.trim())
+}
+
 function useChart() {
   const context = React.useContext(ChartContext)
 
@@ -47,7 +60,10 @@ function ChartContainer({
   >["children"]
 }) {
   const uniqueId = React.useId()
-  const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
+  // CLI-414：调用方传入的 id 进入 CSS 选择器，清洗为安全标识符字符集。
+  const safePropId = typeof id === "string" ? id : ""
+  const rawId = safePropId || uniqueId
+  const chartId = `chart-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -70,8 +86,11 @@ function ChartContainer({
 }
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
+  // CLI-414：key 进入 CSS 自定义属性名，color 进入 CSS 值，均需白名单过滤。
   const colorConfig = Object.entries(config).filter(
-    ([, config]) => config.theme || config.color
+    ([key, config]) =>
+      SAFE_CSS_IDENT.test(key) &&
+      (config.theme || config.color)
   )
 
   if (!colorConfig.length) {
@@ -84,14 +103,18 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart="${id}"] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
+    // CLI-414：非法 CSS 颜色（如含 } 或表达式）直接丢弃该条变量。
+    return typeof color === "string" && isSafeCssColor(color)
+      ? `  --color-${key}: ${color.trim()};`
+      : null
   })
+  .filter(Boolean)
   .join("\n")}
 }
 `

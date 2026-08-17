@@ -76,6 +76,9 @@ export function validateWorkOrder(record: unknown): string[] {
   try {
     normalizeSeverity(r.severity);
   } catch (err) {
+    // SH-020（已裁决保留）：按 code 精确过滤后 re-throw 非 unknown_severity 的
+    // 契约错误——比 Python 一律返 unknown_severity 更严（不吞非预期异常），
+    // 为 TS 侧有意保留的差异，Python 侧不改（spec「已裁决项」终态）。
     if (err instanceof DomainContractError && err.code === 'unknown_severity') return ['unknown_severity'];
     throw err;
   }

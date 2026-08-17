@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohOutbox } from '@server/database/schema';
-import { and, asc, desc, eq, gt, gte, max } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, isNull, max, or, type SQL } from 'drizzle-orm';
 import type { OutboxEvent } from '@shared/api.interface';
 
 /** 入队可选的实体元数据（用于 SSE 缺口判定与影响分析的事件分类）。 */
@@ -40,7 +41,9 @@ export class OutboxService {
     // B1 修复：sequence 未显式传入时不再用 SELECT MAX+1 计算（非原子），
     // 省略该字段由 DB DEFAULT（ewoh_outbox_sequence_seq）原子生成，RETURNING 取回真实值。
     // 显式传 sequence 的兼容路径保留（调用方仍可覆盖）。
-    const eventId = `EVT-${Date.now()}-${this.randomSuffix()}`;
+    // NEST-047（2026-08-17）：Date.now()+短随机后缀 → randomUUID（密码学随机，
+    // 消除高并发碰撞与可预测性）。
+    const eventId = `EVT-${randomUUID()}`;
     // Phase 3 / P3-T2：envelope 透传字段写入 payload（SSE 端从 payload 读取）。
     const envelopePayload: Record<string, unknown> = { ...payload };
     if (opts?.snapshotVersion != null) envelopePayload.snapshotVersion = opts.snapshotVersion;
@@ -89,10 +92,27 @@ export class OutboxService {
     windowMs = 5_000,
     opts?: OutboxEnqueueOpts,
   ): Promise<OutboxEvent> {
+    // NEST-013 修复（2026-08-17）：SELECT-then-UPDATE/INSERT 竞态改为
+    // 原子 UPDATE ... RETURNING 先行——窗口内已有 pending 行时并发调用都在
+    // 同一行上合并（DB 行锁串行化），不再出现「先查无、双双 INSERT」对既有
+    // pending 行的重复插入。仅在窗口确无命中时才 INSERT（残余竞态最多产生
+    // 两条 pending 行，后续窗口继续合并，无正确性破坏）。
+    // NEST-017 修复：合并路径同步合并 opts 的 envelope 字段（此前更新只写
+    // payload，entityType/correlationId 等元数据丢失）。
     const cutoff = new Date(Date.now() - windowMs);
-    const [existing] = await this.db
-      .select()
-      .from(ewohOutbox)
+    const mergedPayload: Record<string, unknown> = { ...payload };
+    if (opts?.snapshotVersion != null) mergedPayload.snapshotVersion = opts.snapshotVersion;
+    if (opts?.planId != null) mergedPayload.planId = opts.planId;
+    if (opts?.occurredAt != null) mergedPayload.occurredAt = opts.occurredAt;
+    if (opts?.correlationId != null) mergedPayload.correlationId = opts.correlationId;
+    const [updated] = await this.db
+      .update(ewohOutbox)
+      .set({
+        payloadJson: mergedPayload,
+        // NEST-017：opts 提供时更新元数据；缺省保留原值（不回退抹掉）。
+        ...(opts?.entityType != null ? { entityType: opts.entityType } : {}),
+        ...(opts?.correlationId != null ? { correlationId: opts.correlationId } : {}),
+      })
       .where(
         and(
           eq(ewohOutbox.eventType, eventType),
@@ -101,14 +121,9 @@ export class OutboxService {
           gte(ewohOutbox.createdAt, cutoff),
         ),
       )
-      .limit(1);
-    if (existing) {
-      // 窗口命中：覆盖 payload 为最终态（保持 sequence 不变，无缺口副作用）
-      const [updated] = await this.db
-        .update(ewohOutbox)
-        .set({ payloadJson: payload })
-        .where(eq(ewohOutbox.id, existing.id))
-        .returning();
+      .returning();
+    if (updated) {
+      // 窗口命中：payload 已覆盖为最终态（sequence 不变，无缺口副作用）。
       return this.toEvent(updated);
     }
     return this.enqueue(eventType, entityId, payload, orgId, undefined, opts);
@@ -122,36 +137,76 @@ export class OutboxService {
     return row?.m ?? 0;
   }
 
-  /** 将所有 pending 事件标记为 published，返回受影响行数。 */
-  async publishPending(): Promise<number> {
+  /**
+   * 将 pending 事件标记为 published，返回受影响行数。
+   *
+   * NEST-016（2026-08-17）：可选 orgId 作用域。缺省（undefined/null）= 系统级
+   * 全量发布——ewoh_outbox 为 GLOBAL_SHARED 表（standalone_057 裁决：eventId
+   * 全局唯一、RLS 关闭），后台发布器跨 org 推送是显式系统语义；租户路径必须
+   * 传 orgId 限定作用域。
+   */
+  async publishPending(orgId?: string | null): Promise<number> {
     const now = new Date();
     const rows = await this.db
       .update(ewohOutbox)
       .set({ status: 'published', publishedAt: now })
-      .where(eq(ewohOutbox.status, 'pending'))
+      .where(
+        orgId
+          ? and(eq(ewohOutbox.status, 'pending'), eq(ewohOutbox.orgId, orgId))
+          : eq(ewohOutbox.status, 'pending'),
+      )
       .returning();
     return rows.length;
   }
 
-  /** 按 sequence 升序返回 sequence > sinceSequence 的事件（SSE 重放/增量）。 */
-  async listSince(sinceSequence: number, limit = 1000): Promise<OutboxEvent[]> {
+  /**
+   * 按 sequence 升序返回 sequence > sinceSequence 的事件（SSE 重放/增量）。
+   *
+   * NEST-014（2026-08-17）：viewerOrgId 提供时仅返回该 org 事件 + 全局事件
+   * （orgId IS NULL），杜绝跨租户重放泄露；缺省为系统级（GLOBAL_SHARED 表
+   * 的后台运维路径，需显式系统语义）。
+   */
+  async listSince(
+    sinceSequence: number,
+    limit = 1000,
+    viewerOrgId?: string | null,
+  ): Promise<OutboxEvent[]> {
     const rows = await this.db
       .select()
       .from(ewohOutbox)
-      .where(gt(ewohOutbox.sequence, sinceSequence))
+      .where(
+        and(
+          gt(ewohOutbox.sequence, sinceSequence),
+          viewerOrgId ? this.orgVisibilityCondition(viewerOrgId) : undefined,
+        ),
+      )
       .orderBy(asc(ewohOutbox.sequence))
       .limit(limit);
     return rows.map((r) => this.toEvent(r));
   }
 
-  /** 按 sequence 倒序返回最近的事件。 */
-  async listLatest(limit: number): Promise<OutboxEvent[]> {
+  /**
+   * 按 sequence 倒序返回最近的事件。
+   *
+   * NEST-015（2026-08-17）：同 listSince——viewerOrgId 提供时按 org 过滤
+   * （本 org + 全局事件），缺省为系统级。
+   */
+  async listLatest(
+    limit: number,
+    viewerOrgId?: string | null,
+  ): Promise<OutboxEvent[]> {
     const rows = await this.db
       .select()
       .from(ewohOutbox)
+      .where(viewerOrgId ? this.orgVisibilityCondition(viewerOrgId) : undefined)
       .orderBy(desc(ewohOutbox.sequence))
       .limit(limit);
     return rows.map((r) => this.toEvent(r));
+  }
+
+  /** SSE 可见性条件：本 org 事件 + 全局事件（orgId IS NULL，ADR-004 全局流语义）。 */
+  private orgVisibilityCondition(viewerOrgId: string): SQL {
+    return or(isNull(ewohOutbox.orgId), eq(ewohOutbox.orgId, viewerOrgId)) as SQL;
   }
 
   private toEvent(row: typeof ewohOutbox.$inferSelect): OutboxEvent {
@@ -164,18 +219,12 @@ export class OutboxService {
       sequence: row.sequence,
       entityType: row.entityType ?? undefined,
       entityVersion: row.entityVersion ?? undefined,
+      // NEST-113/114（2026-08-17）：outbox 行 org_id 直读透传——SSE 订阅者
+      // 按 org 过滤依赖该字段（此前缺失导致所有事件被当作全局事件放行）。
+      orgId: row.orgId ?? null,
       createdAt: row.createdAt
         ? row.createdAt.toISOString()
         : new Date().toISOString(),
     };
-  }
-
-  private randomSuffix(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < 4; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
   }
 }

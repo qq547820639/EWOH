@@ -59,6 +59,31 @@ describe('Timeline (统一对象时间线组件)', () => {
     expect(markup).toContain('负荷');
     expect(markup).toContain('0.95');
   });
+
+  it('CLI-301: renders safe https evidence url as link but degrades javascript: to plain text', () => {
+    const markup = renderToStaticMarkup(
+      <Timeline
+        events={[
+          ev({
+            id: 'evt-xss',
+            evidence: [
+              { id: 'e-safe', url: 'https://example.com/evidence/1' },
+              { id: 'e-evil', url: 'javascript:alert(1)' },
+              { id: 'e-data', url: 'data:text/html,<script>alert(2)</script>' },
+            ],
+          }),
+        ]}
+        expandedIds={['evt-xss']}
+      />,
+    );
+    // 安全 https 链接正常渲染为 <a href>
+    expect(markup).toContain('href="https://example.com/evidence/1"');
+    // 危险 scheme 不渲染为可点击链接，降级为纯文本展示
+    expect(markup).not.toContain('href="javascript:');
+    expect(markup).not.toContain('href="data:');
+    expect(markup).toContain('javascript:alert(1)');
+    expect(markup).toContain('查看');
+  });
 });
 
 describe('Timeline audit export helpers', () => {

@@ -46,12 +46,18 @@ node scripts/verify-deploy-artifacts.js
 python3 scripts/rego-tck.py
 
 echo "== e2e (requires runtime DB env) =="
+E2E_BLOCKED=0
 if [[ -n "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]]; then
   cd "$ROOT_DIR/ewoh-spark-app"
   npm run test:e2e
   npm run test:browser
 else
-  echo "EWOH_E2E_RUNTIME_DATABASE_URL not set; skipping E2E and browser tests"
+  # SCR-009: env 未设时不得静默 SKIP 冒充 PASSED——显式记 BLOCKED 并落盘状态。
+  E2E_BLOCKED=1
+  echo "::notice::BLOCKED: EWOH_E2E_RUNTIME_DATABASE_URL not set; E2E and browser tests NOT executed (BLOCKED, not PASSED)"
+  mkdir -p "$ROOT_DIR/output"
+  printf '{"section":"e2e-browser","status":"BLOCKED","reason":"EWOH_E2E_RUNTIME_DATABASE_URL not set"}\n' \
+    > "$ROOT_DIR/output/standalone-check-e2e-status.json"
 fi
 
 echo "== standalone build =="
@@ -80,4 +86,8 @@ if grep -E 'user_profile|__EWOH_SCHEMA__|workspace_aadknm4yzbyds' /tmp/ewoh-plan
   exit 1
 fi
 
-echo "ALL STANDALONE CHECKS PASSED"
+if [ "$E2E_BLOCKED" = "1" ]; then
+  echo "ALL STANDALONE CHECKS PASSED (E2E/browser: BLOCKED — 见 output/standalone-check-e2e-status.json)"
+else
+  echo "ALL STANDALONE CHECKS PASSED"
+fi

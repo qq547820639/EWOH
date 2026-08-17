@@ -58,12 +58,31 @@ DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_REPO:$RUN_I
 echo "digest=$DIGEST"
 
 echo "== Trivy image scan =="
-if ! command -v trivy >/dev/null 2>&1; then
-  curl -sSL -o /tmp/trivy.tar.gz \
-    "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+# SCR-006: 统一用 TRIVY_BIN 变量，预装 trivy 时直接使用，否则下载到 /tmp 并校验。
+if command -v trivy >/dev/null 2>&1; then
+  TRIVY_BIN="$(command -v trivy)"
+else
+  TRIVY_TARBALL="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+  curl -fsSL -o /tmp/trivy.tar.gz \
+    "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${TRIVY_TARBALL}"
+  # SCR-029: 下载后必须做 SHA256 校验（优先官方 checksums 文件，可用 TRIVY_SHA256 显式指定）。
+  TRIVY_EXPECTED_SHA256="${TRIVY_SHA256:-}"
+  if [ -z "$TRIVY_EXPECTED_SHA256" ]; then
+    curl -fsSL -o /tmp/trivy-checksums.txt \
+      "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt"
+    TRIVY_EXPECTED_SHA256="$(awk -v f="$TRIVY_TARBALL" '$2==f {print $1}' /tmp/trivy-checksums.txt)"
+  fi
+  if [ -z "$TRIVY_EXPECTED_SHA256" ]; then
+    fail "无法获取 Trivy SHA256（checksums 文件缺失且未设置 TRIVY_SHA256），拒绝使用未校验的二进制"
+  fi
+  TRIVY_ACTUAL_SHA256="$( (sha256sum /tmp/trivy.tar.gz 2>/dev/null || shasum -a 256 /tmp/trivy.tar.gz) | awk '{print $1}')"
+  if [ "$TRIVY_ACTUAL_SHA256" != "$TRIVY_EXPECTED_SHA256" ]; then
+    fail "Trivy tarball SHA256 校验失败: expected=$TRIVY_EXPECTED_SHA256 actual=$TRIVY_ACTUAL_SHA256"
+  fi
   tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+  TRIVY_BIN="/tmp/trivy"
 fi
-if /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL \
+if "$TRIVY_BIN" image --exit-code 1 --severity HIGH,CRITICAL \
     --format json --output output/trivy-image-report.json "$IMAGE_REPO:$RUN_ID"; then
   echo "{\"gate\":\"$GATE_ID\",\"status\":\"SUCCEEDED\",\"digest\":\"$DIGEST\",\"image\":\"$IMAGE_REPO:$RUN_ID\"}" > "$REPORT"
   record SUCCEEDED "镜像 $IMAGE_REPO:$RUN_ID 构建成功，digest=$DIGEST，Trivy 无 HIGH/CRITICAL"

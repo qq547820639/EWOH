@@ -182,11 +182,17 @@ def _classify_trend(slope: float) -> TrendDirection:
 
 
 def _assert_non_medical(report: FatigueReport) -> None:
-    """安全不变量校验：is_medical 必为 False，且不得出现医学表述。"""
-    assert report.is_medical is False, "负荷趋势评分不得为医学诊断（is_medical 必为 False）"
+    """安全不变量校验：is_medical 必为 False，且不得出现医学表述。
+
+    EDGE-105（2026-08-17 审计整改）：assert 改为显式 raise——python -O 下
+    assert 被剥离，安全不变量必须始终生效。
+    """
+    if report.is_medical is not False:
+        raise AssertionError("负荷趋势评分不得为医学诊断（is_medical 必为 False）")
     blob = "".join(report.main_causes) + report.recommendation
     for term in FORBIDDEN_MEDICAL_TERMS:
-        assert term not in blob, f"负荷趋势评分出现禁止的医学表述：{term!r}"
+        if term in blob:
+            raise AssertionError(f"负荷趋势评分出现禁止的医学表述：{term!r}")
 
 
 # ---------- 评分器 ----------

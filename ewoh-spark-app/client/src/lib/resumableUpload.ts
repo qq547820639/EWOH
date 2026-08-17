@@ -15,6 +15,8 @@
  * and dedupes already-uploaded chunks.
  */
 
+import { logger } from './logger';
+
 export interface Chunk {
   index: number;
   blob: Blob;
@@ -74,14 +76,27 @@ export async function computeBlobChecksum(blob: Blob): Promise<string> {
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
   }
-  // Deterministic fallback hash (FNV-1a) — not cryptographic, but catch
-  // corruption when the platform lacks Web Crypto.
+  // CLI-525（裁决）：WebCrypto 不可用时降级为确定性 FNV-1a——非密码学哈希，
+  // 完整性校验强度下降，仅能捕获随机损坏而非恶意篡改。选择「降级 + 显式
+  // 警告」而非拒绝上传：受限环境（旧 WebView）仍可完成上传，警告保证
+  // 使用方知晓校验弱化。结果带 fnv- 前缀，服务端可识别弱校验。
+  warnWeakChecksumOnce();
   let hash = 0x811c9dc5;
   for (let i = 0; i < data.length; i += 1) {
     hash ^= data[i];
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return `fnv-${hash.toString(16)}`;
+}
+
+/** CLI-525：弱校验降级只警告一次，避免逐块上传刷屏。 */
+let weakChecksumWarned = false;
+function warnWeakChecksumOnce(): void {
+  if (weakChecksumWarned) return;
+  weakChecksumWarned = true;
+  logger.warn(
+    '[resumableUpload] WebCrypto 不可用，checksum 降级为非密码学 FNV-1a（完整性校验强度下降）',
+  );
 }
 
 /** Slices a blob into fixed-size chunks. Pure. */
@@ -106,6 +121,13 @@ export function createChunks(
  * so a resumed upload finds the same persisted progress.
  */
 export function createUploadId(idempotencyKey: string, fileIdentifier: string): string {
+  // CLI-542：显式拒绝含分隔符「::」的组成部份，杜绝 uploadId 的切分歧义
+  // （原实现下 key 含 :: 时无法唯一还原 key/文件标识）。
+  if (idempotencyKey.includes('::') || fileIdentifier.includes('::')) {
+    throw new Error(
+      'createUploadId: idempotencyKey 与 fileIdentifier 不允许包含分隔符 ::',
+    );
+  }
   return `${idempotencyKey}::${fileIdentifier}`;
 }
 

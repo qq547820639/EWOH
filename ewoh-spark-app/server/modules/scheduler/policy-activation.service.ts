@@ -1,10 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { Inject, Injectable, Logger, NotFoundException, ConflictException, Optional } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { ewohPolicyActivation, ewohSchedulingPolicy } from '@server/database/schema';
+import { RequestDatabaseContext } from '../../database/request-database-context';
+import { buildGucSettings } from '../shared/org-context.interceptor';
 import type {
   PolicyActivationRecord,
   PolicyGateConfig,
@@ -48,6 +51,9 @@ export class PolicyActivationService {
     private readonly kpiService: KpiService,
     private readonly metricsService: SchedulerMetricsService,
     private readonly outboxService: OutboxService,
+    // NEST-033（2026-08-17）：策略写路径经 RequestDatabaseContext 事务 + GUC
+    // （RLS 生效）；@Optional 保持既有直构测试（无 DB context）兼容。
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {}
 
   /** 计算当前 Gate 配置（可扩展为持久化配置；当前用默认 + 环境覆盖）。 */
@@ -205,24 +211,36 @@ export class PolicyActivationService {
     },
     ctx?: OrgContext,
   ): Promise<PolicyActivationRecord> {
+    // NEST-031 修复（2026-08-17）：HTTP 路径强制 orgId（无 org 的 ACTIVE 判定
+    // 会跨租户选中他 org 行并归档）；系统后台流（无 request context）保持可选。
+    // NEST-165 配套：configVersion 已按 org 作用域递增——candidate 查找也必须
+    // 带 org 条件（否则可能命中他租户同版本号行）。
+    const orgScope = opts.orgId
+      ? or(
+          eq(ewohSchedulingPolicy.orgId, opts.orgId),
+          isNull(ewohSchedulingPolicy.orgId),
+        )
+      : isNull(ewohSchedulingPolicy.orgId);
     const [candidate] = await this.db
       .select()
       .from(ewohSchedulingPolicy)
-      .where(eq(ewohSchedulingPolicy.configVersion, policyVersion))
+      .where(
+        and(eq(ewohSchedulingPolicy.configVersion, policyVersion), orgScope),
+      )
       .limit(1);
-    if (!candidate) throw new Error(`policy v${policyVersion} not found`);
+    if (!candidate) throw new NotFoundException(`policy v${policyVersion} not found`);
     if (candidate.status !== 'SHADOW' && candidate.active) {
-      throw new Error(`policy v${policyVersion} already ACTIVE`);
+      throw new ConflictException(`policy v${policyVersion} already ACTIVE`);
     }
     if (candidate.status === 'ARCHIVED') {
-      throw new Error(`policy v${policyVersion} is ARCHIVED; cannot activate`);
+      throw new ConflictException(`policy v${policyVersion} is ARCHIVED; cannot activate`);
     }
 
     // Gate 强制：未提供 gateResult 时现场评估（不允许跳过 Gate）。
     const gateResult =
       opts.gateResult ?? (await this.evaluateGate(policyVersion, opts.replayId));
     if (!gateResult.passed) {
-      throw new Error(
+      throw new ConflictException(
         `POLICY_GATE_FAILED: ${gateResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ')}`,
       );
     }
@@ -240,7 +258,7 @@ export class PolicyActivationService {
                 eq(ewohSchedulingPolicy.orgId, opts.orgId),
                 isNull(ewohSchedulingPolicy.orgId),
               )
-            : undefined,
+            : isNull(ewohSchedulingPolicy.orgId),
         ),
       )
       .orderBy(desc(ewohSchedulingPolicy.configVersion))
@@ -248,19 +266,27 @@ export class PolicyActivationService {
     const beforeVersion = activeRow?.configVersion ?? null;
     const rollbackTarget = beforeVersion;
 
-    const activationId = `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // NEST-047（2026-08-17）：Date.now()+Math.random → randomUUID。
+    const activationId = `ACT-${randomUUID()}`;
     await this.requestDatabaseContextSafe(ctx, async () => {
       // 原 ACTIVE → ARCHIVED（不删除，保留回滚目标）
       if (activeRow && activeRow.configVersion !== policyVersion) {
         await this.db
           .update(ewohSchedulingPolicy)
           .set({ active: false, status: 'ARCHIVED', updatedAt: new Date() })
-          .where(eq(ewohSchedulingPolicy.configVersion, activeRow.configVersion));
+          .where(
+            and(
+              eq(ewohSchedulingPolicy.configVersion, activeRow.configVersion),
+              orgScope,
+            ),
+          );
       }
       await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: true, status: 'ACTIVE', updatedBy: opts.operator, updatedAt: new Date() })
-        .where(eq(ewohSchedulingPolicy.configVersion, policyVersion));
+        .where(
+          and(eq(ewohSchedulingPolicy.configVersion, policyVersion), orgScope),
+        );
       await this.db.insert(ewohPolicyActivation).values({
         activationId,
         orgId: opts.orgId ?? null,
@@ -303,30 +329,68 @@ export class PolicyActivationService {
     };
   }
 
-  /** 一键回滚：恢复到 rollbackTarget（上一 ACTIVE）。 */
-  async rollback(activationId: string, operator: string, reason?: string): Promise<PolicyActivationRecord> {
+  /**
+   * 一键回滚：恢复到 rollbackTarget（上一 ACTIVE）。
+   * NEST-032 修复（2026-08-17）：activation 读取与策略 UPDATE 全部带 org 条件
+   * （跨租户 activationId → 404；策略版本号按 org 作用域，仅凭 configVersion
+   * 更新会命中他租户同版本行）。ctx 透传 GUC（NEST-033）。
+   */
+  async rollback(
+    activationId: string,
+    operator: string,
+    reason?: string,
+    ctx?: OrgContext,
+  ): Promise<PolicyActivationRecord> {
+    const orgId = ctx?.primaryOrgId || null;
     const [activation] = await this.db
       .select()
       .from(ewohPolicyActivation)
-      .where(eq(ewohPolicyActivation.activationId, activationId))
+      .where(
+        and(
+          eq(ewohPolicyActivation.activationId, activationId),
+          orgId
+            ? or(
+                eq(ewohPolicyActivation.orgId, orgId),
+                isNull(ewohPolicyActivation.orgId),
+              )
+            : undefined,
+        ),
+      )
       .limit(1);
-    if (!activation) throw new Error(`activation ${activationId} not found`);
+    if (!activation) throw new NotFoundException(`activation ${activationId} not found`);
     if (activation.status === 'ROLLED_BACK') {
-      throw new Error(`activation ${activationId} already rolled back`);
+      throw new ConflictException(`activation ${activationId} already rolled back`);
     }
     const target = activation.rollbackTarget ?? activation.beforeVersion;
-    if (target == null) throw new Error('no rollback target');
+    if (target == null) throw new ConflictException('no rollback target');
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // NEST-032/165：策略行更新按 org 作用域（本 org + NULL 全局行）。
+    const policyOrgScope = orgId
+      ? or(
+          eq(ewohSchedulingPolicy.orgId, orgId),
+          isNull(ewohSchedulingPolicy.orgId),
+        )
+      : undefined;
+    await this.requestDatabaseContextSafe(ctx, async () => {
+      await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: false, status: 'ARCHIVED', updatedAt: new Date() })
-        .where(eq(ewohSchedulingPolicy.configVersion, activation.afterVersion ?? activation.policyVersion));
-      await tx
+        .where(
+          and(
+            eq(
+              ewohSchedulingPolicy.configVersion,
+              activation.afterVersion ?? activation.policyVersion,
+            ),
+            policyOrgScope,
+          ),
+        );
+      await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: true, status: 'ACTIVE', updatedBy: operator, updatedAt: new Date() })
-        .where(eq(ewohSchedulingPolicy.configVersion, target));
-      await tx
+        .where(
+          and(eq(ewohSchedulingPolicy.configVersion, target), policyOrgScope),
+        );
+      await this.db
         .update(ewohPolicyActivation)
         .set({ status: 'ROLLED_BACK', reason: reason ?? activation.reason ?? null })
         .where(eq(ewohPolicyActivation.activationId, activationId));
@@ -370,12 +434,22 @@ export class PolicyActivationService {
     }));
   }
 
-  /** 兼容事务上下文（无 RequestDatabaseContext 时直接 db.transaction）。 */
+  /**
+   * 兼容事务上下文（NEST-033 修复，2026-08-17）：有 RequestDatabaseContext 时
+   * 经 runInTransaction + buildGucSettings（RLS 生效，策略写不绕过租户隔离）；
+   * 无 ctx/无 context（直构测试）回退裸事务（原行为）。
+   */
   private async requestDatabaseContextSafe(
     ctx: OrgContext | undefined,
     fn: () => Promise<void>,
   ): Promise<void> {
-    void ctx;
+    if (this.requestDatabaseContext) {
+      await this.requestDatabaseContext.runInTransaction(
+        ctx ? buildGucSettings(ctx) : [],
+        fn,
+      );
+      return;
+    }
     await this.db.transaction(async () => {
       await fn();
     });

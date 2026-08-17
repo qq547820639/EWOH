@@ -253,7 +253,14 @@ class SchedulingRepository:
         return merged
 
     def _get_reservation_raw(self, reservation_id):
-        """从 Storage 直接读预约原始行（list_reservations 无按 id 查询，做一次全表匹配）。"""
+        """按 ID 读预约原始行。
+
+        EDGE-116：优先走 Storage.get_reservation（SQL 主键查询）；
+        旧 storage/stub 无该接口时回退全表线性匹配（兼容）。
+        """
+        fn = getattr(self.storage, "get_reservation", None)
+        if fn is not None:
+            return fn(reservation_id)
         for r in self.storage.list_reservations():
             if r.get("reservation_id") == reservation_id:
                 return r

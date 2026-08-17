@@ -52,14 +52,14 @@ auth_dml AS (
   FROM information_schema.role_table_grants g
   JOIN expected e ON e.name = g.table_name
   WHERE g.table_schema = '__EWOH_SCHEMA__'
-    AND g.grantee IN ('authenticated_workspace_aadknm4yzbyds', 'user_authenticated_workspace_aadknm4yzbyds')
+    AND g.grantee IN ('__EWOH_ROLE_AUTHENTICATED__', '__EWOH_ROLE_USER_AUTHENTICATED__')
     AND g.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
 ),
 anon_grants AS (
   SELECT count(DISTINCT g.table_name) AS anon_grants
   FROM information_schema.role_table_grants g
   JOIN expected e ON e.name = g.table_name
-  WHERE g.table_schema = '__EWOH_SCHEMA__' AND g.grantee = 'anon_workspace_aadknm4yzbyds'
+  WHERE g.table_schema = '__EWOH_SCHEMA__' AND g.grantee = '__EWOH_ROLE_ANON__'
 ),
 identities AS (
   SELECT

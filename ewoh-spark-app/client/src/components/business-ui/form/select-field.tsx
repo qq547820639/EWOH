@@ -143,8 +143,10 @@ export function SelectField(props: SelectFieldProps) {
           {hasContent ? (
             children || (options && renderOptions(options))
           ) : (
+            // CLI-325：Radix Select 不允许 SelectItem value 为空字符串，
+            // 占位项改用保留占位值。
             // eslint-disable-next-line no-restricted-syntax
-            <SelectItem disabled value={''}>
+            <SelectItem disabled value="__empty__">
               暂无选项
             </SelectItem>
           )}

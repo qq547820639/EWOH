@@ -5,20 +5,26 @@
  * 全程 postgres.js + runner，不依赖 psql/createdb。
  */
 'use strict';
+// SCR-004: 路径参数化——ROOT 从脚本位置推导；embedded-postgres 依赖目录优先
+// EWOH_EMBEDDED_PG_DIR env，缺省回退 ~/.workbuddy（仓内未安装该依赖）；node 用 process.execPath。
 import { createRequire } from 'module';
-const requireFromWs = createRequire('/Users/panhao/.workbuddy/binaries/node/workspace/package.json');
-const EmbeddedPostgres = requireFromWs('embedded-postgres').default || requireFromWs('embedded-postgres');
 import { execSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const ROOT = '/Volumes/Extra/CodeProj/EWOH';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const EMBEDDED_PG_DIR = process.env.EWOH_EMBEDDED_PG_DIR || path.join(os.homedir(), '.workbuddy/binaries/node/workspace');
+const requireFromWs = createRequire(path.join(EMBEDDED_PG_DIR, 'package.json'));
+const EmbeddedPostgres = requireFromWs('embedded-postgres').default || requireFromWs('embedded-postgres');
+
 const APP = path.join(ROOT, 'ewoh-spark-app');
-const PG_PORT = 15438;
+const PG_PORT = Number(process.env.EWOH_E2E_PG_PORT || 15438);
 const PG_PASS = 'ewohp0';
 const PG_DIR = '/tmp/ewoh-pg-verify-022-final';
 const DB_NAME = 'ewoh_verify';
-const NODE = '/Users/panhao/.workbuddy/binaries/node/versions/22.22.2/bin/node';
+const NODE = process.execPath;
 const RUNNER = path.join(ROOT, 'db/runner/run_migrations.js');
 const URL = `postgresql://postgres:${PG_PASS}@127.0.0.1:${PG_PORT}/${DB_NAME}`;
 

@@ -36,7 +36,24 @@ function createInsertMock(returnRows: unknown[]) {
   return { insert, entries };
 }
 
+/**
+ * NEST-202 配套：drizzle 的 select().from().where() 返回 thenable builder
+ * （既可 await 又可链 orderBy/limit）——mock 需同形。
+ */
+function whereBuilder(rows: unknown[]) {
+  const builder: Record<string, unknown> = {
+    then: (onFulfilled: (value: unknown[]) => unknown) =>
+      Promise.resolve(rows).then(onFulfilled),
+  };
+  builder.orderBy = jest.fn().mockReturnValue(builder);
+  builder.limit = jest.fn().mockReturnValue(Promise.resolve(rows));
+  return jest.fn().mockReturnValue(builder) as never;
+}
+
 describe('ScaleService templates and assets', () => {
+  // NEST-202：scale 读写已强制 org 上下文（缺失 401）——测试统一带 actor。
+  const actor = { userId: 'user-1', primaryOrgId: 'org-1' };
+
   it('registers a factory template with audit', async () => {
     const row = { templateId: 'TPL-1', lifecycleStatus: 'draft' };
     const { insert, entries } = createInsertMock([row]);
@@ -81,7 +98,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const published = await service.transitionTemplate('TPL-1', 'publish');
+    const published = await service.transitionTemplate('TPL-1', 'publish', actor);
     expect(published.lifecycleStatus).toBe('published');
     selectWhere.mockResolvedValue([
       { ...template, lifecycleStatus: 'published' },
@@ -112,7 +129,7 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn() } as never,
     );
     await expect(
-      service.installTemplate('TPL-1', { factoryName: '工厂B' }),
+      service.installTemplate('TPL-1', { factoryName: '工厂B' }, actor),
     ).rejects.toThrow('must be published');
   });
 
@@ -133,9 +150,13 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const result = await service.diffPreview('TPL-1', {
-      config: { shift: { count: 3 }, newFlag: true },
-    });
+    const result = await service.diffPreview(
+      'TPL-1',
+      {
+        config: { shift: { count: 3 }, newFlag: true },
+      },
+      actor,
+    );
 
     expect(result.mergedConfig).toEqual({
       shift: { count: 3 },
@@ -154,12 +175,15 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
-    const result = await service.registerAssetPackage({
-      packageType: 'scenario',
-      name: 'heavy-lifting-safety',
-      version: '1.0.0',
-      manifest: { requires: [] },
-    });
+    const result = await service.registerAssetPackage(
+      {
+        packageType: 'scenario',
+        name: 'heavy-lifting-safety',
+        version: '1.0.0',
+        manifest: { requires: [] },
+      },
+      actor,
+    );
 
     expect(result.packageId).toBe('PKG-1');
     expect(entries[0].table).toBe(ewohAssetPackage);
@@ -173,13 +197,16 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
-    const result = await service.registerConnector({
-      name: 'opcua-generic-machinery',
-      version: '1.2.0',
-      runtime: 'edge-python',
-      protocol: 'opcua',
-      outputEvents: ['DeviceStateChanged'],
-    });
+    const result = await service.registerConnector(
+      {
+        name: 'opcua-generic-machinery',
+        version: '1.2.0',
+        runtime: 'edge-python',
+        protocol: 'opcua',
+        outputEvents: ['DeviceStateChanged'],
+      },
+      actor,
+    );
 
     expect(result.packageType).toBe('connector');
     expect(entries[0].table).toBe(ewohAssetPackage);
@@ -197,11 +224,14 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
-    const result = await service.registerScenarioPack({
-      name: 'heavy-lifting-safety',
-      version: '1.0.0',
-      requires: { connectors: ['exoskeleton-frame@1.x'] },
-    });
+    const result = await service.registerScenarioPack(
+      {
+        name: 'heavy-lifting-safety',
+        version: '1.0.0',
+        requires: { connectors: ['exoskeleton-frame@1.x'] },
+      },
+      actor,
+    );
 
     expect(result.packageType).toBe('scenario');
   });
@@ -214,17 +244,20 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
-    const result = await service.registerMapping({
-      mappingId: 'PKG-MAP',
-      name: 'exoskeleton-telemetry-v1',
-      version: '1.0.0',
-      source: { system: 'exo-jsonl', schemaRef: 'ewoh:///schemas/exo-frame/v1' },
-      target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/telemetry/v1' },
-      rules: [
-        { from: 'entity_id', to: 'entityId', required: true },
-        { from: 'load.total_kg', to: 'payload.load.totalKg' },
-      ],
-    });
+    const result = await service.registerMapping(
+      {
+        mappingId: 'PKG-MAP',
+        name: 'exoskeleton-telemetry-v1',
+        version: '1.0.0',
+        source: { system: 'exo-jsonl', schemaRef: 'ewoh:///schemas/exo-frame/v1' },
+        target: { system: 'ewoh', schemaRef: 'ewoh:///schemas/telemetry/v1' },
+        rules: [
+          { from: 'entity_id', to: 'entityId', required: true },
+          { from: 'load.total_kg', to: 'payload.load.totalKg' },
+        ],
+      },
+      actor,
+    );
 
     expect(result.packageType).toBe('mapping');
     expect(entries[0].table).toBe(ewohAssetPackage);
@@ -310,6 +343,7 @@ describe('ScaleService templates and assets', () => {
     const result = await service.dryRunMapping(
       'PKG-MAP-BAD',
       { qty: 'not-a-number' },
+      actor,
     );
 
     expect(result.passed).toBe(false);
@@ -412,7 +446,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.runConformance('PKG-CONN');
+    const result = await service.runConformance('PKG-CONN', actor);
 
     expect(result.passed).toBe(true);
     expect(result.checks.every((check) => check.passed)).toBe(true);
@@ -443,7 +477,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.runConformance('PKG-MAP');
+    const result = await service.runConformance('PKG-MAP', actor);
 
     expect(result.passed).toBe(true);
     expect(
@@ -481,7 +515,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.installScenarioPack('PKG-SCEN');
+    const result = await service.installScenarioPack('PKG-SCEN', actor);
 
     expect(result.status).toBe('installed');
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
@@ -505,7 +539,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn() };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.installScenarioPack('PKG-SCEN');
+    const result = await service.installScenarioPack('PKG-SCEN', actor);
 
     expect(result.status).toBe('installed');
     expect(db.update).not.toHaveBeenCalled();
@@ -529,7 +563,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    await expect(service.installScenarioPack('PKG-SCEN-BAD')).rejects.toThrow(
+    await expect(service.installScenarioPack('PKG-SCEN-BAD', actor)).rejects.toThrow(
       'does not pass conformance',
     );
     expect(audit.appendAuditLog).toHaveBeenCalledTimes(1);
@@ -558,7 +592,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.uninstallScenarioPack('PKG-SCEN');
+    const result = await service.uninstallScenarioPack('PKG-SCEN', actor);
 
     expect(result.status).toBe('uninstalled');
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
@@ -582,7 +616,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn() };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.uninstallScenarioPack('PKG-SCEN');
+    const result = await service.uninstallScenarioPack('PKG-SCEN', actor);
 
     expect(result.status).toBe('uninstalled');
     expect(db.update).not.toHaveBeenCalled();
@@ -594,19 +628,22 @@ describe('ScaleService templates and assets', () => {
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
-          orderBy: jest.fn().mockResolvedValue(profiles),
+          where: whereBuilder(profiles),
         })),
       })),
+      // NEST-217：批量 UPDATE（单次 set/where/returning）。
       update: jest.fn(() => ({
         set: jest.fn(() => ({
-          where: jest.fn().mockResolvedValue([]),
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue(profiles),
+          }),
         })),
       })),
     };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.fleetRollback();
+    const result = await service.fleetRollback(actor);
 
     expect(result.rolledBackProfiles).toBe(2);
     expect(audit.appendAuditLog).toHaveBeenCalledWith(
@@ -640,12 +677,15 @@ describe('ScaleService templates and assets', () => {
       },
     };
     const select = jest.fn(() => ({
-      from: jest.fn(() => ({
-        orderBy: jest.fn().mockResolvedValue(profiles),
-        where: jest.fn().mockResolvedValue([asset]),
+      from: jest.fn((table: unknown) => ({
+        // listProfiles 链 orderBy；getAssetPackage 直接 await。
+        where: whereBuilder(table === ewohFactoryProfile ? profiles : [asset]),
       })),
     }));
-    const updateWhere = jest.fn().mockResolvedValue([]);
+    // NEST-217：批量 UPDATE returning。
+    const updateWhere = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ profileId: 'PRF-2' }]),
+    });
     const db = {
       select,
       update: jest.fn(() => ({
@@ -657,7 +697,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.fleetUpgrade('PKG-CONN', undefined, 'shadow');
+    const result = await service.fleetUpgrade('PKG-CONN', actor, 'shadow');
 
     expect(result.targetRing).toBe('shadow');
     expect(result.updatedProfiles).toBe(1);
@@ -693,12 +733,13 @@ describe('ScaleService templates and assets', () => {
       },
     };
     const select = jest.fn(() => ({
-      from: jest.fn(() => ({
-        orderBy: jest.fn().mockResolvedValue(profiles),
-        where: jest.fn().mockResolvedValue([asset]),
+      from: jest.fn((table: unknown) => ({
+        where: whereBuilder(table === ewohFactoryProfile ? profiles : [asset]),
       })),
     }));
-    const updateWhere = jest.fn().mockResolvedValue([]);
+    const updateWhere = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ profileId: 'PRF-2' }]),
+    });
     const db = {
       select,
       update: jest.fn(() => ({
@@ -710,7 +751,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.fleetUpgrade('PKG-CONN');
+    const result = await service.fleetUpgrade('PKG-CONN', actor);
 
     expect(result.updatedProfiles).toBe(1);
     expect(updateWhere).toHaveBeenCalledTimes(1);
@@ -731,10 +772,12 @@ describe('ScaleService templates and assets', () => {
     ];
     const select = jest.fn(() => ({
       from: jest.fn(() => ({
-        orderBy: jest.fn().mockResolvedValue(profiles),
+        where: whereBuilder(profiles),
       })),
     }));
-    const updateWhere = jest.fn().mockResolvedValue([]);
+    const updateWhere = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ profileId: 'PRF-2' }]),
+    });
     const db = {
       select,
       update: jest.fn(() => ({
@@ -746,7 +789,7 @@ describe('ScaleService templates and assets', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const result = await service.fleetRollback(undefined, 'small');
+    const result = await service.fleetRollback(actor, 'small');
 
     expect(result.targetRing).toBe('small');
     expect(result.rolledBackProfiles).toBe(1);
@@ -788,20 +831,22 @@ describe('ScaleService templates and assets', () => {
     ];
     const select = jest.fn(() => ({
       from: jest.fn((table: unknown) => ({
-        orderBy: jest.fn().mockResolvedValue(
-          table === ewohFactoryProfile
-            ? profiles
-            : table === ewohFactoryTemplate
-              ? templates
-              : assets,
-        ),
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockResolvedValue(
+            table === ewohFactoryProfile
+              ? profiles
+              : table === ewohFactoryTemplate
+                ? templates
+                : assets,
+          ),
+        }),
       })),
     }));
     const db = { select };
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ScaleService(db as never, audit as never);
 
-    const status = await service.fleetStatus();
+    const status = await service.fleetStatus(actor);
     expect(status.factoryCount).toBe(1);
     expect(status.templateCount).toBe(1);
     expect(status.assetPackageCount).toBe(1);
@@ -853,7 +898,9 @@ describe('ScaleService templates and assets', () => {
     ];
     const select = jest.fn(() => ({
       from: jest.fn(() => ({
-        orderBy: jest.fn().mockResolvedValue(assets),
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockResolvedValue(assets),
+        }),
       })),
     }));
     const service = new ScaleService(
@@ -861,11 +908,12 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const result = await service.compatibilityCatalog();
+    const result = await service.compatibilityCatalog(actor);
 
     expect(result.coreVersion).toBe('0.6.0-rc4');
-    expect(result.compatibleCount).toBe(2);
-    expect(result.incompatibleCount).toBe(1);
+    // NEST-231：未约束（PKG-MAP）不再默认兼容——fail-closed 计入 incompatible。
+    expect(result.compatibleCount).toBe(1);
+    expect(result.incompatibleCount).toBe(2);
     expect(
       result.assets.find((row) => row.packageId === 'PKG-CONN')?.compatible,
     ).toBe(true);
@@ -936,13 +984,15 @@ describe('ScaleService templates and assets', () => {
     ];
     const select = jest.fn(() => ({
       from: jest.fn((table: unknown) => ({
-        orderBy: jest.fn().mockResolvedValue(
-          table === ewohAssetPackage
-            ? assets
-            : table === ewohFactoryProfile
-              ? profiles
-              : templates,
-        ),
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockResolvedValue(
+            table === ewohAssetPackage
+              ? assets
+              : table === ewohFactoryProfile
+                ? profiles
+                : templates,
+          ),
+        }),
       })),
     }));
     const service = new ScaleService(
@@ -950,7 +1000,7 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const result = await service.scaleMetrics();
+    const result = await service.scaleMetrics(actor);
 
     expect(result.templateCount).toBe(1);
     expect(result.profileCount).toBe(2);
@@ -960,7 +1010,8 @@ describe('ScaleService templates and assets', () => {
     expect(result.mappingCount).toBe(1);
     expect(result.publishedRate).toBeCloseTo(0.667, 3);
     expect(result.ringCounts).toEqual({ pilot: 1, shadow: 1 });
-    expect(result.compatibility.compatibleCount).toBe(3);
+    // NEST-231：三个资产 manifest 均无 core 约束 → fail-closed 全部不计 compatible。
+    expect(result.compatibility.compatibleCount).toBe(0);
   });
 
   it('registers a factory difference with audit', async () => {
@@ -1020,11 +1071,7 @@ describe('ScaleService templates and assets', () => {
     ];
     const select = jest.fn(() => ({
       from: jest.fn((table: unknown) => ({
-        where: jest.fn(() => ({
-          orderBy: jest.fn().mockResolvedValue(
-            table === ewohSchedulerConfig ? rows : [],
-          ),
-        })),
+        where: whereBuilder(table === ewohSchedulerConfig ? rows : []),
       })),
     }));
     const service = new ScaleService(
@@ -1032,7 +1079,7 @@ describe('ScaleService templates and assets', () => {
       { appendAuditLog: jest.fn() } as never,
     );
 
-    const result = await service.listFactoryDifferences();
+    const result = await service.listFactoryDifferences(actor);
 
     expect(result).toHaveLength(1);
     expect(result[0].factoryName).toBe('FactoryA');

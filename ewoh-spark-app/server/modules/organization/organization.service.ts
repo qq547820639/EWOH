@@ -196,7 +196,20 @@ export class OrganizationService {
     return row;
   }
 
-  async listPersonnel(query: { keyword?: string; orgId?: string; status?: string }) {
+  /**
+   * NEST-637（2026-08-17 审计整改）：人员列表分页（原先 select 全表仅
+   * orderBy，无界）。limit 缺省 200、上限 500；offset 缺省 0。
+   * 返回保持数组形状（客户端契约兼容），大表翻页经 limit/offset。
+   */
+  async listPersonnel(
+    query: {
+      keyword?: string;
+      orgId?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    },
+  ) {
     const conditions = [];
     if (query.keyword) {
       const kw = `%${query.keyword}%`;
@@ -214,11 +227,15 @@ export class OrganizationService {
     if (query.status) {
       conditions.push(eq(ewohPersonnel.status, query.status));
     }
+    const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? 200)), 500);
+    const offset = Math.max(0, Math.trunc(query.offset ?? 0));
     return this.db
       .select()
       .from(ewohPersonnel)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(ewohPersonnel.createdAt));
+      .orderBy(desc(ewohPersonnel.createdAt))
+      .limit(limit)
+      .offset(offset);
   }
 
   async getPersonnel(id: string, includeSensitive = false) {

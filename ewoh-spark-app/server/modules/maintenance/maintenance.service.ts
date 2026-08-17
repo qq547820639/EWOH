@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq } from 'drizzle-orm';
@@ -61,7 +61,15 @@ export class MaintenanceService {
     if (errors.length > 0) {
       throw new BadRequestException(`维护状态违反契约: ${errors.join(', ')}`);
     }
-    const kind = input.subjectEntityId.slice(0, input.subjectEntityId.indexOf(':'));
+    // NEST-441：subjectKind 用 split 派生并校验（indexOf 无冒号返回 -1，
+    // slice(0,-1) 会产出截断垃圾值）。
+    const subjectParts = input.subjectEntityId.split(':');
+    if (subjectParts.length < 2 || !subjectParts[0].trim() || !subjectParts[1].trim()) {
+      throw new BadRequestException(
+        `subjectEntityId 必须为 "<kind>:<id>" 形态（收到 ${input.subjectEntityId}）`,
+      );
+    }
+    const kind = subjectParts[0];
     const row = {
       orgId,
       conditionId: input.conditionId,
@@ -131,10 +139,22 @@ export class MaintenanceService {
       set.workOrderRef = input.workOrderRef;
     }
     if (input.to === 'resolved') set.resolvedAt = new Date();
-    await this.db
+    // NEST-436：CAS（status 谓词）——并发转移命中 0 行时 409，杜绝
+    // 双方都读到 detected 后重复建工单。
+    const updatedRows = await this.db
       .update(ewohMaintenanceCondition)
       .set(set)
-      .where(and(eq(ewohMaintenanceCondition.orgId, orgId), eq(ewohMaintenanceCondition.id, current.id)));
+      .where(
+        and(
+          eq(ewohMaintenanceCondition.orgId, orgId),
+          eq(ewohMaintenanceCondition.id, current.id),
+          eq(ewohMaintenanceCondition.status, current.status),
+        ),
+      )
+      .returning({ id: ewohMaintenanceCondition.id });
+    if (updatedRows.length === 0) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
     // NO-05e（ADR-012）：work_order_created 且带工单引用 → 经 WorkOrderService
     // （唯一权威写路径）创建真实工单行 + WorkOrderCreated 事件。内部 workOrderId
     // 由 EWOH 确定性推导；外部工单号仅作 externalRef alias（ADR-006）。

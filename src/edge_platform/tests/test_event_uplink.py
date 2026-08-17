@@ -99,6 +99,22 @@ class EventUplinkTest(unittest.TestCase):
         self.assertEqual(uplink.health()["stats"]["failures"], 0)  # 直调不计数（loop 计数）
         self.assertEqual(len(batch), 1)
 
+    def test_loop_failure_counts_stats(self):
+        """EDT-007：loop 路径的失败计数真正被测——指向不可达端口启动 loop，
+        发布事件后按 deadline 轮询断言 failures ≥ 1 且批次保留在缓冲。"""
+        uplink = EventUplink(self.bus, "http://127.0.0.1:1", queue_path="")
+        uplink.start()
+        try:
+            self.bus.publish("events", {"envelope": _envelope(event_id="EVT-LOOP-FAIL")})
+            deadline = time.time() + 10
+            while time.time() < deadline and uplink.health()["stats"]["failures"] < 1:
+                time.sleep(0.05)
+            stats = uplink.health()["stats"]
+            self.assertGreaterEqual(stats["failures"], 1, "loop 发送失败应计入 failures")
+            self.assertGreaterEqual(uplink.health()["buffer"], 1, "失败批次应保留在缓冲（at-least-once）")
+        finally:
+            uplink.stop()
+
     def test_headers_and_batch_limit(self):
         uplink = EventUplink(
             self.bus,

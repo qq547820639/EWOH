@@ -51,7 +51,7 @@ def fuse_uwb_positions(samples):
     return {"x": fx, "y": fy, "z": fz, "confidence": fused_conf}
 
 
-def estimate_uwb_confidence(num_beaacons, packet_loss_pct):
+def estimate_uwb_confidence(num_beacons, packet_loss_pct):
     """根据基站数与丢包率估计 UWB 置信度。
 
     基站越多、丢包越低则置信度越高：
@@ -59,11 +59,11 @@ def estimate_uwb_confidence(num_beaacons, packet_loss_pct):
     - 丢包得分：1 - loss/100。
     - 综合：0.6 * 基站得分 + 0.4 * 丢包得分。
 
-    :param num_beaacons: 参与定位的 UWB 基站数。
+    :param num_beacons: 参与定位的 UWB 基站数。
     :param packet_loss_pct: 丢包率（0..100）。
     :return: 置信度（0..1）。
     """
-    num = max(0, int(num_beaacons))
+    num = max(0, int(num_beacons))
     loss = max(0.0, min(100.0, float(packet_loss_pct)))
     beacon_score = min(1.0, num / 4.0)
     loss_score = 1.0 - loss / 100.0

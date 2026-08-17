@@ -191,7 +191,9 @@ export function hasRoleAccess(
   userRoles: string[] | null | undefined,
   allowedRoles: EwohRole[] | string[],
 ): boolean {
-  if (!allowedRoles || allowedRoles.length === 0) return true;
+  // CLI-521：allowedRoles 为空（配置漏写 roles）时拒绝访问（fail-closed），
+  // 不再默认放行；显式公开的入口应声明 ALL_ROLES。
+  if (!allowedRoles || allowedRoles.length === 0) return false;
   if (!userRoles || userRoles.length === 0) return false;
   const roleSet = new Set(userRoles);
   if (roleSet.has('global_admin')) return true;

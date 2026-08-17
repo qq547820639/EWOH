@@ -34,6 +34,47 @@ export function normalizePagination(page?: number, pageSize?: number) {
   return { page: safePage, pageSize: safeSize };
 }
 
+/**
+ * NEST-347/348/349（2026-08-17 审计整改）：查询数值参数统一清洗——
+ * parseInt NaN 一律拒绝（不允许 gte(col, NaN) 这类未定义行为），limit 设上限。
+ */
+export const MAX_LIST_LIMIT = 500;
+
+export function parseLimitParam(
+  raw: string | undefined,
+  fallback = 50,
+  max = MAX_LIST_LIMIT,
+): number {
+  if (raw === undefined || raw === '') return fallback;
+  // 严格数值解析（Number 而非 parseInt——'12abc' 这类尾随垃圾显式拒绝）。
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) {
+    throw new BadRequestException(`invalid limit: ${raw}`);
+  }
+  return Math.min(Math.trunc(value), max);
+}
+
+export function parseBatteryParam(
+  raw: string | undefined,
+  field: 'batteryMin' | 'batteryMax',
+): number | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new BadRequestException(`invalid ${field}: ${raw}`);
+  }
+  return value;
+}
+
+export function parsePageParam(raw: string | undefined, fallback = 1): number {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) {
+    throw new BadRequestException(`invalid page: ${raw}`);
+  }
+  return Math.trunc(value);
+}
+
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
@@ -43,15 +84,47 @@ export class DashboardService {
     private readonly auditService: AuditService,
   ) {}
 
-  async getOverview(): Promise<OverviewStats> {
+  /**
+   * NEST-312~319（2026-08-17 审计整改）：dashboard 全部聚合/列表/详情/写路径
+   * 带 org 谓词。global_admin 显式放行（与 RLS 例外路径一致）。
+   */
+  private orgCondition(
+    column:
+      | typeof ewohDevice.orgId
+      | typeof ewohEvent.orgId
+      | typeof ewohTelemetry.orgId
+      | typeof ewohSpatialEntity.orgId
+      | typeof ewohEnvironment.orgId,
+    actor?: OrgContext,
+  ): SQL | undefined {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: dashboard operations require tenant context',
+      );
+    }
+    return eq(column, orgId) as SQL;
+  }
+
+  private auditOrgId(actor: OrgContext | undefined, rowOrgId?: string | null): string {
+    return actor?.primaryOrgId ?? rowOrgId ?? '';
+  }
+
+  async getOverview(actor?: OrgContext): Promise<OverviewStats> {
     try {
+      const deviceOrg = this.orgCondition(ewohDevice.orgId, actor);
       const [deviceStats] = await this.db
         .select({
           total: sql<number>`count(*)::int`,
           online: sql<number>`count(*) filter (where ${ewohDevice.online} = true)::int`,
         })
-        .from(ewohDevice);
+        .from(ewohDevice)
+        .where(deviceOrg);
 
+      const eventOrg = this.orgCondition(ewohEvent.orgId, actor);
       const [eventStats] = await this.db
         .select({
           open: sql<number>`count(*) filter (where ${ewohEvent.status} = 'open')::int`,
@@ -59,21 +132,34 @@ export class DashboardService {
           // 并集统计，避免存量/新量口径漂移（真实 PG 首推后按需收紧）。
           critical: sql<number>`count(*) filter (where ${ewohEvent.severity} in ('critical','high','medium','L2','L3'))::int`,
         })
-        .from(ewohEvent);
+        .from(ewohEvent)
+        .where(eventOrg);
 
+      const telemetryOrg = this.orgCondition(ewohTelemetry.orgId, actor);
       const [loadStats] = await this.db
         .select({
           avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
         })
         .from(ewohTelemetry)
-        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`));
+        .where(
+          telemetryOrg
+            ? and(telemetryOrg, gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+            : gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+        );
 
       const [workerStats] = await this.db
         .select({
           count: sql<number>`count(distinct ${ewohDevice.workerName})::int`,
         })
         .from(ewohDevice)
-        .where(sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`);
+        .where(
+          deviceOrg
+            ? and(
+                deviceOrg,
+                sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
+              )
+            : sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
+        );
 
       return {
         deviceTotal: deviceStats?.total ?? 0,
@@ -89,8 +175,9 @@ export class DashboardService {
     }
   }
 
-  async getEnvironmentSummary(): Promise<EnvironmentReading[]> {
+  async getEnvironmentSummary(actor?: OrgContext): Promise<EnvironmentReading[]> {
     try {
+      const orgId = this.orgParam(actor);
       const rows = await this.db.execute<Record<string, unknown>>(
         sql`
           select distinct on (sensor_id)
@@ -106,6 +193,7 @@ export class DashboardService {
             record_id,
             data_confidence
           from ${ewohEnvironment}
+          ${orgId ? sql`where org_id = ${orgId}` : sql``}
           order by sensor_id, ts desc
           limit 500
         `,
@@ -129,9 +217,21 @@ export class DashboardService {
     }
   }
 
-  async getDevices(query?: DeviceSearchQuery): Promise<DeviceInfo[]> {
+  /** raw SQL 用的 org 参数（global_admin → null = 不加过滤）。 */
+  private orgParam(actor?: OrgContext): string | null {
+    if (actor?.isGlobalAdmin) return null;
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: dashboard operations require tenant context',
+      );
+    }
+    return orgId;
+  }
+
+  async getDevices(query?: DeviceSearchQuery, actor?: OrgContext): Promise<DeviceInfo[]> {
     try {
-      const conditions = this.buildDeviceConditions(query);
+      const conditions = this.buildDeviceConditions(query, actor);
       const rows = await this.buildDeviceQuery(conditions).orderBy(this.buildDeviceOrder(query));
       return this.mapDeviceRows(rows);
     } catch (error) {
@@ -140,9 +240,11 @@ export class DashboardService {
     }
   }
 
-  async getDeviceDetail(deviceId: string): Promise<DeviceInfo> {
+  async getDeviceDetail(deviceId: string, actor?: OrgContext): Promise<DeviceInfo> {
     try {
-      const rows = await this.buildDeviceQuery([eq(ewohDevice.deviceId, deviceId)]);
+      const conditions = this.buildDeviceConditions(undefined, actor);
+      conditions.push(eq(ewohDevice.deviceId, deviceId));
+      const rows = await this.buildDeviceQuery(conditions);
       if (rows.length === 0) {
         throw new NotFoundException(`Device ${deviceId} not found`);
       }
@@ -156,9 +258,12 @@ export class DashboardService {
     }
   }
 
-  async searchDevices(query: DeviceSearchQuery = {}): Promise<DeviceSearchResult> {
+  async searchDevices(
+    query: DeviceSearchQuery = {},
+    actor?: OrgContext,
+  ): Promise<DeviceSearchResult> {
     try {
-      const conditions = this.buildDeviceConditions(query);
+      const conditions = this.buildDeviceConditions(query, actor);
       const where = conditions.length > 0 ? and(...conditions) : undefined;
       const { page, pageSize } = normalizePagination(query.page, query.pageSize);
 
@@ -184,8 +289,11 @@ export class DashboardService {
     }
   }
 
-  private buildDeviceConditions(query?: DeviceSearchQuery): SQL[] {
+  private buildDeviceConditions(query?: DeviceSearchQuery, actor?: OrgContext): SQL[] {
     const conditions: SQL[] = [];
+    // NEST-314：设备查询 org 谓词（global_admin 不加过滤）。
+    const orgCond = this.orgCondition(ewohDevice.orgId, actor);
+    if (orgCond) conditions.push(orgCond);
     if (query?.keyword) {
       const kw = `%${query.keyword}%`;
       conditions.push(
@@ -320,16 +428,20 @@ export class DashboardService {
     }));
   }
 
-  async getEvents(limit: number = 50, status?: string): Promise<EventInfo[]> {
+  async getEvents(limit: number = 50, status?: string, actor?: OrgContext): Promise<EventInfo[]> {
     try {
-      const conditions = status ? [eq(ewohEvent.status, status)] : [];
-      const query = this.db
+      // NEST-347：limit 上限（防 parseInt('1e9') 全表拉取）。
+      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
+      const conditions: SQL[] = [];
+      const orgCond = this.orgCondition(ewohEvent.orgId, actor);
+      if (orgCond) conditions.push(orgCond);
+      if (status) conditions.push(eq(ewohEvent.status, status));
+      const rows = await this.db
         .select()
         .from(ewohEvent)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(ewohEvent.createdAt))
-        .limit(limit);
-      const rows = await query;
+        .limit(safeLimit);
       return rows.map((r) => ({
         id: r.id,
         eventId: r.eventId,
@@ -348,14 +460,16 @@ export class DashboardService {
     }
   }
 
-  async getEventStats(): Promise<EventStats> {
+  async getEventStats(actor?: OrgContext): Promise<EventStats> {
     try {
+      const orgCond = this.orgCondition(ewohEvent.orgId, actor);
       const severityRows = await this.db
         .select({
           severity: ewohEvent.severity,
           count: sql<number>`count(*)::int`,
         })
         .from(ewohEvent)
+        .where(orgCond)
         .groupBy(ewohEvent.severity);
 
       const statusRows = await this.db
@@ -364,6 +478,7 @@ export class DashboardService {
           count: sql<number>`count(*)::int`,
         })
         .from(ewohEvent)
+        .where(orgCond)
         .groupBy(ewohEvent.status);
 
       const trendRows = await this.db
@@ -372,7 +487,11 @@ export class DashboardService {
           count: sql<number>`count(*)::int`,
         })
         .from(ewohEvent)
-        .where(gte(ewohEvent.createdAt, sql`now() - interval '24 hours'`))
+        .where(
+          orgCond
+            ? and(orgCond, gte(ewohEvent.createdAt, sql`now() - interval '24 hours'`))
+            : gte(ewohEvent.createdAt, sql`now() - interval '24 hours'`),
+        )
         .groupBy(sql`date_trunc('hour', ${ewohEvent.createdAt})`)
         .orderBy(sql`date_trunc('hour', ${ewohEvent.createdAt})`);
 
@@ -397,14 +516,23 @@ export class DashboardService {
     }
   }
 
-  async getTelemetry(deviceId: string, limit: number = 50): Promise<TelemetryInfo[]> {
+  async getTelemetry(
+    deviceId: string,
+    limit: number = 50,
+    actor?: OrgContext,
+  ): Promise<TelemetryInfo[]> {
     try {
+      // NEST-348：limit 上限。
+      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
+      const conditions: SQL[] = [eq(ewohTelemetry.deviceId, deviceId)];
+      const orgCond = this.orgCondition(ewohTelemetry.orgId, actor);
+      if (orgCond) conditions.push(orgCond);
       const rows = await this.db
         .select()
         .from(ewohTelemetry)
-        .where(eq(ewohTelemetry.deviceId, deviceId))
+        .where(and(...conditions))
         .orderBy(desc(ewohTelemetry.ts))
-        .limit(limit);
+        .limit(safeLimit);
       return rows.map((r) => ({
         id: r.id,
         deviceId: r.deviceId,
@@ -421,8 +549,9 @@ export class DashboardService {
     }
   }
 
-  async getWorkers(): Promise<WorkerLoad[]> {
+  async getWorkers(actor?: OrgContext): Promise<WorkerLoad[]> {
     try {
+      const orgCond = this.orgCondition(ewohDevice.orgId, actor);
       const rows = await this.db
         .select({
           deviceId: ewohDevice.deviceId,
@@ -436,7 +565,11 @@ export class DashboardService {
         })
         .from(ewohDevice)
         .leftJoin(ewohTelemetry, eq(ewohTelemetry.deviceId, ewohDevice.deviceId))
-        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+        .where(
+          orgCond
+            ? and(orgCond, gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+            : gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+        )
         .groupBy(ewohDevice.deviceId, ewohDevice.workerName, ewohDevice.online, ewohDevice.batteryPct);
 
       return rows.map((r) => ({
@@ -463,10 +596,12 @@ export class DashboardService {
     actor?: OrgContext,
   ): Promise<EventInfo> {
     try {
+      // NEST-317：按 (orgId, eventId) 定位；他租户事件对本租户呈现 404。
+      const orgCond = this.orgCondition(ewohEvent.orgId, actor);
       const [existing] = await this.db
         .select()
         .from(ewohEvent)
-        .where(eq(ewohEvent.eventId, eventId))
+        .where(orgCond ? and(eq(ewohEvent.eventId, eventId), orgCond) : eq(ewohEvent.eventId, eventId))
         .limit(1);
 
       if (!existing) {
@@ -488,12 +623,16 @@ export class DashboardService {
             handled_at: now.toISOString(),
           },
         })
-        .where(eq(ewohEvent.eventId, eventId))
+        .where(
+          orgCond
+            ? and(eq(ewohEvent.eventId, eventId), orgCond)
+            : eq(ewohEvent.eventId, eventId),
+        )
         .returning();
 
       await this.auditService.appendAuditLog({
         actorId: actor?.userId ?? operator ?? 'system',
-        orgId: actor?.primaryOrgId ?? '',
+        orgId: this.auditOrgId(actor, existing.orgId),
         action: 'event.handle',
         entityType: 'event',
         entityId: eventId,
@@ -523,10 +662,17 @@ export class DashboardService {
 
   async createDevice(dto: CreateDeviceDto, actor?: OrgContext): Promise<DeviceInfo> {
     try {
+      // NEST-331：无租户上下文显式拒绝（不再回退 NULL=全局可见行）。
+      const orgId = this.orgParam(actor) ?? undefined;
+      if (!orgId) {
+        throw new BadRequestException(
+          'org context missing: device creation requires tenant context',
+        );
+      }
       const [existing] = await this.db
         .select({ deviceId: ewohDevice.deviceId })
         .from(ewohDevice)
-        .where(eq(ewohDevice.deviceId, dto.deviceId))
+        .where(and(eq(ewohDevice.deviceId, dto.deviceId), eq(ewohDevice.orgId, orgId)))
         .limit(1);
       if (existing) {
         throw new BadRequestException('设备 ID 已存在');
@@ -545,7 +691,7 @@ export class DashboardService {
           hardwareVersion: dto.hardwareVersion ?? null,
           protocolVersion: dto.protocolVersion ?? null,
           // NO-13aa（ADR-075 续）：设备行归属注入（001 ewoh_org_visible RLS 对齐）。
-          orgId: actor?.primaryOrgId ?? null,
+          orgId,
         })
         .returning();
 
@@ -563,10 +709,12 @@ export class DashboardService {
     actor?: OrgContext,
   ): Promise<DeviceInfo> {
     try {
+      const orgCond = this.orgCondition(ewohDevice.orgId, actor);
+      // NEST-318：按 (orgId, deviceId) 定位与更新（跨租户设备不可见不可改）。
       const [existing] = await this.db
         .select()
         .from(ewohDevice)
-        .where(eq(ewohDevice.deviceId, deviceId))
+        .where(orgCond ? and(eq(ewohDevice.deviceId, deviceId), orgCond) : eq(ewohDevice.deviceId, deviceId))
         .limit(1);
       if (!existing) {
         throw new NotFoundException(`Device ${deviceId} not found`);
@@ -586,12 +734,14 @@ export class DashboardService {
       const [updated] = await this.db
         .update(ewohDevice)
         .set(updateData)
-        .where(eq(ewohDevice.deviceId, deviceId))
+        .where(
+          orgCond ? and(eq(ewohDevice.deviceId, deviceId), orgCond) : eq(ewohDevice.deviceId, deviceId),
+        )
         .returning();
 
       await this.auditService.appendAuditLog({
         actorId: actor?.userId ?? 'system',
-        orgId: actor?.primaryOrgId ?? '',
+        orgId: this.auditOrgId(actor, existing.orgId),
         action: 'device.update',
         entityType: 'device',
         entityId: deviceId,
@@ -619,36 +769,45 @@ export class DashboardService {
     }
   }
 
-  async getDeviceBindings(deviceId: string): Promise<DeviceBinding> {
+  async getDeviceBindings(deviceId: string, actor?: OrgContext): Promise<DeviceBinding> {
     try {
+      const orgCond = this.orgCondition(ewohSpatialEntity.orgId, actor);
       const [deviceEntity] = await this.db
         .select()
         .from(ewohSpatialEntity)
         .where(
-          and(eq(ewohSpatialEntity.entityType, 'device'), eq(ewohSpatialEntity.entityId, deviceId)),
+          and(
+            eq(ewohSpatialEntity.entityType, 'device'),
+            eq(ewohSpatialEntity.entityId, deviceId),
+            ...(orgCond ? [orgCond] : []),
+          ),
         )
         .limit(1);
 
+      // NEST-346：层级遍历去 N+1 —— 单条递归 CTE 一次取全部祖先链。
       const hierarchyPath: Array<{ entityId: string; name: string; entityType: string }> = [];
       if (deviceEntity?.parentId) {
-        const visited = new Set<string>();
-        let currentId: string | null = deviceEntity.parentId;
-        while (currentId && !visited.has(currentId)) {
-          visited.add(currentId);
-          const [entity] = await this.db
-            .select()
-            .from(ewohSpatialEntity)
-            .where(eq(ewohSpatialEntity.entityId, currentId))
-            .limit(1);
-          if (!entity) break;
+        const ancestorRows = await this.db.execute<Record<string, unknown>>(sql`
+          with recursive ancestors as (
+            select entity_id, name, entity_type, parent_id
+            from ${ewohSpatialEntity}
+            where entity_id = ${deviceEntity.parentId}
+            ${orgCond ? sql`and org_id = ${this.orgParam(actor)}` : sql``}
+            union
+            select e.entity_id, e.name, e.entity_type, e.parent_id
+            from ${ewohSpatialEntity} e
+            join ancestors a on e.entity_id = a.parent_id
+            ${orgCond ? sql`where e.org_id = ${this.orgParam(actor)}` : sql``}
+          )
+          select entity_id, name, entity_type from ancestors
+        `);
+        for (const row of ancestorRows.reverse()) {
           hierarchyPath.push({
-            entityId: entity.entityId,
-            name: entity.name,
-            entityType: entity.entityType,
+            entityId: String(row.entity_id),
+            name: String(row.name),
+            entityType: String(row.entity_type),
           });
-          currentId = entity.parentId;
         }
-        hierarchyPath.reverse();
       }
 
       const [personEntity] = await this.db
@@ -658,6 +817,7 @@ export class DashboardService {
           and(
             eq(ewohSpatialEntity.entityType, 'person'),
             sql`${ewohSpatialEntity.extra}->>'device_id' = ${deviceId}`,
+            ...(orgCond ? [orgCond] : []),
           ),
         )
         .limit(1);
@@ -675,15 +835,41 @@ export class DashboardService {
     }
   }
 
-  async bindDevice(deviceId: string, req: BindDeviceRequest): Promise<DeviceBinding> {
+  async bindDevice(
+    deviceId: string,
+    req: BindDeviceRequest,
+    actor?: OrgContext,
+  ): Promise<DeviceBinding> {
     try {
+      const orgId = this.orgParam(actor) ?? undefined;
+      if (!orgId) {
+        throw new BadRequestException(
+          'org context missing: device binding requires tenant context',
+        );
+      }
       const [existingDeviceEntity] = await this.db
         .select()
         .from(ewohSpatialEntity)
         .where(
-          and(eq(ewohSpatialEntity.entityType, 'device'), eq(ewohSpatialEntity.entityId, deviceId)),
+          and(
+            eq(ewohSpatialEntity.entityType, 'device'),
+            eq(ewohSpatialEntity.entityId, deviceId),
+            eq(ewohSpatialEntity.orgId, orgId),
+          ),
         )
         .limit(1);
+
+      // NEST-319：目标空间实体必须属于本租户（防跨租户挂载）。
+      if (req.spatialEntityId !== undefined) {
+        const [target] = await this.db
+          .select({ id: ewohSpatialEntity.id })
+          .from(ewohSpatialEntity)
+          .where(and(eq(ewohSpatialEntity.entityId, req.spatialEntityId), eq(ewohSpatialEntity.orgId, orgId)))
+          .limit(1);
+        if (!target) {
+          throw new NotFoundException(`Spatial entity ${req.spatialEntityId} not found`);
+        }
+      }
 
       let deviceEntity = existingDeviceEntity;
       if (!deviceEntity) {
@@ -694,6 +880,7 @@ export class DashboardService {
             entityType: 'device',
             name: deviceId,
             parentId: req.spatialEntityId ?? null,
+            orgId,
           })
           .returning();
         deviceEntity = created;
@@ -703,14 +890,21 @@ export class DashboardService {
         await this.db
           .update(ewohSpatialEntity)
           .set({ parentId: req.spatialEntityId })
-          .where(eq(ewohSpatialEntity.id, deviceEntity.id));
+          .where(
+            and(eq(ewohSpatialEntity.id, deviceEntity.id), eq(ewohSpatialEntity.orgId, orgId)),
+          );
       }
 
       if (req.personEntityId !== undefined && deviceEntity) {
         const [personEntity] = await this.db
           .select()
           .from(ewohSpatialEntity)
-          .where(eq(ewohSpatialEntity.entityId, req.personEntityId))
+          .where(
+            and(
+              eq(ewohSpatialEntity.entityId, req.personEntityId),
+              eq(ewohSpatialEntity.orgId, orgId),
+            ),
+          )
           .limit(1);
         if (personEntity) {
           const personExtra = (personEntity.extra as Record<string, unknown> | null) ?? {};
@@ -723,23 +917,30 @@ export class DashboardService {
         await this.db
           .update(ewohSpatialEntity)
           .set({ extra: { ...deviceExtra, worker_id: req.personEntityId } })
-          .where(eq(ewohSpatialEntity.id, deviceEntity.id));
+          .where(
+            and(eq(ewohSpatialEntity.id, deviceEntity.id), eq(ewohSpatialEntity.orgId, orgId)),
+          );
       }
 
-      return this.getDeviceBindings(deviceId);
+      return this.getDeviceBindings(deviceId, actor);
     } catch (error) {
       this.logger.error(`bindDevice 失败 deviceId=${deviceId}`, error);
       throw error;
     }
   }
 
-  async unbindDevice(deviceId: string): Promise<void> {
+  async unbindDevice(deviceId: string, actor?: OrgContext): Promise<void> {
     try {
+      const orgCond = this.orgCondition(ewohSpatialEntity.orgId, actor);
       const [deviceEntity] = await this.db
         .select()
         .from(ewohSpatialEntity)
         .where(
-          and(eq(ewohSpatialEntity.entityType, 'device'), eq(ewohSpatialEntity.entityId, deviceId)),
+          and(
+            eq(ewohSpatialEntity.entityType, 'device'),
+            eq(ewohSpatialEntity.entityId, deviceId),
+            ...(orgCond ? [orgCond] : []),
+          ),
         )
         .limit(1);
 
@@ -747,7 +948,11 @@ export class DashboardService {
         await this.db
           .update(ewohSpatialEntity)
           .set({ parentId: null })
-          .where(eq(ewohSpatialEntity.id, deviceEntity.id));
+          .where(
+            orgCond
+              ? and(eq(ewohSpatialEntity.id, deviceEntity.id), orgCond)
+              : eq(ewohSpatialEntity.id, deviceEntity.id),
+          );
 
         const deviceExtra = (deviceEntity.extra as Record<string, unknown> | null) ?? {};
         if ('worker_id' in deviceExtra) {
@@ -756,7 +961,11 @@ export class DashboardService {
           await this.db
             .update(ewohSpatialEntity)
             .set({ extra: newExtra })
-            .where(eq(ewohSpatialEntity.id, deviceEntity.id));
+            .where(
+              orgCond
+                ? and(eq(ewohSpatialEntity.id, deviceEntity.id), orgCond)
+                : eq(ewohSpatialEntity.id, deviceEntity.id),
+            );
         }
       }
 
@@ -767,6 +976,7 @@ export class DashboardService {
           and(
             eq(ewohSpatialEntity.entityType, 'person'),
             sql`${ewohSpatialEntity.extra}->>'device_id' = ${deviceId}`,
+            ...(orgCond ? [orgCond] : []),
           ),
         );
 
@@ -778,7 +988,11 @@ export class DashboardService {
           await this.db
             .update(ewohSpatialEntity)
             .set({ extra: newExtra })
-            .where(eq(ewohSpatialEntity.id, person.id));
+            .where(
+              orgCond
+                ? and(eq(ewohSpatialEntity.id, person.id), orgCond)
+                : eq(ewohSpatialEntity.id, person.id),
+            );
         }
       }
     } catch (error) {

@@ -209,8 +209,9 @@ export class WorkbenchExportService {
 
   /** Advances progress while the export runs. Only valid from `running`. */
   async advance(taskId: string, progress: number, processed: number, total: number): Promise<void> {
-    const task = await this.store.get(taskId);
-    if (task) assertTransition(task.status, 'running');
+    // NEST-216：task 未找到时显式 404（不再静默 no-op update）。
+    const task = await this.requireTask(taskId);
+    assertTransition(task.status, 'running');
     await this.store.update(taskId, {
       status: 'running',
       progress: Math.max(0, Math.min(100, Math.round(progress))),
@@ -221,8 +222,9 @@ export class WorkbenchExportService {
 
   /** Marks the export as finished and records the download target. */
   async complete(taskId: string, downloadUrl: string, meta?: { rowCount?: number; fileSize?: number }): Promise<void> {
-    const task = await this.store.get(taskId);
-    if (task) assertTransition(task.status, 'succeeded');
+    // NEST-216：task 未找到时显式 404。
+    const task = await this.requireTask(taskId);
+    assertTransition(task.status, 'succeeded');
     await this.store.update(taskId, {
       status: 'succeeded',
       progress: 100,
@@ -235,13 +237,21 @@ export class WorkbenchExportService {
 
   /** Marks the export as failed. */
   async fail(taskId: string, error: string): Promise<void> {
-    const task = await this.store.get(taskId);
-    if (task) assertTransition(task.status, 'failed');
+    // NEST-216：task 未找到时显式 404。
+    const task = await this.requireTask(taskId);
+    assertTransition(task.status, 'failed');
     await this.store.update(taskId, {
       status: 'failed',
       error,
       finishedAt: new Date().toISOString(),
     });
+  }
+
+  /** NEST-216：统一“task 必须存在”读取入口。 */
+  private async requireTask(taskId: string): Promise<WorkbenchExportTask> {
+    const task = await this.store.get(taskId);
+    if (!task) throw new NotFoundException('export task not found');
+    return task;
   }
 
   /**
@@ -273,7 +283,10 @@ export class WorkbenchExportService {
       throw new BadRequestException(`Cannot cancel an export in '${from}' state`);
     }
     await this.appendAudit(actor, 'workbench.export.cancelled', { id: taskId });
-    return (await this.store.get(taskId)) as WorkbenchExportTask;
+    // NEST-230：重读 undefined（并发删除）时显式 404，不再强转。
+    const reloaded = await this.store.get(taskId);
+    if (!reloaded) throw new NotFoundException('export task not found');
+    return reloaded;
   }
 
   /**
@@ -297,11 +310,13 @@ export class WorkbenchExportService {
 
   /** Requeues a failed/expired task for another attempt (with backoff deadline). */
   async retryExportTask(taskId: string, retryAfterMs = 30 * 1000): Promise<void> {
-    const task = await this.store.get(taskId);
-    if (!task) throw new NotFoundException('export task not found');
-    if (!canTransition(task.status, 'running')) {
+    const task = await this.requireTask(taskId);
+    // NEST-208：retry 显式走 failed/expired → queued 转移（状态机已补该边），
+    // 校验与写入目标一致，且 assertTransition 杜绝 silent 违约。
+    if (!canTransition(task.status, 'queued')) {
       throw new BadRequestException(`Cannot retry an export in '${task.status}' state`);
     }
+    assertTransition(task.status, 'queued');
     const now = new Date();
     await this.store.update(taskId, {
       status: 'queued',

@@ -80,7 +80,7 @@ export class ConflictService {
     params: ConflictsListRequest = {},
     actor?: OrgContext,
   ): Promise<ConflictsListResponse> {
-    const derived = await this.derive();
+    const derived = await this.derive(actor);
     const merged = await this.mergeWithDbReadOnly(derived, actor);
     let conflicts = merged;
     if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
@@ -100,7 +100,7 @@ export class ConflictService {
   async reconcileNow(
     ctx: OrgContext,
   ): Promise<{ ok: boolean; reconciledCount: number; conflicts: SchedulingConflict[] }> {
-    const derived = await this.derive();
+    const derived = await this.derive(ctx);
     const merged = await this.reconcile(derived, ctx ?? SYSTEM_CTX);
     return { ok: true, reconciledCount: merged.length, conflicts: merged };
   }
@@ -156,12 +156,13 @@ export class ConflictService {
    */
   async aggregateOpenConflicts(
     windowMs: number,
+    ctx?: OrgContext,
   ): Promise<{
     triggerIds: string[];
     affectedTaskIds: string[];
     conflicts: SchedulingConflict[];
   }> {
-    const derived = await this.derive();
+    const derived = await this.derive(ctx);
     const now = Date.now();
     const open = derived.filter((c) => {
       if ((c.status ?? 'OPEN') !== 'OPEN') return false;
@@ -190,12 +191,14 @@ export class ConflictService {
     reason?: string,
     ctx?: OrgContext,
   ): Promise<SchedulingConflict> {
-    const row = await this.findRowByConflictId(conflictId);
+    // NEST-003 修复（2026-08-17）：人工生命周期转移强制携带 actor 语义——
+    // 行读取/归并全部传 ctx（org 过滤），跨租户 conflictId 404。
+    const row = await this.findRowByConflictId(conflictId, ctx);
     if (!row) {
       // 未落库：先推导归并（使其落库），再执行转移。
-      await this.reconcile(await this.derive(), ctx ?? SYSTEM_CTX);
+      await this.reconcile(await this.derive(ctx), ctx ?? SYSTEM_CTX);
     }
-    const fresh = await this.findRowByConflictId(conflictId);
+    const fresh = await this.findRowByConflictId(conflictId, ctx);
     if (!fresh) throw new NotFoundException(`Conflict ${conflictId} not found`);
     if (fresh.status === 'ACKNOWLEDGED') return this.rowToConflict(fresh);
     if (fresh.status !== 'OPEN') {
@@ -211,7 +214,7 @@ export class ConflictService {
       acknowledgedAt: now,
       updatedAt: now,
     });
-    const updated = await this.findRowByConflictId(conflictId);
+    const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
     await this.writeAudit(
@@ -221,7 +224,7 @@ export class ConflictService {
       reason ?? '',
       ctx ?? SYSTEM_CTX,
     );
-    await this.emitSse('conflict.acknowledged', view);
+    await this.emitSse('conflict.acknowledged', view, ctx?.primaryOrgId || null);
     return view;
   }
 
@@ -233,7 +236,8 @@ export class ConflictService {
     resolution?: string,
     ctx?: OrgContext,
   ): Promise<SchedulingConflict> {
-    const fresh = await this.findRowByConflictId(conflictId);
+    // NEST-003：行读取/更新按 ctx org 过滤。
+    const fresh = await this.findRowByConflictId(conflictId, ctx);
     if (!fresh) throw new NotFoundException(`Conflict ${conflictId} not found`);
     if (fresh.status === 'RESOLVED') return this.rowToConflict(fresh);
     const now = new Date();
@@ -245,7 +249,7 @@ export class ConflictService {
       resolution: resolution ?? fresh.resolution ?? null,
       updatedAt: now,
     });
-    const updated = await this.findRowByConflictId(conflictId);
+    const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
     await this.writeAudit(
@@ -267,7 +271,8 @@ export class ConflictService {
     suppressUntilMs?: number,
     ctx?: OrgContext,
   ): Promise<SchedulingConflict> {
-    const fresh = await this.findRowByConflictId(conflictId);
+    // NEST-003：行读取/更新按 ctx org 过滤。
+    const fresh = await this.findRowByConflictId(conflictId, ctx);
     if (!fresh) throw new NotFoundException(`Conflict ${conflictId} not found`);
     if (fresh.status === 'SUPPRESSED') return this.rowToConflict(fresh);
     if (fresh.status === 'RESOLVED') {
@@ -286,7 +291,7 @@ export class ConflictService {
       suppressUntil,
       updatedAt: now,
     });
-    const updated = await this.findRowByConflictId(conflictId);
+    const updated = await this.findRowByConflictId(conflictId, ctx);
     if (!updated) throw new NotFoundException(`Conflict ${conflictId} not found`);
     const view = this.rowToConflict(updated);
     await this.writeAudit(
@@ -302,11 +307,13 @@ export class ConflictService {
 
   // ===== 推导 + 归并落库 =====
 
-  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突（迁移自 SchedulerService）。 */
-  async derive(): Promise<SchedulingConflict[]> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突（迁移自 SchedulerService）。NEST-042/101：ctx 透传。 */
+  async derive(ctx?: OrgContext): Promise<SchedulingConflict[]> {
+    // NEST-042/NEST-101（2026-08-17）：世界状态收集按 ctx org 过滤
+    // （此前无 ctx 全表收集，跨租户冲突混入推导/归并）。
+    const state = await this.worldStateSnapshotService.getCurrentWorldState(ctx);
     const config = (await this.policyService
-      .getConfig()
+      .getConfig(ctx?.primaryOrgId || null)
       .catch(() => null)) as SchedulingPolicyConfig | null;
     const minBatteryPct = config?.minBatteryPct ?? 15;
     const now = Date.now();
@@ -588,14 +595,27 @@ export class ConflictService {
     }
 
     // 11. stale plan：活跃方案基于已过期的快照。
+    //    NEST-042/159 配套：活跃方案 org 过滤 + 单次 current 复用（N+1 消除）。
     const activePlans = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, ACTIVE_PLAN_STATUSES));
+      .where(
+        and(
+          inArray(ewohSchedulePlan.status, ACTIVE_PLAN_STATUSES),
+          ctx
+            ? or(
+                isNull(ewohSchedulePlan.orgId),
+                eq(ewohSchedulePlan.orgId, ctx.primaryOrgId),
+              )
+            : undefined,
+        ),
+      );
     for (const p of activePlans) {
       if (!p.snapshotVersion) continue;
       const stale = await this.worldStateSnapshotService.isPlanStale(
         p.snapshotVersion,
+        ctx,
+        state,
       );
       if (stale) {
         conflicts.push(
@@ -695,7 +715,11 @@ export class ConflictService {
     derived: SchedulingConflict[],
     ctx: OrgContext,
   ): Promise<SchedulingConflict[]> {
-    const persisted = await this.loadAllRows();
+    // NEST-042 修复（2026-08-17）：归并读取传 ctx（此前 loadAllRows() 无 actor，
+    // 全租户落库行参与归并——他租户冲突被本租户推导结果误置 auto_cleared）。
+    const persisted = await this.loadAllRows(
+      ctx.primaryOrgId ? ctx : undefined,
+    );
     const byId = new Map(persisted.map((r) => [r.conflictId, r]));
     const now = new Date();
     const nowMs = now.getTime();
@@ -712,7 +736,7 @@ export class ConflictService {
           detectedAt: now.toISOString(),
         };
         result.push(enriched);
-        await this.emitSse('conflict.detected', enriched);
+        await this.emitSse('conflict.detected', enriched, ctx.primaryOrgId || null);
         await this.writeAudit('conflict.detected', enriched, SYSTEM_ACTOR, 'derived', ctx);
         continue;
       }
@@ -744,7 +768,7 @@ export class ConflictService {
       };
       if (transition) {
         await this.updateRow(row.id, { status: 'OPEN', updatedAt: now });
-        await this.emitSse('conflict.detected', merged);
+        await this.emitSse('conflict.detected', merged, ctx.primaryOrgId || null);
         await this.writeAudit(
           'conflict.reopen',
           merged,
@@ -777,7 +801,7 @@ export class ConflictService {
           resolvedAt: now.toISOString(),
           resolution: 'auto_cleared',
         };
-        await this.emitSse('conflict.resolved', resolvedView);
+        await this.emitSse('conflict.resolved', resolvedView, ctx.primaryOrgId || null);
         await this.writeAudit(
           'conflict.resolve',
           resolvedView,
@@ -880,10 +904,11 @@ export class ConflictService {
 
   // ===== 内部：SSE / audit / 映射 =====
 
-  /** SSE 推送（conflict.detected/resolved/acknowledged/suppressed）。缺失 outbox 时静默。 */
+  /** SSE 推送（conflict.detected/resolved/acknowledged/suppressed）。缺失 outbox 时静默。NEST-107 同源：携带 orgId。 */
   private async emitSse(
     eventType: string,
     conflict: SchedulingConflict,
+    orgId?: string | null,
   ): Promise<void> {
     if (!this.outboxService) return;
     try {
@@ -905,7 +930,9 @@ export class ConflictService {
           snapshotVersion: conflict.snapshotVersion,
           occurredAt: new Date().toISOString(),
         },
-        null,
+        // NEST-113/114（2026-08-17）：冲突事件携带 orgId（SSE 订阅者按 org
+        // 过滤；此前恒 null 被当全局事件放行给全部订阅者）。
+        orgId ?? null,
         undefined,
         {
           entityType: 'conflict',

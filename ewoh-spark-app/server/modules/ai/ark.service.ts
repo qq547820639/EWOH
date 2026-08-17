@@ -4,6 +4,9 @@ import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
 import { sql, eq, and, desc } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { validateReasoningResult } from '@shared/reasoning-result';
+import { AuditService } from '../shared/audit.service';
+import type { OrgContext } from '../shared/org-context.interceptor';
+import { AI_GLOBAL_ORG_SENTINEL } from '@server/common/org-sentinels';
 
 /**
  * Ark 大模型通用客户端（文本对话）。
@@ -54,7 +57,10 @@ export interface ArkChatResult {
 export class ArkService {
   private readonly logger = new Logger(ArkService.name);
 
-  constructor(@Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any) {}
+  constructor(
+    @Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any,
+    @Optional() private readonly auditService?: AuditService,
+  ) {}
 
   /**
    * NO-08d（ADR-014）：把 Ark 文本结果包裹为 Canonical ReasoningResult。
@@ -138,8 +144,15 @@ export class ArkService {
     return Boolean(cfg.apiKey);
   }
 
-  /** 保存全局 AI 配置到系统配置表（供所有系统功能共享）。 */
-  async saveConfig(input: { api_key?: string; base_url?: string; model?: string }): Promise<ArkConfig> {
+  /**
+   * 保存全局 AI 配置到系统配置表（供所有系统功能共享）。
+   * NEST-414/439：配置变更（含密钥/base_url）写审计日志——密钥字段不落明文，
+   * 仅记录变更布尔；updatedBy 取操作者（不再硬编码 'system-admin'）。
+   */
+  async saveConfig(
+    input: { api_key?: string; base_url?: string; model?: string },
+    actor?: OrgContext,
+  ): Promise<ArkConfig> {
     if (!this.db) {
       throw new Error('无数据库连接，无法持久化 AI 配置');
     }
@@ -149,6 +162,7 @@ export class ArkService {
       base_url: input.base_url?.trim() || current.baseUrl,
       model: input.model?.trim() || current.model,
     };
+    const updatedBy = actor?.userId ?? 'system-admin';
     // v0.7 修复：显式提供 org_id（全局哨兵）而非依赖列默认值（默认可能为 NULL）。
     // 旧版未写 org_id → NULL → ON CONFLICT (org_id, config_key) 永不冲突 → 无限插入新行。
     await this.db
@@ -157,16 +171,34 @@ export class ArkService {
         orgId: GLOBAL_ORG_SENTINEL,
         configKey: ARK_CONFIG_KEY,
         configValue: next as unknown as Record<string, unknown>,
-        updatedBy: 'system-admin',
+        updatedBy,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
         set: {
           configValue: next as unknown as Record<string, unknown>,
-          updatedBy: 'system-admin',
+          updatedBy,
           updatedAt: new Date(),
         },
       });
+    // NEST-414：审计留痕（密钥变更 risk:true；绝不记录密钥本值）。
+    const apiKeyChanged = Boolean(input.api_key?.trim()) && input.api_key?.trim() !== current.apiKey;
+    const baseUrlChanged = Boolean(input.base_url?.trim()) && input.base_url?.trim() !== current.baseUrl;
+    try {
+      await this.auditService?.appendAuditLog({
+        actorId: updatedBy,
+        orgId: actor?.primaryOrgId ?? GLOBAL_ORG_SENTINEL,
+        action: 'ai.config.save',
+        entityType: 'ai_provider_config',
+        entityId: ARK_CONFIG_KEY,
+        before: { apiKeyConfigured: Boolean(current.apiKey), baseUrl: current.baseUrl, model: current.model },
+        after: { apiKeyConfigured: Boolean(next.api_key), baseUrl: next.base_url, model: next.model },
+        risk: apiKeyChanged || baseUrlChanged,
+        metadata: { apiKeyChanged, baseUrlChanged },
+      });
+    } catch (err) {
+      this.logger.error(`AI 配置审计落账失败: ${String(err)}`);
+    }
     return { apiKey: next.api_key, baseUrl: next.base_url, model: next.model };
   }
 

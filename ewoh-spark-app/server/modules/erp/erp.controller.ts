@@ -30,8 +30,9 @@ export class ErpController {
   }
 
   @Get('orders')
-  listOrders() {
-    return this.erpService.listOrders();
+  listOrders(@Req() request: { userContext?: OrgContext }) {
+    // NEST-407：org 过滤。
+    return this.erpService.listOrders(request.userContext);
   }
 
   @Post('outbound')
@@ -48,8 +49,9 @@ export class ErpController {
   }
 
   @Get('outbound')
-  listOutbound() {
-    return this.erpService.listOutbound();
+  listOutbound(@Req() request: { userContext?: OrgContext }) {
+    // NEST-407：org 过滤。
+    return this.erpService.listOutbound(request.userContext);
   }
 
   @Post('outbound/:id/ack')
@@ -62,7 +64,8 @@ export class ErpController {
   }
 
   @Post('reconcile')
-  reconcile() {
-    return this.erpService.reconcile();
+  reconcile(@Req() request: { userContext?: OrgContext }) {
+    // NEST-407：org 作用域核对。
+    return this.erpService.reconcile(request.userContext);
   }
 }

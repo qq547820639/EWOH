@@ -46,8 +46,10 @@ export class SchedulingContextService {
     const snapshot = await this.worldStateSnapshotService.buildSnapshot(orgCtx);
     const [resources, policy, eventSequence, constraints] = await Promise.all([
       // 统一资源投影（与 GET /api/scheduler/resources/state 同源，SSOT）。
-      this.resourceProjectionService.getUnifiedResourceState(),
-      this.policyService.getActivePolicy(),
+      // NEST-109（2026-08-17）：资源投影透传 ctx（与快照同一 org 时间切片，
+      // 消除跨租户资源混入 context.resources）。
+      this.resourceProjectionService.getUnifiedResourceState(orgCtx),
+      this.policyService.getActivePolicy(orgCtx.primaryOrgId || undefined),
       this.outboxService.latestSequence(),
       this.constraintLoaderService.loadGlobalActive(orgCtx),
     ]);

@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
@@ -172,7 +173,8 @@ export interface EfficiencyEntryValue {
   standardMinutes: number;
   deviationMinutes: number;
   efficiencyPercent: number;
-  completedAt: string;
+  /** NEST-226：缺省不再回退“当前时间”（语义误导），显式 null=完成时间未知。 */
+  completedAt: string | null;
   reason: string | null;
   source: string;
   updatedAt: string;
@@ -205,45 +207,97 @@ export class OperationsService {
     private readonly auditService: AuditService,
   ) {}
 
+  /**
+   * NEST-201/209：写配置显式携带 orgId（不依赖 GUC 默认值），transition
+   * 类调用传 expectedUpdatedAt 乐观锁谓词——并发转移时 UPDATE 命中 0 行
+   * 抛 ConflictException，避免读-改-写丢失 history。
+   */
   private async writeConfig(
     key: string,
     value: Record<string, unknown>,
     actor?: OrgContext,
+    expectedUpdatedAt?: Date,
   ) {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org 上下文缺失：operations 配置写入必须带租户上下文',
+      );
+    }
+    const updatedBy = actor?.userId ?? 'system';
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey: key,
         configValue: value,
-        updatedBy: actor?.userId ?? 'system',
+        updatedBy,
+        orgId,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
         set: {
           configValue: value,
-          updatedBy: actor?.userId ?? 'system',
+          updatedBy,
+          updatedAt: new Date(),
         },
+        ...(expectedUpdatedAt
+          ? {
+              setWhere: eq(
+                ewohSchedulerConfig.updatedAt,
+                expectedUpdatedAt,
+              ),
+            }
+          : {}),
       })
       .returning();
+    if (!row) {
+      throw new ConflictException(
+        `Operations record ${key} was modified concurrently (stale version)`,
+      );
+    }
     return row;
   }
 
-  private async readConfig(key: string): Promise<ConfigRow> {
+  /** NEST-201：读取按 (orgId, configKey) 精确命中，跨租户 404。 */
+  private async readConfig(key: string, actor?: OrgContext): Promise<ConfigRow> {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org 上下文缺失：operations 记录读取必须带租户上下文',
+      );
+    }
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, key));
+      .where(
+        and(
+          eq(ewohSchedulerConfig.orgId, orgId),
+          eq(ewohSchedulerConfig.configKey, key),
+        ),
+      );
     if (!row) {
       throw new NotFoundException(`Operations record ${key} not found`);
     }
     return row;
   }
 
-  private async listConfigs(prefix: string): Promise<ConfigRow[]> {
+  /** NEST-201：列表查询加 eq(orgId)（跨租户全量返回收敛）。 */
+  private async listConfigs(prefix: string, actor?: OrgContext): Promise<ConfigRow[]> {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org 上下文缺失：operations 列表查询必须带租户上下文',
+      );
+    }
     return this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, `${prefix}.%`))
+      .where(
+        and(
+          eq(ewohSchedulerConfig.orgId, orgId),
+          like(ewohSchedulerConfig.configKey, `${prefix}.%`),
+        ),
+      )
       .orderBy(desc(ewohSchedulerConfig.updatedAt));
   }
 
@@ -337,7 +391,7 @@ export class OperationsService {
       standardMinutes: 0,
       deviationMinutes: 0,
       efficiencyPercent: 0,
-      completedAt: nowIso(),
+      completedAt: null,
       reason: null,
       source: 'manual',
       updatedAt: row.updatedAt.toISOString(),
@@ -406,8 +460,8 @@ export class OperationsService {
     return this.parseAsset(row);
   }
 
-  async listAssets() {
-    const rows = await this.listConfigs('eam.asset');
+  async listAssets(actor?: OrgContext) {
+    const rows = await this.listConfigs('eam.asset', actor);
     return rows.map((row) => this.parseAsset(row));
   }
 
@@ -417,7 +471,7 @@ export class OperationsService {
     actor?: OrgContext,
   ) {
     const key = configKey('eam.asset', assetId);
-    const row = await this.readConfig(key);
+    const row = await this.readConfig(key, actor);
     const value = this.parseAsset(row);
     const status = nextAssetStatus(value.status, action);
     if (!status) {
@@ -438,6 +492,8 @@ export class OperationsService {
       key,
       value as unknown as Record<string, unknown>,
       actor,
+      // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
+      row.updatedAt,
     );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
@@ -507,8 +563,8 @@ export class OperationsService {
     return this.parseTask(row);
   }
 
-  async listMaintenanceTasks() {
-    const rows = await this.listConfigs('eam.task');
+  async listMaintenanceTasks(actor?: OrgContext) {
+    const rows = await this.listConfigs('eam.task', actor);
     return rows.map((row) => this.parseTask(row));
   }
 
@@ -519,7 +575,7 @@ export class OperationsService {
     actor?: OrgContext,
   ) {
     const key = configKey('eam.task', taskId);
-    const row = await this.readConfig(key);
+    const row = await this.readConfig(key, actor);
     const value = this.parseTask(row);
     const status = nextMaintenanceTaskStatus(value.status, action);
     if (!status) {
@@ -540,7 +596,13 @@ export class OperationsService {
       actor: actor?.userId ?? 'system',
       note: body.note ?? undefined,
     });
-    await this.writeConfig(key, value as unknown as Record<string, unknown>, actor);
+    await this.writeConfig(
+      key,
+      value as unknown as Record<string, unknown>,
+      actor,
+      // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
+      row.updatedAt,
+    );
 
     if (action === 'complete' && value.assetId) {
       await this.refreshAssetAfterMaintenance(value.assetId, value.updatedAt, actor);
@@ -555,7 +617,7 @@ export class OperationsService {
       before: { status: before },
       after: { status, result: value.result },
     });
-    return this.parseTask(await this.readConfig(key));
+    return this.parseTask(await this.readConfig(key, actor));
   }
 
   private async refreshAssetAfterMaintenance(
@@ -565,7 +627,7 @@ export class OperationsService {
   ) {
     const key = configKey('eam.asset', assetId);
     try {
-      const row = await this.readConfig(key);
+      const row = await this.readConfig(key, actor);
       const asset = this.parseAsset(row);
       asset.status = 'active';
       asset.lastCompletedAt = completedAt;
@@ -581,6 +643,8 @@ export class OperationsService {
         key,
         asset as unknown as Record<string, unknown>,
         actor,
+        // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
+        row.updatedAt,
       );
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -645,8 +709,8 @@ export class OperationsService {
     return this.parseTool(row);
   }
 
-  async listTools() {
-    const rows = await this.listConfigs('eam.tool');
+  async listTools(actor?: OrgContext) {
+    const rows = await this.listConfigs('eam.tool', actor);
     return rows.map((row) => this.parseTool(row));
   }
 
@@ -656,7 +720,7 @@ export class OperationsService {
     actor?: OrgContext,
   ) {
     const key = configKey('eam.tool', toolId);
-    const row = await this.readConfig(key);
+    const row = await this.readConfig(key, actor);
     const value = this.parseTool(row);
     const status = nextToolStatus(value.status, action);
     if (!status) {
@@ -739,8 +803,8 @@ export class OperationsService {
     return this.parseWorkCenter(row);
   }
 
-  async listWorkCenters() {
-    const rows = await this.listConfigs('ops.workcenter');
+  async listWorkCenters(actor?: OrgContext) {
+    const rows = await this.listConfigs('ops.workcenter', actor);
     return rows.map((row) => this.parseWorkCenter(row));
   }
 
@@ -795,8 +859,8 @@ export class OperationsService {
     return this.parseStandardHour(row);
   }
 
-  async listStandardHours() {
-    const rows = await this.listConfigs('ops.standard-hour');
+  async listStandardHours(actor?: OrgContext) {
+    const rows = await this.listConfigs('ops.standard-hour', actor);
     return rows.map((row) => this.parseStandardHour(row));
   }
 
@@ -823,7 +887,7 @@ export class OperationsService {
     }
     let standardMinutes = Number(body.standardMinutes);
     if (!Number.isFinite(standardMinutes) || standardMinutes <= 0) {
-      const standardRows = await this.listConfigs('ops.standard-hour');
+      const standardRows = await this.listConfigs('ops.standard-hour', actor);
       const matched = standardRows
         .map((row) => this.parseStandardHour(row))
         .find(
@@ -878,13 +942,13 @@ export class OperationsService {
     return this.parseEfficiencyEntry(row);
   }
 
-  async listEfficiencyEntries() {
-    const rows = await this.listConfigs('ops.efficiency');
+  async listEfficiencyEntries(actor?: OrgContext) {
+    const rows = await this.listConfigs('ops.efficiency', actor);
     return rows.map((row) => this.parseEfficiencyEntry(row));
   }
 
-  async efficiencySummary() {
-    const entries = await this.listEfficiencyEntries();
+  async efficiencySummary(actor?: OrgContext) {
+    const entries = await this.listEfficiencyEntries(actor);
     const byWorker = new Map<string, number[]>();
     for (const entry of entries) {
       const values = byWorker.get(entry.workerId) ?? [];
@@ -919,15 +983,15 @@ export class OperationsService {
     };
   }
 
-  async summary() {
+  async summary(actor?: OrgContext) {
     const [assets, tasks, tools, workCenters, standardHours, efficiency] =
       await Promise.all([
-        this.listAssets(),
-        this.listMaintenanceTasks(),
-        this.listTools(),
-        this.listWorkCenters(),
-        this.listStandardHours(),
-        this.listEfficiencyEntries(),
+        this.listAssets(actor),
+        this.listMaintenanceTasks(actor),
+        this.listTools(actor),
+        this.listWorkCenters(actor),
+        this.listStandardHours(actor),
+        this.listEfficiencyEntries(actor),
       ]);
     const now = nowIso();
     return {

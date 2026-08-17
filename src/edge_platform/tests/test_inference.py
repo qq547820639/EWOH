@@ -2,7 +2,6 @@
 
 import json
 import os
-import queue
 import random
 import shutil
 import sys
@@ -14,7 +13,10 @@ import unittest
 # - src 在 path 上 → `edge_platform.*` 绝对导入可解析（collection 模块已改为绝对导入）。
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# EDT-017：FakeStorage/FakeBus 迁移到共享 _fixtures 模块（本目录加入 path）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from _fixtures import FakeBus, FakeStorage  # noqa: E402
 from collection.dataset import export_dataset
 from collection.session import SessionManager
 from inference import ms_to_ts, ts_to_ms
@@ -29,74 +31,7 @@ from inference.rules import DEFAULT_CONFIG, SEVERITY, RuleEngine
 BASE_TS = 1785300000000  # 固定时间起点（ms），保证测试可重复
 
 
-# ---------- 轻量 Fake（契约对齐，不依赖并行开发的真实实现） ----------
-class FakeStorage:
-    def __init__(self, db_path=None):
-        if db_path is None:
-            fd, db_path = tempfile.mkstemp(suffix=".db")
-            os.close(fd)
-        self.db_path = db_path
-        self.telemetry = []
-        self.inferences = []
-        self.events = {}
-
-    def init_db(self):
-        pass
-
-    def insert_telemetry(self, msg, raw_hex=None):
-        self.telemetry.append(msg)
-
-    def latest_telemetry(self, device_id):
-        msgs = [m for m in self.telemetry if m["device_id"] == device_id]
-        return msgs[-1] if msgs else None
-
-    def query_telemetry(self, device_id, start, end, limit=1000):
-        s, e = ts_to_ms(start), ts_to_ms(end)
-        out = [m for m in self.telemetry if m["device_id"] == device_id and s <= ts_to_ms(m["timestamp"]) <= e]
-        out.sort(key=lambda m: ts_to_ms(m["timestamp"]))
-        return out[:limit]
-
-    def export_slice(self, device_id, start, end):
-        return self.query_telemetry(device_id, start, end, 100000)
-
-    def list_devices(self):
-        return sorted({m["device_id"] for m in self.telemetry})
-
-    def insert_inference(self, res):
-        self.inferences.append(res)
-
-    def query_inference(self, device_id, start, end, limit=100):
-        return self.inferences[-limit:]
-
-    def insert_event(self, evt):
-        self.events[evt["event_id"]] = dict(evt)
-
-    def list_events(self, limit=100):
-        evts = sorted(self.events.values(), key=lambda e: e["start_time"])
-        return evts[-limit:]
-
-    def get_event(self, eid):
-        return self.events.get(eid)
-
-    def update_event_status(self, eid, status, handling):
-        self.events[eid]["status"] = status
-        self.events[eid]["handling"] = handling
-
-
-class FakeBus:
-    def __init__(self):
-        self.queues = {}
-        self.published = {}
-
-    def subscribe(self, topic):
-        q = queue.Queue()
-        self.queues.setdefault(topic, []).append(q)
-        return q
-
-    def publish(self, topic, msg):
-        self.published.setdefault(topic, []).append(msg)
-        for q in self.queues.get(topic, []):
-            q.put(msg)
+# ---------- 轻量 Fake（EDT-017：已迁移至 tests/_fixtures.py 共享） ----------
 
 
 # ---------- 消息工厂 ----------
@@ -448,8 +383,12 @@ class TrainEvalTest(unittest.TestCase):
         self.assertGreaterEqual(metrics["test_metrics"]["macro_f1"], 0.85)
         self.assertIn("confusion", metrics["test_metrics"])
         self.assertLess(metrics["latency"]["p95"], 300)  # 远低于 P95<300ms 门禁
-        # --register 已激活
+        # EDGE-103 整改后：--register 仅登记候选，不自动激活
         reg = ModelRegistry(out)
+        self.assertIsNone(reg.active(), "训练 CLI 不得自动激活模型（须人工 activate）")
+        self.assertIn("0.1.0", reg.versions())
+        # 人工显式激活仍可用（生命周期闭环由人执行）
+        reg.activate("0.1.0")
         got = reg.active()
         self.assertIsNotNone(got)
         self.assertEqual(got[1]["version"], "0.1.0")

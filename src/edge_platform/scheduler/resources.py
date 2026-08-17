@@ -55,14 +55,16 @@ class ResourceStateService:
     """统一资源实时状态聚合服务（Phase 3）。"""
 
     def __init__(self):
-        self._seq = 0
         self._cache = {}  # resource_id -> ResourceState（用于 version 递增）
 
     def _next_version(self, resource_id):
-        """为资源版本自增（乐观版本，供前端只接受比当前版本新的数据）。"""
+        """为资源版本自增（乐观版本，供前端只接受比当前版本新的数据）。
+
+        EDGE-118：移除从未被读取的 self._seq 死代码——版本号即 per-resource
+        递增（ver+1），不再维护无用全局序号。
+        """
         cur = self._cache.get(resource_id)
         ver = int(cur.version) if cur else 0
-        self._seq += 1
         return ver + 1
 
     def build_resource_states(self, storage, ctx=None):

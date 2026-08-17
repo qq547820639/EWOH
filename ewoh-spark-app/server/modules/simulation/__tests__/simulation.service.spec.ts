@@ -78,7 +78,25 @@ function createSimulationDb(rows: Array<Record<string, unknown>> = []) {
         if (table === ewohSimulationRun) state.rows.push(row);
         if (table === ewohEvent) events.push(row);
         writtenTables.push(table);
-        return { returning: jest.fn(async () => [row]) };
+        // NEST-633：onConflictDoNothing——同 (orgId, runId) 已存在时返回空
+        // （数据库唯一键裁决语义；服务层据此回读）。
+        const conflict =
+          table === ewohSimulationRun &&
+          state.rows.some(
+            (r, idx) =>
+              idx < state.rows.length - 1 &&
+              String(r.orgId) === String(row.orgId) &&
+              String(r.runId) === String(row.runId),
+          );
+        if (conflict) {
+          state.rows.pop();
+        }
+        return {
+          returning: jest.fn(async () => (conflict ? [] : [row])),
+          onConflictDoNothing: jest.fn(() => ({
+            returning: jest.fn(async () => (conflict ? [] : [row])),
+          })),
+        };
       }),
     })),
     update: jest.fn((table: unknown) => ({
@@ -182,6 +200,54 @@ describe('SimulationService（NO-12a 数字孪生仿真台账）', () => {
     const second = await service.run({ ...VALID_INPUT, runId: 'sim:fixed-1' }, ORG_A);
     expect(second.created).toBe(false);
     expect(events).toHaveLength(2); // 不重复发事件
+  });
+
+  it('NEST-633: 并发窗口（select 未命中但 insert 冲突）回读不裸抛 23505', async () => {
+    // 预置既有行但让 select 首查不命中（模拟两并发同时过 select 检查）。
+    const { db, events, rows, service } = createSimulationDb([
+      {
+        id: '00000000-0000-4000-8000-000000000009',
+        orgId: ORG_A,
+        runId: 'sim:race-1',
+        kind: 'capacity',
+        status: 'completed',
+        isSimulation: true,
+        baseRefJson: { snapshotVersion: 1 },
+        parametersJson: {},
+        resultsJson: { ok: true },
+        failureReason: null,
+        engineVersion: '1.0.0',
+        recordJson: {},
+        createdAt: new Date(),
+      },
+    ]);
+    const originalSelect = db.select;
+    let selectCallCount = 0;
+    db.select = jest.fn(() => {
+      selectCallCount += 1;
+      const result = originalSelect();
+      if (selectCallCount === 1) {
+        // 首查（run 前置幂等检查）视作未命中——复刻 TOCTOU 窗口。
+        return {
+          from: jest.fn(() => ({
+            where: jest.fn(() => thenableOf([])),
+          })),
+        };
+      }
+      return result;
+    }) as never;
+    function thenableOf(data: unknown[]): unknown {
+      return {
+        then: (resolve: (v: unknown[]) => void) => resolve(data),
+        orderBy: jest.fn(() => thenableOf(data)),
+        limit: jest.fn(() => thenableOf(data.slice(0, 100))),
+      };
+    }
+    const result = await service.run({ ...VALID_INPUT, runId: 'sim:race-1' }, ORG_A);
+    expect(result.created).toBe(false);
+    expect((result.run as Record<string, unknown>).status).toBe('completed');
+    expect(events).toHaveLength(0); // 不重复发事件
+    expect(rows).toHaveLength(1); // 不重复落运行
   });
 
   it('§13 隔离：服务层唯一写路径 = ewoh_simulation_run，绝不写生产 World State 表', async () => {

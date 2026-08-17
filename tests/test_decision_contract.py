@@ -17,6 +17,7 @@ from edge_platform.contracts.risk import SEVERITY_LADDER
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VECTORS_PATH = REPO_ROOT / "contracts" / "decision" / "decision.test-vectors.json"
+SCHEMA_PATH = REPO_ROOT / "contracts" / "decision" / "decision.schema.json"
 
 
 def _load() -> list:
@@ -32,10 +33,18 @@ def test_vector(case):
         assert errors[0] == case["expectError"], (case["name"], errors)
 
 
-def test_registries_shape():
-    assert len(dec.DECISION_KINDS) == 8
-    assert len(dec.DECISION_STATUSES) == 5
-    assert len(dec.DECISION_AUTHORITIES) == 5
+def test_registries_match_schema():
+    """TEST-005：加载 decision.schema.json 与 Python 注册表逐项交叉核对（顺序敏感）。"""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert list(dec.DECISION_KINDS) == schema["decisionKinds"]
+    assert list(dec.DECISION_STATUSES) == schema["decisionStatuses"]
+    assert list(dec.DECISION_AUTHORITIES) == schema["decisionAuthorities"]
+    assert list(dec.RISK_LEVELS) == schema["riskLevels"]
+    # properties.enum 与注册表同源一致性
+    assert schema["properties"]["kind"]["enum"] == list(dec.DECISION_KINDS)
+    assert schema["properties"]["status"]["enum"] == list(dec.DECISION_STATUSES)
+    assert schema["properties"]["decisionAuthority"]["enum"] == list(dec.DECISION_AUTHORITIES)
+    assert schema["properties"]["riskLevel"]["enum"] == list(dec.RISK_LEVELS)
 
 
 def test_risk_ladder_single_source():

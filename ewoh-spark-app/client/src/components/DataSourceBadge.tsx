@@ -9,13 +9,14 @@ export const DATA_SOURCE_LABELS: Record<string, string> = {
   offline: '离线',
 };
 
+/** CLI-337：全部映射到语义设计令牌（6 个状态的视觉类保持互异）。 */
 const DATA_SOURCE_CLASSES: Record<string, string> = {
-  real: 'bg-blue-100 text-blue-700 border-blue-200',
-  controlled_test: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  simulated: 'bg-gray-100 text-gray-600 border-gray-200',
-  replayed: 'bg-purple-100 text-purple-700 border-purple-200',
-  stale: 'bg-orange-100 text-orange-700 border-orange-200',
-  offline: 'bg-red-100 text-red-700 border-red-200',
+  real: 'bg-info/10 text-info border-info/30',
+  controlled_test: 'bg-warning/10 text-warning border-warning/30',
+  simulated: 'bg-muted text-muted-foreground border-border',
+  replayed: 'bg-risk-conflict/10 text-risk-conflict border-risk-conflict/30',
+  stale: 'bg-risk-degraded/15 text-risk-degraded-foreground border-risk-degraded-border',
+  offline: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
 export function dataSourceLabel(source?: string): string {
@@ -23,7 +24,7 @@ export function dataSourceLabel(source?: string): string {
 }
 
 export function dataSourceClass(source?: string): string {
-  return DATA_SOURCE_CLASSES[source ?? ''] ?? 'bg-gray-100 text-gray-500 border-gray-200';
+  return DATA_SOURCE_CLASSES[source ?? ''] ?? 'bg-muted text-muted-foreground border-border';
 }
 
 export function DataSourceBadge({

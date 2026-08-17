@@ -1,8 +1,26 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { SlowQueryService } from '../observability/slow-query.service';
 
+/**
+ * NEST-416：路由模板判定——含路径参数段（:id）或数字/UUID 字面量的原始
+ * path 不是稳定模板（基数无界），归一为 'unmatched' 桶。
+ */
+function isRouteTemplate(route: string): boolean {
+  if (!route || route === 'unmatched' || route === 'unknown') return true;
+  // 路由模板自身（/api/models/:id）是稳定键，保留。
+  if (route.includes(':')) return true;
+  // 原始路径含数字段（/api/models/123）→ 非模板。
+  return !/\/\d+(\/|$)/.test(route);
+}
+
 @Injectable()
 export class MetricsService {
+  /**
+   * NEST-416：请求计数键基数上限（超出后新键并入 'overflow' 聚合桶，
+   * 防御 404/参数化路径把原始 path 当 key 的无界基数内存耗尽）。
+   */
+  private static readonly MAX_REQUEST_KEYS = 1000;
+
   private readonly requests = new Map<string, number>();
   private readonly startedAt = Date.now();
   private activeRequests = 0;
@@ -22,7 +40,18 @@ export class MetricsService {
 
   endRequest(method: string, route: string, status: number): void {
     this.activeRequests = Math.max(0, this.activeRequests - 1);
-    const key = `${method} ${route} ${status}`;
+    // NEST-416：调用方必须传路由模板（MetricsInterceptor 归一）；无模板的
+    // 原始 path 一律归一为 'unmatched'（固定基数）。
+    const normalizedRoute = isRouteTemplate(route) ? route : 'unmatched';
+    const key = `${method} ${normalizedRoute} ${status}`;
+    if (
+      !this.requests.has(key) &&
+      this.requests.size >= MetricsService.MAX_REQUEST_KEYS
+    ) {
+      const overflowKey = `${method} overflow ${status}`;
+      this.requests.set(overflowKey, (this.requests.get(overflowKey) ?? 0) + 1);
+      return;
+    }
     this.requests.set(key, (this.requests.get(key) ?? 0) + 1);
   }
 

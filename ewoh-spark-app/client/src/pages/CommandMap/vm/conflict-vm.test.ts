@@ -1,5 +1,10 @@
 /* Phase 3 / P3-T3：conflictVM 纯函数测试。 */
-import { conflictVM, conflictActionsFor, conflictStatusLabel } from './conflictVM';
+import {
+  conflictVM,
+  conflictActionsFor,
+  conflictStatusLabel,
+  conflictVmItemToConflict,
+} from './conflictVM';
 import type { SchedulingConflict } from '@shared/api.interface';
 
 function conflict(over: Partial<SchedulingConflict>): SchedulingConflict {
@@ -56,5 +61,14 @@ describe('conflictVM（冲突生命周期展示）', () => {
     expect(vm.items).toEqual([]);
     const one = conflictVM([conflict({ status: 'SUPPRESSED' })]);
     expect(one.items[0].suppressed).toBe(true);
+  });
+
+  it('CLI-007：VM item 透传后端原始 createdAt，显式构造不伪造空串', () => {
+    const vm = conflictVM([conflict({ createdAt: '2026-08-09T01:02:03.000Z' })]);
+    expect(vm.items[0].createdAt).toBe('2026-08-09T01:02:03.000Z');
+    const restored = conflictVmItemToConflict(vm.items[0]);
+    expect(restored.createdAt).toBe('2026-08-09T01:02:03.000Z');
+    expect(restored.conflictId).toBe('CFL-1');
+    expect(restored.snapshotVersion).toBeNull();
   });
 });

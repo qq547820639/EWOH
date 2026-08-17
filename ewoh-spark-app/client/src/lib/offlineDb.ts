@@ -38,6 +38,11 @@ export interface SimpleStore<T extends { key: string }> {
   delete(key: string): Promise<void>;
   clear(): Promise<void>;
   count(): Promise<number>;
+  /**
+   * CLI-519：可选的单事务批量删除（IDB 实现提供；内存 fake 可缺省，
+   * 调用方需回退到逐条删除）。保证全部删除要么整体提交、要么整体回滚。
+   */
+  deleteMany?(keys: string[]): Promise<void>;
 }
 
 export interface StoredPendingAction {
@@ -126,6 +131,21 @@ function createStore<T extends { key: string }>(
     new Promise<R>((resolve, reject) => {
       const tx = db.transaction(storeName, mode);
       const result = fn(tx);
+      if (mode === 'readwrite') {
+        // CLI-504：写事务以 tx.oncomplete 为准。请求 onsuccess 时事务仍
+        // 可能随后中止/回滚（QuotaError、版本变更等），在请求成功即 resolve
+        // 会让调用方误以为已持久化。请求结果（写操作均为 void）不再被消费。
+        let requestError: DOMException | null = null;
+        if (result) {
+          result.onerror = () => {
+            requestError = result.error;
+          };
+        }
+        tx.oncomplete = () => resolve(undefined as unknown as R);
+        tx.onerror = () => reject(tx.error ?? requestError);
+        tx.onabort = () => reject(tx.error ?? requestError ?? new Error(`${storeName} transaction aborted`));
+        return;
+      }
       if (result) {
         result.onsuccess = () => resolve(result.result as R);
         result.onerror = () => reject(result.error);
@@ -133,6 +153,7 @@ function createStore<T extends { key: string }>(
         tx.oncomplete = () => resolve(undefined as unknown as R);
       }
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error(`${storeName} transaction aborted`));
     });
 
   return {
@@ -145,6 +166,17 @@ function createStore<T extends { key: string }>(
     delete: (key) => run('readwrite', (tx) => tx.objectStore(storeName).delete(key)),
     clear: () => run('readwrite', (tx) => tx.objectStore(storeName).clear()),
     count: () => run('readonly', (tx) => tx.objectStore(storeName).count()),
+    // CLI-519：批量删除在单事务内执行（run 的 readwrite 路径以
+    // tx.oncomplete resolve），整体原子。
+    deleteMany: (keys: string[]) =>
+      keys.length === 0
+        ? Promise.resolve()
+        : run('readwrite', (tx) => {
+            const objectStore = tx.objectStore(storeName);
+            for (const key of keys) {
+              objectStore.delete(key);
+            }
+          }).then(() => undefined),
   };
 }
 
@@ -173,6 +205,12 @@ export async function openOfflineDb(): Promise<OfflineDatabase> {
           database.createObjectStore(name, { keyPath });
         }
       }
+      // CLI-528（裁决）：IndexedDB 结构迁移（新增 store/索引）与业务数据
+      // 迁移（localStorage → IndexedDB，见 migratePendingActionsFromLocalStorage）
+      // 分两层执行：后者依赖打开后的 store 句柄与幂等 flag，且需处理
+      // 无 legacy 数据的正常路径，放在 openOfflineDb 之后的启动序列中执行
+      // （storageController.runMigrations）。在 upgradeneeded 事务内做跨
+      // 存储读写的业务迁移无法满足这两点，故不在此处耦合。
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -229,11 +267,11 @@ export function createId(): string {
 }
 
 /**
- * Generates an idempotency key for a mobile action. Backend idempotency support
- * is NOT assumed; the key is recorded locally so duplicate deliveries can be
- * traced and deduplicated once the backend implements it (see #9 / TODO).
+ * CLI-534：更名 generateTraceKey——该值由 createId() 生成、每次调用都不同，
+ * 实际语义是「本次入队投递的追踪 ID」而非幂等键（幂等去重依赖 action.id）。
+ * 字段名 idempotencyKey 为既有数据模型契约，保留不改。
  */
-export function generateIdempotencyKey(
+export function generateTraceKey(
   orderId: string,
   stepId: string,
   action?: string,
@@ -242,6 +280,9 @@ export function generateIdempotencyKey(
 }
 
 export function backoffDelay(attempt: number): number {
+  // CLI-541：指数退避上限 10s 是「客户端自发重试」的节奏约束；
+  // retryAfterMs 的 60s 上限服务于「服务端显式 Retry-After 指令」——
+  // 服务端要求更长等待时尊重指令（两者来源与语义不同，故上限不同）。
   return Math.min(1000 * 2 ** attempt, 10000);
 }
 
@@ -356,7 +397,7 @@ async function toStoredPendingAction(
     action: action.action,
     body: action.body,
     attachmentId,
-    idempotencyKey: generateIdempotencyKey(
+    idempotencyKey: generateTraceKey(
       action.orderId,
       action.stepId,
       action.action,
@@ -389,10 +430,18 @@ export async function migratePendingActionsFromLocalStorage(
     return 0;
   }
   const legacy = readPendingActions(storage);
+  // CLI-509：迁移前按 action.id 查重。迁移中途失败时 flag 未写入，重跑会
+  // 再次进入；若不查重，已完成行会以新 attachmentId 重复写入、旧附件残留
+  // 成为孤儿。查重后重跑只补写缺失行。
+  const existingIds = new Set((await pendingStore.getAll()).map((row) => row.id));
   let migrated = 0;
   for (const action of legacy) {
+    if (existingIds.has(action.id)) {
+      continue;
+    }
     const stored = await toStoredPendingAction(action, attachmentStore);
     await pendingStore.put(stored);
+    existingIds.add(action.id);
     migrated += 1;
   }
   await syncStateStore.put({
@@ -572,6 +621,11 @@ export async function flushOfflineQueue(
   };
 
   // Process each entity group serially; run up to `concurrency` groups in parallel.
+  // CLI-522（裁决）：groupIndex 为共享游标——worker 依序取组，先取的组（大实体）
+  // 持续占用 worker 时后续组仍会被其它 worker 取走，仅在「组数 > worker 数且
+  // 前 N 个组耗时极长」时才出现尾组饥饿。如需严格公平可改为轮转取组
+  // （round-robin：worker i 从 i % workers 起步按 workers 步进取组），
+  // 当前队列规模（单用户移动端待同步项）下无实测饥饿，先记录不动。
   let groupIndex = 0;
   const workers = Array.from(
     { length: Math.min(concurrency, groupList.length) },
@@ -593,8 +647,11 @@ export async function flushOfflineQueue(
 /** Serializes a Blob to a base64 data URL (only used client-side for export). */
 export function blobToDataUrl(blob: Blob): Promise<string> {
   if (typeof FileReader === 'undefined') {
-    // Non-browser (test) environment — fall back to an empty data URL.
-    return Promise.resolve(`data:${blob.type || 'application/octet-stream'};base64,`);
+    // CLI-523：无 FileReader 的环境直接拒绝导出——返回空 data URL 会让导出
+    // 快照静默丢失全部附件内容，且导入方无从感知。
+    return Promise.reject(
+      new Error('FileReader is not available; cannot serialize blob for export'),
+    );
   }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

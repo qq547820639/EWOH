@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, ConflictException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohResourceReservation } from '@server/database/schema';
-import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -92,8 +93,15 @@ export class ResourceReservationService {
               await this.db.execute(
                 sql`SELECT pg_advisory_xact_lock(hashtext(${input.resourceId}))`,
               );
-            } catch {
-              // 无 execute 能力的环境跳过 advisory lock（单测替身/只读副本）
+            } catch (err) {
+              // NEST-126 修复（2026-08-17）：advisory lock 失败不再静默吞——
+              // 生产锁异常时并发容量计数可能超卖，必须留痕（warn + 错误摘要）；
+              // 计数路径继续（DB EXCLUDE 约束仍是 person/device 硬后盾）。
+              this.logger.warn(
+                `station advisory lock unavailable (capacity check unserialized): ${input.resourceId}: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
             }
           }
           const overlapping = await this.db
@@ -112,7 +120,9 @@ export class ResourceReservationService {
             throw new ConflictException('RESOURCE_CONFLICT');
           }
 
-          const reservationId = `RSV-${Date.now()}-${this.randomSuffix()}`;
+          // NEST-131 修复（2026-08-17）：Date.now()+4 字符随机后缀（同毫秒
+          // 1/1.7M 碰撞）→ randomUUID（密码学随机）。
+          const reservationId = `RSV-${randomUUID()}`;
           let row: { reservationId: string; resourceType: string; resourceId: string; startMs: number; endMs: number } | undefined;
           try {
             [row] = await this.db
@@ -214,12 +224,27 @@ export class ResourceReservationService {
     return count;
   }
 
-  /** 列出所有活跃预占（reserved/active）。 */
-  async listActive(): Promise<ReservationResult[]> {
+  /**
+   * 列出所有活跃预占（reserved/active）。
+   * NEST-103（2026-08-17）：ctx 携带非空 primaryOrgId 时按 org 过滤
+   * （org 匹配或 NULL 存量）；缺省 = 系统后台流（GUC/RLS 兜底）。
+   */
+  async listActive(ctx?: OrgContext): Promise<ReservationResult[]> {
+    const orgId = ctx?.primaryOrgId;
     const rows = await this.db
       .select()
       .from(ewohResourceReservation)
-      .where(inArray(ewohResourceReservation.status, [...ACTIVE_STATUSES]));
+      .where(
+        and(
+          inArray(ewohResourceReservation.status, [...ACTIVE_STATUSES]),
+          orgId
+            ? or(
+                isNull(ewohResourceReservation.orgId),
+                eq(ewohResourceReservation.orgId, orgId),
+              )
+            : undefined,
+        ),
+      );
     return rows.map((r) => ({
       reservationId: r.reservationId,
       resourceType: r.resourceType,
@@ -229,13 +254,15 @@ export class ResourceReservationService {
     }));
   }
 
-  /** 给定资源时间窗是否与现有活跃预占冲突。 */
+  /** 给定资源时间窗是否与现有活跃预占冲突。NEST-103：ctx 透传 org 过滤。 */
   async hasConflict(
     resourceType: string,
     resourceId: string,
     startMs: number,
     endMs: number,
+    ctx?: OrgContext,
   ): Promise<boolean> {
+    const orgId = ctx?.primaryOrgId;
     const rows = await this.db
       .select({ id: ewohResourceReservation.id })
       .from(ewohResourceReservation)
@@ -246,18 +273,15 @@ export class ResourceReservationService {
           inArray(ewohResourceReservation.status, [...ACTIVE_STATUSES]),
           lt(ewohResourceReservation.startMs, endMs),
           gt(ewohResourceReservation.endMs, startMs),
+          orgId
+            ? or(
+                isNull(ewohResourceReservation.orgId),
+                eq(ewohResourceReservation.orgId, orgId),
+              )
+            : undefined,
         ),
       )
       .limit(1);
     return rows.length > 0;
-  }
-
-  private randomSuffix(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < 4; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
   }
 }

@@ -28,6 +28,9 @@ import * as path from 'path';
 /** 根句柄 token 文本。 */
 const ROOT_TOKEN = 'STANDALONE_ROOT_DATABASE';
 
+/** systemTransaction 调用文本（NEST-509 扩展，2026-08-17）。 */
+const SYSTEM_TX_TOKEN = '.systemTransaction(';
+
 /** 识别对 request-database-context 模块的 import/re-export（相对或 @server 别名）。 */
 const IMPORT_FROM_CONTEXT = /from\s+['"][^'"]*request-database-context['"]/;
 
@@ -147,5 +150,35 @@ describe('D7 根数据库句柄访问白名单审计（STANDALONE_ROOT_DATABASE�
     expect(auditSource('server/modules/shared/tenant-aware.service.ts', cleanSource)).toEqual(
       [],
     );
+  });
+
+  // ===== NEST-509 扩展（2026-08-17）：systemTransaction 调用白名单审计 =====
+  // systemTransaction 绕过租户 GUC（显式系统事务 API），调用方必须命中白名单。
+  // 白名单 = 上述 ALLOWLIST 中会消费根句柄的业务文件（request-database-context
+  // 自身是定义处）。新增业务调用方 → 测试失败。
+  it('除 allowlist 外没有任何模块调用 systemTransaction', () => {
+    const files: string[] = [];
+    for (const root of scanRoots) {
+      if (fs.existsSync(root)) collectTsFiles(root, files);
+    }
+    const systemTxAallowlist = new Set([
+      'server/database/request-database-context.ts',
+      'server/modules/work-orchestration/domain-persistence.service.ts',
+      'server/modules/shared/__tests__/root-db-allowlist.audit.spec.ts',
+    ]);
+    const violations: string[] = [];
+    for (const file of files) {
+      const rel = path.relative(appRoot, file).replace(/\\/g, '/');
+      if (systemTxAallowlist.has(rel)) continue;
+      const source = fs.readFileSync(file, 'utf8');
+      if (source.includes(SYSTEM_TX_TOKEN)) {
+        violations.push(rel);
+      }
+    }
+    expect(violations).toEqual([]);
+    if (violations.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error('非 allowlist 模块调用 systemTransaction：', violations);
+    }
   });
 });

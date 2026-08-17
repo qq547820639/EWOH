@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw, Workflow } from 'lucide-react';
 import {
   advanceWorkflowInstance,
@@ -96,6 +97,12 @@ const Scale = (): React.ReactElement => {
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleCompatibility });
       setFactoryName('');
     },
+    // CLI-209：失败 toast 透传 err.message。
+    onError: (err) => {
+      toast.error('工厂 onboarding 失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const differencesQuery = useQuery<FactoryDifference[]>({
@@ -120,12 +127,22 @@ const Scale = (): React.ReactElement => {
       setDiffCategory('general');
       setDiffValue('true');
     },
+    onError: (err) => {
+      toast.error('差异登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const resolveDiff = useMutation({
     mutationFn: resolveFactoryDifference,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleDifferences });
+    },
+    onError: (err) => {
+      toast.error('差异解决失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -149,6 +166,11 @@ const Scale = (): React.ReactElement => {
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
       setFleetPackageId('');
     },
+    onError: (err) => {
+      toast.error('Fleet 升级失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const rollbackFleet = useMutation({
@@ -157,6 +179,11 @@ const Scale = (): React.ReactElement => {
       setFleetResult(result);
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleFleetStatus });
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
+    },
+    onError: (err) => {
+      toast.error('Fleet 回滚失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -187,6 +214,11 @@ const Scale = (): React.ReactElement => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workflowInstances });
       setWorkflowEntityId('');
     },
+    onError: (err) => {
+      toast.error('工作流启动失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const advanceWorkflow = useMutation({
@@ -201,6 +233,11 @@ const Scale = (): React.ReactElement => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workflowInstances });
     },
+    onError: (err) => {
+      toast.error('工作流推进失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const installScenario = useMutation({
@@ -209,6 +246,11 @@ const Scale = (): React.ReactElement => {
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleAssets });
     },
+    onError: (err) => {
+      toast.error('场景包安装失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const uninstallScenario = useMutation({
@@ -216,6 +258,11 @@ const Scale = (): React.ReactElement => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleDashboard });
       queryClient.invalidateQueries({ queryKey: queryKeys.scaleAssets });
+    },
+    onError: (err) => {
+      toast.error('场景包卸载失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -590,7 +637,9 @@ const Scale = (): React.ReactElement => {
                 className="h-9 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
               >
                 <option value="">全部环</option>
-                {['dev', 'integration', 'shadow', 'pilot', 'small', 'full'].map(
+                {/* CLI-208：升级环选项由后端 fleetStatus.ringCounts 派生
+                    （原前端硬编码 6 环，与后端实际环集合漂移）。 */}
+                {Object.keys(fleetStatus?.ringCounts ?? {}).map(
                   (ring) => (
                     <option key={ring} value={ring}>
                       {ring}

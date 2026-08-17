@@ -1,12 +1,12 @@
 import type { UserInfo, SearchAvatar } from '@lark-apaas/client-toolkit/tools/services';
 
-import type { AccountType } from '@client/src/components/business-ui/api/users/service';
+import type { AccountType } from '@/components/business-ui/api/users/service';
 import type {
   UserSelectItemValue,
   UserSelectValue,
-} from '@client/src/components/business-ui/user-select/types';
-import { getI18nText } from '@client/src/components/business-ui/utils/user';
-import type { User } from '@client/src/components/business-ui/types/user';
+} from '@/components/business-ui/user-select/types';
+import { getI18nText } from '@/components/business-ui/utils/user';
+import type { Department, User } from '@/components/business-ui/types/user';
 
 export function getUserDisplayName(name: UserInfo['name']): string {
   return name.zh_cn || name.en_us || '';
@@ -40,6 +40,14 @@ export function createUnknownUser(id: string): UserSelectItemValue {
   };
 }
 
+/**
+ * CLI-420：lark 侧 department 负载与本地 Department（ItemValue<DepartmentInfo>）
+ * 形状不同源，经 unknown 收窄为本地 Department，替代 as any。
+ */
+function toDepartment(department: unknown): Department | undefined {
+  return department ? (department as Department) : undefined;
+}
+
 export function userInfoToUser(
   userInfo: UserInfo & SearchAvatar,
   accountType: AccountType,
@@ -51,7 +59,7 @@ export function userInfoToUser(
     name: userInfo.name,
     avatar: userInfo.avatar?.image?.large,
     user_type: userInfo.userType,
-    department: userInfo.department as any,
+    department: toDepartment(userInfo.department),
   };
 
   return {
@@ -73,7 +81,7 @@ export function searchUserInfoToUser(
     name: userInfo.name,
     avatar: userInfo.avatar,
     user_type: userInfo.userType,
-    department: userInfo.department as any,
+    department: toDepartment(userInfo.department),
     tenantName: userInfo.tenantName,
   };
 
@@ -95,6 +103,9 @@ declare global {
   }
 }
 
+/** appId 的合法字符集（字母/数字/下划线/连字符）。 */
+const APP_ID_RE = /^[A-Za-z0-9_-]+$/;
+
 export function getAppId(path: string): string | null | undefined {
   if (window?.__platform__?.appId) {
     return window.__platform__.appId;
@@ -109,9 +120,11 @@ export function getAppId(path: string): string | null | undefined {
   /**
    * 从路径中提取 appId
    * @example "/app/my-app/settings" → "my-app"
+   * CLI-415：提取结果经格式校验，非法值（空串/含路径分隔符或特殊字符）
+   * 不再直接透出，落回 window.appId 兜底。
    */
   const appMatch = path.match(/\/app\/([^/]+)/);
-  if (appMatch) {
+  if (appMatch && APP_ID_RE.test(appMatch[1])) {
     return appMatch[1];
   }
 
@@ -164,20 +177,23 @@ export function extractIdsFromValue(value: UserSelectValue): string[] {
       return value as string[];
     }
     // 对象数组：可能是 User[] 或 UserSelectItemValue[]
-    return value.map((item: any) => {
-      // UserSelectItemValue 有 id 字段（内部类型）
-      if ('id' in item && item.id) {
-        return item.id;
-      }
-      // User 有 user_id 字段（外部类型）
-      if ('user_id' in item && item.user_id) {
-        return item.user_id;
-      }
-      return '';
-    }).filter(Boolean);
+    // CLI-420：显式判别联合替代 any 断言。
+    return (value as Array<User | UserSelectItemValue>)
+      .map((item) => {
+        // UserSelectItemValue 有 id 字段（内部类型）
+        if ('id' in item && item.id) {
+          return item.id;
+        }
+        // User 有 user_id 字段（外部类型）
+        if ('user_id' in item && item.user_id) {
+          return item.user_id;
+        }
+        return '';
+      })
+      .filter(Boolean);
   }
   // 单个对象：可能是 User 或 UserSelectItemValue
-  const item = value as any;
+  const item = value as User | UserSelectItemValue;
   if ('id' in item && item.id) {
     return [item.id];
   }

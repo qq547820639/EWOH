@@ -1,5 +1,14 @@
 import { axiosForBackend } from '../lib/http';
 
+/*
+ * CLI-721（裁决确认）：visionUnderstand / saveAiConfig 接受可选 api_key 并
+ * 经前端转发至后端。脱敏核查结论：
+ *  1. 本文件不记录任何请求体日志，不在 URL/query 中携带 api_key（仅 POST body）；
+ *  2. lib/http.ts 的拦截器只写 Authorization 头，不落日志；
+ *  3. lib/observability.ts 的指标只含 url 路径与状态码，不含请求体。
+ * 密钥经 HTTPS body 直达后端，前端不持久化。维持现状，不额外改动。
+ */
+
 export interface AiSuggestion {
   id: string;
   problem: string;
@@ -67,6 +76,12 @@ export interface AiConfigStatus {
   configured: boolean;
   baseUrl: string;
   model: string;
+}
+
+/** GET /api/ai/snapshot-version — 本租户当前推理快照版本号（真实数据源，CLI-001）。 */
+export async function getAiSnapshotVersion(): Promise<{ version: number }> {
+  const res = await axiosForBackend({ url: '/api/ai/snapshot-version', method: 'GET' });
+  return res.data;
 }
 
 /** GET /api/ai/config/status — 查询全局 AI 配置状态。 */

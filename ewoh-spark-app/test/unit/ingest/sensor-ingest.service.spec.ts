@@ -76,31 +76,39 @@ describe('SensorIngestService', () => {
     const { db, insertCalls } = createDb();
     const svc = new SensorIngestService(db as never);
 
-    const res = await svc.ingestCamera({
-      camera_id: 'CAM-1',
-      event_time: new Date().toISOString(),
-      detections: [
-        { class_name: 'person', confidence: 0.9 },
-        { class_name: 'person', confidence: 0.8, track_id: 'T-2' },
-      ],
-    });
+    const res = await svc.ingestCamera(
+      {
+        camera_id: 'CAM-1',
+        event_time: new Date().toISOString(),
+        detections: [
+          { class_name: 'person', confidence: 0.9 },
+          { class_name: 'person', confidence: 0.8, track_id: 'T-2' },
+        ],
+      },
+      // W4：世界态写入显式租户上下文（缺省 fail-closed 拒绝）。
+      'ORG-1',
+    );
 
     expect(res.accepted).toBe(true);
     const wsInsert = insertCalls.find((c) => c.table === ewohWorldState);
     expect(wsInsert!.rows).toHaveLength(2);
+    expect((wsInsert!.rows[0] as Record<string, unknown>).orgId).toBe('ORG-1');
   });
 
   it('ingestSpatialScan upsert ewoh_spatial_entity', async () => {
     const { db, insertCalls } = createDb();
     const svc = new SensorIngestService(db as never);
 
-    const res = await svc.ingestSpatialScan({
-      entity_id: 'WS-1',
-      entity_type: 'workstation',
-      source_type: 'real' as never,
-      x: 10,
-      y: 20,
-    });
+    const res = await svc.ingestSpatialScan(
+      {
+        entity_id: 'WS-1',
+        entity_type: 'workstation',
+        source_type: 'real' as never,
+        x: 10,
+        y: 20,
+      },
+      'ORG-1',
+    );
 
     expect(res.accepted).toBe(true);
     const entInsert = insertCalls.find((c) => c.table === ewohSpatialEntity);
@@ -112,14 +120,17 @@ describe('SensorIngestService', () => {
     const { db, insertCalls } = createDb();
     const svc = new SensorIngestService(db as never);
 
-    const res = await svc.ingestLocation({
-      entity_id: 'P-1',
-      locator: 'uwb',
-      confidence: 0.9,
-      x: 5,
-      y: 6,
-      ts: new Date().toISOString(),
-    });
+    const res = await svc.ingestLocation(
+      {
+        entity_id: 'P-1',
+        locator: 'uwb',
+        confidence: 0.9,
+        x: 5,
+        y: 6,
+        ts: new Date().toISOString(),
+      },
+      'ORG-1',
+    );
 
     expect(res.accepted).toBe(true);
     const wsInsert = insertCalls.find((c) => c.table === ewohWorldState);

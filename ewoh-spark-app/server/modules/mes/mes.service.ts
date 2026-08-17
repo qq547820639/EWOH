@@ -8,7 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
   ewohAssetPackage,
@@ -17,6 +17,7 @@ import {
   ewohScheduleTask,
   ewohScheduleTaskStep,
 } from '@server/database/schema';
+import { workOrderTransitionAllowed } from '@shared/workorder';
 import { AuditService } from '../shared/audit.service';
 import { IdempotencyService } from '../shared/idempotency.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -57,21 +58,57 @@ export interface ForceResolveResult {
   resolvedAt: string;
 }
 
+/**
+ * NEST-322/323（2026-08-17 审计整改）：MES 工单状态机与 ADR-012 契约对齐。
+ *
+ * 事实源 = shared/workorder.ts 的 WORK_ORDER_LIFECYCLE + TRANSITIONS（契约
+ * 冻结层 contracts/workorder/*.schema.json 的 TS 消费面）。MES 的
+ * draft/released 是 ADR-012 created/scheduled 的历史 UI 别名，这里以显式
+ * alias 映射衔接（不修改冻结契约、不改存量数据），转移合法性全部委托
+ * workOrderTransitionAllowed——漂移由 mes.state-machine.spec.ts 契约测试钉死。
+ */
+export const MES_WORK_ORDER_STATUS_TO_CONTRACT: Readonly<Record<string, string>> = {
+  draft: 'created',
+  released: 'scheduled',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  cancelled: 'cancelled',
+};
+
+export const CONTRACT_WORK_ORDER_STATUS_TO_MES: Readonly<Record<string, string>> = {
+  created: 'draft',
+  scheduled: 'released',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  cancelled: 'cancelled',
+};
+
+/** MES 动作 → ADR-012 目标状态（合法性由契约 TRANSITIONS 裁决）。 */
+const ACTION_TO_CONTRACT_TARGET: Readonly<Record<string, string>> = {
+  release: 'scheduled',
+  start: 'in_progress',
+  complete: 'completed',
+  cancel: 'cancelled',
+};
+
 export function nextWorkOrderStatus(current: string, action: string): string | null {
-  switch (action) {
-    case 'release':
-      return current === 'draft' ? 'released' : null;
-    case 'start':
-      return current === 'released' ? 'in_progress' : null;
-    case 'complete':
-      return current === 'in_progress' ? 'completed' : null;
-    case 'cancel':
-      return ['draft', 'released'].includes(current) ? 'cancelled' : null;
-    default:
-      return null;
+  const canonicalCurrent = MES_WORK_ORDER_STATUS_TO_CONTRACT[current];
+  const canonicalTarget = ACTION_TO_CONTRACT_TARGET[action];
+  if (!canonicalCurrent || !canonicalTarget) {
+    return null;
   }
+  if (!workOrderTransitionAllowed(canonicalCurrent, canonicalTarget)) {
+    return null;
+  }
+  return CONTRACT_WORK_ORDER_STATUS_TO_MES[canonicalTarget] ?? null;
 }
 
+/**
+ * MES 工序状态机（pending→in_progress→reported→reviewed→handed_over 等）。
+ * 注意：contracts/state-machines/ 中无工序级契约（task.yaml 是生产任务机，
+ * 状态词表不同）；本表为 MES 局部状态机，行为由
+ * mes.state-machine.spec.ts 钉死，若后续契约层落地工序 yaml 必须切换同源。
+ */
 export function nextStepStatus(current: string, action: string): string | null {
   switch (action) {
     case 'start':
@@ -98,7 +135,10 @@ function sanitizeExceptionAttachments(value: unknown): Record<string, string>[] 
     return [];
   }
   const allowedKeys = ['id', 'filename', 'contentType', 'url'] as const;
+  // NEST-356：附件数量上限（防任意长度数组落库）。
+  const MAX_ATTACHMENTS = 20;
   return value
+    .slice(0, MAX_ATTACHMENTS)
     .filter(
       (entry): entry is Record<string, unknown> =>
         !!entry && typeof entry === 'object',
@@ -195,11 +235,55 @@ export class MesService {
     private readonly idempotencyService: IdempotencyService = new IdempotencyService(),
   ) {}
 
-  async listWorkOrders() {
+  /**
+   * NEST-301~304 等租户隔离（2026-08-17 审计整改）：MES 读写全部带 org 谓词。
+   * global_admin 显式放行（与 RLS 例外路径一致）；无租户上下文的写路径
+   * fail-closed（业务表 insert 必须显式 orgId，NEST-302）。
+   */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: mes operations require tenant context',
+      );
+    }
+    return orgId;
+  }
+
+  /**
+   * org 谓词：global_admin 不加过滤；其余按 primaryOrgId 严格匹配。
+   * actor 完全缺省（进程内调用方，如 mobile 扫码 facade）不过滤——
+   * HTTP 面全部经 controller 透传 userContext（NEST-301~304 闭合），
+   * 无上下文的内部读委托 DB 层 RLS 兜底。
+   */
+  private orgCondition(
+    column: typeof ewohScheduleTask.orgId | typeof ewohEvent.orgId | typeof ewohAssetPackage.orgId | typeof ewohResourceBinding.orgId | typeof ewohScheduleTaskStep.orgId,
+    actor?: OrgContext,
+  ): SQL | undefined {
+    if (actor === undefined || actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    return eq(column, this.requireOrgId(actor)) as SQL;
+  }
+
+  /**
+   * 审计 orgId 统一（NEST-335）：取 actor.primaryOrgId（global_admin 跨租户
+   * 操作也记自己 org）；内部调用无 actor 时取行归属，不再静默回退空串。
+   */
+  private auditOrgId(actor: OrgContext | undefined, rowOrgId?: string | null): string {
+    return actor?.primaryOrgId ?? rowOrgId ?? '';
+  }
+
+  async listWorkOrders(actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohScheduleTask.orgId, actor);
     return this.db
       .select()
       .from(ewohScheduleTask)
-      .where(eq(ewohScheduleTask.source, 'mes'))
+      .where(
+        orgCond
+          ? and(eq(ewohScheduleTask.source, 'mes'), orgCond)
+          : eq(ewohScheduleTask.source, 'mes'),
+      )
       .orderBy(desc(ewohScheduleTask.createdAt));
   }
 
@@ -207,6 +291,8 @@ export class MesService {
     if (!body.title?.trim() || !Array.isArray(body.steps) || body.steps.length === 0) {
       throw new BadRequestException('title and at least one step are required');
     }
+    // NEST-302：ewoh_schedule_task 写入显式 orgId（缺租户上下文 fail-closed）。
+    const orgId = this.requireOrgId(actor);
     const orderId = body.orderId?.trim() || `WO-${randomUUID().slice(0, 8)}`;
     const now = new Date();
     const steps = body.steps.map((step, index) => ({
@@ -251,12 +337,13 @@ export class MesService {
         planEnd: body.planEnd ? new Date(body.planEnd) : null,
         isSimulation: false,
         progress: 0,
+        orgId,
       },
-      steps,
+      steps.map((step) => ({ ...step, orgId })),
     );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId,
       action: 'mes.work_order.create',
       entityType: 'schedule_task',
       entityId: orderId,
@@ -268,44 +355,57 @@ export class MesService {
         createdAt: now.toISOString(),
       },
     });
-    return this.getWorkOrder(orderId);
+    return this.getWorkOrder(orderId, actor);
   }
 
   /**
    * Canonical write path for ewoh_schedule_task + ewoh_schedule_task_step.
    * MES 与 ERP 共用此入口，避免双方各自直写调度表；调用方各自保留自己的
-   * source、校验与审计语义。
+   * source、校验与审计语义（orgId 由调用方在 task/steps 中显式携带）。
+   * NEST-320：task + steps 同事务落库（steps 失败不留孤儿 task）。
    */
   async writeScheduleOrder(
     task: typeof ewohScheduleTask.$inferInsert,
     steps: typeof ewohScheduleTaskStep.$inferInsert[],
   ) {
-    const [row] = await this.db
-      .insert(ewohScheduleTask)
-      .values(task)
-      .returning();
-    if (steps.length > 0) {
-      await this.db.insert(ewohScheduleTaskStep).values(steps);
-    }
-    return row;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(ewohScheduleTask)
+        .values(task)
+        .returning();
+      if (steps.length > 0) {
+        await tx.insert(ewohScheduleTaskStep).values(steps);
+      }
+      return row;
+    });
   }
 
-  async getStep(stepId: string) {
+  async getStep(stepId: string, actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohScheduleTaskStep.orgId, actor);
     const [step] = await this.db
       .select()
       .from(ewohScheduleTaskStep)
-      .where(eq(ewohScheduleTaskStep.stepId, stepId));
+      .where(
+        orgCond
+          ? and(eq(ewohScheduleTaskStep.stepId, stepId), orgCond)
+          : eq(ewohScheduleTaskStep.stepId, stepId),
+      );
     if (!step) {
       throw new NotFoundException(`Step ${stepId} not found`);
     }
     return step;
   }
 
-  async getWorkOrder(orderId: string) {
+  async getWorkOrder(orderId: string, actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohScheduleTask.orgId, actor);
     const [workOrder] = await this.db
       .select()
       .from(ewohScheduleTask)
-      .where(eq(ewohScheduleTask.scheduleTaskId, orderId));
+      .where(
+        orgCond
+          ? and(eq(ewohScheduleTask.scheduleTaskId, orderId), orgCond)
+          : eq(ewohScheduleTask.scheduleTaskId, orderId),
+      );
     if (!workOrder) {
       throw new NotFoundException(`Work order ${orderId} not found`);
     }
@@ -327,17 +427,27 @@ export class MesService {
     return { workOrder, steps, materials };
   }
 
-  async getTrace(orderId: string) {
-    const detail = await this.getWorkOrder(orderId);
+  async getTrace(orderId: string, actor?: OrgContext) {
+    const detail = await this.getWorkOrder(orderId, actor);
+    // NEST-303：quality 事件按 workOrderId + orgId 在数据库侧过滤
+    // （原先全表加载后内存过滤，无界且跨租户）。
+    const eventOrgCond = this.orgCondition(ewohEvent.orgId, actor);
     const qualityEvents = await this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventType, 'quality'));
-    const inspections = qualityEvents.filter(
-      (event) =>
-        (event.evidenceJson as Record<string, unknown> | null)?.workOrderId ===
-        orderId,
-    );
+      .where(
+        eventOrgCond
+          ? and(
+              eq(ewohEvent.eventType, 'quality'),
+              sql`${ewohEvent.evidenceJson}->>'workOrderId' = ${orderId}`,
+              eventOrgCond,
+            )
+          : and(
+              eq(ewohEvent.eventType, 'quality'),
+              sql`${ewohEvent.evidenceJson}->>'workOrderId' = ${orderId}`,
+            ),
+      );
+    const inspections = qualityEvents;
     const nodes = [
       {
         id: detail.workOrder.scheduleTaskId,
@@ -396,7 +506,7 @@ export class MesService {
     _body: Record<string, unknown> | undefined,
     actor?: OrgContext,
   ) {
-    const current = await this.getWorkOrder(orderId);
+    const current = await this.getWorkOrder(orderId, actor);
     const status = nextWorkOrderStatus(current.workOrder.status, action);
     if (!status) {
       throw new BadRequestException(
@@ -414,6 +524,7 @@ export class MesService {
       }
     }
     const before = current.workOrder.status;
+    const orgCond = this.orgCondition(ewohScheduleTask.orgId, actor);
     const [row] = await this.db
       .update(ewohScheduleTask)
       .set({
@@ -423,10 +534,16 @@ export class MesService {
         progress: action === 'complete' ? 100 : current.workOrder.progress,
       })
       .where(
-        and(
-          eq(ewohScheduleTask.scheduleTaskId, orderId),
-          eq(ewohScheduleTask.status, before),
-        ),
+        orgCond
+          ? and(
+              eq(ewohScheduleTask.scheduleTaskId, orderId),
+              eq(ewohScheduleTask.status, before),
+              orgCond,
+            )
+          : and(
+              eq(ewohScheduleTask.scheduleTaskId, orderId),
+              eq(ewohScheduleTask.status, before),
+            ),
       )
       .returning();
     if (!row) {
@@ -434,7 +551,7 @@ export class MesService {
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, row.orgId),
       action: `mes.work_order.${action}`,
       entityType: 'schedule_task',
       entityId: orderId,
@@ -473,7 +590,7 @@ export class MesService {
     body: Record<string, unknown> | undefined,
     actor?: OrgContext,
   ) {
-    const workOrder = await this.getWorkOrder(orderId);
+    const workOrder = await this.getWorkOrder(orderId, actor);
     const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
     if (!step) {
       throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
@@ -490,6 +607,7 @@ export class MesService {
       );
     }
     const before = step.status;
+    const orgCond = this.orgCondition(ewohScheduleTaskStep.orgId, actor);
     const resultJson = { ...((step.resultJson as Record<string, unknown> | null) ?? {}) };
     if (action === 'report') {
       resultJson.report = {
@@ -546,10 +664,16 @@ export class MesService {
         progress: action === 'handover' ? 100 : step.progress,
       })
       .where(
-        and(
-          eq(ewohScheduleTaskStep.stepId, stepId),
-          eq(ewohScheduleTaskStep.status, before),
-        ),
+        orgCond
+          ? and(
+              eq(ewohScheduleTaskStep.stepId, stepId),
+              eq(ewohScheduleTaskStep.status, before),
+              orgCond,
+            )
+          : and(
+              eq(ewohScheduleTaskStep.stepId, stepId),
+              eq(ewohScheduleTaskStep.status, before),
+            ),
       )
       .returning();
     if (!row) {
@@ -560,7 +684,7 @@ export class MesService {
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, row.orgId),
       action: `mes.step.${action}`,
       entityType: 'schedule_task_step',
       entityId: stepId,
@@ -605,7 +729,7 @@ export class MesService {
     if (recorded) {
       return recorded;
     }
-    const workOrder = await this.getWorkOrder(orderId);
+    const workOrder = await this.getWorkOrder(orderId, actor);
     const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
     if (!step) {
       throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
@@ -628,9 +752,12 @@ export class MesService {
         serverValue = updated;
       } catch (error) {
         if (error instanceof ConflictException) {
+          // 仅并发冲突被显式吸收为 note（服务端状态权威，本地不再覆写）。
           note = 'LOCAL_CONFLICT_PERSISTS';
         } else {
-          note = error instanceof Error ? error.message : 'LOCAL_APPLY_FAILED';
+          // NEST-336：非冲突错误（SOP 签名缺失、非法转移等业务校验失败）
+          // 原样上抛——调用方必须看到失败原因，不能被 applied=false 吞掉。
+          throw error;
         }
       }
     }
@@ -645,7 +772,7 @@ export class MesService {
     };
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, step.orgId),
       action: `mes.step.force_resolve.${resolution}`,
       entityType: 'schedule_task_step',
       entityId: stepId,
@@ -666,7 +793,7 @@ export class MesService {
     body: { materialId: string; quantity: number; reason?: string; operatorId?: string },
     actor?: OrgContext,
   ) {
-    const workOrder = await this.getWorkOrder(orderId);
+    const workOrder = await this.getWorkOrder(orderId, actor);
     if (['completed', 'cancelled'].includes(workOrder.workOrder.status)) {
       throw new BadRequestException('Work order is not consumable in its current state');
     }
@@ -688,11 +815,12 @@ export class MesService {
         operatorId: body.operatorId ?? actor?.userId ?? null,
         quantity: String(quantity),
         reason: body.reason ?? null,
+        orgId: this.auditOrgId(actor, workOrder.workOrder.orgId),
       })
       .returning();
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, workOrder.workOrder.orgId),
       action: 'mes.material.consume',
       entityType: 'resource_binding',
       entityId: bindingId,
@@ -706,16 +834,23 @@ export class MesService {
     return row;
   }
 
-  async listMaterials(orderId: string) {
-    await this.getWorkOrder(orderId);
+  async listMaterials(orderId: string, actor?: OrgContext) {
+    await this.getWorkOrder(orderId, actor);
+    const orgCond = this.orgCondition(ewohResourceBinding.orgId, actor);
     return this.db
       .select()
       .from(ewohResourceBinding)
       .where(
-        and(
-          eq(ewohResourceBinding.targetId, orderId),
-          eq(ewohResourceBinding.bindingType, 'material_consumption'),
-        ),
+        orgCond
+          ? and(
+              eq(ewohResourceBinding.targetId, orderId),
+              eq(ewohResourceBinding.bindingType, 'material_consumption'),
+              orgCond,
+            )
+          : and(
+              eq(ewohResourceBinding.targetId, orderId),
+              eq(ewohResourceBinding.bindingType, 'material_consumption'),
+            ),
       )
       .orderBy(ewohResourceBinding.startTime);
   }
@@ -750,6 +885,7 @@ export class MesService {
       );
     }
     const sopId = body.sopId?.trim() || `SOP-${randomUUID().slice(0, 8)}`;
+    const orgId = this.requireOrgId(actor);
     const [row] = await this.db
       .insert(ewohAssetPackage)
       .values({
@@ -765,11 +901,12 @@ export class MesService {
           steps: body.steps,
         },
         status: 'draft',
+        orgId,
       })
       .returning();
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId,
       action: 'mes.sop.register',
       entityType: 'asset_package',
       entityId: sopId,
@@ -779,23 +916,35 @@ export class MesService {
     return row;
   }
 
-  async listSops() {
+  async listSops(actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     return this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageType, 'sop'))
+      .where(
+        orgCond
+          ? and(eq(ewohAssetPackage.packageType, 'sop'), orgCond)
+          : eq(ewohAssetPackage.packageType, 'sop'),
+      )
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
-  async getSop(sopId: string) {
+  async getSop(sopId: string, actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     const [row] = await this.db
       .select()
       .from(ewohAssetPackage)
       .where(
-        and(
-          eq(ewohAssetPackage.packageId, sopId),
-          eq(ewohAssetPackage.packageType, 'sop'),
-        ),
+        orgCond
+          ? and(
+              eq(ewohAssetPackage.packageId, sopId),
+              eq(ewohAssetPackage.packageType, 'sop'),
+              orgCond,
+            )
+          : and(
+              eq(ewohAssetPackage.packageId, sopId),
+              eq(ewohAssetPackage.packageType, 'sop'),
+            ),
       );
     if (!row) {
       throw new NotFoundException(`SOP ${sopId} not found`);
@@ -804,21 +953,26 @@ export class MesService {
   }
 
   async publishSop(sopId: string, actor?: OrgContext) {
-    const sop = await this.getSop(sopId);
+    const sop = await this.getSop(sopId, actor);
     if (sop.status === 'published') {
       return sop;
     }
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     const [updated] = await this.db
       .update(ewohAssetPackage)
       .set({ status: 'published', publishedAt: new Date() })
-      .where(eq(ewohAssetPackage.packageId, sopId))
+      .where(
+        orgCond
+          ? and(eq(ewohAssetPackage.packageId, sopId), orgCond)
+          : eq(ewohAssetPackage.packageId, sopId),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, updated.orgId),
       action: 'mes.sop.publish',
       entityType: 'asset_package',
       entityId: sopId,
@@ -828,9 +982,9 @@ export class MesService {
     return updated;
   }
 
-  async diffSops(fromId: string, toId: string) {
-    const from = await this.getSop(fromId);
-    const to = await this.getSop(toId);
+  async diffSops(fromId: string, toId: string, actor?: OrgContext) {
+    const from = await this.getSop(fromId, actor);
+    const to = await this.getSop(toId, actor);
     const fromSteps = (
       (from.manifestJson as { steps?: Array<{ name: string }> } | null)
         ?.steps ?? []
@@ -888,6 +1042,7 @@ export class MesService {
     }
     const schemeId =
       body.schemeId?.trim() || `QS-${randomUUID().slice(0, 8)}`;
+    const orgId = this.requireOrgId(actor);
     const [row] = await this.db
       .insert(ewohAssetPackage)
       .values({
@@ -904,11 +1059,12 @@ export class MesService {
           productCodes: body.productCodes ?? [],
         },
         status: 'draft',
+        orgId,
       })
       .returning();
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId,
       action: 'mes.quality_scheme.register',
       entityType: 'asset_package',
       entityId: schemeId,
@@ -923,23 +1079,35 @@ export class MesService {
     return row;
   }
 
-  async listQualitySchemes() {
+  async listQualitySchemes(actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     return this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageType, 'quality_scheme'))
+      .where(
+        orgCond
+          ? and(eq(ewohAssetPackage.packageType, 'quality_scheme'), orgCond)
+          : eq(ewohAssetPackage.packageType, 'quality_scheme'),
+      )
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
-  async getQualityScheme(schemeId: string) {
+  async getQualityScheme(schemeId: string, actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     const [row] = await this.db
       .select()
       .from(ewohAssetPackage)
       .where(
-        and(
-          eq(ewohAssetPackage.packageId, schemeId),
-          eq(ewohAssetPackage.packageType, 'quality_scheme'),
-        ),
+        orgCond
+          ? and(
+              eq(ewohAssetPackage.packageId, schemeId),
+              eq(ewohAssetPackage.packageType, 'quality_scheme'),
+              orgCond,
+            )
+          : and(
+              eq(ewohAssetPackage.packageId, schemeId),
+              eq(ewohAssetPackage.packageType, 'quality_scheme'),
+            ),
       );
     if (!row) {
       throw new NotFoundException(`Quality scheme ${schemeId} not found`);
@@ -948,21 +1116,26 @@ export class MesService {
   }
 
   async publishQualityScheme(schemeId: string, actor?: OrgContext) {
-    const scheme = await this.getQualityScheme(schemeId);
+    const scheme = await this.getQualityScheme(schemeId, actor);
     if (scheme.status === 'published') {
       return scheme;
     }
+    const orgCond = this.orgCondition(ewohAssetPackage.orgId, actor);
     const [updated] = await this.db
       .update(ewohAssetPackage)
       .set({ status: 'published', publishedAt: new Date() })
-      .where(eq(ewohAssetPackage.packageId, schemeId))
+      .where(
+        orgCond
+          ? and(eq(ewohAssetPackage.packageId, schemeId), orgCond)
+          : eq(ewohAssetPackage.packageId, schemeId),
+      )
       .returning();
     if (!updated) {
       throw new ConflictException('STATE_CONFLICT');
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: this.auditOrgId(actor, updated.orgId),
       action: 'mes.quality_scheme.publish',
       entityType: 'asset_package',
       entityId: schemeId,
@@ -972,12 +1145,15 @@ export class MesService {
     return updated;
   }
 
-  async matchQualitySchemes(filters: {
-    deviceId?: string;
-    stepType?: string;
-    productCode?: string;
-  }) {
-    const schemes = await this.listQualitySchemes();
+  async matchQualitySchemes(
+    filters: {
+      deviceId?: string;
+      stepType?: string;
+      productCode?: string;
+    },
+    actor?: OrgContext,
+  ) {
+    const schemes = await this.listQualitySchemes(actor);
     return schemes
       .filter((scheme) => scheme.status === 'published')
       .filter((scheme) => {
@@ -1014,8 +1190,9 @@ export class MesService {
     schemeId: string,
     stage: string | undefined,
     checkResults: Array<{ itemId: string; result: 'pass' | 'fail'; note?: string }> | undefined,
+    actor?: OrgContext,
   ) {
-    const scheme = await this.getQualityScheme(schemeId);
+    const scheme = await this.getQualityScheme(schemeId, actor);
     if (scheme.status !== 'published') {
       throw new BadRequestException('QUALITY_SCHEME_NOT_PUBLISHED');
     }
@@ -1095,7 +1272,7 @@ export class MesService {
     },
     actor?: OrgContext,
   ) {
-    const workOrder = await this.getWorkOrder(orderId);
+    const workOrder = await this.getWorkOrder(orderId, actor);
     const step = workOrder.steps.find((candidate) => candidate.stepId === body.stepId);
     if (!step) {
       throw new NotFoundException(`Step ${body.stepId} not found`);
@@ -1115,6 +1292,7 @@ export class MesService {
         body.schemeId,
         body.stage,
         body.checkResults,
+        actor,
       );
       if (schemeInfo.hasFail && body.result === 'pass') {
         throw new BadRequestException(
@@ -1132,37 +1310,47 @@ export class MesService {
       inspectedAt: new Date().toISOString(),
       scheme: schemeInfo ?? null,
     };
-    await this.db
-      .update(ewohScheduleTaskStep)
-      .set({ resultJson })
-      .where(eq(ewohScheduleTaskStep.stepId, body.stepId));
-
     const eventId = `QI-${randomUUID().slice(0, 8)}`;
-    await this.db.insert(ewohEvent).values({
-      eventId,
-      deviceId: step.assignedDeviceId ?? null,
-      eventCode: 'QUALITY_INSPECTION',
-      eventType: 'quality',
-      severity: body.result === 'pass' ? 'L1' : body.result === 'rework' ? 'L2' : 'L3',
-      title: `质量检验-${body.result}`,
-      status: 'open',
-      createdAt: new Date(),
-      sourceType: 'real',
-      evidenceJson: {
-        workOrderId: orderId,
-        stepId: body.stepId,
-        result: body.result,
-        defectCode: body.defectCode ?? null,
-        quantity: body.quantity ?? null,
-        note: body.note ?? null,
-        schemeId: body.schemeId ?? null,
-        stage: body.stage ?? null,
-        checkResults: body.checkResults ?? [],
-      },
+    const orgId = this.auditOrgId(actor, workOrder.workOrder.orgId);
+    const stepOrgCond = this.orgCondition(ewohScheduleTaskStep.orgId, actor);
+    // NEST-321：step 更新与 quality 事件同事务落库（部分失败不再产生
+    // 「结果已写、事件缺失」的不一致）。
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(ewohScheduleTaskStep)
+        .set({ resultJson })
+        .where(
+          stepOrgCond
+            ? and(eq(ewohScheduleTaskStep.stepId, body.stepId), stepOrgCond)
+            : eq(ewohScheduleTaskStep.stepId, body.stepId),
+        );
+      await tx.insert(ewohEvent).values({
+        eventId,
+        deviceId: step.assignedDeviceId ?? null,
+        eventCode: 'QUALITY_INSPECTION',
+        eventType: 'quality',
+        severity: body.result === 'pass' ? 'L1' : body.result === 'rework' ? 'L2' : 'L3',
+        title: `质量检验-${body.result}`,
+        status: 'open',
+        createdAt: new Date(),
+        sourceType: 'real',
+        orgId,
+        evidenceJson: {
+          workOrderId: orderId,
+          stepId: body.stepId,
+          result: body.result,
+          defectCode: body.defectCode ?? null,
+          quantity: body.quantity ?? null,
+          note: body.note ?? null,
+          schemeId: body.schemeId ?? null,
+          stage: body.stage ?? null,
+          checkResults: body.checkResults ?? [],
+        },
+      });
     });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId,
       action: 'mes.quality.inspect',
       entityType: 'schedule_task_step',
       entityId: body.stepId,

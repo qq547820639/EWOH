@@ -10,6 +10,8 @@ import {
   ewohMaintenanceCondition,
   ewohQualityFinding,
 } from '@server/database/schema';
+import { eq, isNull, or, type AnyColumn, type SQL } from 'drizzle-orm';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   CoordinateReference,
   FreshnessPolicy,
@@ -80,22 +82,47 @@ export class ResourceProjectionService {
   ) {}
 
   /**
+   * NEST-102（2026-08-17）：读面 org 条件（org 匹配或 NULL 存量，与 RLS USING
+   * 等价）；ctx 缺省 = 系统后台流（GUC/RLS 兜底），HTTP 路径必须传 ctx。
+   */
+  private orgCondition(column: AnyColumn, ctx: OrgContext | undefined): SQL | undefined {
+    const orgId = ctx?.primaryOrgId;
+    if (!orgId) return undefined;
+    return or(isNull(column), eq(column, orgId));
+  }
+
+  /**
    * 统一资源状态聚合入口：person / device / station 的单一权威投影，
    * 已水合 reservations 与 availableWindows。map / ResourcePool /
    * Scheduler / Dispatch 应统一从此处消费。
+   * NEST-102：ctx 透传（org 过滤）。
    */
-  async getUnifiedResourceState(): Promise<ResourceState[]> {
-    return this.project();
+  async getUnifiedResourceState(ctx?: OrgContext): Promise<ResourceState[]> {
+    return this.project(ctx);
   }
 
-  /** 查询全部资源（person / device / station）的统一投影。 */
-  async project(): Promise<ResourceState[]> {
+  /** 查询全部资源（person / device / station）的统一投影。NEST-102：ctx 透传。 */
+  async project(ctx?: OrgContext): Promise<ResourceState[]> {
+    // NEST-102：org 过滤；ctx 缺省/空 org 不调 .where（无 where 能力测试替身兼容）。
+    const personnelQuery = this.db.select().from(ewohPersonnel);
+    const deviceQuery = this.db.select().from(ewohDevice);
+    const spatialQuery = this.db.select().from(ewohSpatialEntity);
     const [personnelRows, deviceRows, spatialRows, reservations] =
       await Promise.all([
-        this.db.select().from(ewohPersonnel),
-        this.db.select().from(ewohDevice),
-        this.db.select().from(ewohSpatialEntity),
-        this.reservationService.listActive(),
+        ctx?.primaryOrgId
+          ? personnelQuery.where(
+              this.orgCondition(ewohPersonnel.orgId, ctx) as SQL,
+            )
+          : personnelQuery,
+        ctx?.primaryOrgId
+          ? deviceQuery.where(this.orgCondition(ewohDevice.orgId, ctx) as SQL)
+          : deviceQuery,
+        ctx?.primaryOrgId
+          ? spatialQuery.where(
+              this.orgCondition(ewohSpatialEntity.orgId, ctx) as SQL,
+            )
+          : spatialQuery,
+        this.reservationService.listActive(ctx),
       ]);
     this.logger.debug(
       `resource projection: personnel=${personnelRows.length} device=${deviceRows.length} spatial=${spatialRows.length} reservations=${reservations.length}`,
@@ -653,17 +680,32 @@ export class ResourceProjectionService {
    * 只换来源不换形状：字段与旧快照装配一致（availableFromMs 由真实 reservation
    * 推导、dataQuality FRESH/STALE/UNKNOWN），并增加 coordinate 判别联合。
    */
-  async projectForSnapshot(): Promise<{
+  async projectForSnapshot(ctx?: OrgContext): Promise<{
     persons: WorldStateSnapshot['persons'];
     devices: WorldStateSnapshot['devices'];
     stations: WorldStateSnapshot['stations'];
   }> {
+    // NEST-102（2026-08-17）：快照资源视图同 ctx 透传（org 匹配或 NULL 存量；
+    // ctx 缺省/空 org 不调 .where——无 where 能力测试替身兼容）。
+    const personnelQuery = this.db.select().from(ewohPersonnel);
+    const deviceQuery = this.db.select().from(ewohDevice);
+    const spatialQuery = this.db.select().from(ewohSpatialEntity);
     const [personnelRows, deviceRows, spatialRows, reservations] =
       await Promise.all([
-        this.db.select().from(ewohPersonnel),
-        this.db.select().from(ewohDevice),
-        this.db.select().from(ewohSpatialEntity),
-        this.reservationService.listActive(),
+        ctx?.primaryOrgId
+          ? personnelQuery.where(
+              this.orgCondition(ewohPersonnel.orgId, ctx) as SQL,
+            )
+          : personnelQuery,
+        ctx?.primaryOrgId
+          ? deviceQuery.where(this.orgCondition(ewohDevice.orgId, ctx) as SQL)
+          : deviceQuery,
+        ctx?.primaryOrgId
+          ? spatialQuery.where(
+              this.orgCondition(ewohSpatialEntity.orgId, ctx) as SQL,
+            )
+          : spatialQuery,
+        this.reservationService.listActive(ctx),
       ]);
 
     const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
@@ -815,8 +857,9 @@ export class ResourceProjectionService {
     > = spatialRows
       .filter((se) => ['workstation', 'station'].includes(se.entityType ?? ''))
       .map((se) => {
-        const capacity =
-          typeof se.capacity === 'number' && se.capacity > 0 ? se.capacity : null;
+        // NEST-154 修复（2026-08-17）：capacity=0（显式不可用/已封位）不再被
+        // 误判为 null（未知）。仅非法类型/未写值才回退 null。
+        const capacity = typeof se.capacity === 'number' ? se.capacity : null;
         // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
         const isWgs84 = (se.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
         // NO-05c：工位快照无 status 字段；活跃维护事实附着（无 → null），
@@ -880,16 +923,23 @@ export class ResourceProjectionService {
     hasDeviceLocation: boolean,
   ): CoordinateReference {
     const type = d.locationCoordinateType ?? 'FACTORY_CARTESIAN';
-    if (!hasDeviceLocation || type === 'UNKNOWN') {
+    // NEST-155 修复（2026-08-17）：坐标任一缺失 → 显式 UNKNOWN（禁止 0,0
+    // 伪坐标兜底——0 兜底会把"未知位置"伪装成工厂原点参与路由计算）。
+    if (
+      !hasDeviceLocation ||
+      type === 'UNKNOWN' ||
+      d.locationLat == null ||
+      d.locationLng == null
+    ) {
       return { type: 'UNKNOWN' };
     }
     if (type === 'WGS84') {
-      return { type: 'WGS84', lat: d.locationLat ?? 0, lng: d.locationLng ?? 0 };
+      return { type: 'WGS84', lat: d.locationLat, lng: d.locationLng };
     }
     return {
       type: 'FACTORY_CARTESIAN',
-      x: d.locationLat ?? 0,
-      y: d.locationLng ?? 0,
+      x: d.locationLat,
+      y: d.locationLng,
       floorId: null,
     };
   }

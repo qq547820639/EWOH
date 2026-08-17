@@ -29,7 +29,7 @@ from . import services
 from .config import Settings
 from .rbac.permissions import action_for_request, is_allowed
 from .routes import NOT_HANDLED, ReqMeta
-from .routes._util import OFFLINE_AFTER_SEC
+from .routes._util import offline_after_sec
 from .routes.registry import dispatch
 from .security import SecurityHeaders, rate_limiter
 
@@ -98,6 +98,21 @@ def _anonymous_or_none():
     return "anonymous"
 
 
+def _verify_bearer_session(handler, sm):
+    """从 Authorization header 校验 Bearer token，返回 Session 或 None（不抛异常）。"""
+    auth = (handler.headers.get("Authorization", "") or "").strip()
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[len("Bearer ") :].strip()
+    if not token:
+        return None
+    try:
+        return sm.verify(token)
+    except Exception as e:  # L3：认证异常按未认证处理（fail-closed），记录日志
+        print(f"[EWOH] session verify failed (rbac): {e!r}")
+        return None
+
+
 def rbac_allowed(handler, action):
     """production 下按会话角色执行 RBAC 动作校验（fail-closed，P1 落地）。
 
@@ -110,14 +125,7 @@ def rbac_allowed(handler, action):
     sm = _get_session_manager()
     if sm is None:
         return False
-    auth = (handler.headers.get("Authorization", "") or "").strip()
-    token = auth[len("Bearer ") :].strip() if auth.startswith("Bearer ") else ""
-    if not token:
-        return False
-    try:
-        session = sm.verify(token)
-    except Exception:
-        return False
+    session = _verify_bearer_session(handler, sm)
     if session is None:
         return False
     return bool(is_allowed(session.role, action))
@@ -213,7 +221,7 @@ class Context:
     def device_online(self, d):
         """掉线判定：online 标志 + last_seen 新鲜度双重判断。"""
         last = parse_ts(d.get("last_seen"))
-        fresh = bool(last) and (datetime.now().astimezone() - last).total_seconds() <= OFFLINE_AFTER_SEC
+        fresh = bool(last) and (datetime.now().astimezone() - last).total_seconds() <= offline_after_sec()
         return bool(d.get("online")) and fresh
 
 
@@ -411,16 +419,40 @@ def make_handler(ctx):
             return dispatch(ctx, self, method, req_meta)
 
         # ---- GET 路由（横切中间件 + 按域派发；未命中回退静态文件，与原行为一致） ----
+        def _production_read_guard(self, p):
+            """EDGE-001（2026-08-17 审计整改）：production 下全部 /api/* 与 /metrics
+            GET 要求有效 Bearer token 并映射 VIEW_* 动作；未映射路径默认拒绝
+            （fail-closed 401）。返回错误响应或 None（放行）。
+            """
+            if not (p.startswith("/api/") or p == "/metrics"):
+                return None  # 静态资源/SPA 不经此守卫
+            action = action_for_request("GET", p)
+            if action is None:
+                return self._new_error(
+                    "unauthorized", "production 下未映射的 API 读路径默认拒绝", 401
+                )
+            sm = _get_session_manager()
+            if sm is None:
+                return self._new_error("auth_unavailable", "认证服务未就绪，拒绝读请求", 503)
+            session = _verify_bearer_session(self, sm)
+            if session is None:
+                return self._new_error(
+                    "unauthorized", "production 读操作必须携带有效 Bearer token", 401
+                )
+            if not is_allowed(session.role, action):
+                return _rbac_forbidden(self)
+            return None
+
         def do_GET(self):
             self._request_id = None  # keep-alive 复用实例时重置请求 ID
             self._post_audit_pending = False
             p = urlparse(self.path).path
-            # P1 RBAC 落地：production 下受限读路径（审计查询/原始数据导出）按角色校验
-            # （矩阵：viewer/data_analyst 无 view_audit；导出受 export_data 约束）。
+            # EDGE-001：production 下 GET 面强制认证 + RBAC（未映射默认拒绝）；
+            # development/simulation 保持宽松（离线演示直连，不破坏既有测试）。
             if Settings.load().runtime_mode == "production":
-                action = action_for_request("GET", p)
-                if action and not rbac_allowed(self, action):
-                    return _rbac_forbidden(self)
+                guard = self._production_read_guard(p)
+                if guard is not None:
+                    return guard
             try:
                 if self._dispatch("GET") is not NOT_HANDLED:
                     return
@@ -432,6 +464,10 @@ def make_handler(ctx):
                     {"error": {"code": "internal_error", "message": "请求处理失败", "request_id": self._request_id}},
                     500,
                 )
+            # EDGE-025：未命中的 /api/*（与 /metrics）GET 返回 404 JSON，
+            # 不再回退 SPA index.html（与 POST 未命中 404 JSON 口径一致）。
+            if p.startswith("/api/") or p == "/metrics":
+                return self.send_json({"error": "not found"}, 404)
             return super().do_GET()
 
         # ---- POST 路由（横切中间件 + 按域派发；未命中回退 {"error":"not found"} 404） ----
@@ -565,7 +601,10 @@ def build_server(addr, ctx, tls_cert=None, tls_key=None):
     """构建 HTTP(S) 服务。
 
     Task 30：若 ``tls_cert`` 与 ``tls_key`` 均提供（或从 Settings 读取到非空值），
-    用 ``ssl.wrap_socket`` 包装为 HTTPS；否则保持 HTTP。
+    用 TLS 包装为 HTTPS；否则保持 HTTP。
+    EDGE-009（2026-08-17 审计整改）：``ssl.wrap_socket``（3.10 起 deprecated）改为
+    ``SSLContext(PROTOCOL_TLS_SERVER)`` 并强制 ``minimum_version=TLSv1_2``，
+    消除 TLS 1.0/1.1 弱协议协商面。
     安全响应头中间件 ``SecurityHeaders`` 在此统一注入到 handler 类。
     """
     handler_cls = make_handler(ctx)
@@ -584,6 +623,8 @@ def build_server(addr, ctx, tls_cert=None, tls_key=None):
         except Exception:
             pass
     if tls_cert and tls_key:
-        # ssl.wrap_socket 在 3.12 起 deprecated 但仍可用；保留以匹配 Task 30 口径。
-        httpd.socket = ssl.wrap_socket(httpd.socket, certfile=tls_cert, keyfile=tls_key, server_side=True)
+        tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        tls_ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
+        httpd.socket = tls_ctx.wrap_socket(httpd.socket, server_side=True)
     return httpd

@@ -99,6 +99,8 @@ export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps):
   const s = state.snapshot;
   if (!s) return EMPTY;
   const persons = s.persons.map((p) => ({ id: p.id, x: p.x, y: p.y, status: p.status, name: p.name }));
+  // CLI-037 裁决：snapshot.devices 契约无 name 字段（仅 id/status/online/...），
+  // 层 props 亦无 entities 可映射，暂以 id 展示（待后端快照补 name 后替换）。
   const devices = s.devices.map((d) => ({ id: d.id, x: d.x, y: d.y, status: d.status ?? 'unknown', name: d.id }));
   return (
     <g data-layer="resource">
@@ -434,15 +436,10 @@ export const ReplanChangeLayer = memo(function ReplanChangeLayer({
   return (
     <g data-layer="changed-by-replan">
       {Array.from(overlay.entries()).map(([taskId, item]) => {
-        const st = s.stations.find((x) => x.id === s.tasks.find((t) => t.id === taskId)?.stationId);
-        const pt = st
-          ? { x: st.x, y: st.y }
-          : (() => {
-              const t = s.tasks.find((x) => x.id === taskId);
-              if (!t) return null;
-              const st2 = s.stations.find((x) => x.id === t.stationId);
-              return st2 ? { x: st2.x, y: st2.y } : null;
-            })();
+        // CLI-036：task/station 各查找一次并复用（原 IIFE 内重复 find）。
+        const t = s.tasks.find((x) => x.id === taskId);
+        const st = t ? s.stations.find((x) => x.id === t.stationId) : undefined;
+        const pt = st ? { x: st.x, y: st.y } : null;
         if (!pt) return null;
         return (
           <g key={`rc-${taskId}`} transform={`translate(${pt.x} ${pt.y})`}>

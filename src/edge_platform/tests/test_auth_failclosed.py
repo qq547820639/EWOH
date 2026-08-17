@@ -93,11 +93,15 @@ class AuthDemoTokenDevTest(unittest.TestCase):
         cls.fx.close()
 
     def test_development_login_keeps_demo_token(self):
-        """development/simulation 保留演示行为（离线演示是设计内功能）。"""
+        """development/simulation 保留演示行为（离线演示是设计内功能）。
+
+        EDGE-027：演示 token 角色收敛为受限角色 operator（不再发放 admin），
+        降低 auth 模块未就绪窗口内的越权面。
+        """
         status, payload = self.fx.login()
         self.assertEqual(status, 200)
         self.assertIn("token", payload)
-        self.assertEqual(payload["user"]["role"], "admin")
+        self.assertEqual(payload["user"]["role"], "operator")
 
 
 if __name__ == "__main__":

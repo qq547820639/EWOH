@@ -82,6 +82,7 @@ function parseArgs(argv) {
     output: null,
     apply: false,
     strict: false,
+    maxCreate: 10,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -93,6 +94,11 @@ function parseArgs(argv) {
       options.apply = true;
     } else if (argument === '--strict') {
       options.strict = true;
+    } else if (argument === '--max-create') {
+      options.maxCreate = Number(argv[++index]);
+      if (!Number.isInteger(options.maxCreate) || options.maxCreate < 1) {
+        throw new Error(`--max-create must be a positive integer, got: ${argument}`);
+      }
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -122,7 +128,7 @@ function requireApproval() {
   }
 }
 
-function liveApply(plan, registryFile, root) {
+async function liveApply(plan, registryFile, root, options = {}) {
   requireApproval();
   const remote = plan.repository;
   const match = remote.match(/(?:github\.com[:/])([^/]+)\/([^/]+?)(?:\.git)?$/);
@@ -132,35 +138,75 @@ function liveApply(plan, registryFile, root) {
   const [, owner, repo] = match;
   const token = process.env.GITHUB_TOKEN;
   const missing = plan.items.filter((entry) => entry.missing);
-  const created = [];
-  for (const entry of missing) {
-    const response = awaitFetch(
-      `https://api.github.com/repos/${owner}/${repo}/issues`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'ewoh-git-sync',
-        },
-        body: JSON.stringify({
-          title: `[EWOH] ${entry.workItemId}: ${entry.title}`,
-          body: [
-            `Owner: ${entry.owner}`,
-            `Type: ${entry.type}`,
-            `Wave: ${entry.wave || 'n/a'}`,
-            `Status: ${entry.status}`,
-            `Evidence: ${entry.evidence || 'n/a'}`,
-            `Source: ${plan.source}`,
-          ].join('\n'),
-        }),
-      },
+  // TOOL-006: 单次批量创建上限（--max-create，缺省 10）——超出即失败，
+  // 避免一次 live apply 无上限地批量开 issue。
+  const maxCreate = Number.isInteger(options.maxCreate) && options.maxCreate > 0
+    ? options.maxCreate
+    : 10;
+  if (missing.length > maxCreate) {
+    throw new Error(
+      `live apply refuses to create ${missing.length} issues in one batch (max ${maxCreate}); ` +
+        'split the batch or raise --max-create explicitly',
     );
-    created.push({
-      workItemId: entry.workItemId,
-      issueNumber: response.number,
-      htmlUrl: response.html_url,
-    });
+  }
+  const created = [];
+  // TOOL-006: 部分失败回滚——创建中途失败时关闭本批已创建 issue 后再抛错，
+  // 不留下半同步状态。
+  try {
+    for (const entry of missing) {
+      const response = awaitFetch(
+        `https://api.github.com/repos/${owner}/${repo}/issues`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'ewoh-git-sync',
+          },
+          body: JSON.stringify({
+            title: `[EWOH] ${entry.workItemId}: ${entry.title}`,
+            body: [
+              `Owner: ${entry.owner}`,
+              `Type: ${entry.type}`,
+              `Wave: ${entry.wave || 'n/a'}`,
+              `Status: ${entry.status}`,
+              `Evidence: ${entry.evidence || 'n/a'}`,
+              `Source: ${plan.source}`,
+            ].join('\n'),
+          }),
+        },
+      );
+      created.push({
+        workItemId: entry.workItemId,
+        issueNumber: response.number,
+        htmlUrl: response.html_url,
+      });
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const item of created) {
+      try {
+        await awaitFetch(`https://api.github.com/repos/${owner}/${repo}/issues/${item.issueNumber}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'ewoh-git-sync',
+          },
+          body: JSON.stringify({ state: 'closed' }),
+        });
+      } catch (rollbackError) {
+        rollbackErrors.push(`#${item.issueNumber}: ${rollbackError.message}`);
+      }
+    }
+    throw new Error(
+      `live apply failed after creating ${created.length} issues: ${error.message}; ` +
+        (created.length === 0
+          ? 'no rollback needed'
+          : rollbackErrors.length > 0
+            ? `rollback PARTIALLY FAILED (manual cleanup required): ${rollbackErrors.join(' | ')}`
+            : `rolled back ${created.length} created issues (closed)`),
+    );
   }
   const previous = loadRegistry(path.dirname(registryFile));
   const next = previous.map((entry) => {
@@ -191,14 +237,19 @@ function awaitFetch(url, options) {
   });
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   const artifactsDir = workIndexer.findArtifactsDir(options.root);
   const graph = workIndexer.indexWorkGraph(artifactsDir, { root: options.root });
   const registry = loadRegistry(artifactsDir);
   const plan = buildGitSyncPlan(graph.items, registry, gitInfo(options.root));
   if (options.apply) {
-    const result = liveApply(plan, path.join(artifactsDir, 'work', 'git-sync.json'), options.root);
+    const result = await liveApply(
+      plan,
+      path.join(artifactsDir, 'work', 'git-sync.json'),
+      options.root,
+      { maxCreate: options.maxCreate },
+    );
     plan.status = 'live';
     plan.items = plan.items.map((entry) => {
       const created = result.created.find((item) => item.workItemId === entry.workItemId);
@@ -225,13 +276,11 @@ function main() {
   }
 }
 
-module.exports = { buildGitSyncPlan, gitInfo, loadRegistry };
+module.exports = { buildGitSyncPlan, gitInfo, liveApply, loadRegistry };
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     console.error(error && (error.stack || error.message || error));
     process.exitCode = 1;
-  }
+  });
 }

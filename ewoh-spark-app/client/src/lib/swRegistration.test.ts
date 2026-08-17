@@ -91,6 +91,11 @@ describe('swRegistration SW lifecycle metrics (C6-7)', () => {
     });
   });
 
+  afterEach(() => {
+    // CLI-725：恢复被 defineProperty 覆盖的全局 navigator，避免跨用例泄漏。
+    delete (globalThis as { navigator?: unknown }).navigator;
+  });
+
   it('reports sw.install / sw.activate / sw.migration / sw.rollback via recordMetric', () => {
     registerServiceWorker();
     messageHandler?.({ data: { type: 'EWOH_SW_INSTALLED', version: 'v2' } });

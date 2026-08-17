@@ -180,7 +180,8 @@ class TaskAssignmentSyncTest(unittest.TestCase):
         self.service.update_task("TASK-SYNC-1", "tester", status=TASK_COMPLETED)
         updated = self.service.get_assignment(assignments[0].assignment_id)
         self.assertEqual(updated.status, TASK_COMPLETED)
-        self.assertEqual(updated.actual_end, updated.actual_end)  # 非空（completed 落实际结束时间）
+        # EDT-001：原 assertEqual(x, x) 恒真——改为真实非空校验（completed 落实际结束时间）
+        self.assertIsNotNone(updated.actual_end, "completed 派工应记录实际结束时间")
 
     def test_update_task_repeat_completed_keeps_consistency(self):
         """任务与其派工均已 completed：重复推进不破坏一致性（状态不变，

@@ -53,8 +53,9 @@ function collectGateResults() {
       if (raw && raw.id && raw.status) {
         gates.push(raw);
       }
-    } catch {
-      /* skip unparseable gate record */
+    } catch (error) {
+      // SCR-036: 解析失败不再静默跳过，输出 warning 保留线索。
+      console.warn(`truth-manifest: gate-result 文件解析失败（已跳过）: ${file}: ${error && error.message}`);
     }
   }
   return gates.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -193,11 +194,10 @@ function main() {
   const manifest = buildManifest();
 
   if (checkMode) {
+    // SCR-010: --check 模式下缺失 baseline 属于校验失败，不得自动生成后 exit 0（假成功）。
     if (!fs.existsSync(outPath)) {
-      console.log(`TRUTH-MANIFEST: no prior manifest at ${outPath}; generating baseline (HEAD ${manifest.evaluatedCommitSha})`);
-      fs.mkdirSync(path.dirname(outPath), { recursive: true });
-      fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2) + '\n');
-      process.exit(0);
+      console.error(`TRUTH-MANIFEST CHECK FAILED: no prior manifest at ${outPath}（先运行 node scripts/truth-manifest.js --out ${path.relative(root, outPath)} 生成 baseline）`);
+      process.exit(1);
     }
     const prior = JSON.parse(fs.readFileSync(outPath, 'utf8'));
     const drift = [];
@@ -211,6 +211,15 @@ function main() {
       if (prior[key] !== manifest[key]) {
         drift.push(`${key}: ${prior[key]} -> ${manifest[key]}`);
       }
+    }
+    // SCR-011: gates 状态纳入漂移比较（id:status 投影，剔除 checkedAt/details 等易变字段）。
+    const gateKey = (g) => `${g.id}:${g.status}`;
+    const priorGates = (Array.isArray(prior.gates) ? prior.gates : []).map(gateKey).sort();
+    const currentGates = (Array.isArray(manifest.gates) ? manifest.gates : []).map(gateKey).sort();
+    if (priorGates.join('|') !== currentGates.join('|')) {
+      const removed = priorGates.filter((x) => !currentGates.includes(x));
+      const added = currentGates.filter((x) => !priorGates.includes(x));
+      drift.push(`gates: removed=[${removed.join(', ')}] added=[${added.join(', ')}]`);
     }
     if (drift.length > 0) {
       console.error('TRUTH-MANIFEST DRIFT DETECTED:');

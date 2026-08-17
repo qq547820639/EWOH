@@ -5,7 +5,7 @@
  * 服务端排序为权威（客户端零聚合/排序）；展示层不做二次解释。
  */
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { History, Loader2, TriangleAlert, RefreshCw } from 'lucide-react';
 import { fetchDecisionHistory } from '../../api/decisions';
 import { queryKeys } from '../../hooks/queryKeys';
@@ -26,25 +26,33 @@ const STATUS_OPTIONS = Object.entries(DECISION_STATUS_LABELS);
 export default function DecisionHistoryConsole(): React.ReactElement {
   const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
-  const [offset, setOffset] = useState(0);
 
-  const query = useQuery({
-    queryKey: [queryKeys.decisions, kind, status, offset],
-    queryFn: () =>
+  // CLI-103：useInfiniteQuery 分页累加（原 useQuery offset 变更后仅含当前页，
+  // 前页丢失且「已显示 X/Y」文案误导）。
+  const query = useInfiniteQuery({
+    queryKey: [queryKeys.decisions, kind, status],
+    queryFn: ({ pageParam }) =>
       fetchDecisionHistory({
         kind: kind || undefined,
         status: status || undefined,
         limit: PAGE_SIZE,
-        offset,
+        offset: pageParam,
       }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((n, p) => n + p.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
   });
 
-  const items = query.data?.items ?? [];
+  const items = query.data?.pages.flatMap((p) => p.items) ?? [];
   const rows = buildDecisionRows(items);
-  const total = query.data?.total ?? 0;
-  const skippedInvalid = query.data?.skippedInvalid ?? 0;
-  const sourcesSummary = query.data
-    ? buildSourcesSummary(query.data.sources)
+  const lastPage = query.data?.pages[query.data.pages.length - 1] ?? null;
+  const total = lastPage?.total ?? 0;
+  const skippedInvalid =
+    query.data?.pages.reduce((n, p) => n + (p.skippedInvalid ?? 0), 0) ?? 0;
+  const sourcesSummary = lastPage
+    ? buildSourcesSummary(lastPage.sources)
     : '';
 
   return (
@@ -65,7 +73,6 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
-              setOffset(0);
             }}
             className="rounded border border-[hsl(220_14%_89%)] px-2 py-1 text-sm"
           >
@@ -84,7 +91,6 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
-              setOffset(0);
             }}
             className="rounded border border-[hsl(220_14%_89%)] px-2 py-1 text-sm"
           >
@@ -130,14 +136,18 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             skippedInvalid={skippedInvalid}
             sourcesSummary={sourcesSummary}
           />
-          {offset + rows.length < total && (
+          {query.hasNextPage && (
             <div className="flex justify-center">
               <Button
                 variant="outline"
                 data-testid="decision-history-load-more"
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                disabled={query.isFetchingNextPage}
+                onClick={() => void query.fetchNextPage()}
               >
-                加载更多（已显示 {offset + rows.length} / {total}）
+                {query.isFetchingNextPage ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                加载更多（已加载 {rows.length} / 共 {total}）
               </Button>
             </div>
           )}

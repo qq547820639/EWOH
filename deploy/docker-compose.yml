@@ -1,13 +1,23 @@
-# EWOH 受控试点系统 - 服务编排（试点部署）
+# ============================================================================
+# DEPRECATED（遗留编排，勿用于新部署）——审计 CFG-002/003/010（2026-08-17）
 #
-# 说明：
-#   - 开发环境推荐以进程方式运行：`PYTHONPATH=src python -m edge_platform.run`（见 Makefile）。
-#   - 本 docker-compose.yml 位于 deploy/，用于受控试点部署，定义四区网络隔离与服务边界。
-#   - 卷挂载路径以仓库根为基准（../ 前缀回到仓库根）；ewoh-api / ewoh-adapter /
-#     ewoh-inference 共用同一镜像（../Dockerfile 占位），通过不同 entrypoint/command 区分职责；
-#     待 Dockerfile 落地后启用 build。
+# 本文件为早期试点占位编排：引用的根级 Dockerfile 从未落地（build 段仅为
+# 占位注释），ewoh-adapter / ewoh-inference 仍为 sleep 占位服务（无真实入口、
+# 无 healthcheck）。按整改裁决保留为历史遗留物，不删除；生产部署不使用本文件。
+#
+# 现行方式：
+#   - 开发环境以进程方式运行：`PYTHONPATH=src python -m edge_platform.run`（见 Makefile）。
+#   - 云侧 NestJS standalone 部署与发布包见 release/ 与 scripts/package-release.sh。
+#
+# 遗留说明（自洽化修正）：
+#   - build 段已注释（Dockerfile 不存在，不引用不存在的构建上下文）；
+#   - 镜像标签统一为 0.6.0-rc4（与 version.json 单一事实源一致）；
+#   - 凭据类环境变量一律 `:?` 强制注入（缺省回落已全部移除，CFG-001）。
+#
+# 其他：
 #   - postgres / redis 仅接入内部网络 ewoh-internal，不对普通用户网开放。
 #   - 环境变量引用 deploy/.env（由 deploy/.env.example 复制生成）。
+# ============================================================================
 
 version: "3.9"
 
@@ -44,10 +54,11 @@ services:
 
   # ---------- 平台服务区：API 服务 ----------
   ewoh-api:
-    build:
-      context: ..
-      dockerfile: Dockerfile   # 占位，待落地
-    image: ewoh-api:0.6.0
+    # 遗留占位：根级 Dockerfile 未落地，build 段注释（CFG-002），仅引用镜像标签
+    # build:
+    #   context: ..
+    #   dockerfile: Dockerfile
+    image: ewoh-api:0.6.0-rc4
     container_name: ewoh-api
     restart: unless-stopped
     command: ["python", "-m", "edge_platform.run", "--host", "0.0.0.0", "--port", "8765"]
@@ -68,7 +79,7 @@ services:
 
   # ---------- 采集适配区：适配层（占位，仅运行适配层命令） ----------
   ewoh-adapter:
-    image: ewoh-api:0.6.0
+    image: ewoh-api:0.6.0-rc4
     container_name: ewoh-adapter
     restart: unless-stopped
     # 占位 entrypoint：未来替换为 `python -m edge_platform.edge.adapter`
@@ -83,7 +94,7 @@ services:
 
   # ---------- 推理服务：推理管线（占位，仅运行推理） ----------
   ewoh-inference:
-    image: ewoh-api:0.6.0
+    image: ewoh-api:0.6.0-rc4
     container_name: ewoh-inference
     restart: unless-stopped
     # 占位 entrypoint：未来替换为 `python -m edge_platform.inference.pipeline`
@@ -104,7 +115,8 @@ services:
     environment:
       POSTGRES_DB: ${EWOH_DB_NAME:-ewoh}
       POSTGRES_USER: ${EWOH_DB_USER:-ewoh}
-      POSTGRES_PASSWORD: ${EWOH_DB_PASSWORD:-CHANGE_ME}
+      # CFG-001：密码强制注入，禁止缺省回落（缺省即启动失败，fail-closed）
+      POSTGRES_PASSWORD: ${EWOH_DB_PASSWORD:?必须设置 EWOH_DB_PASSWORD（deploy/.env）}
     volumes:
       - ewoh-pgdata:/var/lib/postgresql/data
     networks:

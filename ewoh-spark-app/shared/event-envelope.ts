@@ -56,7 +56,8 @@ export function validateEventEnvelope(
   }
   if (typeof e.eventId !== 'string' || e.eventId === '') return ['bad_event_id'];
   if (!knownEventTypes.has(e.eventType)) return ['unknown_event_type'];
-  if (typeof e.schemaVersion !== 'string' || e.schemaVersion === '') return ['bad_schema_version'];
+  // SH-003：schemaVersion 与 envelope.schema.json const '1.0.0' 强校验（锁版本）。
+  if (typeof e.schemaVersion !== 'string' || e.schemaVersion !== '1.0.0') return ['bad_schema_version'];
   if (parseEnvelopeTs(e.occurredAt) == null) return ['bad_occurred_at'];
   if (typeof e.source !== 'string' || e.source === '') return ['bad_source'];
   if (e.observedAt != null && parseEnvelopeTs(e.observedAt) == null) return ['bad_observed_at'];

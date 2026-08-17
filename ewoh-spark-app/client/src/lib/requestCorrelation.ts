@@ -105,6 +105,14 @@ export function getTraceContext(): TraceContext {
   return { ...lastContext };
 }
 
+/**
+ * CLI-544：重置模块级 lastContext——非并发安全的最近上下文缓存会在测试
+ * 间泄漏状态，测试的 beforeEach/afterEach 调用本函数恢复干净基线。
+ */
+export function resetTraceContext(): void {
+  lastContext = {};
+}
+
 /** 便捷：解析错误中的 requestId（无可解析时为空串）。 */
 export function extractRequestId(error: unknown): string {
   return extractRequestIds(error).requestId ?? '';

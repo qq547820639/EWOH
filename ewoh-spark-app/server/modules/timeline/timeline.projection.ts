@@ -43,15 +43,21 @@ export interface TimelineBuildableEvent {
   [k: string]: unknown;
 }
 
-const DEFAULT_SOURCE: TimelineSource | string = 'system';
+const DEFAULT_SOURCE: TimelineSource = 'system';
 
 /**
  * 单个领域事件 → 统一 TimelineEvent。
  * 缺省字段给安全默认值；sourceType 同时写入 credibility.sourceType。
+ *
+ * SH-010 联动（暂留断言）：TimelineEvent.source 已收敛封闭枚举，但领域
+ * 事件 sourceType（real/controlled_test/simulated/replayed/stale/offline，
+ * 见 openapi EventInfo.sourceType）是可信度画像语义，与 TimelineSource
+ * 注册表不同集——此处按任务裁决保留透传 + as 断言（契约封闭由类型层
+ * 把关；映射表收敛另行立项，不在本次审计最小整改范围）。
  */
 export function buildTimelineEvent(raw: TimelineBuildableEvent): TimelineEvent {
   const timestamp = raw.timestamp ?? raw.createdAt ?? new Date().toISOString();
-  const source: TimelineSource | string =
+  const source: TimelineSource =
     (raw.sourceType as TimelineSource | undefined) ?? DEFAULT_SOURCE;
   const objectId = raw.deviceId ?? raw.eventId ?? raw.id;
   const action = raw.eventType ?? raw.eventCode ?? 'updated';

@@ -239,8 +239,12 @@ class PoseFusion:
 
         保留 UWB + 外骨骼 IMU，移除视觉来源，按 DEGRADED 质量乘数降低置信度，
         刷新时间戳，不中断输出。
+        EDGE-209（2026-08-17 审计整改）：降级幂等化——仅首次降级时折减
+        confidence（以原始值为基），重复调用不再叠加折减。
         """
-        state.confidence = confidence_from_quality(QualityStatus.DEGRADED, state.confidence)
+        already_degraded = state.quality_status == QualityStatus.DEGRADED
+        if not already_degraded:
+            state.confidence = confidence_from_quality(QualityStatus.DEGRADED, state.confidence)
         state.quality_status = QualityStatus.DEGRADED
         state.sources_used = [s for s in state.sources_used if s != "vision"]
         state.ts = now_iso()

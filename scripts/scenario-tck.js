@@ -25,7 +25,9 @@ for (const [script, args] of gates) {
       encoding: 'utf8',
     });
   } catch (error) {
-    failures.push(script);
+    // SCR-032: 保留错误详情（stderr 尾部），不再只记脚本名。
+    const stderrTail = String(error?.stderr || '').trim().split('\n').slice(-5).join('\n');
+    failures.push(`${script}${stderrTail ? `: ${stderrTail}` : `: exit=${error?.status ?? '?'}`}`);
   }
 }
 

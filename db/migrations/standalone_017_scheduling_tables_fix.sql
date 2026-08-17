@@ -15,9 +15,16 @@
 -- 修复后 008/009/011/014 的 ALTER 均可正常执行。表列与 Drizzle schema 对齐。
 --
 -- 注意：ewoh_outbox.sequence 的 DEFAULT 依赖 ewoh_outbox_sequence_seq，
--- 该 sequence 由 standalone_011_outbox_sequence.sql 创建——本迁移先建表（列无
--- DEFAULT），011 再补 DEFAULT；若 011 已执行过则 CREATE TABLE IF NOT EXISTS 跳过。
--- 为保证既有 011 语义（幂等），此处 sequence 默认值以 011 为准，见 011 文件。
+-- 该 sequence 由 standalone_011_outbox_sequence.sql 创建（011 编号早于本迁移，
+-- 空库顺序执行时 sequence 已先行创建；此处 CREATE SEQUENCE IF NOT EXISTS 为
+-- 单跑 017 场景兜底）。
+-- 迁移顺序终态对齐（审计 SQL-003/005/006 修复，2026-08-17）：008/011/014 对
+-- 本迁移补建的表已做 IF EXISTS 守卫——空库顺序执行时它们先行跳过，本迁移的
+-- CREATE TABLE 直接包含最终形态：
+--   - ewoh_outbox：entity_type/entity_version（008）+ sequence DEFAULT
+--     nextval(ewoh_outbox_sequence_seq)（011）+ idx_ewoh_outbox_sequence（008）；
+--   - ewoh_scheduling_policy：weights_json（014）。
+-- 已应用库重跑：CREATE TABLE IF NOT EXISTS 跳过，ALTER 类语句幂等，无变更。
 
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 
@@ -46,7 +53,9 @@ CREATE INDEX IF NOT EXISTS idx_ewoh_resource_reservation_plan
 CREATE INDEX IF NOT EXISTS idx_ewoh_resource_reservation_task
   ON __EWOH_SCHEMA__.ewoh_resource_reservation (task_id);
 
--- ===== ewoh_outbox（对齐 Drizzle ewohOutbox；sequence DEFAULT 由 011 补） =====
+-- ===== ewoh_outbox（对齐 Drizzle ewohOutbox；含 008/011 列与 DEFAULT 终态） =====
+CREATE SEQUENCE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_outbox_sequence_seq;
+
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id varchar(255) NOT NULL UNIQUE,
@@ -54,7 +63,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_outbox (
   entity_id varchar(255) NOT NULL,
   entity_type varchar(100),
   entity_version integer,
-  sequence bigint,
+  sequence bigint DEFAULT nextval('__EWOH_SCHEMA__.ewoh_outbox_sequence_seq'),
   status varchar(50) NOT NULL DEFAULT 'pending',
   payload_json jsonb,
   org_id varchar(255),
@@ -65,8 +74,10 @@ CREATE INDEX IF NOT EXISTS idx_ewoh_outbox_status
   ON __EWOH_SCHEMA__.ewoh_outbox (status);
 CREATE INDEX IF NOT EXISTS idx_ewoh_outbox_entity
   ON __EWOH_SCHEMA__.ewoh_outbox (entity_id);
+CREATE INDEX IF NOT EXISTS idx_ewoh_outbox_sequence
+  ON __EWOH_SCHEMA__.ewoh_outbox (sequence);
 
--- ===== ewoh_scheduling_policy（对齐 Drizzle ewohSchedulingPolicy） =====
+-- ===== ewoh_scheduling_policy（对齐 Drizzle ewohSchedulingPolicy；含 014 weights_json 终态） =====
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_scheduling_policy (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   config_version integer NOT NULL,

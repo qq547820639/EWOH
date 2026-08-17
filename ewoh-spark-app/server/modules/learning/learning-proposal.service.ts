@@ -15,6 +15,9 @@ import { currentTraceId } from '@server/common/request-context';
 import { projectLearningProposalActivationDecision } from '../scheduler/decision-projection';
 import type { DecisionRecord } from '@shared/decision';
 
+/** db 或事务句柄（NEST-344：recordEvent 在转移事务内执行）。 */
+type ProposalDb = Pick<PostgresJsDatabase, 'insert'>;
+
 export interface ProposeLearningInput {
   proposalId?: string;
   kind: string;
@@ -101,7 +104,7 @@ export class LearningProposalService {
       recordJson: record,
     };
     const inserted = (await this.db.insert(ewohLearningProposal).values(row).returning())[0];
-    await this.recordEvent(inserted, orgId, 'LearningProposalCreated', status);
+    await this.recordEvent(this.db, inserted, orgId, 'LearningProposalCreated', status);
     return { proposal: this.toProposal(inserted), created: true };
   }
 
@@ -121,6 +124,7 @@ export class LearningProposalService {
       },
       facts,
     );
+    // NEST-342：状态更新加 eq(status) CAS（两并发 shadow 不再重复覆写）。
     const updated = (
       await this.db
         .update(ewohLearningProposal)
@@ -130,9 +134,16 @@ export class LearningProposalService {
           recordJson: { ...(current.recordJson as Record<string, unknown>), status: 'shadow_evaluated', shadowEval },
           updatedAt: new Date(),
         })
-        .where(and(eq(ewohLearningProposal.orgId, orgId), eq(ewohLearningProposal.id, current.id)))
+        .where(and(
+          eq(ewohLearningProposal.orgId, orgId),
+          eq(ewohLearningProposal.id, current.id),
+          eq(ewohLearningProposal.status, current.status),
+        ))
         .returning()
     )[0];
+    if (!updated) {
+      throw new BadRequestException(`proposal_state_changed_concurrently:${current.status}`);
+    }
     return this.toProposal(updated);
   }
 
@@ -148,8 +159,9 @@ export class LearningProposalService {
     const decisionJson = this.projectActivationDecision(
       current, 'approved', approvedBy, undefined, orgId, now,
     );
-    const updated = (
-      await this.db
+    // NEST-343/344：CAS（eq(status=current)）+ 事件同事务（状态与留痕一致）。
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
         .update(ewohLearningProposal)
         .set({
           status: 'approved',
@@ -164,10 +176,18 @@ export class LearningProposalService {
           },
           updatedAt: now,
         })
-        .where(and(eq(ewohLearningProposal.orgId, orgId), eq(ewohLearningProposal.id, current.id)))
-        .returning()
-    )[0];
-    await this.recordEvent(updated, orgId, 'LearningProposalResolved', 'approved');
+        .where(and(
+          eq(ewohLearningProposal.orgId, orgId),
+          eq(ewohLearningProposal.id, current.id),
+          eq(ewohLearningProposal.status, current.status),
+        ))
+        .returning();
+      if (rows.length === 0) {
+        throw new BadRequestException(`proposal_state_changed_concurrently:${current.status}`);
+      }
+      await this.recordEvent(tx, rows[0], orgId, 'LearningProposalResolved', 'approved');
+      return rows[0];
+    });
     return this.toProposal(updated);
   }
 
@@ -181,8 +201,9 @@ export class LearningProposalService {
     const decisionJson = this.projectActivationDecision(
       current, 'rejected', rejectedBy, reason, orgId, new Date(),
     );
-    const updated = (
-      await this.db
+    // NEST-343/344：CAS + 事件同事务。
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
         .update(ewohLearningProposal)
         .set({
           status: 'rejected',
@@ -197,10 +218,18 @@ export class LearningProposalService {
           },
           updatedAt: new Date(),
         })
-        .where(and(eq(ewohLearningProposal.orgId, orgId), eq(ewohLearningProposal.id, current.id)))
-        .returning()
-    )[0];
-    await this.recordEvent(updated, orgId, 'LearningProposalResolved', 'rejected');
+        .where(and(
+          eq(ewohLearningProposal.orgId, orgId),
+          eq(ewohLearningProposal.id, current.id),
+          eq(ewohLearningProposal.status, current.status),
+        ))
+        .returning();
+      if (rows.length === 0) {
+        throw new BadRequestException(`proposal_state_changed_concurrently:${current.status}`);
+      }
+      await this.recordEvent(tx, rows[0], orgId, 'LearningProposalResolved', 'rejected');
+      return rows[0];
+    });
     return this.toProposal(updated);
   }
 
@@ -214,8 +243,9 @@ export class LearningProposalService {
     const decisionJson = this.projectActivationDecision(
       current, 'rolled_back', rolledBackBy, reason, orgId, new Date(),
     );
-    const updated = (
-      await this.db
+    // NEST-343/344：CAS + 事件同事务。
+    const updated = await this.db.transaction(async (tx) => {
+      const rows = await tx
         .update(ewohLearningProposal)
         .set({
           status: 'rolled_back',
@@ -230,10 +260,18 @@ export class LearningProposalService {
           },
           updatedAt: new Date(),
         })
-        .where(and(eq(ewohLearningProposal.orgId, orgId), eq(ewohLearningProposal.id, current.id)))
-        .returning()
-    )[0];
-    await this.recordEvent(updated, orgId, 'LearningProposalResolved', 'rolled_back');
+        .where(and(
+          eq(ewohLearningProposal.orgId, orgId),
+          eq(ewohLearningProposal.id, current.id),
+          eq(ewohLearningProposal.status, current.status),
+        ))
+        .returning();
+      if (rows.length === 0) {
+        throw new BadRequestException(`proposal_state_changed_concurrently:${current.status}`);
+      }
+      await this.recordEvent(tx, rows[0], orgId, 'LearningProposalResolved', 'rolled_back');
+      return rows[0];
+    });
     return this.toProposal(updated);
   }
 
@@ -364,7 +402,12 @@ export class LearningProposalService {
     };
   }
 
+  /**
+   * 目录事件落库（NEST-344：接受 db 或事务——终态转移与事件同事务提交，
+   * 消除「事件失败状态已改」的不一致窗口）。
+   */
   private async recordEvent(
+    db: ProposalDb,
     row: typeof ewohLearningProposal.$inferSelect,
     orgId: string,
     eventType: 'LearningProposalCreated' | 'LearningProposalResolved',
@@ -384,7 +427,7 @@ export class LearningProposalService {
       correlationId: currentTraceId() ?? null,
     });
     const envelopeRecord = envelopeForEvidence(envelope);
-    await this.db.insert(ewohEvent).values({
+    await db.insert(ewohEvent).values({
       eventId,
       eventType,
       eventCode: eventType === 'LearningProposalCreated' ? 'LEARNING_PROPOSAL_CREATED' : 'LEARNING_PROPOSAL_RESOLVED',

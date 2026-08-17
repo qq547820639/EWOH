@@ -40,6 +40,16 @@ MAX_BACKOFF_SEC = 60
 CATALOG_TYPES: frozenset = frozenset(EVENT_CATALOG_TYPES)
 
 
+def _runtime_mode() -> str:
+    """读取运行时模式（EDGE-041：production 判定；读取失败按 development 宽松）。"""
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 class EventUplink:
     """STREAM_EVENTS → 云侧 /api/ingest/events 批量上行（持久化离线缓冲 + 退避）。"""
 
@@ -58,6 +68,17 @@ class EventUplink:
         self._org_id = org_id
         self._batch_size = max(1, min(batch_size, BATCH_SIZE))
         self._queue_path = queue_path or ""
+        # EDGE-041（2026-08-17 审计整改）：production 下 X-Ingest-Key 禁止经
+        # 明文 http 传输——上行地址必须为 https://，否则本组件显式禁用
+        # （enabled=false，health 说明原因），绝不降级发送凭据。
+        # （mTLS/HMAC 签名属云端协同改造，由云侧任务域跟进；此处先消除明文面。）
+        self._disabled_reason = ""
+        if self._url.startswith(("http://", "//")) and _runtime_mode() == "production":
+            self._disabled_reason = "insecure_http_in_production"
+            logger.error(
+                "event uplink: production 下拒绝明文 http 上行（X-Ingest-Key 会暴露），已禁用: %s",
+                self._url,
+            )
         self._buffer: list[dict] = []
         # NO-04c：断点续传——启动加载未发送队列；损坏显式 ERROR（空队列启动，不静默）。
         if self._queue_path and os.path.exists(self._queue_path):
@@ -78,12 +99,13 @@ class EventUplink:
 
     @property
     def enabled(self) -> bool:
-        return bool(self._url)
+        return bool(self._url) and not self._disabled_reason
 
     def health(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
             "url": self._url,
+            "disabled_reason": self._disabled_reason or None,
             "stats": dict(self._stats),
             "buffer": len(self._buffer),
             "queue_path": self._queue_path,
@@ -103,6 +125,9 @@ class EventUplink:
 
     def start(self) -> None:
         if self._running:
+            return
+        if self._disabled_reason:  # EDGE-041：production 明文 http → 拒绝启动
+            logger.error("event uplink: 已禁用（%s），start() 不生效", self._disabled_reason)
             return
         self._running = True
         self._sub_id = self._bus.subscribe("events", self._enqueue)

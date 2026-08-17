@@ -28,12 +28,21 @@ from edge_platform.scheduler.repository import SchedulingRepository  # noqa: E40
 
 
 class ActionMappingTest(unittest.TestCase):
-    """action_for_request 纯函数映射（无需服务器）。"""
+    """action_for_request 纯函数映射（无需服务器）。
+
+    EDGE-001 整改（2026-08-17）后：全部 GET /api/* 与 /metrics 均映射 VIEW_*
+    动作（未映射路径由 server 层 fail-closed 拒绝）。
+    """
 
     def test_read_restricted_paths(self):
         self.assertEqual(action_for_request("GET", "/api/audit"), "view_audit")
         self.assertEqual(action_for_request("GET", "/api/telemetry/export"), "export_data")
-        self.assertEqual(action_for_request("GET", "/api/telemetry"), None)  # 普通读放行
+        self.assertEqual(action_for_request("GET", "/api/telemetry"), "view_telemetry")
+        self.assertEqual(action_for_request("GET", "/api/people"), "view_personnel")
+        self.assertEqual(action_for_request("GET", "/api/person/profile"), "view_personnel")
+        self.assertEqual(action_for_request("GET", "/api/status"), "view_telemetry")
+        self.assertEqual(action_for_request("GET", "/metrics"), "view_telemetry")
+        self.assertEqual(action_for_request("GET", "/api/tasks/T1"), "view_events")
 
     def test_write_paths(self):
         self.assertEqual(action_for_request("POST", "/api/tasks"), "manage_assignments")
@@ -42,13 +51,19 @@ class ActionMappingTest(unittest.TestCase):
         self.assertEqual(action_for_request("POST", "/api/assignments/A1/start"), "manage_assignments")
         self.assertEqual(action_for_request("POST", "/api/events/E1/status"), "handle_events")
         self.assertEqual(action_for_request("POST", "/api/events/E1/comment"), "handle_events")
+        self.assertEqual(action_for_request("POST", "/api/event/status"), "handle_events")  # EDGE-008
         self.assertEqual(action_for_request("POST", "/api/models/register"), "manage_models")
         self.assertEqual(action_for_request("POST", "/api/rules/register"), "manage_rules")
+        self.assertEqual(action_for_request("POST", "/api/reset"), "manage_data")  # EDGE-012
+        self.assertEqual(action_for_request("POST", "/api/query"), "query_assistant")  # EDGE-048
+        self.assertEqual(action_for_request("POST", "/api/andon/raise"), "raise_andon")  # EDGE-039
+        self.assertEqual(action_for_request("POST", "/api/world/states"), "manage_world")  # EDGE-038
 
     def test_public_and_unmapped(self):
         self.assertEqual(action_for_request("POST", "/api/auth/login"), None)
-        self.assertEqual(action_for_request("POST", "/api/reset"), None)
-        self.assertEqual(action_for_request("GET", "/api/status"), None)
+        self.assertEqual(action_for_request("POST", "/api/auth/refresh"), None)
+        # GET 面未映射 /api/* 路径返回 None（server.do_GET 对其 fail-closed 401）
+        self.assertEqual(action_for_request("GET", "/api/no-such-route"), None)
 
 
 class _Fixture:
@@ -142,9 +157,44 @@ class RbacEnforcementTest(unittest.TestCase):
         self.assertEqual(status, 200, "operator 有 view_audit")
 
     def test_anonymous_audit_read_401(self):
-        # production 匿名访问受限读路径：无会话 → forbidden（fail-closed）
+        # EDT-005（原 EDGE-001 面收敛）：production 匿名访问受限读路径钉死 401
+        #（无会话 → unauthorized，非角色 403）
         status, body = self.fx.req("GET", "/api/audit")
-        self.assertIn(status, (401, 403))
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"]["code"], "unauthorized")
+
+    def test_anonymous_get_api_denied_401(self):
+        # EDGE-001：production 下匿名 GET 业务数据面 → 401（不再匿名放行）
+        for path in ("/api/tasks", "/api/people", "/api/telemetry", "/api/status",
+                     "/api/scheduling/plans", "/metrics"):
+            status, body = self.fx.req("GET", path)
+            self.assertEqual(status, 401, f"{path} 匿名读应 401: {body}")
+            self.assertEqual(body["error"]["code"], "unauthorized")
+
+    def test_unmapped_get_path_default_denied_401(self):
+        # EDGE-001：未映射的 /api/* GET 默认拒绝（fail-closed）
+        status, body = self.fx.req("GET", "/api/no-such-thing")
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"]["code"], "unauthorized")
+
+    def test_authenticated_get_allowed_with_view_action(self):
+        # EDGE-001：认证后按 VIEW_* 动作放行（operator 有 view_telemetry/view_events）
+        token = self.fx.login("operator", "operator123")
+        for path in ("/api/tasks", "/api/telemetry", "/api/status"):
+            status, body = self.fx.req("GET", path, token=token)
+            self.assertNotEqual(status, 401, f"{path} 认证读不应 401: {body}")
+            self.assertNotEqual(status, 403, f"{path} 认证读不应 403: {body}")
+
+    def test_viewer_cannot_read_personnel_pii(self):
+        # EDGE-014：/api/people 映射 view_personnel（viewer 无权 → 403）。
+        # viewer 不在离线种子账号内——经服务端 SessionManager 单例直接铸造会话。
+        sm = server._get_session_manager()
+        self.assertIsNotNone(sm)
+        user = type("ViewerUser", (), {"user_id": "U-VIEWER", "role": "viewer", "display_name": "viewer"})()
+        token = sm.create(user)
+        status, body = self.fx.req("GET", "/api/people", token=token)
+        self.assertEqual(status, 403, f"viewer 读人员 PII 应 403: {body}")
+        self.assertEqual(body["error"]["code"], "forbidden")
 
     def test_operator_patch_task_forbidden(self):
         token = self.fx.login("operator", "operator123")

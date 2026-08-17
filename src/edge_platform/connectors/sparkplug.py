@@ -274,14 +274,17 @@ def normalize_sparkplug_message(
     parsed_topic = parse_sparkplug_topic(topic)
     payload = decode_sparkplug_payload(payload_bytes)
     entity_id = parsed_topic.device_id or parsed_topic.edge_node_id
-    event_time = (
-        time.strftime(
-            "%Y-%m-%dT%H:%M:%S.%fZ",
-            time.gmtime(payload.timestamp_ms / 1000),
-        )
-        if payload.timestamp_ms is not None
-        else now_iso()
-    )
+    # EDGE-207：超大 timestamp_ms（gmtime 溢出）按无效处理，回落当前时间，
+    # 不让单帧畸形时间戳打断采集链。
+    event_time = now_iso()
+    if payload.timestamp_ms is not None:
+        try:
+            event_time = time.strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ",
+                time.gmtime(payload.timestamp_ms / 1000),
+            )
+        except (OverflowError, OSError, ValueError):
+            event_time = now_iso()
     metrics = [
         {
             "name": metric.name,

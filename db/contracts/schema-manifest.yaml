@@ -7,8 +7,8 @@ source:
 managed_package:
   new_group_count: 36
   frozen_alter_count: 12
-  managed_count: 73
-  physical_create_count: 76
+  managed_count: 74
+  physical_create_count: 77
   mapped_existing_count_in_group: 1
 notes:
   - "Authoritative plan table 77 lists 38 logical new names under the label \"36 new tables\"."
@@ -40,7 +40,8 @@ notes:
   - "NO-10a (ADR-022): ewoh_trace_span added as GLOBAL_SHARED-semantics managed table (trace_span_org_or_global policy: org lineage or global admin, NOT loose; status/duration/time CHECK, unique (trace_id, span_id), standalone_042). managed_count 66->67, physical_create_count 69->70; 001_verify / standalone_001_verify expected lists 60->61 in lockstep."
   - "NO-09a (ADR-021): ewoh_learning_evaluation added as TENANT_SCOPED managed table (RLS learning_evaluation_org_isolation, unique (org_id, eval_id), evaluation_type/period CHECK, standalone_041). managed_count 65->66, physical_create_count 68->69; 001_verify / standalone_001_verify expected lists 59->60 in lockstep."
   - "NO-08a (ADR-019): ewoh_inference_result added as TENANT_SCOPED managed table (RLS inference_result_org_isolation, unique (org_id, inference_id), level/confidence/data_quality/ood-consistency CHECK, standalone_040). managed_count 64->65, physical_create_count 67->68; 001_verify / standalone_001_verify expected lists 58->59 in lockstep."
-  - "口径说明（Round 39 结构修复，59 core 非漂移）：managed_count=65 是 managed_tables 全量逻辑受管表数（52 张核心受管表 + 6 张 F61-02 域表 + 2 张 NO-05b 维护/质量表 + 1 张 NO-05e-b 工单表）。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表只统计 55 张核心受管表（核心 = 52 原始受管 + identity_mapping/maintenance_condition/quality_finding/work_order/ingest_event_dedup/agent_manifest/agent_task 共 7 张历轮 TENANT_SCOPED 表，Round 39 起 +inference_result 与 knowledge_entry 硬化同计数）。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表只统计 59 张核心受管表，其 managed_table_count / rls_enabled 期望值=59（run_migrations.js 从本 manifest 派生）；6 张域表由 standalone_004_ewoh_domain.sql 单独创建，并由 --verify-standalone-domain 单独验证（期望值=6）。Round 39 修复：032-040 的 8 张表条目此前误挂 additional_hardened_existing_tables 段（YAML 缩进归属），已移回 managed_tables——修复后 computed=65 与 reconcile 口径一致。"
+  - "口径说明（2026-08-17 审计整改 SQL-031/032/049/101 统一为单段最新计数，替代历史多版本计数 51/52/55/59/65）：header managed_count=74 / physical_create_count=77 与本文件 managed_tables 实际条目数（74）及最新轮次 notes（NO-13c..NO-13y 的 74/77）一致。managed_tables 74 项 = 68 张核心受管表 + 6 张 F61-02 域表。db/verify/001_verify.sql 与 db/verify/standalone_001_verify.sql 的 expected 列表 = 68 张核心受管表（managed_tables 去除 6 张域表），其 managed_table_count / rls_enabled 期望值=68（run_migrations.js coreManagedTableCountFromManifest 从本 manifest 派生，解析失败直接报错，不回退旧值）；6 张域表由 standalone_004_ewoh_domain.sql 单独创建并由 --verify-standalone-domain 单独验证（期望值=6）。历史轮次计数（51/52/55/59/65/73）已废弃，以本段为准。"
+  - "审计整改 W1（2026-08-17，standalone_057_rls_null_reject）：1) SQL-028/029 分类修正——ewoh_agent_approval / ewoh_learning_proposal 实为 standalone_049 / standalone_045 全新 CREATE TABLE，status 由 altered 改 new（managed_count/physical_create_count 不变，表已在列）；2) SQL-030 补登 4 张此前完全缺失的表（saved_views / workbench_export_tasks / prediction_shadow_observation / ewoh_snapshot_version_counter，登记于 additional_hardened_existing_tables 段末尾的登记性条目——三者非 org_id 列名或 GLOBAL_SHARED 语义，不进入 managed_tables 核心口径，verify expected 列表不变）；3) 057 迁移本体见 db/migrations/standalone_057_rls_null_reject.sql（RLS 去 NULL 放行、org_id NOT NULL backfill、业务键复合唯一、ewoh_org_visible(text) 重载）。"
 managed_tables:
   - domain: "Scale"
     logical_name: "ewoh_asset_package"
@@ -563,7 +564,7 @@ managed_tables:
     physical_table: "ewoh_learning_proposal"
     business_key_columns: ["org_id","proposal_id"]
     org_id_policy: "NOT NULL"
-    status: "altered"
+    status: "new"
     capability_mapping: ["learning.feedback_loop", "learning.proposal_activation_decision"]
   # TENANT_SCOPED（ADR-032，standalone_046）：外骨骼↔人员绑定会话台账；
   # 部分唯一索引（org_id, exo_id WHERE status=active）机器强制一台外骨骼
@@ -591,7 +592,7 @@ managed_tables:
     physical_table: "ewoh_agent_approval"
     business_key_columns: ["org_id","approval_id"]
     org_id_policy: "NOT NULL"
-    status: "altered"
+    status: "new"
     capability_mapping: ["agent.approval_persistence", "agent.approval_decision"]
   # TENANT_SCOPED（ADR-051/ADR-052，standalone_051）：外骨骼配置台账；
   # Support Mode/Assist Profile/Fit/Calibration 配置事实（kind/status 按 kind/
@@ -763,3 +764,40 @@ additional_hardened_existing_tables:
     org_id_policy: "GLOBAL_SHARED"
     status: "new"
     capability_mapping: ["scheduler.outbox"]
+  # ===== 登记性条目（审计 SQL-030/010/011 补登，2026-08-17）=====
+  # 以下 4 张表由 standalone_005 / 029 / 031 全新 CREATE TABLE，此前 manifest
+  # 完全缺失（三方对账失败）。登记于本段而非 managed_tables：列名非 org_id
+  # （organization_id）或 GLOBAL_SHARED 语义，不参与 001_verify / standalone_
+  # 001_verify 的核心口径（managed_table_count / rls_enabled / missing_org_id）。
+  - domain: "Workbench"
+    logical_name: "saved_views"
+    physical_table: "saved_views"
+    business_key_columns: ["organization_id","owner_user_id","workbench","name"]
+    org_id_policy: "NOT NULL (organization_id)"
+    status: "new"
+    capability_mapping: ["workbench.saved_views"]
+  - domain: "Workbench"
+    logical_name: "workbench_export_tasks"
+    physical_table: "workbench_export_tasks"
+    business_key_columns: ["organization_id","task_id"]
+    org_id_policy: "NOT NULL (organization_id)"
+    status: "new"
+    capability_mapping: ["workbench.export"]
+  # GLOBAL_SHARED 语义（standalone_029 头注释显式声明 advisory-only 观测 +
+  # null=全局/ALL 采样）：org_id 仅血缘（可空），不启用 RLS（审计 SQL-010 裁决）。
+  - domain: "Scheduling"
+    logical_name: "prediction_shadow_observation"
+    physical_table: "prediction_shadow_observation"
+    business_key_columns: ["org_id","correlation_id"]
+    org_id_policy: "GLOBAL_SHARED"
+    status: "new"
+    capability_mapping: ["scheduler.prediction_shadow"]
+  # GLOBAL_SHARED 语义（standalone_031）：按 day 的全局版本计数器，跨租户共享
+  # 单调版本空间（审计 SQL-011 裁决：设计为全局，manifest 显式登记）。
+  - domain: "Scheduling"
+    logical_name: "ewoh_snapshot_version_counter"
+    physical_table: "ewoh_snapshot_version_counter"
+    business_key_columns: ["day"]
+    org_id_policy: "GLOBAL_SHARED"
+    status: "new"
+    capability_mapping: ["scheduler.snapshot_version"]

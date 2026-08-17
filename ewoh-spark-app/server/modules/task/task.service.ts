@@ -162,31 +162,60 @@ export class TaskService {
     }
   }
 
-  async listTasks() {
+  /**
+   * NEST-612（2026-08-17 审计整改）：任务读写带 org 谓词（global_admin 放行）；
+   * 写入显式 orgId（缺租户上下文 fail-closed）。列表补 LIMIT（原先无界全表）。
+   */
+  private orgCondition(actor?: OrgContext) {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: task operations require tenant context',
+      );
+    }
+    return eq(ewohProductionTask.orgId, orgId);
+  }
+
+  async listTasks(actor?: OrgContext) {
+    const orgCond = this.orgCondition(actor);
     return this.db
       .select()
       .from(ewohProductionTask)
-      .orderBy(desc(ewohProductionTask.createdAt));
+      .where(orgCond)
+      .orderBy(desc(ewohProductionTask.createdAt))
+      .limit(500);
   }
 
-  async getTask(id: string) {
+  async getTask(id: string, actor?: OrgContext) {
     if (!isValidUuid(id)) {
       throw new NotFoundException(`Task ${id} not found`);
     }
+    const orgCond = this.orgCondition(actor);
     const [row] = await this.db
       .select()
       .from(ewohProductionTask)
-      .where(eq(ewohProductionTask.id, id));
+      .where(orgCond ? and(eq(ewohProductionTask.id, id), orgCond) : eq(ewohProductionTask.id, id));
     if (!row) {
       throw new NotFoundException(`Task ${id} not found`);
     }
     return row;
   }
 
-  async createTask(body: CreateTaskDto) {
+  async createTask(body: CreateTaskDto, actor?: OrgContext) {
     if (!body.title?.trim() || !body.taskType?.trim()) {
       throw new BadRequestException('title and taskType are required');
     }
+    const orgCond = this.orgCondition(actor);
+    if (!orgCond) {
+      // global_admin 无 org 归属写入亦显式拒绝（业务表 insert 必须显式 orgId）。
+      throw new BadRequestException(
+        'org context missing: task creation requires tenant org context',
+      );
+    }
+    const orgId = actor?.primaryOrgId as string;
     const [row] = await this.db
       .insert(ewohProductionTask)
       .values({
@@ -201,6 +230,7 @@ export class TaskService {
         planEnd: body.planEnd ? new Date(body.planEnd) : null,
         status: 'draft',
         source: 'manual',
+        orgId,
       })
       .returning();
     // A1：任务创建成功 → 通知调度桥（fire-and-forget，触发事件驱动重排）
@@ -209,7 +239,7 @@ export class TaskService {
   }
 
   async transitionTaskState(id: string, action: string, actor?: OrgContext) {
-    const task = await this.getTask(id);
+    const task = await this.getTask(id, actor);
     const status = nextTaskStatus(task.status, action);
     if (!status) {
       throw new BadRequestException(

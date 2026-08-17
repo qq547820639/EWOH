@@ -62,8 +62,11 @@ export function matchesCoreRange(
   range: string | null | undefined,
   version: string,
 ): boolean {
+  // NEST-231：未约束版本不再默认视为兼容（掩盖核心版本不匹配）——
+  // fail-closed 返回 false；调用方（compatibilityCatalog）以 reason
+  // 'unconstrained' 显式标记未约束资产。
   if (!range || !range.trim()) {
-    return true;
+    return false;
   }
   const parsedVersion = parseVersion(version);
   if (!parsedVersion) {

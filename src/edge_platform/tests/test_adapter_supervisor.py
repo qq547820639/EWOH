@@ -126,8 +126,12 @@ class AdapterSupervisorTest(unittest.TestCase):
     def tearDown(self):
         try:
             self.manager.stop()
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - EDT-011：清理失败留痕（原静默吞）
+            import logging
+
+            logging.getLogger("ewoh.tests.adapter_supervisor").warning(
+                "tearDown manager.stop() 失败: %s", exc
+            )
 
     def _health(self, device_id):
         for h in self.manager.health():

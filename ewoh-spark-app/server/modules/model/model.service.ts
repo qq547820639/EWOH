@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -51,28 +52,47 @@ export class ModelService {
     private readonly auditService: AuditService,
   ) {}
 
-  async listModels() {
+  /** NEST-411：org 上下文强制（缺失 401）；global_admin 跨租户放行。 */
+  private orgScope(actor?: OrgContext): { orgId?: string } {
+    if (actor?.isGlobalAdmin) return {};
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：模型注册表读写必须带租户上下文',
+      );
+    }
+    return { orgId };
+  }
+
+  async listModels(actor?: OrgContext) {
+    const { orgId } = this.orgScope(actor);
     return this.db
       .select()
       .from(ewohModelRegistry)
+      .where(orgId ? eq(ewohModelRegistry.orgId, orgId) : undefined)
       .orderBy(desc(ewohModelRegistry.createdAt));
   }
 
-  async getModel(id: string) {
+  async getModel(id: string, actor?: OrgContext) {
     if (!isValidUuid(id)) {
       throw new NotFoundException(`Model ${id} not found`);
     }
+    const { orgId } = this.orgScope(actor);
     const [row] = await this.db
       .select()
       .from(ewohModelRegistry)
-      .where(eq(ewohModelRegistry.id, id));
+      .where(
+        orgId
+          ? and(eq(ewohModelRegistry.id, id), eq(ewohModelRegistry.orgId, orgId))
+          : eq(ewohModelRegistry.id, id),
+      );
     if (!row) {
       throw new NotFoundException(`Model ${id} not found`);
     }
     return row;
   }
 
-  async registerModel(body: RegisterModelDto) {
+  async registerModel(body: RegisterModelDto, actor?: OrgContext) {
     if (
       !body.modelId?.trim() ||
       !body.modelName?.trim() ||
@@ -83,6 +103,13 @@ export class ModelService {
         'modelId, modelName, version and type are required',
       );
     }
+    // NEST-411：写入显式携带 orgId（global_admin 归属其 primaryOrgId）。
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：模型注册必须带租户上下文',
+      );
+    }
     const [row] = await this.db
       .insert(ewohModelRegistry)
       .values({
@@ -91,6 +118,7 @@ export class ModelService {
         version: body.version.trim(),
         type: body.type.trim(),
         status: 'candidate',
+        orgId,
         // NO-08b（ADR-013）：inputVersion 对齐 InferenceResult 契约元数据
         //（无独立列，落 cardJson.inputVersion；缺省不伪造）。
         cardJson: {
@@ -105,7 +133,7 @@ export class ModelService {
   }
 
   async transitionStatus(id: string, action: string, actor?: OrgContext) {
-    const current = await this.getModel(id);
+    const current = await this.getModel(id, actor);
     const status = nextModelStatus(current.status ?? 'candidate', action);
     if (status === current.status) {
       throw new BadRequestException(

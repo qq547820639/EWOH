@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   riskStates,
   riskToken,
@@ -46,5 +48,39 @@ describe('designTokens（语义化设计 token 系统）', () => {
       expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]);
     }
     expect(zScale.modal).toBe('200');
+  });
+});
+
+describe('designTokens ↔ tokens.css 单一来源锁定（CLI-527）', () => {
+  const css = fs.readFileSync(path.resolve(__dirname, '../tokens.css'), 'utf8');
+  const cssVar = (name: string): string | null => {
+    const match = new RegExp(`--${name}:\\s*([^;]+);`).exec(css);
+    return match ? match[1].trim() : null;
+  };
+  const kebab = (key: string): string =>
+    key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
+  it('semanticTokens 每个色值与 tokens.css 同名变量一致', () => {
+    for (const [key, value] of Object.entries(semanticTokens)) {
+      expect(cssVar(`semantic-${kebab(key)}`)).toBe(value);
+    }
+  });
+
+  it('riskTokens 四个维度与 tokens.css 同名变量一致', () => {
+    // dim= 'color' 对应 CSS 主色变量 --risk-<state>（无 -color 后缀），
+    // 其余维度为 --risk-<state>-<dim>。
+    const cssName = (state: string, dim: string): string =>
+      dim === 'color' ? `risk-${state}` : `risk-${state}-${dim}`;
+    for (const [state, dims] of Object.entries(riskTokens)) {
+      for (const [dim, value] of Object.entries(dims)) {
+        expect(cssVar(cssName(state, dim))).toBe(value);
+      }
+    }
+  });
+
+  it('zScale 与 tokens.css z-index 刻度一致', () => {
+    for (const [key, value] of Object.entries(zScale)) {
+      expect(cssVar(`z-${kebab(key)}`)).toBe(`${value}`);
+    }
   });
 });

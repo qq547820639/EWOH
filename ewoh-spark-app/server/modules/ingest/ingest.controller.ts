@@ -83,11 +83,15 @@ export class IngestController {
   }
 
   @Post('camera')
-  async ingestCamera(@Body() frame: CameraFrameDto): Promise<IngestResponse> {
+  async ingestCamera(
+    @Body() frame: CameraFrameDto,
+    @Req() request?: { userContext?: OrgContext },
+  ): Promise<IngestResponse> {
     if (!frame.camera_id || !frame.event_time) {
       throw new BadRequestException('camera_id 和 event_time 必填');
     }
-    return this.ingestService.ingestCamera(frame);
+    // NEST-210：透传 IngestGuard 挂载的租户上下文（service 写入带 orgId）。
+    return this.ingestService.ingestCamera(frame, request?.userContext?.primaryOrgId);
   }
 
   @Post('mes')
@@ -104,19 +108,27 @@ export class IngestController {
   }
 
   @Post('spatial-scan')
-  async ingestSpatialScan(@Body() scan: SpatialScanDto): Promise<IngestResponse> {
+  async ingestSpatialScan(
+    @Body() scan: SpatialScanDto,
+    @Req() request?: { userContext?: OrgContext },
+  ): Promise<IngestResponse> {
     if (!scan.entity_id || !scan.source_type) {
       throw new BadRequestException('entity_id 和 source_type 必填');
     }
-    return this.ingestService.ingestSpatialScan(scan);
+    // NEST-210：透传租户上下文。
+    return this.ingestService.ingestSpatialScan(scan, request?.userContext?.primaryOrgId);
   }
 
   @Post('location')
-  async ingestLocation(@Body() loc: LocationFrameDto): Promise<IngestResponse> {
+  async ingestLocation(
+    @Body() loc: LocationFrameDto,
+    @Req() request?: { userContext?: OrgContext },
+  ): Promise<IngestResponse> {
     if (!loc.entity_id || !loc.locator || !loc.ts) {
       throw new BadRequestException('entity_id、locator、ts 必填');
     }
-    return this.ingestService.ingestLocation(loc);
+    // NEST-210：透传租户上下文。
+    return this.ingestService.ingestLocation(loc, request?.userContext?.primaryOrgId);
   }
 
   /** NO-04b：Edge→Cloud 事件批量上行（ADR-009 信封 + 传输级幂等去重）。 */

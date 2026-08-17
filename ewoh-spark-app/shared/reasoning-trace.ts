@@ -201,8 +201,11 @@ export function evaluateReasoningRules(
   thresholds?: ReasoningThresholdOverrides,
 ): ReasoningConclusion[] {
   const conclusions: ReasoningConclusion[] = [];
+  // SH-006：按 subjectId 去重（后到覆盖先到），与 Python evaluate_rules 的
+  // by_kind = {f["subjectId"]: f for f in facts} 语义一致，避免重复 conclusionId。
+  const bySubject = new Map(facts.map((f) => [f.subjectId, f] as const));
   for (const ruleId of REASONING_RULE_IDS) {
-    for (const fact of facts) {
+    for (const fact of bySubject.values()) {
       if (!matchesRule(ruleId, fact, thresholds)) continue;
       const v = fact.values;
       const explanation = RULE_TEMPLATES[ruleId]

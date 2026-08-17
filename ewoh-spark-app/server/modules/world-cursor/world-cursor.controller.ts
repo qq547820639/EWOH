@@ -1,19 +1,37 @@
-import { Controller, Get, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Query, HttpException, HttpStatus, Req } from '@nestjs/common';
 import { WorldCursorService, CursorExpiredError } from './world-cursor.service';
+import { Roles } from '../shared/roles.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
+/**
+ * NEST-608（2026-08-17 审计整改）：补 @Roles（原先任何认证用户可取
+ * snapshot/delta）。角色集与 route-role.policy FALLBACK 表一致
+ * （global_admin/dispatcher/workshop_lead）。
+ */
 @Controller('api/world')
+@Roles('global_admin', 'dispatcher', 'workshop_lead')
 export class WorldCursorController {
   constructor(private readonly worldCursorService: WorldCursorService) {}
 
   @Get('snapshot')
-  snapshot() {
-    return this.worldCursorService.getSnapshot();
+  snapshot(@Req() request?: { userContext?: OrgContext }) {
+    return this.worldCursorService.getSnapshot(request?.userContext?.primaryOrgId);
   }
 
   @Get('delta')
-  async delta(@Query('cursor') cursor: string, @Query('limit') limit?: string) {
+  async delta(
+    @Query('cursor') cursor: string,
+    @Query('limit') limit?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
     try {
-      return await this.worldCursorService.getDelta(cursor, limit ? parseInt(limit) : 200);
+      // NEST-639：limit 钳制上限 1000（NaN 回退默认 200）。
+      const parsed = limit ? parseInt(limit, 10) : 200;
+      return await this.worldCursorService.getDelta(
+        cursor,
+        Number.isFinite(parsed) && parsed > 0 ? parsed : 200,
+        request?.userContext?.primaryOrgId,
+      );
     } catch (error) {
       if (error instanceof CursorExpiredError) {
         throw new HttpException(

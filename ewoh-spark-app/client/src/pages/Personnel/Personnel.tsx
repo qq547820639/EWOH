@@ -10,7 +10,7 @@ import {
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
 
-const riskLabel = {
+const riskLabel: Record<string, string> = {
   low: '低风险',
   medium: '中风险',
   high: '高风险',
@@ -97,7 +97,8 @@ const Personnel = (): React.ReactElement => {
                             : 'bg-emerald-100 text-emerald-700'
                       }`}
                     >
-                      {riskLabel[person.riskLevel ?? 'low']}
+                      {/* CLI-220：显式默认标签（未定义/未知 riskLevel 不再渲染为空）。 */}
+                      {riskLabel[person.riskLevel ?? 'low'] ?? `未知(${person.riskLevel ?? '—'})`}
                     </span>
                   </td>
                 </tr>

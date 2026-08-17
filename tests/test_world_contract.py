@@ -62,6 +62,8 @@ class TestWorldVectors:
                 assert errors == [], (case["name"], errors)
                 if "currentVersion" in case["expect"]:
                     current = [r for r in records if r["validTo"] is None]
+                    # TEST-012：先断言恰好一条 current 记录，再取下标
+                    assert len(current) == 1, (case["name"], [r["version"] for r in current])
                     assert current[0]["version"] == case["expect"]["currentVersion"], case["name"]
             else:
                 assert case["expect"]["reason"] in errors, (case["name"], errors)

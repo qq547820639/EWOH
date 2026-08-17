@@ -161,62 +161,66 @@ export class SolverService {
       return { suffix: slot.suffix, profileId: slot.profileId, label: profile.label, scale, reason };
     });
 
-    const plans: SchedulingPlanV2[] = [];
-    for (const profile of profiles) {
-      const variantPolicy: SchedulingPolicy = {
-        ...base,
-        // Phase 2 / P2-T2：8 权重权威缩放（weights 与兼容旧字段同步缩放；profile 只缩放 soft objective）。
-        weights: {
-          lateness: base.weights.lateness * (profile.scale.lateness ?? 1),
-          travel: base.weights.travel * (profile.scale.travel ?? 1),
-          wait: base.weights.wait * (profile.scale.wait ?? 1),
-          workload: base.weights.workload * (profile.scale.workload ?? 1),
-          station: base.weights.station * (profile.scale.station ?? 1),
-          change: base.weights.change * (profile.scale.change ?? 1),
-          risk: base.weights.risk * (profile.scale.risk ?? 1),
-          energy: base.weights.energy * (profile.scale.energy ?? 1),
-        },
-        latenessWeight: base.latenessWeight * (profile.scale.lateness ?? 1),
-        walkingWeight: base.walkingWeight * (profile.scale.travel ?? 1),
-        workloadBalanceWeight:
-          base.workloadBalanceWeight * (profile.scale.workload ?? 1),
-        stationWaitWeight:
-          base.stationWaitWeight * (profile.scale.wait ?? 1),
-        changeCostWeight:
-          base.changeCostWeight * (profile.scale.change ?? 1),
-        riskWeight: base.riskWeight * (profile.scale.risk ?? 1),
-        energyWeight: base.energyWeight * (profile.scale.energy ?? 1),
-      };
-      const plan = await this.solve(snapshot, constraints, {
-        ...opts,
-        planId: `${opts.planId}${profile.suffix}`,
-        planName: profile.label,
-        policy: variantPolicy,
-      });
-      // 记录变体标签/原因与投放权重，保证差异可解释且随方案持久化。
-      plan.baselineDelta = {
-        ...plan.baselineDelta,
-        variant: {
-          label: profile.label,
-          reason: profile.reason,
-          // P1-C（§六）：profileId/profileVersion 一并持久化（DB 无独立列，随 baselineDelta 落库可审计）。
-          profileId: profile.profileId,
-          profileVersion: base.version,
+    // NEST-143 修复（2026-08-17）：三变体顺序 await（3× 全量求解串行耗时）→
+    // Promise.all 并行（变体间无共享可变状态：各自独立 policy 快照/求解器实例
+    // 无跨调用状态）；结果按 profiles 顺序映射，输出顺序与历史一致（确定性）。
+    const plans = await Promise.all(
+      profiles.map(async (profile) => {
+        const variantPolicy: SchedulingPolicy = {
+          ...base,
+          // Phase 2 / P2-T2：8 权重权威缩放（weights 与兼容旧字段同步缩放；profile 只缩放 soft objective）。
           weights: {
-            latenessWeight: variantPolicy.latenessWeight,
-            workloadBalanceWeight: variantPolicy.workloadBalanceWeight,
-            walkingWeight: variantPolicy.walkingWeight,
-            changeCostWeight: variantPolicy.changeCostWeight,
+            lateness: base.weights.lateness * (profile.scale.lateness ?? 1),
+            travel: base.weights.travel * (profile.scale.travel ?? 1),
+            wait: base.weights.wait * (profile.scale.wait ?? 1),
+            workload: base.weights.workload * (profile.scale.workload ?? 1),
+            station: base.weights.station * (profile.scale.station ?? 1),
+            change: base.weights.change * (profile.scale.change ?? 1),
+            risk: base.weights.risk * (profile.scale.risk ?? 1),
+            energy: base.weights.energy * (profile.scale.energy ?? 1),
           },
-        },
-      };
-      // P1-C（§六）：plan 记录版本化 Profile（profileId/profileVersion，与 weights 一起确定性重放）。
-      plan.profileId = profile.profileId;
-      plan.profileVersion = base.version;
-      // Phase 2 / P2-T2：实际投放的 8 权重快照（persistPlan 落库 weightsJson；可审计/确定性重放）。
-      plan.weights = variantPolicy.weights;
-      plans.push(plan);
-    }
+          latenessWeight: base.latenessWeight * (profile.scale.lateness ?? 1),
+          walkingWeight: base.walkingWeight * (profile.scale.travel ?? 1),
+          workloadBalanceWeight:
+            base.workloadBalanceWeight * (profile.scale.workload ?? 1),
+          stationWaitWeight:
+            base.stationWaitWeight * (profile.scale.wait ?? 1),
+          changeCostWeight:
+            base.changeCostWeight * (profile.scale.change ?? 1),
+          riskWeight: base.riskWeight * (profile.scale.risk ?? 1),
+          energyWeight: base.energyWeight * (profile.scale.energy ?? 1),
+        };
+        const plan = await this.solve(snapshot, constraints, {
+          ...opts,
+          planId: `${opts.planId}${profile.suffix}`,
+          planName: profile.label,
+          policy: variantPolicy,
+        });
+        // 记录变体标签/原因与投放权重，保证差异可解释且随方案持久化。
+        plan.baselineDelta = {
+          ...plan.baselineDelta,
+          variant: {
+            label: profile.label,
+            reason: profile.reason,
+            // P1-C（§六）：profileId/profileVersion 一并持久化（DB 无独立列，随 baselineDelta 落库可审计）。
+            profileId: profile.profileId,
+            profileVersion: base.version,
+            weights: {
+              latenessWeight: variantPolicy.latenessWeight,
+              workloadBalanceWeight: variantPolicy.workloadBalanceWeight,
+              walkingWeight: variantPolicy.walkingWeight,
+              changeCostWeight: variantPolicy.changeCostWeight,
+            },
+          },
+        };
+        // P1-C（§六）：plan 记录版本化 Profile（profileId/profileVersion，与 weights 一起确定性重放）。
+        plan.profileId = profile.profileId;
+        plan.profileVersion = base.version;
+        // Phase 2 / P2-T2：实际投放的 8 权重快照（persistPlan 落库 weightsJson；可审计/确定性重放）。
+        plan.weights = variantPolicy.weights;
+        return plan;
+      }),
+    );
     return plans;
   }
 
@@ -276,11 +280,14 @@ export class SolverService {
       }
       this.metricsService.recordRun({
         durationMs: Math.max(Date.now() - started, 0),
+        // NEST-144 修复（2026-08-17）：feasible 判定加 violation==0——仅以
+        // assignments 数量覆盖 schedulable 任务数判定会把带硬违例的方案误标
+        // feasible（数量达标但存在违规分配/no_eligible_resource 违例）。
         feasible:
           plan.assignments.length >=
-          snapshot.tasks.filter(
-            (t) => !['completed', 'cancelled'].includes(t.status),
-          ).length,
+            snapshot.tasks.filter(
+              (t) => !['completed', 'cancelled'].includes(t.status),
+            ).length && (plan.violations?.length ?? 0) === 0,
         solverVersion: plan.solverVersion,
         solverStatus: plan.solverStatus,
       });
@@ -699,12 +706,46 @@ export class SolverService {
     return snapshot.tasks.length;
   }
 
-  /** 将遗留的开放字符串约束转换为统一 SchedulingConstraint。 */
+  /**
+   * 将遗留的开放字符串约束转换为统一 SchedulingConstraint。
+   * NEST-145 修复（2026-08-17）：去除 `as unknown as` 类型逃逸——runtime
+   * 形状校验（type 必须是非空 string；taskId/personId/deviceId/stationId/
+   * zoneId 仅接受 string；startMs/endMs 仅接受有限数），非法条目丢弃并留痕。
+   */
   private toSchedulingConstraints(
     constraints: SolverConstraint[],
   ): SchedulingConstraint[] {
-    return constraints
-      .filter((c): c is SolverConstraint & { type: string } => Boolean(c.type))
-      .map((c) => c as unknown as SchedulingConstraint);
+    const out: SchedulingConstraint[] = [];
+    for (const c of constraints) {
+      const rec = c as unknown as Record<string, unknown>;
+      if (typeof rec.type !== 'string' || rec.type.trim() === '') {
+        this.logger.warn(
+          `toSchedulingConstraints: drop constraint without valid type (${JSON.stringify(rec).slice(0, 80)})`,
+        );
+        continue;
+      }
+      const strOrUndef = (v: unknown): string | undefined =>
+        typeof v === 'string' ? v : undefined;
+      const numOrUndef = (v: unknown): number | undefined =>
+        typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+      // NEST-145：保留原记录全部字段（value/hard/snapshotVersion 等扩展维度
+      // 由消费方读取，如 heuristic 的 MAX_WORKLOAD c.value）——仅对核心
+      // identity 字段做 runtime 规整，不截断未知字段。
+      out.push({
+        ...rec,
+        id: strOrUndef(rec.id),
+        type: rec.type,
+        taskId: strOrUndef(rec.taskId),
+        personId: strOrUndef(rec.personId),
+        deviceId: strOrUndef(rec.deviceId),
+        stationId: strOrUndef(rec.stationId),
+        zoneId: strOrUndef(rec.zoneId),
+        startMs: numOrUndef(rec.startMs),
+        endMs: numOrUndef(rec.endMs),
+        operator: strOrUndef(rec.operator),
+        reason: strOrUndef(rec.reason),
+      } as SchedulingConstraint);
+    }
+    return out;
   }
 }

@@ -751,39 +751,169 @@ components:
     WorkOverview:
       type: object
       additionalProperties: true
+      required: [generatedAt, phase, criticalPath, counts, gates, conflicts, writable]
+      properties:
+        generatedAt:
+          type: string
+        phase:
+          type: string
+        criticalPath:
+          type: string
+        counts:
+          type: object
+          additionalProperties: true
+          description: WorkGraph.summary counts (itemCount, edgeCount, statusCounts, ...)
+        gates:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkGate'
+        conflicts:
+          type: array
+          items:
+            type: string
+        writable:
+          type: boolean
     WorkGraph:
       type: object
       additionalProperties: true
-      required:
-        - schema
-        - items
-        - edges
-        - gates
+      required: [schema, items, edges, gates]
+      properties:
+        schema:
+          type: string
+        generatedAt:
+          type: string
+        sourceRoot:
+          type: string
+        criticalPath:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkItem'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkEdge'
+        actors:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkActor'
+        artifacts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              artifactId:
+                type: string
+              path:
+                type: string
+              mediaType:
+                type: string
+              checksum:
+                type: string
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkEvidence'
+        gates:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkGate'
+        risks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkRisk'
+        decisions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              date:
+                type: string
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkResource'
+        handoffs:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkHandoff'
     WorkItem:
       type: object
       additionalProperties: true
-      required:
-        - id
-        - title
-        - type
-        - status
-        - owner
+      required: [id, title, type, status, owner]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        owner:
+          type: string
+        agents:
+          type: array
+          items:
+            type: string
+        wave:
+          type: string
+        evidence:
+          type: string
+        summary:
+          type: string
     WorkEdge:
       type: object
       additionalProperties: true
-      required:
-        - id
-        - from
-        - to
-        - edgeType
+      required: [id, from, to, edgeType]
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        edgeType:
+          type: string
+        blocking:
+          type: boolean
+        condition:
+          type: string
+        evidenceRequirement:
+          type: string
     WorkActor:
       type: object
       additionalProperties: true
-      required:
-        - actorId
-        - name
-        - kind
-        - role
+      required: [actorId, name, kind, role]
+      properties:
+        actorId:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        role:
+          type: string
+        ownership:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        runtime:
+          type: string
+        status:
+          type: string
     WorkEvidence:
       type: object
       additionalProperties: true
@@ -830,58 +960,123 @@ components:
     EvidenceContent:
       type: object
       additionalProperties: true
-      required:
-        - evidenceId
-        - path
-        - lines
-        - truncated
-        - content
+      required: [evidenceId, path, lines, truncated, content]
+      properties:
+        evidenceId:
+          type: string
+        path:
+          type: string
+        lines:
+          type: integer
+        truncated:
+          type: boolean
+        content:
+          type: string
     WorkGate:
       type: object
       additionalProperties: true
-      required:
-        - gateId
-        - title
-        - calculatedStatus
+      required: [gateId, title, calculatedStatus]
+      properties:
+        gateId:
+          type: string
+        title:
+          type: string
+        calculatedStatus:
+          type: string
+        humanDecision:
+          type: string
+          nullable: true
+        conditions:
+          type: array
+          items:
+            type: string
+        approver:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          nullable: true
     WorkRisk:
       type: object
       additionalProperties: true
-      required:
-        - id
-        - title
-        - severity
+      required: [id, title, severity]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
     WorkResource:
       type: object
       additionalProperties: true
-      required:
-        - resourceId
-        - name
-        - kind
-        - status
+      required: [resourceId, name, kind, status]
+      properties:
+        resourceId:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        purpose:
+          type: string
+        lock:
+          type: object
+          nullable: true
+          additionalProperties: true
     WorkHandoff:
       type: object
       additionalProperties: true
-      required:
-        - handoffId
-        - fromActor
-        - toActor
-        - status
+      required: [handoffId, fromActor, toActor, status]
+      properties:
+        handoffId:
+          type: string
+        fromActor:
+          type: string
+        toActor:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
     WorkCatalog:
       type: object
       additionalProperties: true
-      required:
-        - schemaVersion
-        - catalogId
-        - assets
+      required: [schemaVersion, catalogId, assets]
+      properties:
+        schemaVersion:
+          type: string
+        catalogId:
+          type: string
+        generatedAt:
+          type: string
+        assets:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     GitSyncPlan:
       type: object
       additionalProperties: true
-      required:
-        - schema
-        - itemCount
-        - trackedCount
-        - missingCount
-        - items
+      required: [schema, itemCount, trackedCount, missingCount, items]
+      properties:
+        schema:
+          type: string
+        itemCount:
+          type: integer
+        trackedCount:
+          type: integer
+        missingCount:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     GitSyncApplyRequest:
       type: object
       additionalProperties: true
@@ -905,9 +1100,38 @@ components:
     SiteReadinessSummary:
       type: object
       additionalProperties: true
-      required:
-        - sourcePath
-        - ready
+      required: [sourcePath, ready]
+      properties:
+        sourcePath:
+          type: string
+        example:
+          type: boolean
+        factoryName:
+          type: string
+        siteContact:
+          type: string
+        ready:
+          type: boolean
+        requiredCount:
+          type: integer
+        requiredPassed:
+          type: integer
+        requiredFailed:
+          type: integer
+        checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              passed:
+                type: boolean
+              status:
+                type: string
     ResourceLockRequest:
       type: object
       additionalProperties: true
@@ -921,23 +1145,52 @@ components:
     ResourceLockRecord:
       type: object
       additionalProperties: true
-      required:
-        - resourceId
-        - holder
-        - active
+      required: [resourceId, holder, active]
+      properties:
+        resourceId:
+          type: string
+        holder:
+          type: string
+        purpose:
+          type: string
+        acquiredAt:
+          type: string
+        expiresAt:
+          type: string
+        active:
+          type: boolean
     ResourceReleaseResult:
       type: object
       additionalProperties: true
-      required:
-        - resourceId
-        - released
+      required: [resourceId, released]
+      properties:
+        resourceId:
+          type: string
+        released:
+          type: boolean
+        holder:
+          type: string
+        persisted:
+          type: string
     HandoffRequest:
       type: object
       additionalProperties: true
-      required:
-        - fromActor
-        - toActor
-        - scope
+      required: [fromActor, toActor, scope]
+      properties:
+        fromActor:
+          type: string
+        toActor:
+          type: string
+        scope:
+          type: string
+        contextPack:
+          type: string
+        openQuestions:
+          type: array
+          items:
+            type: string
+        acceptance:
+          type: string
     HandoffStateRequest:
       type: object
       additionalProperties: true
@@ -993,11 +1246,21 @@ components:
     GateDecisionRecord:
       type: object
       additionalProperties: true
-      required:
-        - gateId
-        - decision
-        - approver
-        - decidedAt
+      required: [gateId, decision, approver, decidedAt]
+      properties:
+        gateId:
+          type: string
+        decision:
+          type: string
+          enum: [approved, rejected, conditional]
+        approver:
+          type: string
+        decidedAt:
+          type: string
+        conditions:
+          type: array
+          items:
+            type: string
     GateRevokeRequest:
       type: object
       additionalProperties: true

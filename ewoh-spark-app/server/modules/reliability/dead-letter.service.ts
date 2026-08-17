@@ -115,7 +115,9 @@ export class DeadLetterService {
     return rows.map((r) => this.toLetter(r));
   }
 
-  /** 人审重放：handler 按 sourceId 分发；attempts+1；无 handler 显式失败。 */
+  /** 人审重放：handler 按 sourceId 分发；attempts+1；无 handler 显式失败。
+   * NEST-629：先 CAS 落 requeued 再执行 handler——原先 handler 成功而状态
+   * 更新失败会导致同一信件被重复重放；现状态先行，重复解析被 CAS 拒绝。 */
   async requeue(orgId: string, letterId: string) {
     if (!orgId?.trim()) {
       throw new BadRequestException('orgId 缺失：死信重放必须带租户上下文');
@@ -136,12 +138,22 @@ export class DeadLetterService {
     if (!handler) {
       throw new BadRequestException(`no_requeue_handler:${current.sourceId}`);
     }
-    await handler(orgId, current.envelopeJson as Record<string, unknown>);
     const nextAttempts = current.attempts + 1;
-    await this.db
+    const updatedRows = await this.db
       .update(ewohDeadLetter)
       .set({ status: 'requeued', attempts: nextAttempts, updatedAt: new Date() })
-      .where(and(eq(ewohDeadLetter.orgId, orgId), eq(ewohDeadLetter.id, current.id)));
+      .where(
+        and(
+          eq(ewohDeadLetter.orgId, orgId),
+          eq(ewohDeadLetter.id, current.id),
+          eq(ewohDeadLetter.status, 'pending'),
+        ),
+      )
+      .returning();
+    if (updatedRows.length === 0) {
+      throw new BadRequestException('dead_letter_state_changed_concurrently');
+    }
+    await handler(orgId, current.envelopeJson as Record<string, unknown>);
     return { letterId, from: current.status, to: 'requeued', attempts: nextAttempts };
   }
 
@@ -165,10 +177,21 @@ export class DeadLetterService {
     if (current.status === 'discarded') {
       throw new BadRequestException('already_discarded');
     }
-    await this.db
+    // NEST-630：CAS on status——并发 discard/requeue 只有一个成功。
+    const updatedRows = await this.db
       .update(ewohDeadLetter)
       .set({ status: 'discarded', discardedReason: reason.trim(), updatedAt: new Date() })
-      .where(and(eq(ewohDeadLetter.orgId, orgId), eq(ewohDeadLetter.id, current.id)));
+      .where(
+        and(
+          eq(ewohDeadLetter.orgId, orgId),
+          eq(ewohDeadLetter.id, current.id),
+          eq(ewohDeadLetter.status, current.status),
+        ),
+      )
+      .returning();
+    if (updatedRows.length === 0) {
+      throw new BadRequestException('dead_letter_state_changed_concurrently');
+    }
     return { letterId, from: current.status, to: 'discarded' };
   }
 

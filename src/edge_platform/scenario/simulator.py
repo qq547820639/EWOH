@@ -19,12 +19,15 @@
 纯 Python 标准库实现。
 """
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
 from edge_platform.spatial import new_id
 
 from .metrics import compute_metrics
+
+_LOGGER = logging.getLogger("ewoh.scenario.simulator")
 
 
 class PlanType(str, Enum):
@@ -142,8 +145,8 @@ class ScenarioSimulator:
                 ranked = self.scorer.rank(plans)
                 if ranked:
                     plans = list(ranked)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - EDGE-229：排序失败 warning 留痕（原静默吞）
+                _LOGGER.warning("scorer.rank 失败，保持生成顺序: %s", exc)
         return plans
 
     # ---- 各方案策略 ----

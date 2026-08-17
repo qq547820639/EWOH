@@ -26,13 +26,13 @@ const AppBreadcrumb = ({ pathname }: { pathname: string }) => {
                 <BreadcrumbLink asChild>
                   <Link
                     to={crumb.to}
-                    className="text-[hsl(218_10%_42%)] hover:text-[hsl(220_14%_14%)]"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     {crumb.label}
                   </Link>
                 </BreadcrumbLink>
               ) : (
-                <BreadcrumbPage className="text-[hsl(220_14%_14%)]">
+                <BreadcrumbPage className="text-foreground">
                   {crumb.label}
                 </BreadcrumbPage>
               )}

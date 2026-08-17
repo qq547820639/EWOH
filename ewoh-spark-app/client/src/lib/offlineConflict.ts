@@ -79,6 +79,65 @@ function collect(
   path: string,
   out: ConflictDiff[],
 ): void {
+  // CLI-540：类型分派——Date/RegExp 按值比较；Map/Set 按条目比较。
+  // 它们都是 object，落入下方的键枚举路径会把内部状态当作普通字段展开，
+  // 产生无意义的 diff。
+  if (local instanceof Date || server instanceof Date) {
+    const equal =
+      local instanceof Date &&
+      server instanceof Date &&
+      local.getTime() === server.getTime();
+    if (!equal) {
+      out.push({ path, local, server });
+    }
+    return;
+  }
+  if (local instanceof RegExp || server instanceof RegExp) {
+    const equal =
+      local instanceof RegExp &&
+      server instanceof RegExp &&
+      local.source === server.source &&
+      local.flags === server.flags;
+    if (!equal) {
+      out.push({ path, local, server });
+    }
+    return;
+  }
+  if (local instanceof Map || server instanceof Map) {
+    const localMap = local instanceof Map ? local : null;
+    const serverMap = server instanceof Map ? server : null;
+    if (!localMap || !serverMap) {
+      out.push({ path, local, server });
+      return;
+    }
+    if (localMap.size !== serverMap.size) {
+      out.push({ path, local, server });
+      return;
+    }
+    for (const [key, value] of localMap) {
+      if (!serverMap.has(key)) {
+        out.push({ path, local, server });
+        return;
+      }
+      const childPath = path ? `${path}[${String(key)}]` : `[${String(key)}]`;
+      collect(value, serverMap.get(key), childPath, out);
+    }
+    return;
+  }
+  if (local instanceof Set || server instanceof Set) {
+    const localSet = local instanceof Set ? local : null;
+    const serverSet = server instanceof Set ? server : null;
+    if (
+      !localSet ||
+      !serverSet ||
+      localSet.size !== serverSet.size ||
+      [...localSet].some((item) => !serverSet.has(item))
+    ) {
+      out.push({ path, local, server });
+    }
+    return;
+  }
+
   const bothObjects =
     local !== null &&
     typeof local === 'object' &&

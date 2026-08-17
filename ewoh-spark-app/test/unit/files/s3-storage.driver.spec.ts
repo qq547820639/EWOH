@@ -60,8 +60,9 @@ describe('S3 storage driver', () => {
     };
     await driver.save(record.id, Buffer.from('data'), record);
 
-    expect(store.has(`files/${FILE_ID}`)).toBe(true);
-    expect(store.has(`files/${FILE_ID}.meta.json`)).toBe(true);
+    // NEST-306：新写入按 org 前缀分桶 `{prefix}/{orgId}/{id}`（+ .meta.json）。
+    expect(store.has(`files/org-a/${FILE_ID}`)).toBe(true);
+    expect(store.has(`files/org-a/${FILE_ID}.meta.json`)).toBe(true);
     expect((await driver.readMeta(record.id)).filename).toBe('scan.ply');
     expect((await driver.readContent(record.id)).toString()).toBe('data');
     expect((await driver.list())[0].id).toBe(record.id);
@@ -144,9 +145,25 @@ describe('S3 storage driver', () => {
     const signer = jest.fn(async (command: GetObjectCommand, options: { expiresIn?: number }) => {
       return `https://ewoh-files.s3.example/${command.input.Key}?expires=${options.expiresIn}&type=${command.input.ResponseContentType ?? 'none'}`;
     });
+    // NEST-306/338：presigned 先经 meta 定位内容键（org 前缀布局）。
+    const metaKey = `files/org-a/${FILE_ID}.meta.json`;
+    const send = jest.fn(async (command: unknown) => {
+      if (command instanceof GetObjectCommand) {
+        if (command.input.Key === metaKey) {
+          return {
+            Body: { transformToString: async () => JSON.stringify({ id: FILE_ID }) },
+          };
+        }
+        throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+      }
+      if (command instanceof ListObjectsV2Command) {
+        return { Contents: [{ Key: metaKey }] };
+      }
+      return {};
+    });
     const driver = new S3StorageDriver(
       { bucket: 'ewoh-files', prefix: 'files' },
-      undefined as unknown as S3Client,
+      { send } as unknown as S3Client,
       signer,
     );
 
@@ -155,10 +172,10 @@ describe('S3 storage driver', () => {
       contentType: 'image/png',
     });
 
-    // Object key is the immutable UUID under the fixed prefix (no traversal / no
-    // user-controlled path components).
-    expect(result.key).toBe(`files/${FILE_ID}`);
-    expect(result.url).toContain(`files/${FILE_ID}`);
+    // Object key is the immutable UUID under the org-scoped prefix (no
+    // traversal / no user-controlled path components).
+    expect(result.key).toBe(`files/org-a/${FILE_ID}`);
+    expect(result.url).toContain(`files/org-a/${FILE_ID}`);
     expect(result.url).toContain('type=image/png');
     // Lifetime is clamped to the max (24h), not the requested ~11 days.
     expect(result.url).toContain('expires=86400');
@@ -171,9 +188,24 @@ describe('S3 storage driver', () => {
     const signer = jest.fn(async (_command: GetObjectCommand, options: { expiresIn?: number }) => {
       return `expires=${options.expiresIn}`;
     });
+    const metaKey = `files/org-a/${FILE_ID}.meta.json`;
+    const send = jest.fn(async (command: unknown) => {
+      if (command instanceof GetObjectCommand) {
+        if (command.input.Key === metaKey) {
+          return {
+            Body: { transformToString: async () => JSON.stringify({ id: FILE_ID }) },
+          };
+        }
+        throw Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+      }
+      if (command instanceof ListObjectsV2Command) {
+        return { Contents: [{ Key: metaKey }] };
+      }
+      return {};
+    });
     const driver = new S3StorageDriver(
       { bucket: 'ewoh-files' },
-      undefined as unknown as S3Client,
+      { send } as unknown as S3Client,
       signer,
     );
     const capped = await driver.createPresignedUrl(FILE_ID, 'org-a', { expiresInSeconds: 0 });

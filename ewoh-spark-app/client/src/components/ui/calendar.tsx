@@ -36,8 +36,13 @@ function Calendar({
       )}
       captionLayout={captionLayout}
       formatters={{
+        // CLI-413：不依赖宿主环境 locale（"default" 随操作系统/浏览器漂移），
+        // 显式固定 zh-CN + Asia/Shanghai。
         formatMonthDropdown: (date) =>
-          date.toLocaleString("default", { month: "short" }),
+          date.toLocaleString("zh-CN", {
+            month: "short",
+            timeZone: "Asia/Shanghai",
+          }),
         ...formatters,
       }}
       classNames={{

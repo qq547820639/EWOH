@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ExoConfigService, type RecordExoConfigInput } from './exo-config.service';
 import { ANY_AUTHENTICATED_ROLES, Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -57,10 +58,13 @@ export class ExoConfigController {
     return this.exoConfigs.getConfig(this.currentOrgId(request), configId);
   }
 
+  /** NEST-432：org 上下文缺失显式 400（与 exo-session 一致，不再回退空串）。 */
   private currentOrgId(request: { userContext?: OrgContext }): string {
     const orgId = request.userContext?.primaryOrgId;
-    if (!orgId) {
-      return '';
+    if (!orgId?.trim()) {
+      throw new BadRequestException(
+        'org 上下文缺失：exo 配置读写必须带租户上下文',
+      );
     }
     return orgId;
   }

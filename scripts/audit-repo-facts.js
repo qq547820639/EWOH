@@ -357,13 +357,17 @@ function auditRepoFacts(rootDir) {
 
   // ---- repository-facts consistency (W1): version/state/test-count/evidence drift ----
   const stateFactsJson = readJsonSafe(rootDir, '.codex/artifacts/state.json');
-  const releaseManifest = readYamlSafe(rootDir, 'release/ewoh-0.6.0-rc4/docs/delivery/release-manifest.yaml');
+  // SCR-013: release 目录按 version.json 动态解析，不再硬编码 ewoh-0.6.0-rc4。
+  const version = truth.readVersion();
+  const releaseManifest = readYamlSafe(
+    rootDir,
+    `release/ewoh-${version}/docs/delivery/release-manifest.yaml`,
+  );
   const gatesText = readFile(rootDir, '.codex/artifacts/gates.md');
   const changelogText = readFile(rootDir, 'CHANGELOG.md');
 
   // Version consistency: README / CHANGELOG / release-manifest / state must
   // all agree on the single authoritative version from version.json.
-  const version = truth.readVersion();
   const readmeDeclares = Boolean(readme && version && readme.includes(version));
   const changelogDeclares = Boolean(
     changelogText && version && changelogText.includes(`## [${version}]`),
@@ -371,8 +375,11 @@ function auditRepoFacts(rootDir) {
   const manifestDeclares = Boolean(
     releaseManifest && version && releaseManifest.release === version,
   );
+  // SCR-043: state 一致性按字段精确比对（current_status 以版本号开头），
+  // 不再做整包 JSON.stringify 子串匹配（0.6.0 会误配 0.6.0-rc4 等）。
   const stateDeclares = Boolean(
-    stateFactsJson && version && JSON.stringify(stateFactsJson).includes(version),
+    stateFactsJson && version && typeof stateFactsJson.current_status === 'string'
+      && stateFactsJson.current_status.startsWith(`${version} `),
   );
   check(
     checks,
@@ -453,8 +460,10 @@ function auditRepoFacts(rootDir) {
   // Exemptions are loaded from tools/semantic-rules/exemptions.json (documented,
   // warning-level, non-high-risk rules only; high-risk rules are enforced by the
   // no-self-exemption rule and cannot be exempted here).
+  // SCR-028: 豁免条目必须携带 owner/reason/expiresAt 且未过期，
+  // 过期或缺字段的豁免自动失效并告警（不再无限期抑制真实冲突）。
   const semanticCtx = semanticRules.buildContext(rootDir, {
-    exemptions: Object.keys(readJsonSafe(rootDir, 'tools/semantic-rules/exemptions.json') || {}),
+    exemptions: loadSemanticExemptions(rootDir),
   });
   const semanticResult = semanticRules.runRules(semanticCtx, { strict: true });
   const unexemptedFindings = semanticResult.findings.filter(
@@ -499,7 +508,32 @@ function readYamlSafe(rootDir, relative) {
   }
 }
 
-const manifestDetailHasOpenapi = true; // referenced by the (kept) clarity guard above
+// SCR-028: semantic 豁免条目加载 + 有效期/归属校验。
+// 每条豁免必须含非空 owner/reason/expiresAt（ISO 日期）且 severity 为 warning；
+// 过期、缺字段或非 warning 级（TOOL-002：error 级不可豁免）即失效并告警。
+function loadSemanticExemptions(rootDir) {
+  const doc = readJsonSafe(rootDir, 'tools/semantic-rules/exemptions.json') || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const active = [];
+  for (const [ruleId, meta] of Object.entries(doc)) {
+    const entry = meta && typeof meta === 'object' ? meta : {};
+    const missing = ['owner', 'reason', 'expiresAt'].filter((f) => !String(entry[f] || '').trim());
+    if (missing.length > 0) {
+      console.warn(`semantic exemption '${ruleId}' 缺少必填字段 ${missing.join('/')}，该豁免已失效`);
+      continue;
+    }
+    if (String(entry.expiresAt) < today) {
+      console.warn(`semantic exemption '${ruleId}' 已过期（${entry.expiresAt}），该豁免已失效`);
+      continue;
+    }
+    if (String(entry.severity || '') !== 'warning') {
+      console.warn(`semantic exemption '${ruleId}' 非 warning 级（severity=${entry.severity}），error 级不可豁免，该豁免已失效`);
+      continue;
+    }
+    active.push(ruleId);
+  }
+  return active;
+}
 
 function auditEvidence(evidenceDir) {
   const stats = { total: 0, incomplete: 0, expired: 0, missingCommitSha: 0, missingSpecFieldCount: 0 };

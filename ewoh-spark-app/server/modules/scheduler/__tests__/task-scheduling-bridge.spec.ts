@@ -29,7 +29,9 @@ function makeTaskService(opts: { createReturns?: any } = {}) {
 describe('A1 TaskService 任务写事件发射', () => {
   it('createTask 成功后 emit TASK_CREATED（带 taskId）', async () => {
     const { svc, events } = makeTaskService({ createReturns: { id: 'TASK-X' } });
-    await svc.createTask({ title: '搬运任务', taskType: 'transport' });
+    // NEST-612：任务写入必须带租户上下文（fail-closed）。
+    const actor = { userId: 'u1', primaryOrgId: 'org1', isGlobalAdmin: false };
+    await svc.createTask({ title: '搬运任务', taskType: 'transport' }, actor);
     expect(events).toEqual([{ taskId: 'TASK-X', trigger: 'TASK_CREATED', actor: undefined }]);
   });
 
@@ -54,13 +56,15 @@ describe('A1 TaskService 任务写事件发射', () => {
 });
 
 describe('A1 TaskSchedulingBridge 桥接转发', () => {
+  const actor = { userId: 'u1', primaryOrgId: 'org1', accessibleOrgIds: ['org1'], isGlobalAdmin: false };
+
   it('onModuleInit 注册回调 → 任务事件转发 injectSchedulingEvent（fire-and-forget）', async () => {
     const events: Array<{ taskId: string; trigger: string }> = [];
     const taskService = {
       onTaskEvent: (fn: (taskId: string, trigger: string, actor?: any) => void) => {
-        // 模拟 TaskService 后续触发
+        // 模拟 TaskService 后续触发（NEST-119：事件必须带 actor/org 上下文）
         events.push({ taskId: 'TASK-1', trigger: 'TASK_CREATED' });
-        fn('TASK-1', 'TASK_CREATED' as any, undefined);
+        fn('TASK-1', 'TASK_CREATED' as any, actor);
       },
     };
     const injected: Array<{ body: any; actor?: any }> = [];
@@ -78,11 +82,26 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(injected).toHaveLength(1);
     expect(injected[0].body).toEqual({ trigger: 'TASK_CREATED', entityId: 'TASK-1' });
+    // NEST-119：actor 原样透传（重排归属可追溯）。
+    expect(injected[0].actor).toBe(actor);
+  });
+
+  it('NEST-119：无 actor/org 上下文的事件 → 拒绝桥接（fail-closed，不触发匿名重排）', async () => {
+    const taskService = {
+      onTaskEvent: (fn: any) => fn('TASK-9', 'TASK_UPDATED', undefined),
+    };
+    const schedulerService = {
+      injectSchedulingEvent: jest.fn().mockResolvedValue({ run: null, plans: [], debounced: true, cascaded: [] }),
+    };
+    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any);
+    bridge.onModuleInit();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(schedulerService.injectSchedulingEvent).not.toHaveBeenCalled();
   });
 
   it('injectSchedulingEvent 失败 → 仅日志不抛出（fire-and-forget 容错）', async () => {
     const taskService = {
-      onTaskEvent: (fn: any) => fn('TASK-1', 'TASK_UPDATED', undefined),
+      onTaskEvent: (fn: any) => fn('TASK-1', 'TASK_UPDATED', actor),
     };
     const schedulerService = {
       injectSchedulingEvent: jest.fn().mockRejectedValue(new Error('replan down')),
@@ -93,7 +112,7 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(schedulerService.injectSchedulingEvent).toHaveBeenCalledWith(
       { trigger: 'TASK_UPDATED', entityId: 'TASK-1' },
-      undefined,
+      actor,
     );
   });
 });

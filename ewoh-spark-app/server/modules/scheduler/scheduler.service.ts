@@ -209,16 +209,16 @@ export class SchedulerService {
     return this.queryService.getActivePlans(actor);
   }
 
-  async getSnapshot(): Promise<WorldStateSnapshot> {
-    return this.queryService.getSnapshot();
+  async getSnapshot(actor?: OrgContext): Promise<WorldStateSnapshot> {
+    return this.queryService.getSnapshot(actor);
   }
 
   async getPlanDetail(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
     return this.queryService.getPlanDetail(planId, actor);
   }
 
-  async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
-    return this.queryService.getPolicy();
+  async getPolicy(actor?: OrgContext): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
+    return this.queryService.getPolicy(actor);
   }
 
   async listPolicyVersions(actor?: OrgContext): Promise<SchedulingPolicyVersionSummary[]> {
@@ -242,20 +242,21 @@ export class SchedulerService {
 
   async calculateRouteV2(
     body: CalculateRouteRequest,
+    actor?: OrgContext,
   ): Promise<Route | RouteCandidatesResponse> {
-    return this.queryService.calculateRouteV2(body);
+    return this.queryService.calculateRouteV2(body, actor);
   }
 
-  async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
-    return this.queryService.getTaskCandidates(taskId);
+  async getTaskCandidates(taskId: string, actor?: OrgContext): Promise<TaskCandidatesResponse> {
+    return this.queryService.getTaskCandidates(taskId, actor);
   }
 
-  async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
-    return this.queryService.listConflicts(params);
+  async listConflicts(params: ConflictsListRequest = {}, actor?: OrgContext): Promise<ConflictsListResponse> {
+    return this.queryService.listConflicts(params, actor);
   }
 
-  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
-    return this.queryService.getConflictDetail(conflictId);
+  async getConflictDetail(conflictId: string, actor?: OrgContext): Promise<SchedulingConflict> {
+    return this.queryService.getConflictDetail(conflictId, actor);
   }
 
   async executionList(

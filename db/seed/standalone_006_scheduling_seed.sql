@@ -25,68 +25,71 @@ SELECT set_config('search_path', 'public, pg_temp', false);
 
 -- ===========================================================================
 -- 1) Route graph nodes (12 nodes across 5 zones)
+--    org_id 显式携带默认租户（审计 SQL-102 修复，2026-08-17：056/057 后
+--    route_node/route_edge 有 org_id 列且 RLS 拒绝 NULL，seed 行必须归属默认 org）
 -- ===========================================================================
 INSERT INTO public.ewoh_route_node
-  (id, node_id, node_type, x, y, floor, station_id, zone_id)
+  (id, org_id, node_id, node_type, x, y, floor, station_id, zone_id)
 VALUES
-  ('61000000-0000-4000-8000-000000000001', 'NODE-HUB-01', 'intersection',     500, 360, '1', NULL,          NULL),
-  ('61000000-0000-4000-8000-000000000002', 'NODE-LA-01',  'intersection',     420, 300, '1', NULL,          'LINE-A'),
-  ('61000000-0000-4000-8000-000000000003', 'NODE-LA-02',  'workstation',      380, 260, '1', 'ST-LA-02',   'LINE-A'),
-  ('61000000-0000-4000-8000-000000000004', 'NODE-LA-03',  'workstation',      340, 220, '1', 'ST-LA-03',   'LINE-A'),
-  ('61000000-0000-4000-8000-000000000005', 'NODE-LB-01',  'intersection',     580, 300, '1', NULL,          'LINE-B'),
-  ('61000000-0000-4000-8000-000000000006', 'NODE-LB-02',  'workstation',      620, 260, '1', 'ST-LB-02',   'LINE-B'),
-  ('61000000-0000-4000-8000-000000000007', 'NODE-LB-03',  'workstation',      660, 220, '1', 'ST-LB-03',   'LINE-B'),
-  ('61000000-0000-4000-8000-000000000008', 'NODE-WH-01',  'entrance',         300, 460, '1', NULL,          'WAREHOUSE'),
-  ('61000000-0000-4000-8000-000000000009', 'NODE-WH-02',  'warehouse',        260, 500, '1', 'ST-WH-02',   'WAREHOUSE'),
-  ('61000000-0000-4000-8000-00000000000a', 'NODE-CH-01',  'charging_station', 700, 420, '1', 'ST-CH-01',   'CHARGE'),
-  ('61000000-0000-4000-8000-00000000000b', 'NODE-PK-01',  'workstation',      600, 420, '1', 'ST-PK-01',   'PACKING'),
-  ('61000000-0000-4000-8000-00000000000c', 'NODE-PK-02',  'workstation',      650, 460, '1', 'ST-PK-02',   'PACKING')
+  ('61000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'NODE-HUB-01', 'intersection',     500, 360, '1', NULL,          NULL),
+  ('61000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'NODE-LA-01',  'intersection',     420, 300, '1', NULL,          'LINE-A'),
+  ('61000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'NODE-LA-02',  'workstation',      380, 260, '1', 'ST-LA-02',   'LINE-A'),
+  ('61000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'NODE-LA-03',  'workstation',      340, 220, '1', 'ST-LA-03',   'LINE-A'),
+  ('61000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'NODE-LB-01',  'intersection',     580, 300, '1', NULL,          'LINE-B'),
+  ('61000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'NODE-LB-02',  'workstation',      620, 260, '1', 'ST-LB-02',   'LINE-B'),
+  ('61000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000001', 'NODE-LB-03',  'workstation',      660, 220, '1', 'ST-LB-03',   'LINE-B'),
+  ('61000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'NODE-WH-01',  'entrance',         300, 460, '1', NULL,          'WAREHOUSE'),
+  ('61000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'NODE-WH-02',  'warehouse',        260, 500, '1', 'ST-WH-02',   'WAREHOUSE'),
+  ('61000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-000000000001', 'NODE-CH-01',  'charging_station', 700, 420, '1', 'ST-CH-01',   'CHARGE'),
+  ('61000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-000000000001', 'NODE-PK-01',  'workstation',      600, 420, '1', 'ST-PK-01',   'PACKING'),
+  ('61000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-000000000001', 'NODE-PK-02',  'workstation',      650, 460, '1', 'ST-PK-02',   'PACKING')
 ON CONFLICT (id) DO NOTHING;
 
 -- ===========================================================================
 -- 2) Route graph edges (12 connections x bidirectional = 24 edges)
 --    EDGE-*: open (default). EDGE-LB-00  -> blocked (main LINE-B access).
 --             EDGE-LA-03  -> congested (LA-02 -> LA-03).
+--    org_id 同上显式携带（审计 SQL-102）。
 -- ===========================================================================
 INSERT INTO public.ewoh_route_edge
-  (id, edge_id, from_node_id, to_node_id, distance_meters, expected_time_seconds, direction, capacity, risk_level, status, accessible_for)
+  (id, org_id, edge_id, from_node_id, to_node_id, distance_meters, expected_time_seconds, direction, capacity, risk_level, status, accessible_for)
 VALUES
   -- HUB-01 <-> LA-01
-  ('62000000-0000-4000-8000-000000000001', 'EDGE-LA-01',  'NODE-HUB-01', 'NODE-LA-01', 12,  8,  'outbound', 4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000002', 'EDGE-LA-01R', 'NODE-LA-01',  'NODE-HUB-01', 12,  8,  'inbound',  4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-01',  'NODE-HUB-01', 'NODE-LA-01', 12,  8,  'outbound', 4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-01R', 'NODE-LA-01',  'NODE-HUB-01', 12,  8,  'inbound',  4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
   -- HUB-01 <-> WH-01 (entrance)
-  ('62000000-0000-4000-8000-000000000003', 'EDGE-WH-01',  'NODE-HUB-01', 'NODE-WH-01',  30, 20,  'outbound', 6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000004', 'EDGE-WH-01R', 'NODE-WH-01',  'NODE-HUB-01', 30, 20,  'inbound',  6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-01',  'NODE-HUB-01', 'NODE-WH-01', 30, 20, 'outbound', 6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-01R', 'NODE-WH-01',  'NODE-HUB-01', 30, 20, 'inbound',  6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
   -- HUB-01 <-> CH-01
-  ('62000000-0000-4000-8000-000000000005', 'EDGE-CH-01',  'NODE-HUB-01', 'NODE-CH-01',  50, 35,  'outbound', 2, 'low', 'open', '["exoskeleton"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000006', 'EDGE-CH-01R', 'NODE-CH-01',  'NODE-HUB-01', 50, 35,  'inbound',  2, 'low', 'open', '["exoskeleton"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'EDGE-CH-01',  'NODE-HUB-01', 'NODE-CH-01', 50, 35, 'outbound', 2, 'low', 'open', '["exoskeleton"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'EDGE-CH-01R', 'NODE-CH-01',  'NODE-HUB-01', 50, 35, 'inbound',  2, 'low', 'open', '["exoskeleton"]'::jsonb),
   -- HUB-01 <-> PK-01
-  ('62000000-0000-4000-8000-000000000007', 'EDGE-PK-01',  'NODE-HUB-01', 'NODE-PK-01',  25, 18,  'outbound', 4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000008', 'EDGE-PK-01R', 'NODE-PK-01',  'NODE-HUB-01', 25, 18,  'inbound',  4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000001', 'EDGE-PK-01',  'NODE-HUB-01', 'NODE-PK-01', 25, 18, 'outbound', 4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'EDGE-PK-01R', 'NODE-PK-01',  'NODE-HUB-01', 25, 18, 'inbound',  4, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
   -- HUB-01 <-> LB-01 (main LINE-B access — BLOCKED, forces detour via WH-02)
-  ('62000000-0000-4000-8000-000000000009', 'EDGE-LB-00',  'NODE-HUB-01', 'NODE-LB-01',  15, 10,  'outbound', 4, 'high', 'blocked', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-00000000000a', 'EDGE-LB-00R', 'NODE-LB-01',  'NODE-HUB-01', 15, 10,  'inbound',  4, 'high', 'blocked', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-00',  'NODE-HUB-01', 'NODE-LB-01', 15, 10, 'outbound', 4, 'high', 'blocked', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-00R', 'NODE-LB-01',  'NODE-HUB-01', 15, 10, 'inbound',  4, 'high', 'blocked', '["exoskeleton","agv","person"]'::jsonb),
   -- LA-01 <-> LA-02
-  ('62000000-0000-4000-8000-00000000000b', 'EDGE-LA-02',  'NODE-LA-01',  'NODE-LA-02',   8,  6,  'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
-  ('62000000-0000-4000-8000-00000000000c', 'EDGE-LA-02R', 'NODE-LA-02',  'NODE-LA-01',   8,  6,  'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-02',  'NODE-LA-01',  'NODE-LA-02',   8,  6, 'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-02R', 'NODE-LA-02',  'NODE-LA-01',   8,  6, 'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
   -- LA-02 <-> LA-03 (CONGESTED in LA-02 -> LA-03 direction)
-  ('62000000-0000-4000-8000-00000000000d', 'EDGE-LA-03',  'NODE-LA-02',  'NODE-LA-03',   8,  6,  'outbound', 2, 'medium', 'congested', '["exoskeleton","person"]'::jsonb),
-  ('62000000-0000-4000-8000-00000000000e', 'EDGE-LA-03R', 'NODE-LA-03',  'NODE-LA-02',   8,  6,  'inbound',  2, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000d', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-03',  'NODE-LA-02',  'NODE-LA-03',   8,  6, 'outbound', 2, 'medium', 'congested', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000e', '00000000-0000-4000-8000-000000000001', 'EDGE-LA-03R', 'NODE-LA-03',  'NODE-LA-02',   8,  6, 'inbound',  2, 'low', 'open', '["exoskeleton","person"]'::jsonb),
   -- WH-01 <-> WH-02
-  ('62000000-0000-4000-8000-00000000000f', 'EDGE-WH-02',  'NODE-WH-01',  'NODE-WH-02',  10,  7,  'outbound', 6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000010', 'EDGE-WH-02R', 'NODE-WH-02',  'NODE-WH-01',  10,  7,  'inbound',  6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-02',  'NODE-WH-01', 'NODE-WH-02',  10,  7, 'outbound', 6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-02R', 'NODE-WH-02', 'NODE-WH-01',  10,  7, 'inbound',  6, 'low', 'open', '["exoskeleton","agv","person"]'::jsonb),
   -- WH-02 <-> LB-01 (alternative route to LINE-B, bypasses the blocked EDGE-LB-00)
-  ('62000000-0000-4000-8000-000000000011', 'EDGE-WH-LB',  'NODE-WH-02',  'NODE-LB-01',  45, 30,  'outbound', 4, 'medium', 'open', '["exoskeleton","agv","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000012', 'EDGE-WH-LBR', 'NODE-LB-01',  'NODE-WH-02',  45, 30,  'inbound',  4, 'medium', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-LB',  'NODE-WH-02', 'NODE-LB-01',  45, 30, 'outbound', 4, 'medium', 'open', '["exoskeleton","agv","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000001', 'EDGE-WH-LBR', 'NODE-LB-01', 'NODE-WH-02',  45, 30, 'inbound',  4, 'medium', 'open', '["exoskeleton","agv","person"]'::jsonb),
   -- LB-01 <-> LB-02
-  ('62000000-0000-4000-8000-000000000013', 'EDGE-LB-01',  'NODE-LB-01',  'NODE-LB-02',  10,  7,  'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000014', 'EDGE-LB-01R', 'NODE-LB-02',  'NODE-LB-01',  10,  7,  'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000013', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-01',  'NODE-LB-01', 'NODE-LB-02',  10,  7, 'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000014', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-01R', 'NODE-LB-02', 'NODE-LB-01',  10,  7, 'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
   -- LB-02 <-> LB-03
-  ('62000000-0000-4000-8000-000000000015', 'EDGE-LB-02',  'NODE-LB-02',  'NODE-LB-03',  10,  7,  'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000016', 'EDGE-LB-02R', 'NODE-LB-03',  'NODE-LB-02',  10,  7,  'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000015', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-02',  'NODE-LB-02', 'NODE-LB-03',  10,  7, 'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000016', '00000000-0000-4000-8000-000000000001', 'EDGE-LB-02R', 'NODE-LB-03', 'NODE-LB-02',  10,  7, 'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
   -- PK-01 <-> PK-02
-  ('62000000-0000-4000-8000-000000000017', 'EDGE-PK-02',  'NODE-PK-01',  'NODE-PK-02',  12,  8,  'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
-  ('62000000-0000-4000-8000-000000000018', 'EDGE-PK-02R', 'NODE-PK-02',  'NODE-PK-01',  12,  8,  'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb)
+  ('62000000-0000-4000-8000-000000000017', '00000000-0000-4000-8000-000000000001', 'EDGE-PK-02',  'NODE-PK-01', 'NODE-PK-02',  12,  8, 'outbound', 4, 'low', 'open', '["exoskeleton","person"]'::jsonb),
+  ('62000000-0000-4000-8000-000000000018', '00000000-0000-4000-8000-000000000001', 'EDGE-PK-02R', 'NODE-PK-02', 'NODE-PK-01',  12,  8, 'inbound',  4, 'low', 'open', '["exoskeleton","person"]'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
 -- ===========================================================================
@@ -230,16 +233,18 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ===========================================================================
 -- 10) Scheduling constraints (LOCKED_PERSON / MIN_BATTERY / LOCKED_TIME)
+--     org_id 显式携带默认租户（审计 SQL-102 修复：023/025/057 后 org_id 为
+--     RLS 隔离边界且 NOT NULL，seed 行必须归属默认 org）
 -- ===========================================================================
 INSERT INTO public.ewoh_scheduling_constraint
-  (id, constraint_id, plan_id, task_id, type, value_json, active, created_by)
+  (id, org_id, constraint_id, plan_id, task_id, type, value_json, active, created_by)
 VALUES
   -- TASK-128 must be executed by P008
-  ('69000000-0000-4000-8000-000000000001', 'CONST-TASK128-LOCK', 'PLAN-OPT-001', 'TASK-128', 'LOCKED_PERSON', '{"person_id":"P008"}'::jsonb, true, 'operator-li'),
+  ('69000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'CONST-TASK128-LOCK', 'PLAN-OPT-001', 'TASK-128', 'LOCKED_PERSON', '{"person_id":"P008"}'::jsonb, true, 'operator-li'),
   -- DEV-02 must not run below 30% battery
-  ('69000000-0000-4000-8000-000000000002', 'CONST-LB-002', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-02","min_battery":30}'::jsonb, true, 'operator-li'),
+  ('69000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'CONST-LB-002', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-02","min_battery":30}'::jsonb, true, 'operator-li'),
   -- DEV-05 must not run below 30% battery
-  ('69000000-0000-4000-8000-000000000003', 'CONST-LB-005', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-05","min_battery":30}'::jsonb, true, 'operator-li'),
+  ('69000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'CONST-LB-005', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-05","min_battery":30}'::jsonb, true, 'operator-li'),
   -- TASK-126 locked to its time window
-  ('69000000-0000-4000-8000-000000000004', 'CONST-TASK126-TIME', 'PLAN-OPT-001', 'TASK-126', 'LOCKED_TIME', '{"start":"now()+5min","end":"now()+40min"}'::jsonb, true, 'operator-li')
+  ('69000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'CONST-TASK126-TIME', 'PLAN-OPT-001', 'TASK-126', 'LOCKED_TIME', '{"start":"now()+5min","end":"now()+40min"}'::jsonb, true, 'operator-li')
 ON CONFLICT (id) DO NOTHING;

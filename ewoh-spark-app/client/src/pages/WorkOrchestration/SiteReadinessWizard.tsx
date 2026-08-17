@@ -165,12 +165,16 @@ const SiteReadinessWizard = ({
 
   const runProbe = async () => {
     setProbing(true);
-    const result = runSiteReadinessProbe();
-    const reachable = await probeBackendConnectivity();
-    setProbe(result);
-    setBackendReachable(reachable);
-    setProbing(false);
-    toast.success('环境探测完成');
+    try {
+      const result = runSiteReadinessProbe();
+      const reachable = await probeBackendConnectivity();
+      setProbe(result);
+      setBackendReachable(reachable);
+      toast.success('环境探测完成');
+    } finally {
+      // CLI-213：try/finally 保证 probing 复位（原 probe 抛错时按钮永久 loading）。
+      setProbing(false);
+    }
   };
 
   const stageDef = SITE_READINESS_STAGES.find((s) => s.id === activeStage)!;
@@ -228,7 +232,9 @@ const SiteReadinessWizard = ({
     }
     try {
       const result = await runBackendMappingDryRun(id, parsed);
-      setDryRun(result as DryRunResult);
+      // CLI-547：后端契约未冻结（BackendDryRunResponse 为宽松形状），
+      // 页面按本地 DryRunResult 视图收窄。
+      setDryRun(result as unknown as DryRunResult);
       setDryRunError(null);
       toast.success('后端 Dry Run 完成');
     } catch (error) {

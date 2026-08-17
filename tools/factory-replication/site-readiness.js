@@ -7,6 +7,8 @@ const path = require('path');
 function evaluateSiteReadiness(report) {
   const items = Array.isArray(report.items) ? report.items : [];
   const required = items.filter((item) => item.required === true);
+  // TOOL-014: requiredPassed 仅作报告统计字段（通过数展示），
+  // ready 判定以 requiredFailed.length === 0 为准（见下）。
   const requiredPassed = required.filter((item) => item.status === 'pass');
   const requiredFailed = required.filter((item) => item.status !== 'pass');
   const checks = items.map((item) => ({

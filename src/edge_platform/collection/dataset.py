@@ -53,9 +53,11 @@ def _assign_splits(persons, split):
             n_test -= 1
         n_train = n - n_val - n_test
     groups = {"train": ordered[:n_train], "val": ordered[n_train : n_train + n_val], "test": ordered[n_train + n_val :]}
-    # 人员纯净性断言：任一人员不得跨 split
+    # 人员纯净性校验：任一人员不得跨 split
+    # EDGE-215：assert 改显式 raise（python -O 下不变量仍生效）
     allp = groups["train"] + groups["val"] + groups["test"]
-    assert len(set(allp)) == len(allp) == n, "同一人员跨 split，拒绝导出"
+    if len(set(allp)) != len(allp) or len(allp) != n:
+        raise ValueError("同一人员跨 split，拒绝导出")
     return groups
 
 
@@ -119,7 +121,8 @@ def export_dataset(storage, out_dir, version, window_sec=2, step_sec=1, split=(0
     with open(win_path, "w", encoding="utf-8") as f:
         for s in samples:
             f.write(json.dumps(s, ensure_ascii=False) + "\n")
-    sha = hashlib.sha256(open(win_path, "rb").read()).hexdigest()
+    with open(win_path, "rb") as f:  # EDGE-214：with 上下文管理器（原句柄泄漏）
+        sha = hashlib.sha256(f.read()).hexdigest()
 
     manifest = {
         "version": str(version),

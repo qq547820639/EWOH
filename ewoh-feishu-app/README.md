@@ -49,11 +49,14 @@ node server/index.js
 | `FEISHU_API_TOKEN` | **生产必填** | 空 | **v1.1.0** API 统一鉴权 token。写操作（POST/PUT/PATCH/DELETE）必须携带 `Authorization: Bearer <token>` 或 `X-API-Key: <token>`；**未配置时写操作一律拒绝（fail-closed，503）** |
 | `FEISHU_REQUIRE_AUTH_FOR_READS` | 否 | `false` | **v1.1.0** 设为 `true` 时读操作（GET）也强制鉴权；缺省读操作放行（监督平台展示语义） |
 | `EWOH_DB_PATH` | 否 | `data/ewoh-feishu.db` | **v1.1.0** SQLite 数据库路径。默认文件库（WAL + busy_timeout）；`:memory:` 仅测试用 |
-| `FEISHU_VERIFICATION_TOKEN` | webhook 写操作必填 | 空 | 卡片回调验签 token；缺失 → webhook 写操作 fail-closed |
-| `FEISHU_ENCRYPT_KEY` | 否 | 空 | 飞书加密密钥；配置后强制 HMAC 签名校验（**v1.1.0 修复**：签名时间戳按飞书协议使用秒级字符串） |
+| `FEISHU_VERIFICATION_TOKEN` | webhook 写操作必填 | 空 | 卡片回调验签 token；缺失 → webhook 写操作 fail-closed；常量时间比较 |
+| `FEISHU_ENCRYPT_KEY` | **webhook 写操作必填** | 空 | 飞书 Encrypt Key。**FS-001/002 修复**：签名按飞书事件订阅协议 `hex(sha256(X-Lark-Request-Timestamp + X-Lark-Request-Nonce + encrypt_key + rawBody))` 校验（原始请求体参与签名）；未配置 → webhook 一律拒绝（fail-closed），不再降级放行 |
 | `FEISHU_WEBHOOK_TOLERANCE_SEC` | 否 | `300` | webhook 时间戳容忍窗口（秒） |
 | `FEISHU_SIMULATOR_ENABLED` | 否 | `false` | 设备模拟器开关；`NODE_ENV=production` 下需 `ALLOW_SIMULATOR_IN_PRODUCTION=true` 双开关 |
-| `FEISHU_CORS_ORIGINS` | 否 | 本地源 | CORS 白名单（逗号分隔），禁止 `*` |
+| `FEISHU_CORS_ORIGINS` | 否 | 本地源 | CORS 白名单（逗号分隔），禁止 `*`；allowedHeaders 含 `Authorization`/`X-API-Key`/飞书签名三头（**FS-014**） |
+| `FEISHU_TRUST_PROXY` | 反向代理部署必填 | 关闭 | 设为 `true`/`1`/跳数/`loopback` 启用 Express trust proxy，之后审计 IP 取 `req.ip`（框架解析 X-Forwarded-For），不再直读可伪造 header（**FS-013**） |
+| `FEISHU_RATELIMIT_MAX_FAILURES` | 否 | `20` | **FS-010** API 写操作与 webhook 的 IP+token 失败计数阈值（达阈值 → 429，窗口内封禁） |
+| `FEISHU_RATELIMIT_WINDOW_SEC` | 否 | `300` | **FS-010** 失败计数窗口（秒） |
 | `FEISHU_BASE_TOKEN` | 生产建议 | 空 | **C1 修复** 多维表格 base_token，生产环境应通过环境变量注入（服务端优先读取），避免凭据落入配置文件与命令行参数（lark-cli 暂不支持 env 直读时，argv 暴露问题依赖 lark-cli 后续支持，本项为缓解措施；配置文件的 `base_token` 字段保留为回退） |
 | `PORT` | 否 | `3000` | 服务端口 |
 | `LARK_CLI` | 飞书集成 | `lark-cli` | lark-cli 可执行文件路径 |
@@ -72,10 +75,11 @@ npm run test:integration # 端到端集成测试（真实 HTTP server + 临时 S
 
 | 测试文件 | 覆盖 |
 |----------|------|
-| `test/security.test.js` | webhook 验签（token/timestamp/HMAC/重放）+ **v1.1.0 秒级签名时间戳协议** |
-| `test/auth.test.js` | API 鉴权中间件（写 fail-closed / Bearer+X-API-Key / 常量时间比较 / 读放行与收紧） |
-| `test/db.test.js` | 文件库 WAL + 持久化重开、webhook_dedup 幂等、状态转换边界、规则 DB 加载 |
-| `test/integration.test.js` | 端到端：鉴权链路、卡片处置成功/幂等命中/closed 冲突 409/未知动作 400 |
+| `test/security.test.js` | webhook 验签（token/timestamp/重放）+ **FS-001 飞书事件订阅签名协议**（sha256(ts+nonce+key+rawBody)，篡改 body/旧 HMAC/漏拼 body 均拒绝）+ **FS-002** 未配 encrypt_key fail-closed + **FS-018** 直测 simulatorEnabled/resolveCorsOrigins 真实函数 |
+| `test/auth.test.js` | API 鉴权中间件（写 fail-closed / Bearer+X-API-Key / 常量时间比较 / 读放行与收紧）+ **FS-010** 失败计数限流（429/成功清零/key 不含明文 token） |
+| `test/db.test.js` | 文件库 WAL + 持久化重开、webhook_dedup 幂等、状态转换边界、规则 DB 加载 + **FS-017** DEFAULT_RULES 派生断言 + **FS-020** getRuleByCode/getLatestTelemetryAll 索引化查询 |
+| `test/integration.test.js` | 端到端：鉴权链路、卡片处置成功/幂等命中/closed 冲突 409/未知动作 400 + **FS-004** not-found dedup 回滚 + **FS-007/014** 安全头与 CORS 头 + **FS-009** 复用生产 handler/装配 |
+| `test/health.test.js` | 健康探针：live/ready 状态迁移 + **FS-012** 探针仅状态位（诊断字段不经 HTTP 暴露） |
 | `test/lark-cli-async.test.js` | lark-cli 异步化：并发上限/20s 超时/熔断/user→bot 兜底重试 |
 | `test/base-token.test.js` | FEISHU_BASE_TOKEN 环境变量优先 + 空 token fail（不传空参数） |
 | `test/sync-m2.test.js` | 遥测批量 flush：失败保留重试 / 成功清空 / 空 buffer 不调用 |
@@ -104,7 +108,7 @@ npm run test:integration # 端到端集成测试（真实 HTTP server + 临时 S
 | **D1 API 统一鉴权** | v1.0 `/api` 全站无鉴权，任何人可改事件状态 | 新增 `server/auth.js`：写操作 fail-closed（未配置 token → 503，token 错误 → 401）；Bearer/X-API-Key 双格式；`timingSafeEqual` 常量时间比较；读操作默认放行、可配置收紧 |
 | **D2 SQLite 落盘持久化** | v1.0 用 `:memory:`，进程退出数据全丢，与「30s 全量同步 + 飞书回写」矛盾 | 默认文件库 `data/ewoh-feishu.db`（WAL + busy_timeout + 自动建目录）；`:memory:` 保留给测试/显式配置 |
 | **D3 webhook 业务幂等** | 同一事件重复推送（不同 event_id 信封/网络重试）会重复执行处置 | 新增 `webhook_dedup` 表，`(event_id, action_type)` 唯一约束；重复投递返回 `{duplicated:true}` 不重复改状态；处置失败删除记录允许重试 |
-| **D4 签名时间戳协议修复** | HMAC source 用毫秒时间戳，飞书标准为秒级字符串，配置 encrypt_key 时签名永远不匹配 | `extractSignatureTimestamp` 输出秒级字符串；`body.timestamp` 秒字符串不再 ×1000 |
+| **D4 签名时间戳协议修复**（已被 FS-001 取代） | 旧实现 HMAC(ts+nonce+key) 未覆盖请求体且算法不符飞书协议 | **FS-001 修复**：按飞书事件订阅协议 `X-Lark-Signature = hex(sha256(X-Lark-Request-Timestamp + X-Lark-Request-Nonce + encrypt_key + rawBody))` 校验；timestamp/nonce 取请求头原文，原始请求体（`req.rawBody`，由 JSON 中间件 verify 钩子捕获）参与签名；**FS-002** 未配置 encrypt_key 时 fail-closed 拒绝（不再放行）；verification token 常量时间比较（**FS-003**） |
 | **D5 规则单一事实源** | `rules.js` 与 `db.js` 双份硬编码规则配置，易漂移 | 规则引擎从 DB `rules` 表加载（含阈值/持续门槛/冷却），支持运行时调参；常量降级为 DB 空时的兜底默认 |
 | **D6 同步去重与批量** | `syncAllToFeishu` 对设备/事件逐条 create 造成重复记录、遥测高频 API | 设备/事件走 search+upsert 去重；遥测走批量 batch-create（一次 API 调用） |
 | **D7 启动不阻塞** | feishu-config.json 存在时 lark-cli 同步调用阻塞 `listen`（无授权环境卡死） | 飞书集成延迟到 HTTP 就绪后（setImmediate）后台初始化，API 始终可用 |
@@ -125,9 +129,10 @@ NODE_ENV=production \
 
 建议：
 - `FEISHU_API_TOKEN` 生产必配，且 ≥ 32 字符强随机；写操作未配置时服务拒绝一切写请求（fail-closed），宁可不写不可裸奔
+- `FEISHU_ENCRYPT_KEY` 与 `FEISHU_VERIFICATION_TOKEN` 均必配：未配置时 webhook 全部拒绝（FS-002 fail-closed）
 - `EWOH_DB_PATH` 指向持久化卷（Docker volume / systemd 数据目录），定期备份 `feishu.db`
 - `FEISHU_SIMULATOR_ENABLED` 生产保持关闭（真机数据通过 `/api` 或飞书侧写入）
-- 前置反向代理（nginx/Traefik）时设 `FEISHU_CORS_ORIGINS` 为实际前端源
+- 前置反向代理（nginx/Traefik）时设 `FEISHU_CORS_ORIGINS` 为实际前端源，并设 `FEISHU_TRUST_PROXY=true` 使审计 IP 取真实客户端地址（FS-013）
 
 ## 七、部署与运行时契约（Deployment & Runtime Contract）
 

@@ -224,7 +224,7 @@ describe('observability', () => {
   });
 
   it('envelope does not leak organization identity (org isolation)', async () => {
-    recordMetric('a', 1);
+    recordMetric('a', 1, { orgId: 'org-x', region: 'cn' });
     let received: FrontendMetricsEnvelope | null = null;
     setFlushTransportForTesting(async (env) => {
       received = env;
@@ -232,8 +232,23 @@ describe('observability', () => {
     await flush();
     expect(received).not.toBeNull();
     // 信封不携带组织身份字段（org isolation）：类型上不含，运行时也不应出现。
-    const keys = received ? Object.keys(received) : [];
-    expect(keys).not.toContain('orgId');
-    expect(keys).not.toContain('org');
+    // CLI-728：递归扫描全部嵌套结构——仅查顶层键无法发现 metrics.tags.orgId
+    // 这类深层泄漏。
+    const collectKeys = (value: unknown, prefix: string, out: string[]): void => {
+      if (value === null || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach((item, i) => collectKeys(item, `${prefix}[${i}]`, out));
+        return;
+      }
+      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+        out.push(`${prefix}${prefix ? '.' : ''}${key}`);
+        collectKeys(child, `${prefix}${prefix ? '.' : ''}${key}`, out);
+      }
+    };
+    const allKeys: string[] = [];
+    collectKeys(received, '', allKeys);
+    expect(allKeys.some((k) => /(^|\.)(orgId|org)$/.test(k) || /orgId/.test(k))).toBe(false);
+    // 记录值本身也不得序列化出组织标识。
+    expect(JSON.stringify(received)).not.toContain('org-x');
   });
 });

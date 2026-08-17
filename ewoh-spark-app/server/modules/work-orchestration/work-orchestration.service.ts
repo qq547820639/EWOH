@@ -19,6 +19,22 @@ const HANDOFF_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
+/**
+ * NEST-223：durable 锁操作的 org 上下文强制（缺失 400——绝不回退
+ * 'default' 共享 org，防跨租户锁误共享/误回收）。
+ */
+function requireActorOrgId(
+  actor: { primaryOrgId?: string } | undefined,
+): string {
+  const orgId = actor?.primaryOrgId?.trim();
+  if (!orgId) {
+    throw new BadRequestException(
+      'org 上下文缺失：资源锁操作必须带租户上下文',
+    );
+  }
+  return orgId;
+}
+
 export interface WorkItem {
   id: string;
   title: string;
@@ -234,6 +250,14 @@ export class WorkOrchestrationService {
     };
   }
 
+  /** NEST-221：未显式传 limit 时钳制到 200（全量 slice 是 OOM/慢响应面）。 */
+  private clampListLimit(limit: number | undefined): number {
+    if (limit === undefined) return 200;
+    const value = Number(limit);
+    if (!Number.isFinite(value)) return 200;
+    return Math.min(Math.max(1, value), 200);
+  }
+
   getItems(filters: {
     status?: string;
     type?: string;
@@ -267,8 +291,9 @@ export class WorkOrchestrationService {
       return true;
     });
     const offset = Math.max(0, Number(filters.offset ?? 0));
-    const limit = filters.limit === undefined ? undefined : Math.max(1, Number(filters.limit));
-    return limit === undefined ? filtered.slice(offset) : filtered.slice(offset, offset + limit);
+    // NEST-221：limit 缺省/超界统一钳制（缺省原为无界全量返回）。
+    const limit = this.clampListLimit(filters.limit);
+    return filtered.slice(offset, offset + limit);
   }
 
   getEvidence(filters: {
@@ -293,8 +318,9 @@ export class WorkOrchestrationService {
       return true;
     });
     const offset = Math.max(0, Number(filters.offset ?? 0));
-    const limit = filters.limit === undefined ? undefined : Math.max(1, Number(filters.limit));
-    return limit === undefined ? filtered.slice(offset) : filtered.slice(offset, offset + limit);
+    // NEST-221：limit 缺省/超界统一钳制。
+    const limit = this.clampListLimit(filters.limit);
+    return filtered.slice(offset, offset + limit);
   }
 
   getEvidenceContent(evidenceId: string, limit?: number) {
@@ -783,8 +809,9 @@ export class WorkOrchestrationService {
 
   /**
    * Recover locks whose holder crashed / lease expired. Returns the recovered count.
+   * NEST-222：orgId 必填（controller 已收紧 400；缺省参数移除）。
    */
-  async recoverExpiredLocks(orgId = 'default'): Promise<{ recovered: number }> {
+  async recoverExpiredLocks(orgId: string): Promise<{ recovered: number }> {
     if (!this.domainPersistence) {
       return { recovered: 0 };
     }

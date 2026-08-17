@@ -25,7 +25,8 @@ describe('EWOH scenario packages (unit smoke)', () => {
     ]);
     expect(tree[0].children[0].id).toBe('factory');
     expect(coarseHealthRisk({ loadLevel: 0.85 })).toBe('high');
-    expect(nextAlertStatus('open', 'acknowledge')).toBe('acknowledged');
+    // SH-004：alert 状态机 role 约束 fail-closed，处置必须携带角色。
+    expect(nextAlertStatus('open', 'acknowledge', 'dispatcher')).toBe('acknowledged');
   });
 
   it('SP-02 task scheduling: task state + preorder reservation + approval', async () => {
@@ -84,14 +85,16 @@ describe('EWOH scenario packages (unit smoke)', () => {
 
   it('SP-05 digital world: snapshot, delta, cursor expiry', async () => {
     // ADR-079：世界游标已改 drizzle 链式路径——共用 §31 单一假库。
+    // W4：游标读写显式租户上下文（org 谓词过滤，缺省 fail-closed）。
+    const ORG = 'org-sp5';
     const world = new WorldCursorService(makeWorldDb().db as never);
-    await world.applyUpsert({ id: 'e1', type: 'person' });
-    const snapshot = await world.getSnapshot();
-    await world.applyUpsert({ id: 'e2', type: 'device' });
-    const delta = await world.getDelta(snapshot.cursor);
+    await world.applyUpsert({ id: 'e1', type: 'person' }, ORG);
+    const snapshot = await world.getSnapshot(ORG);
+    await world.applyUpsert({ id: 'e2', type: 'device' }, ORG);
+    const delta = await world.getDelta(snapshot.cursor, 200, ORG);
     expect(delta.upserts[0].id).toBe('e2');
-    await world.getSnapshot();
-    await expect(world.getDelta(snapshot.cursor)).rejects.toThrow(CursorExpiredError);
+    await world.getSnapshot(ORG);
+    await expect(world.getDelta(snapshot.cursor, 200, ORG)).rejects.toThrow(CursorExpiredError);
   });
 
   it('SP-06 multi-org isolation: audit chains stay per-org', () => {
@@ -177,8 +180,14 @@ describe('EWOH scenario packages (unit smoke)', () => {
       { cwd: repoRoot, encoding: 'utf8', timeout: 30000 },
     );
     expect(standaloneRollback).toContain('DESTRUCTIVE');
+    // W1（SQL-038）：rollback 非破坏化——A 类 001 全新表仍 DROP TABLE CASCADE；
+    // B 类既有物理表（如 ewoh_ai_suggestion）改为 DROP POLICY → DISABLE RLS →
+    // 仅 DROP 001 增量列（org_id / _created_by / _updated_by），不再整表删除。
     expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_audit_log CASCADE');
-    expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion CASCADE');
+    expect(standaloneRollback).not.toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion');
+    expect(standaloneRollback).toContain("'ewoh_ai_suggestion'");
+    expect(standaloneRollback).toContain('DROP POLICY IF EXISTS ewoh_org_select ON public.%I');
+    expect(standaloneRollback).toContain("ALTER TABLE public.%I DROP COLUMN IF EXISTS org_id");
     const standaloneRuntimeRole = execFileSync(
       'node',
       ['db/runner/run_migrations.js', '--plan', 'standalone_runtime_role'],

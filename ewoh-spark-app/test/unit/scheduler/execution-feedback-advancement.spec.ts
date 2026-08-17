@@ -168,7 +168,13 @@ describe('执行反馈完成腿（ADR-050）：feedback → assignment → task 
       { assignmentId: 'ASG-FB-1', actualTravel: 120 },
       testOrgContext(),
     );
-    expect(summary).toEqual({ advancedAssignments: 0, advancedTaskSteps: 0, skips: [] });
+    expect(summary).toEqual({
+      advancedAssignments: 0,
+      advancedTaskSteps: 0,
+      skips: [],
+      // NEST-121：summary 附 UPDATE ... RETURNING 真实命中行数。
+      matchedRows: 0,
+    });
     expect(state.events).toHaveLength(0);
     expect(state.assignments[0].status).toBe('dispatched');
   });

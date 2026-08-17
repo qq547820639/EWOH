@@ -93,8 +93,13 @@ const SimulationConsole = (): React.ReactElement => {
         throw new Error(`参数预检未通过：${validation.join('；')}`);
       }
       const snapshotNumber = Number(snapshotVersion);
-      if (!Number.isInteger(snapshotNumber) || snapshotNumber < 0) {
-        throw new Error('快照版本必须是非负整数');
+      // CLI-223：空字符串显式拒绝（Number('')===0 会静默通过整数校验）。
+      if (
+        snapshotVersion.trim() === '' ||
+        !Number.isInteger(snapshotNumber) ||
+        snapshotNumber < 0
+      ) {
+        throw new Error('快照版本必须是非负整数（不能为空）');
       }
       return runSimulation({
         kind,

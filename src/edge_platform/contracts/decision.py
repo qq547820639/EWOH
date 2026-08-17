@@ -215,15 +215,17 @@ def validate_decision(record):
             return ["bad_evidence"]
 
     # 审批判定事实：human 决策或 approved/rejected 状态必带 approver。
+    # EDGE-221：合并双重 dict 检查为单次判定（approver 存在性 → bad_approver；
+    # 判定需要但缺失 → approver_required）。
     approver = record.get("approver")
     needs_approver = (
         record.get("decisionAuthority") == "human"
         or record.get("status") in ("approved", "rejected")
     )
-    if needs_approver:
-        if not isinstance(approver, dict):
+    if approver is None:
+        if needs_approver:
             return ["approver_required"]
-    if approver is not None:
+    else:
         if not isinstance(approver, dict):
             return ["bad_approver"]
         actor = approver.get("actor")

@@ -10,9 +10,16 @@ import type { RouteCostMatrix, WorldStateSnapshot } from '@shared/api.interface'
 
 const HOUR = 3600_000;
 
-/** 内存态 fake db（支持 select().from().where().limit() 与 insert/update）。 */
+/**
+ * 内存态 fake db（支持 select().from().where().limit() 与 insert/update）。
+ * NEST-161（2026-08-17）：persistMatrix 改为 INSERT ... ON CONFLICT
+ * (task_id, snapshot_version) DO UPDATE 原子 upsert——insert 链补
+ * onConflictDoUpdate（同键幂等覆盖，不新增行），与真实唯一索引语义一致。
+ */
 function makeFakeDb() {
   const rows: Array<Record<string, unknown>> = [];
+  const conflictKey = (r: Record<string, unknown>) =>
+    `${r.taskId}::${r.snapshotVersion}`;
   const db: any = {
     select: () => ({
       from: (table: unknown) => {
@@ -26,8 +33,30 @@ function makeFakeDb() {
     }),
     insert: () => ({
       values: (values: unknown) => {
-        rows.push({ ...(values as Record<string, unknown>) });
-        return { returning: () => Promise.resolve([rows[rows.length - 1]]) };
+        const row = { ...(values as Record<string, unknown>) };
+        const key = conflictKey(row);
+        const existingIdx = rows.findIndex((r) => conflictKey(r) === key);
+        const applyUpsert = (): Record<string, unknown> => {
+          if (existingIdx >= 0) {
+            // NEST-161：同 (task, snapshot) 键 → 幂等覆盖（不新增行）。
+            rows[existingIdx] = { ...rows[existingIdx], ...row };
+            return rows[existingIdx];
+          }
+          rows.push(row);
+          return row;
+        };
+        return {
+          // thenable + returning 双形态（drizzle 无 returning 时直接 await 执行）。
+          onConflictDoUpdate: () => ({
+            returning: () => Promise.resolve([applyUpsert()]),
+            then: (resolve: (v: unknown) => unknown) =>
+              Promise.resolve(applyUpsert()).then(resolve),
+          }),
+          returning: () => {
+            rows.push(row);
+            return Promise.resolve([row]);
+          },
+        };
       },
     }),
     update: () => ({

@@ -1,11 +1,19 @@
-import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
-import { DashboardService } from './dashboard.service';
+import { Body, Controller, Get, Post, Param, Query, Req } from '@nestjs/common';
+import { DashboardService, parseBatteryParam } from './dashboard.service';
 import { Roles } from '../shared/roles.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   DeviceSearchQuery,
   BindDeviceRequest,
 } from '@shared/api.interface';
 
+/**
+ * NEST-350（2026-08-17 审计裁决，文档化）：本控制器是 /api/devices 契约面
+ * （对外 openapi 路由），与 DashboardController 的 /api/dashboard/devices*
+ * 共享同一 DashboardService —— org 谓词、校验与行为完全同源，无第二实现。
+ * 两套路由并存是历史契约兼容（openapi/ewoh.yaml 已冻结 /api/devices 路径），
+ * 收敛为单一路由属对外契约破坏，超出本整改边界；此处仅文档化职责边界。
+ */
 @Controller('api/devices')
 @Roles('global_admin', 'dispatcher', 'device_ops')
 export class DeviceContractController {
@@ -20,25 +28,32 @@ export class DeviceContractController {
     @Query('sourceType') sourceType?: string,
     @Query('model') model?: string,
     @Query('orderby') orderby?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
     const query: DeviceSearchQuery = {};
     if (keyword) query.keyword = keyword;
     if (online !== undefined) query.online = online === 'true';
-    if (batteryMin) query.batteryMin = parseInt(batteryMin);
-    if (batteryMax) query.batteryMax = parseInt(batteryMax);
+    const batteryMinNum = parseBatteryParam(batteryMin, 'batteryMin');
+    const batteryMaxNum = parseBatteryParam(batteryMax, 'batteryMax');
+    if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
+    if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
     if (model) query.model = model;
     if (orderby) query.orderby = orderby;
-    return this.dashboardService.getDevices(query);
+    return this.dashboardService.getDevices(query, request?.userContext);
   }
 
   @Get(':id')
-  detail(@Param('id') id: string) {
-    return this.dashboardService.getDeviceDetail(id);
+  detail(@Param('id') id: string, @Req() request?: { userContext?: OrgContext }) {
+    return this.dashboardService.getDeviceDetail(id, request?.userContext);
   }
 
   @Post(':id/bindings')
-  bind(@Param('id') id: string, @Body() body: BindDeviceRequest) {
-    return this.dashboardService.bindDevice(id, body);
+  bind(
+    @Param('id') id: string,
+    @Body() body: BindDeviceRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.bindDevice(id, body, request?.userContext);
   }
 }

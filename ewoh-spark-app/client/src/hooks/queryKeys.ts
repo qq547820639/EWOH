@@ -6,6 +6,32 @@ import type {
   ConflictsListRequest,
 } from '@shared/api.interface';
 
+/**
+ * CLI-715：全局缓存键按当前登录组织分片。原 spatialEntities/worldState/
+ * overview/replaySnapshots 为无 org 维度的常量键，多租户切换账号后可能
+ * 命中上一租户的缓存。改为 getter——每次访问读取当前 auth user 的 orgId
+ * 拼入键首段，调用点（queryKeys.xxx）无需改动。
+ *
+ * 注意：这里直接读 sessionStorage（与 lib/auth.ts 的 AUTH_USER_KEY 同键），
+ * 不 import lib/auth——auth → api/auth → lib/http 的链条携带 Vite 专属的
+ * import.meta 语法，会把整个 jest 环境拖进非必要 的 transform 失败面。
+ */
+function currentOrgScope(): string {
+  try {
+    const raw =
+      typeof window !== 'undefined'
+        ? window.sessionStorage.getItem('ewoh_auth_user')
+        : null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { orgId?: string };
+      if (parsed?.orgId) return parsed.orgId;
+    }
+  } catch {
+    // 解析失败视作无组织上下文。
+  }
+  return 'no-org';
+}
+
 export const queryKeys = {
   org: (orgId: string) => ['org', orgId] as const,
   scope: (orgId: string) => ['org', orgId, 'scope'] as const,
@@ -17,14 +43,22 @@ export const queryKeys = {
   world: (orgId: string) => ['org', orgId, 'world'] as const,
   audit: (orgId: string, filters?: Record<string, unknown>) =>
     ['org', orgId, 'audit', filters ?? {}] as const,
-  spatialEntities: ['spatial-entities'] as const,
+  get spatialEntities() {
+    return ['spatial-entities', currentOrgScope()] as const;
+  },
   spatialHierarchy: ['spatial-hierarchy'] as const,
-  worldState: ['world-state'] as const,
-  overview: ['overview'] as const,
+  get worldState() {
+    return ['world-state', currentOrgScope()] as const;
+  },
+  get overview() {
+    return ['overview', currentOrgScope()] as const;
+  },
   events: (status?: string) => ['events', status ?? 'all'] as const,
   devices: (query?: DeviceSearchQuery) => ['devices', query ?? {}] as const,
   deviceBindings: (deviceId?: string) => ['device-bindings', deviceId ?? 'none'] as const,
-  replaySnapshots: ['world-replay'] as const,
+  get replaySnapshots() {
+    return ['world-replay', currentOrgScope()] as const;
+  },
   schedulerPlans: (status?: string) => ['scheduler-plans', status ?? 'all'] as const,
   /** 当前活跃的调度方案列表（V2），由 createRun 结果 + SSE 事件流写入缓存维护。 */
   schedulerActivePlans: ['scheduler-active-plans'] as const,

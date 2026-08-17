@@ -1,16 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohEvent } from '@server/database/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, type SQL } from 'drizzle-orm';
 import type { TimelineEvent } from '@shared/api.interface';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import { buildTimelineEvents } from './timeline.projection';
 
 /**
  * 统一对象时间线服务。
  *
  * 复用 ewoh_event 数据源，将领域事件投影为统一 TimelineEvent DTO。
- * 走全局 OrgContextInterceptor 的 GUC 事务上下文，自动遵循组织隔离；
- * 鉴权由控制器上的 Roles 守卫保证。
+ * NEST-623（2026-08-17 审计整改）：显式 org 谓词 + limit 上限（原先仅
+ * status 过滤且 parseInt 无上限，跨租户全表可拉取）；鉴权由控制器 Roles 守卫保证。
  */
 @Injectable()
 export class TimelineService {
@@ -18,15 +19,30 @@ export class TimelineService {
 
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async getTimelineEvents(limit = 100, status?: string): Promise<TimelineEvent[]> {
+  async getTimelineEvents(
+    limit = 100,
+    status?: string,
+    actor?: OrgContext,
+  ): Promise<TimelineEvent[]> {
     try {
-      const conditions = status ? [eq(ewohEvent.status, status)] : [];
+      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 500);
+      const conditions: SQL[] = [];
+      if (!actor?.isGlobalAdmin) {
+        const orgId = actor?.primaryOrgId?.trim();
+        if (!orgId) {
+          throw new BadRequestException(
+            'org context missing: timeline queries require tenant context',
+          );
+        }
+        conditions.push(eq(ewohEvent.orgId, orgId));
+      }
+      if (status) conditions.push(eq(ewohEvent.status, status));
       const rows = await this.db
         .select()
         .from(ewohEvent)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(ewohEvent.createdAt))
-        .limit(limit);
+        .limit(safeLimit);
       return buildTimelineEvents(
         rows.map((r) => ({
           id: r.id,

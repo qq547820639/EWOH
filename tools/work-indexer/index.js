@@ -10,6 +10,7 @@ const DEFAULT_PATHS = [
   { path: '.codex/artifacts/task-board.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
   { path: '.codex/artifacts/gates.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
   { path: '.codex/artifacts/agent-registry.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
+  { path: '.codex/artifacts/agent-threads.md', required: false, owner: 'AG-00', mediaType: 'text/markdown' },
   { path: '.codex/artifacts/risk-register.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
   { path: '.codex/artifacts/decision-log.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
   { path: '.codex/artifacts/phase-state.md', required: true, owner: 'AG-00', mediaType: 'text/markdown' },
@@ -21,11 +22,11 @@ const DEFAULT_PATHS = [
 ];
 
 function findArtifactsDir(cwd) {
+  // TOOL-013: 仅 EWOH_WORK_ARTIFACTS_DIR env 可指向别处，否则只回退
+  // cwd/.codex/artifacts——不再向上搜索 ../..（可能误用上层目录的工件）。
   const candidates = [
     process.env.EWOH_WORK_ARTIFACTS_DIR,
     path.resolve(cwd, '.codex/artifacts'),
-    path.resolve(cwd, '..', '.codex/artifacts'),
-    path.resolve(cwd, '..', '..', '.codex/artifacts'),
   ].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'task-board.md'))) {
@@ -174,7 +175,12 @@ function deriveEvidenceBinding(artifactsDir, root, entry, file, sourceText) {
           .filter(Boolean)
       : [];
   const expired = Date.parse(expiresAt) <= Date.now();
-  const staleByCommit = Boolean(codeHead && commitSha && codeHead !== commitSha);
+  // TOOL-008: git 不可用（codeHead 为空）时 commit 新鲜度不可判定——
+  // 记 'unknown' 而非确定性 false，证据不再被当作“确认新鲜”。
+  const commitStaleness = codeHead
+    ? (commitSha && codeHead !== commitSha ? 'stale' : 'fresh')
+    : 'unknown';
+  const staleByCommit = commitStaleness === 'stale';
   const staleByEnv =
     Boolean(frontMatter.envFingerprint) &&
     frontMatter.envFingerprint !== currentEnvFingerprint(root);
@@ -207,6 +213,7 @@ function deriveEvidenceBinding(artifactsDir, root, entry, file, sourceText) {
     testTime,
     verifier,
     expiresAt,
+    commitStaleness,
     status,
     staleReason,
   };

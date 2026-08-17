@@ -29,11 +29,23 @@ CHART="${CHART:-deploy/cloud/helm/ewoh}"
 RELEASE="${RELEASE:-ewoh}"
 NAMESPACE="${NAMESPACE:-ewoh}"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
-IMAGE_TAG_UPGRADE="${IMAGE_TAG_UPGRADE:-0.6.0-rc5}"   # set to a real next tag
+# SCR-031: CI 中升级目标镜像 tag 必须显式设置（默认值 0.6.0-rc5 可能不存在，不得静默使用）。
+if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" ]] && [ -z "${IMAGE_TAG_UPGRADE:-}" ]; then
+  echo "::notice::BLOCKED_BY_ENVIRONMENT: CI 环境必须显式设置 IMAGE_TAG_UPGRADE（升级镜像 tag），不允许回退可能不存在的默认值"
+  echo "{\"gate\":\"$GATE_ID\",\"status\":\"BLOCKED_BY_ENVIRONMENT\",\"reason\":\"CI 未显式设置 IMAGE_TAG_UPGRADE\"}" > "$REPORT"
+  exit 0
+fi
+IMAGE_TAG_UPGRADE="${IMAGE_TAG_UPGRADE:-0.6.0-rc5}"   # 本地缺省（仅非 CI）
 API_URL="${API_URL:-http://127.0.0.1:3000}"
 # Worker Deployment 当前默认关闭（API 镜像尚无 dist/server/worker.js 入口）。
 # 一旦镜像提供 worker 入口，设 WORKER_ENABLED=true 以覆盖并校验 worker 部署。
 WORKER_ENABLED="${WORKER_ENABLED:-false}"
+# SCR-016: CI 中 worker 部署校验必须显式开启（WORKER_ENABLED=true），不允许默认 false 跳过。
+if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" ]] && [ "$WORKER_ENABLED" != "true" ]; then
+  echo "::notice::BLOCKED_BY_ENVIRONMENT: CI 环境必须设置 WORKER_ENABLED=true 以校验 worker 部署（当前 WORKER_ENABLED=$WORKER_ENABLED）"
+  echo "{\"gate\":\"$GATE_ID\",\"status\":\"BLOCKED_BY_ENVIRONMENT\",\"reason\":\"CI 未显式设置 WORKER_ENABLED=true\"}" > "$REPORT"
+  exit 0
+fi
 
 record() { # status details
   node scripts/truth-gate-record.js \

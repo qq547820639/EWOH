@@ -38,8 +38,12 @@ export class ApprovalController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.approvalService.getApproval(id);
+  get(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    // NEST-402：读面 org 守卫。
+    return this.approvalService.getApproval(id, request.userContext);
   }
 
   @Post(':id/steps/:stepId/state')

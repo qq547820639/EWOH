@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import type { OrgContext } from '../shared/org-context.interceptor';
 import { qualityFindingsBlockDispatch } from '@shared/quality';
 import type {
   CandidateEvaluation,
@@ -67,6 +68,12 @@ export interface CandidatePoolOptions {
 export class CandidateEngineService {
   private readonly logger = new Logger(CandidateEngineService.name);
 
+  /**
+   * NEST-048（2026-08-17）：负载等级罚系数——loadLevel 每级计 60s 等效成本
+   * （与 heuristic-scheduling-solver 同源；原为散落魔数 60*1000）。
+   */
+  private static readonly LOAD_PENALTY_MS_PER_LEVEL = 60 * 1000;
+
   constructor(
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly resourceProjectionService: ResourceProjectionService,
@@ -75,14 +82,17 @@ export class CandidateEngineService {
     private readonly policyService: SchedulingPolicyService,
   ) {}
 
-  /** 端点：GET /tasks/:taskId/candidates（响应富化，旧字段保留）。 */
-  async evaluateTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+  /** 端点：GET /tasks/:taskId/candidates（响应富化，旧字段保留）。NEST-101/111：ctx 透传。 */
+  async evaluateTaskCandidates(
+    taskId: string,
+    actor?: OrgContext,
+  ): Promise<TaskCandidatesResponse> {
+    const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task) throw new NotFoundException(`Task ${taskId} not found`);
 
-    const policy = await this.policyService.getActivePolicy();
-    const config = await this.policyService.getConfig();
+    const policy = await this.policyService.getActivePolicy(actor?.primaryOrgId || null);
+    const config = await this.policyService.getConfig(actor?.primaryOrgId || null);
     const now = Date.now();
 
     const lockedByTask = (state.lockedAssignments ?? []).find(
@@ -366,8 +376,9 @@ export class CandidateEngineService {
             baselineAssignee && baselineAssignee !== person.id ? 1 : 0;
           const deviceChanged =
             task.deviceId != null && task.deviceId !== device?.id ? 1 : 0;
-          const stationChanged =
-            task.stationId != null && task.stationId !== stationId ? 1 : 0;
+          const changeover =
+            task.stationId != null && task.stationId !== stationId;
+          const stationChanged = changeover ? 1 : 0;
           const churnCostScore =
             config.churn != null
               ? personChanged * (config.churn.personChangePenalty ?? policy.weights.change) +
@@ -375,9 +386,17 @@ export class CandidateEngineService {
                 stationChanged * (config.churn.stationChangePenalty ?? 0)
               : undefined;
           const changeCost = personChanged;
-          const loadPenalty = person.loadLevel * 60 * 1000;
+          // NEST-048（2026-08-17）：负载罚常量（loadLevel 每级 60s，与 heuristic
+          // 同源；提取命名常量替代裸 60*1000 魔数）。
+          const loadPenalty = person.loadLevel * CandidateEngineService.LOAD_PENALTY_MS_PER_LEVEL;
+          // NEST-006 修复（2026-08-17）：换型成本（station 变更 → setupMinutes
+          // 换型时间入 changeCost 维度，与 heuristic computeCandidateScore 对齐）。
+          const setupMinutes = config.setupMinutes ?? 15;
+          const changeoverMs = changeover ? setupMinutes * 60 * 1000 : 0;
+          // NEST-005 修复（2026-08-17）：riskFactor 对齐 heuristic——medium 风险
+          // 也乘 config.mediumRiskFactor（此前仅判 high，medium 罚丢失）。
           const riskMs =
-            (candRouteCost.riskLevel === 'high' ? config.highRiskFactor : 1) * travelMs;
+            this.riskFactor(candRouteCost.riskLevel, config) * travelMs;
           const batteryPct = device ? device.batteryPct : 100;
           const energyPenalty =
             device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
@@ -388,9 +407,13 @@ export class CandidateEngineService {
             travelMs,
             loadPenalty,
             waitMs,
-            changeCost * 60 * 1000,
+            changeCost * 60 * 1000 + changeoverMs,
             riskMs,
             energyPenalty,
+            stationId,
+            // NEST-007 修复（2026-08-17）：station 队列等待成本入评分
+            // （w.station × queueLength × waitMs，与 heuristic 同源）。
+            station?.queue?.length ?? 0,
             churnCostScore,
           );
 
@@ -415,7 +438,7 @@ export class CandidateEngineService {
             scoreBreakdown,
             routeCost: this.toCandidateRouteCost(candRouteCost, person.id, device ? device.id : null, stationId),
             preferred,
-            changeover: task.stationId != null && task.stationId !== stationId,
+            changeover,
             softCosts: {
               latenessMs: lateMs,
               travelMs,
@@ -601,7 +624,12 @@ export class CandidateEngineService {
     return Array.from(new Set(reasons));
   }
 
-  /** 评分（与 heuristic solver computeCandidateScore 同源：policy.weights 权威 8 权重）。 */
+  /**
+   * 评分（与 heuristic solver computeCandidateScore 同源：policy.weights 权威 8 权重）。
+   * NEST-005/006/007（2026-08-17）：补齐 medium risk 罚、changeoverMs、
+   * station 队列等待成本三项（stationWait = 基础等待 + w.station×queue×waitMs），
+   * 消除与 heuristic 的评分语义漂移。
+   */
   private computeScore(
     policy: import('@shared/api.interface').SchedulingPolicy,
     lateMs: number,
@@ -611,13 +639,18 @@ export class CandidateEngineService {
     changeCostMs: number,
     riskMs: number,
     energyPenalty: number,
+    stationId?: string | null,
+    stationQueueLength = 0,
     churnCostScore?: number,
   ): ScoreBreakdown {
+    void stationId; // 语义锚点：station 维度经 queueLength 入 stationWait（与 heuristic 同源）
     const w = policy.weights;
     const lateness = (w.lateness * lateMs) / 60000;
     const travel = (w.travel * travelMs) / 60000;
     const workloadBalance = (w.workload * loadPenalty) / 60000;
-    const stationWait = (w.wait * waitMs) / 60000;
+    // NEST-007：stationWait = 基础等待 + 真实队列长度 × weights.station（工位排队成本）。
+    const stationWait =
+      (w.wait * waitMs) / 60000 + (w.station * stationQueueLength * waitMs) / 60000;
     // M04：Churn Objective V2——传入 churnCostScore 时以 churn 罚直接计入（缺省=现状）。
     const changeCost =
       churnCostScore != null ? churnCostScore : (w.change * changeCostMs) / 60000;
@@ -633,6 +666,16 @@ export class CandidateEngineService {
       energyCost,
       total: lateness + travel + workloadBalance + stationWait + changeCost + risk + energyCost,
     };
+  }
+
+  /** NEST-005：riskLevel → 策略风险系数（high/medium 分级，与 heuristic riskFactor 同源）。 */
+  private riskFactor(
+    riskLevel: string | null,
+    config: import('@shared/api.interface').SchedulingPolicyConfig,
+  ): number {
+    if (riskLevel === 'high') return config.highRiskFactor;
+    if (riskLevel === 'medium') return config.mediumRiskFactor;
+    return 1;
   }
 
   private devicesForTask(

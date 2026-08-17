@@ -30,11 +30,6 @@ function parseArgs(argv) {
 function computeBlockedItems(graph) {
   const items = graph.items || [];
   const byId = new Map(items.map((item) => [item.id, item]));
-  const blocked = new Set(
-    items
-      .filter((item) => /blocked/i.test(item.status || ''))
-      .map((item) => item.id),
-  );
   const outgoing = new Map();
   for (const edge of graph.edges || []) {
     if (!edge.blocking) continue;
@@ -49,18 +44,12 @@ function computeBlockedItems(graph) {
     sources.push(edge.from);
     incoming.set(edge.to, sources);
   }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const item of items) {
-      if (blocked.has(item.id)) continue;
-      const dependencies = incoming.get(item.id) || [];
-      if (dependencies.some((dependency) => blocked.has(dependency))) {
-        blocked.add(item.id);
-        changed = true;
-      }
-    }
-  }
+  const explicitBlocked = items.filter((item) =>
+    /blocked/i.test(item.status || ''),
+  );
+  // TOOL-016: 阻塞传播改为沿依赖边前向 BFS（O(V+E)），
+  // 语义与原 O(N^2) 轮扫一致——显式 blocked 节点的全部下游传递闭包均为 blocked。
+  const blocked = new Set(explicitBlocked.map((item) => item.id));
   const affected = new Set();
   const queue = [...blocked];
   while (queue.length > 0) {
@@ -68,13 +57,11 @@ function computeBlockedItems(graph) {
     for (const target of outgoing.get(current) || []) {
       if (!affected.has(target)) {
         affected.add(target);
+        if (!blocked.has(target)) blocked.add(target);
         queue.push(target);
       }
     }
   }
-  const explicitBlocked = items.filter((item) =>
-    /blocked/i.test(item.status || ''),
-  );
   const owners = new Set();
   for (const id of explicitBlocked.map((item) => item.id)) {
     const item = byId.get(id);
@@ -138,17 +125,6 @@ function computeMissingEvidence(graph) {
     .filter((entry) => entry.missing);
 }
 
-function loadHumanDecisions(artifactsDir) {
-  const file = path.join(artifactsDir, 'work', 'gate-decisions.json');
-  if (!fs.existsSync(file)) return [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 const EVIDENCE_META_FIELDS = [
   'commitSha',
   'branch',
@@ -159,6 +135,9 @@ const EVIDENCE_META_FIELDS = [
   'verifier',
   'expiresAt',
 ];
+
+// TOOL-017: loadHumanDecisions 收敛到 gate-engine 共享实现（原两处重复 JSON.parse 逻辑）。
+const { loadHumanDecisions } = gateEngine;
 
 // 审计顶层证据对象的元数据完整性：统计每个字段在所有证据中的缺失/未知数量。
 function computeEvidenceMeta(graph) {
@@ -178,10 +157,14 @@ function computeEvidenceMeta(graph) {
   return {
     total,
     fields,
+    // TOOL-004: complete 必须排除 'unknown' 占位符——字段为字面量 'unknown'
+    // 视为未提供，不得计入完整。
     complete: total > 0 && evidence.every((entry) =>
       EVIDENCE_META_FIELDS.every((field) => {
         const value = entry[field];
-        return value !== undefined && value !== null && value !== '';
+        return (
+          value !== undefined && value !== null && value !== '' && value !== 'unknown'
+        );
       }),
     ),
   };
@@ -193,7 +176,7 @@ function computeGraphSummary(graph, artifactsDir) {
   const finalGates = gateEngine.calculate(
     graph.gates || [],
     loadHumanDecisions(artifactsDir || graph.sourceRoot),
-    artifactsDir || graph.sourceRoot,
+    { actors: graph.actors },
   );
   const requiresApproval = finalGates.filter(
     (gate) =>

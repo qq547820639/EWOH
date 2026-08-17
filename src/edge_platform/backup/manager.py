@@ -8,7 +8,9 @@
   ``ewoh_backup_<YYYYMMDD_HHMMSS>.json``；JSON 副本按表导出关键表行，
   便于在 SQLite 不可用时人工查阅与跨工具迁移。
 - 恢复时以备份 .db 文件覆盖目标路径；目标存在则先删除再复制，避免脏数据残留。
-- ``verify`` 执行 ``PRAGMA integrity_check``，返回 ``(ok: bool, message: str)``。
+  EDGE-205（2026-08-17 审计整改）：恢复目标路径受 ``allowed_restore_root``
+  白名单约束（构造参数；缺省取首次 backup 的源库所在目录），拒绝任意路径覆写。
+- ``verify`` 执行 ``PRAGMA integrity_check``，返回 ``(ok: bool, message)``。
 - ``list_backups`` 按文件名时间戳倒序返回备份 .db 路径列表（最新在前）。
 
 纯 Python 标准库（``shutil`` / ``json`` / ``sqlite3`` / ``os`` / ``datetime``）。
@@ -16,6 +18,7 @@
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 from datetime import datetime
@@ -24,17 +27,25 @@ from datetime import datetime
 _BACKUP_PREFIX = "ewoh_backup_"
 _BACKUP_TS_FMT = "%Y%m%d_%H%M%S"
 
+# EDGE-204：表名白名单字符集（安全标识符；key_tables 用户可控时的注入防御）
+_SAFE_TABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 class BackupManager:
     """SQLite 数据库备份/恢复/校验/列表管理器。"""
 
-    def __init__(self, key_tables=None):
+    def __init__(self, key_tables=None, allowed_restore_root=None):
         """初始化。
 
         :param key_tables: 备份时导出为 JSON 的关键表名列表；
             None 时自动查询 sqlite_master 导出全部用户表。
+        :param allowed_restore_root: restore 目标路径的允许根目录（EDGE-205）；
+            None 时首个 backup() 的源库父目录成为允许根。
         """
         self._key_tables = list(key_tables) if key_tables else None
+        self._allowed_restore_root = (
+            os.path.realpath(allowed_restore_root) if allowed_restore_root else None
+        )
 
     # ---- 备份 ----
     def backup(self, db_path, output_path) -> str:
@@ -49,6 +60,9 @@ class BackupManager:
         output_path = os.fspath(output_path)
         if not os.path.isfile(db_path):
             raise FileNotFoundError(f"源数据库不存在: {db_path}")
+        # EDGE-205：未显式指定允许根时，锁定为源库父目录（restore 只允许回到原地）
+        if self._allowed_restore_root is None:
+            self._allowed_restore_root = os.path.dirname(os.path.realpath(db_path))
         os.makedirs(output_path, exist_ok=True)
         ts = datetime.now().strftime(_BACKUP_TS_FMT)
         db_name = f"{_BACKUP_PREFIX}{ts}.db"
@@ -89,7 +103,11 @@ class BackupManager:
             return False
 
     def _dump_tables(self, db_path) -> dict:
-        """导出关键表为 {table_name: [row_dict, ...]}。"""
+        """导出关键表为 {table_name: [row_dict, ...]}。
+
+        EDGE-204：表名经安全标识符白名单校验（key_tables 可能来自调用方配置，
+        非法表名直接抛 ValueError，绝不拼入 SQL）。
+        """
         tables = self._key_tables
         result = {}
         try:
@@ -102,8 +120,10 @@ class BackupManager:
                     )
                     tables = [r[0] for r in cur.fetchall()]
                 for t in tables or []:
+                    if not _SAFE_TABLE_NAME.match(str(t)):
+                        raise ValueError(f"非法表名（拒绝导出，EDGE-204）: {t!r}")
                     try:
-                        rows = conn.execute(f"SELECT * FROM {t}").fetchall()  # nosec B608 - table names from sqlite_master
+                        rows = conn.execute(f"SELECT * FROM {t}").fetchall()  # nosec B608 - whitelisted identifier
                     except sqlite3.Error:
                         continue
                     result[t] = [dict(r) for r in rows]
@@ -126,6 +146,14 @@ class BackupManager:
         db_path = os.fspath(db_path)
         if not os.path.isfile(backup_path):
             raise FileNotFoundError(f"备份文件不存在: {backup_path}")
+        # EDGE-205：恢复目标必须在允许根目录内（防任意路径覆写删除）。
+        root = self._allowed_restore_root
+        if root is not None:
+            target_real = os.path.realpath(db_path)
+            if not (target_real == root or target_real.startswith(root + os.sep)):
+                raise ValueError(
+                    f"恢复目标路径超出允许目录（EDGE-205）: {db_path} ∉ {root}"
+                )
         parent = os.path.dirname(os.path.abspath(db_path))
         if parent:
             os.makedirs(parent, exist_ok=True)

@@ -11,12 +11,15 @@
 //   - token 来自 FEISHU_API_TOKEN 环境变量（生产必须配置）；
 //     token 未配置时：写操作一律拒绝（fail-closed，防止"忘了配密钥就裸奔"），
 //     读操作放行但打印一次告警日志；
-//   - 使用 timingSafeEqual 常量时间比较，防时序侧信道。
+//   - 使用 timingSafeEqual 常量时间比较，防时序侧信道；
+//   - FS-010：写操作（及收紧模式下的读操作）token 校验失败计入内存限流
+//     （IP+token 失败计数），达阈值后返回 429，缓解暴力枚举。
 //
 // 用途：在 /api 路由上挂 `app.use('/api', require('./auth').apiAuth, createApiRouter(db))`。
 // webhook 端点（/webhook/card）仍走 security.verifyWebhookRequest 的飞书验签，不受本中间件影响。
 
 const crypto = require('crypto');
+const ratelimit = require('./ratelimit');
 
 // 读取 API token（环境变量唯一来源；不读配置文件，避免密钥进 JSON 落盘）
 function getApiToken() {
@@ -52,6 +55,8 @@ function isWriteMethod(method) {
 function apiAuth(req, res, next) {
   const token = getApiToken();
   const provided = extractToken(req);
+  // FS-010：写操作（及收紧模式下的读操作）按 IP+token 失败计数限流
+  const rlKey = ratelimit.key('api', req.ip, provided);
 
   if (isWriteMethod(req.method)) {
     // 写操作：fail-closed
@@ -63,11 +68,18 @@ function apiAuth(req, res, next) {
         },
       });
     }
+    if (ratelimit.isBlocked(rlKey)) {
+      return res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'too many failed attempts, retry later' },
+      });
+    }
     if (!provided || !safeEqual(provided, token)) {
+      ratelimit.recordFailure(rlKey);
       return res.status(401).json({
         error: { code: 'UNAUTHORIZED', message: 'invalid or missing API token' },
       });
     }
+    ratelimit.recordSuccess(rlKey);
     return next();
   }
 
@@ -79,11 +91,18 @@ function apiAuth(req, res, next) {
         error: { code: 'AUTH_NOT_CONFIGURED', message: 'FEISHU_API_TOKEN 未配置，读操作被收紧配置拒绝（fail-closed）' },
       });
     }
+    if (ratelimit.isBlocked(rlKey)) {
+      return res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: 'too many failed attempts, retry later' },
+      });
+    }
     if (!provided || !safeEqual(provided, token)) {
+      ratelimit.recordFailure(rlKey);
       return res.status(401).json({
         error: { code: 'UNAUTHORIZED', message: 'invalid or missing API token' },
       });
     }
+    ratelimit.recordSuccess(rlKey);
   } else if (!token) {
     // 仅提示一次，避免刷屏
     if (!apiAuth._warnedNoToken) {

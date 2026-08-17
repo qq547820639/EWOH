@@ -12,16 +12,17 @@ import {
   type FreshnessStatus,
 } from '@client/src/lib/dataFreshness';
 
-/** 新鲜度状态 → 深色主题徽标样式（与 Command Map 徽标风格一致）。 */
+/** 新鲜度状态 → 深色主题徽标样式（与 Command Map 徽标风格一致，CLI-336：
+ *  全部使用语义设计令牌）。 */
 export const FRESHNESS_STATUS_CLASSES: Record<FreshnessStatus, string> = {
-  LIVE: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  DELAYED: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  STALE: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  OFFLINE: 'bg-red-500/20 text-red-400 border-red-500/30',
-  REPLAY: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  SHADOW: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  RESYNCING: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  DEGRADED: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  LIVE: 'bg-risk-normal/20 text-risk-normal border-risk-normal/30',
+  DELAYED: 'bg-risk-degraded/20 text-risk-degraded border-risk-degraded/30',
+  STALE: 'bg-warning/20 text-warning border-warning/30',
+  OFFLINE: 'bg-destructive/20 text-destructive border-destructive/30',
+  REPLAY: 'bg-risk-conflict/20 text-risk-conflict border-risk-conflict/30',
+  SHADOW: 'bg-info/20 text-info border-info/30',
+  RESYNCING: 'bg-info/20 text-info border-info/30',
+  DEGRADED: 'bg-risk-degraded/20 text-risk-degraded border-risk-degraded/30',
 };
 
 function formatUpdatedAt(ts: number | null | undefined): string {

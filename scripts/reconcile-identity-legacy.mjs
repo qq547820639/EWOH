@@ -121,7 +121,8 @@ async function main() {
     if (planned.length > 10) console.log(`  ... and ${planned.length - 10} more`);
 
     if (!args.apply) {
-      console.log('RESULT {"status":"DRY_RUN","planned":${planned.length},"applied":0}'.replace('${planned.length}', planned.length));
+      // SCR-039: 用 JSON.stringify 生成结果行，不再对含 ${} 的字符串做 .replace 模板替换。
+      console.log(`RESULT ${JSON.stringify({ status: 'DRY_RUN', planned: planned.length, applied: 0 })}`);
       process.exit(0);
     }
 

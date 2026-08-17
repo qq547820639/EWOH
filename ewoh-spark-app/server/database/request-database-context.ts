@@ -12,11 +12,21 @@ export interface TransactionSetting {
   value: string;
 }
 
+/** NEST-504：根句柄回落告警去重（每实例一次，避免请求风暴刷屏日志）。 */
+function warnOnce(alreadyWarned: boolean | undefined, message: string): true {
+  if (!alreadyWarned) {
+    // eslint-disable-next-line no-console
+    console.warn(`[RequestDatabaseContext] ${message}`);
+  }
+  return true;
+}
+
 type StandaloneDatabase = PostgresJsDatabase<Record<string, never>>;
 
 @Injectable()
 export class RequestDatabaseContext {
   private readonly storage = new AsyncLocalStorage<StandaloneDatabase>();
+  private warnedRootFallback?: boolean;
 
   readonly database: StandaloneDatabase;
 
@@ -26,7 +36,24 @@ export class RequestDatabaseContext {
   ) {
     this.database = new Proxy({} as StandaloneDatabase, {
       get: (_target, property) => {
-        const database = this.storage.getStore() ?? this.rootDatabase;
+        let database = this.storage.getStore();
+        if (!database) {
+          // NEST-504 修复（2026-08-17）：无事务 store 时回落根句柄仅允许两类场景——
+          // 进程启动/后台任务（无请求上下文，按 systemTransaction 约定使用）与
+          // SSE 长连接（应用层 org 过滤，见 org-context.interceptor 注释）。
+          // HTTP 请求上下文内的回落是租户隔离绕过（无 GUC/无 RLS）：默认告警留痕，
+          // EWOH_DB_REQUIRE_TX=1 时 fail-closed 抛错（生产建议开启）。
+          if (currentRequestContext() && process.env.EWOH_DB_REQUIRE_TX === '1') {
+            throw new Error(
+              'RequestDatabaseContext: HTTP 请求路径必须经 runInTransaction（GUC/RLS）访问数据库，检测到直接回落根句柄（NEST-504，EWOH_DB_REQUIRE_TX=1 fail-closed）',
+            );
+          }
+          if (currentRequestContext()) {
+            this.warnedRootFallback =
+              warnOnce(this.warnedRootFallback, 'NEST-504: HTTP 请求上下文内无事务 store，回落根句柄（无 GUC/RLS）。请将该查询移入 runInTransaction 或经 OrgContextInterceptor 路径调用');
+          }
+          database = this.rootDatabase;
+        }
         const value = Reflect.get(database, property, database) as unknown;
         return typeof value === 'function' ? value.bind(database) : value;
       },
@@ -63,7 +90,12 @@ export class RequestDatabaseContext {
   ): Promise<T> {
     const startedAt = Date.now();
     const thresholdMs = Number(process.env.EWOH_DB_SLOW_THRESHOLD_MS || 1000);
-    const statementTimeoutMs = Number(process.env.EWOH_DB_STATEMENT_TIMEOUT_MS || 0);
+    // NEST-516 修复（2026-08-17）：statement timeout 缺省 30s（原默认 0=无超时，
+    // 慢查询可无限占用连接池）。显式设置 EWOH_DB_STATEMENT_TIMEOUT_MS 可覆盖
+    // （含设 0 关闭——运维显式决策）。
+    const rawTimeout = process.env.EWOH_DB_STATEMENT_TIMEOUT_MS;
+    const statementTimeoutMs =
+      rawTimeout === undefined || rawTimeout === '' ? 30000 : Number(rawTimeout);
     const effectiveSettings =
       statementTimeoutMs > 0
         ? [

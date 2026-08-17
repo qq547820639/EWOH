@@ -1,7 +1,13 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Sparkles, TriangleAlert } from 'lucide-react';
-import { createPlan, createSuggestion, type AiPlan, type AiSuggestion } from '../../api/ai';
+import {
+  createPlan,
+  createSuggestion,
+  getAiSnapshotVersion,
+  type AiPlan,
+  type AiSuggestion,
+} from '../../api/ai';
 import { getCurrentOperator } from '../../lib/auth';
 import { Button } from '@client/src/components/ui/button';
 
@@ -10,16 +16,26 @@ const AiDecision = (): React.ReactElement => {
   const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
   const [plan, setPlan] = useState<AiPlan | null>(null);
 
+  // CLI-001：快照元信息改为真实来源——版本号读后端 /api/ai/snapshot-version；
+  // 观察窗为「页面挂载 → 触发时刻」的真实区间；records 前端无数据源，
+  // 显式上报 0（不伪造 60 条记录）。
+  const mountedAtRef = useRef(new Date());
+  const snapshotVersionQuery = useQuery({
+    queryKey: ['ai', 'snapshot-version'],
+    queryFn: getAiSnapshotVersion,
+    staleTime: 30000,
+  });
+
   const suggestionMutation = useMutation({
     mutationFn: () =>
       createSuggestion({
         triggeredBy: getCurrentOperator(),
         problem,
         snapshot: {
-          version: 1,
-          from: new Date(Date.now() - 3600000).toISOString(),
+          version: snapshotVersionQuery.data?.version ?? 0,
+          from: mountedAtRef.current.toISOString(),
           to: new Date().toISOString(),
-          records: 60,
+          records: 0,
         },
       }),
     onSuccess: (result) => {
@@ -69,7 +85,7 @@ const AiDecision = (): React.ReactElement => {
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             type="button"
-            disabled={busy}
+            disabled={busy || !snapshotVersionQuery.isSuccess}
             onClick={() => suggestionMutation.mutate()}
             className="inline-flex items-center gap-2"
           >
@@ -95,6 +111,13 @@ const AiDecision = (): React.ReactElement => {
             {planMutation.isPending ? '推演中...' : '生成调度方案'}
           </Button>
         </div>
+        <p className="mt-3 text-xs text-[hsl(218_10%_42%)]">
+          {snapshotVersionQuery.isSuccess
+            ? `快照版本 ${snapshotVersionQuery.data?.version}（真实来源） · 观察窗：页面挂载 → 触发时刻 · 快照记录数：前端无数据源，按 0 上报（不伪造）`
+            : snapshotVersionQuery.isError
+              ? '快照版本获取失败，暂无法生成建议（不伪造版本号）。'
+              : '正在获取快照版本…'}
+        </p>
       </div>
 
       {suggestionMutation.isSuccess && !planMutation.isPending && (

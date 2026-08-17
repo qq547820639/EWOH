@@ -17,8 +17,9 @@ export class GamificationController {
   constructor(private readonly gamificationService: GamificationService) {}
 
   @Get('role')
-  async getRole() {
-    return this.gamificationService.getRole();
+  async getRole(@Req() request?: { userContext?: OrgContext }) {
+    // NEST-351：角色从认证上下文推导（不再读进程级环境变量）。
+    return this.gamificationService.getRole(request?.userContext);
   }
 
   @Post('resources/allocate')
@@ -47,8 +48,12 @@ export class GamificationController {
   }
 
   @Post('exo/:deviceId/feedback')
-  async sendExoFeedback(@Param('deviceId') deviceId: string, @Body() body: ExoFeedbackRequest) {
-    return this.gamificationService.sendExoFeedback(deviceId, body);
+  async sendExoFeedback(
+    @Param('deviceId') deviceId: string,
+    @Body() body: ExoFeedbackRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.gamificationService.sendExoFeedback(deviceId, body, request?.userContext);
   }
 
   @Get('brain/suggestions')

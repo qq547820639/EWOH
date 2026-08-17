@@ -541,17 +541,24 @@ function countsGenerative(ctx) {
   }
 
   // ---- Confirmed DB count must be marked unverified ----
-  // If final_authoritative claims a confirmed "51 managed tables / 57 physical
-  // tables" count without an `unverified` marker, flag it.
+  // TOOL-009: 期望计数从 db/contracts/schema-manifest.yaml 动态派生
+  // （managed_count / physical_create_count），不再硬编码 51/57 字面量；
+  // manifest 缺失或计数不可解析时跳过该项（无法断言）。
   const authText = JSON.stringify(finalAuth);
-  if (/51\s+managed\s+tables?\s*\/\s*57\s+physical/.test(authText) && !/unverified/i.test(authText)) {
-    findings.push({
-      ruleId: 'counts-generative',
-      severity: 'warning',
-      message: 'final_authoritative claims 51 managed / 57 physical tables as confirmed but the figure is unverified and must be marked unverified',
-      path: '.codex/artifacts/state.json',
-      fixable: false,
-    });
+  const manifest = ctx.schemaManifest || {};
+  const managedCount = manifest.managed_count;
+  const physicalCount = manifest.physical_create_count;
+  if (Number.isInteger(managedCount) && Number.isInteger(physicalCount)) {
+    const claimed = new RegExp(`${managedCount}\\s+managed\\s+tables?\\s*\\/\\s*${physicalCount}\\s+physical`, 'i');
+    if (claimed.test(authText) && !/unverified/i.test(authText)) {
+      findings.push({
+        ruleId: 'counts-generative',
+        severity: 'warning',
+        message: `final_authoritative claims ${managedCount} managed / ${physicalCount} physical tables as confirmed but the figure is unverified and must be marked unverified`,
+        path: '.codex/artifacts/state.json',
+        fixable: false,
+      });
+    }
   }
 
   return findings;
@@ -573,12 +580,16 @@ function pilotEnvFingerprint(ctx) {
   const pilot = auth.pilotReadiness;
   if (!pilot || String(pilot).trim() === '') return findings;
 
+  // TOOL-007: pilot 声明为就绪（强绑定场景）时，指纹缺失/漂移升级为 error
+  // （error 级不可豁免）；仅为 NOT READY 等否定性记录时保持 warning。
+  const claimsReady = !/not\s*ready/i.test(String(pilot));
+  const severity = claimsReady ? 'error' : 'warning';
   const recorded = findRecordedFingerprint(ctx);
   const current = buildEnvFingerprint();
   if (!recorded) {
     findings.push({
       ruleId: 'pilot-env-fingerprint',
-      severity: 'warning',
+      severity,
       message: `pilot readiness ('${pilot}') is not bound to an environment fingerprint; it must not be treated as authoritative`,
       path: '.codex/artifacts/state.json',
       fixable: false,
@@ -586,7 +597,7 @@ function pilotEnvFingerprint(ctx) {
   } else if (recorded !== current) {
     findings.push({
       ruleId: 'pilot-env-fingerprint',
-      severity: 'warning',
+      severity,
       message: `pilot readiness ('${pilot}') is bound to environment '${recorded}' but the current environment fingerprint is '${current}'; it must not be treated as authoritative`,
       path: '.codex/artifacts/state.json',
       fixable: false,
@@ -896,25 +907,28 @@ function noSelfExemption(ctx) {
     'evidence-invalid',
     'counts-generative',
   ]);
-  const decisions = (ctx.decisions || []).map((d) => String(d.id || d || ''));
-  const authorized = new Set();
-  for (const decision of decisions) {
-    const text = String(decision).toLowerCase();
-    if (text.includes('exempt') || text.includes('semantic') || text.includes('waive')) {
-      authorized.add(decision.toUpperCase());
-    }
-  }
+  // TOOL-001: ctx.decisions 现为 { id, text }（text = 决策行正文）。
+  // 授权判定解析决策正文：豁免高风险规则 <ruleId> 需要存在一条决策，
+  // 其正文同时包含该 ruleId 与豁免措辞（exempt/waive/豁免/免除）。
+  const decisions = (ctx.decisions || []).map((d) =>
+    typeof d === 'string'
+      ? { id: d, text: d }
+      : { id: String(d.id || ''), text: String(d.text || d.body || d.id || '') },
+  );
+  const exemptWords = /exempt|waive|豁免|免除/i;
+  const authorizedFor = (ruleId) =>
+    decisions.find((d) => {
+      const text = `${d.id} ${d.text}`;
+      return exemptWords.test(text) && text.includes(ruleId);
+    });
   const exemptions = ctx.exemptions || [];
   for (const ruleId of exemptions) {
     if (!highRisk.has(ruleId)) continue;
-    const ruleDecision = decisions.find(
-      (d) => String(d).toUpperCase().startsWith('D-') && authorized.has(String(d).toUpperCase()),
-    );
-    if (!ruleDecision) {
+    if (!authorizedFor(ruleId)) {
       findings.push({
         ruleId: 'no-self-exemption',
         severity: 'error',
-        message: `high-risk rule "${ruleId}" is exempted without an authorized decision-log entry`,
+        message: `high-risk rule "${ruleId}" is exempted without an authorized decision-log entry (a D-numbered decision whose body names "${ruleId}" and grants the exemption is required)`,
         path: '.codex/artifacts/decision-log.md',
         fixable: false,
       });

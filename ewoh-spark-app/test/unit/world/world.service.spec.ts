@@ -103,6 +103,9 @@ describe('WorldService unified replay', () => {
     const snapshots = await service.getReplay(
       '2026-08-04T09:00:00.000Z',
       '2026-08-04T11:00:00.000Z',
+      100,
+      // W4：世界态回放读路径显式租户上下文（org 谓词过滤）。
+      { userId: 'user-1', primaryOrgId: 'org-1' },
     );
 
     expect(snapshots).toHaveLength(1);
@@ -152,7 +155,10 @@ describe('WorldService unified replay', () => {
       },
     ]);
 
-    const context = await service.getEventContext('EV-1', 10);
+    const context = await service.getEventContext('EV-1', 10, {
+      userId: 'user-1',
+      primaryOrgId: 'org-1',
+    });
 
     expect(context.before?.ts).toBe('2026-08-04T09:55:00.000Z');
     expect(context.during?.ts).toBe('2026-08-04T10:00:00.000Z');

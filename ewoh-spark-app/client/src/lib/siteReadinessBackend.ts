@@ -16,11 +16,21 @@ export interface BackendDryRunSample {
   sample: Record<string, unknown>;
 }
 
-export async function runBackendMappingDryRun(
+/** dry-run 响应的宽松形状（后端契约未冻结，允许额外字段）。 */
+export interface BackendDryRunResponse {
+  result?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
+ * CLI-547：导出响应形状并支持泛型收窄——原先返回 unknown 迫使每个调用方
+ * 自行断言；默认按 BackendDryRunResponse 解析，调用方可传 T 覆盖。
+ */
+export async function runBackendMappingDryRun<T = BackendDryRunResponse>(
   mappingId: string,
   sample: Record<string, unknown>,
-): Promise<unknown> {
-  const res = await axiosForBackend({
+): Promise<T> {
+  const res = await axiosForBackend<T>({
     url: `/api/scale/mappings/${encodeURIComponent(mappingId)}/dry-run`,
     method: 'POST',
     data: { sample } satisfies BackendDryRunSample,

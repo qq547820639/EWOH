@@ -93,6 +93,9 @@ function createOrchestratorDb(presetRows: Array<Record<string, unknown>> = []) {
         })),
       })),
     })),
+    // NEST-324：createTask 事务（advisory xact lock + 预算检查 + 插入）。
+    execute: jest.fn().mockResolvedValue([]),
+    transaction: jest.fn(async (op: (tx: unknown) => Promise<unknown>) => op(db)),
   };
   const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
   const service = new AgentOrchestratorService(db as never, audit as never);

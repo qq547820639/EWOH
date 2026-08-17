@@ -215,7 +215,11 @@ export default function WorkbenchPanel({
     },
     {
       label: '平均负荷',
-      value: overview ? `${(overview.avgLoad * 100).toFixed(1)}%` : '—',
+      // CLI-107：avgLoad 空值保护（overview 存在但字段缺失时不再显示 "NaN%"）。
+      value:
+        overview?.avgLoad != null && Number.isFinite(overview.avgLoad)
+          ? `${(overview.avgLoad * 100).toFixed(1)}%`
+          : '—',
       icon: Gauge,
       color: 'text-cyan-400',
       action: () => onModeChange?.('body_load'),

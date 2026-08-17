@@ -53,11 +53,17 @@ def test_evaluate_rules_six_rules_ordered():
     )
     assert [c["ruleId"] for c in conclusions] == list(rtr.RULE_IDS)
     assert all(c["confidence"] == 1 and c["confidenceBasis"] == "deterministic" for c in conclusions)
-    assert conclusions[0]["severity"] == "high"
-    assert conclusions[2]["severity"] == "critical"
-    assert "负荷 0.9" in conclusions[0]["explanation"]
-    assert "电量 12%" in conclusions[1]["explanation"]
-    assert "40 分钟" in conclusions[5]["explanation"]
+    # TEST-014：以 ruleId+severity 结构化断言为主（不绑定中文文案模板，防文案调整脆弱）
+    assert [c["severity"] for c in conclusions] == [
+        "high",    # rule:worker-overload
+        "high",    # rule:exo-low-battery
+        "critical",  # rule:machine-vibration-risk
+        "high",    # rule:material-shortage
+        "critical",  # rule:station-quality-blocked
+        "high",    # rule:andon-escalation
+    ]
+    # explanation 结构存在且非空（契约要求非空字符串），但不锁定具体措辞
+    assert all(isinstance(c["explanation"], str) and c["explanation"].strip() for c in conclusions)
 
 
 def test_evaluate_rules_no_trigger_empty():

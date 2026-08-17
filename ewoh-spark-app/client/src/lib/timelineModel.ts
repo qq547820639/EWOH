@@ -56,14 +56,40 @@ export interface RawTimelineEvent {
   deviceId?: string;
 }
 
-const DEFAULT_SOURCE: TimelineSource | string = 'system';
+const DEFAULT_SOURCE: TimelineSource = 'system';
+
+// SH-010/016 联动：TimelineEvent.source/permissionVisibility/riskLevel 收敛
+// 封闭枚举后，宽松原始输入经注册表守卫（未注册值回退安全默认，不透传任意串）。
+const TIMELINE_SOURCES: ReadonlySet<string> = new Set([
+  'workflow', 'alert', 'device', 'system', 'user', 'edge', 'evidence',
+]);
+const PERMISSION_VISIBILITIES: ReadonlySet<string> = new Set(['visible', 'restricted', 'hidden']);
+const RISK_LEVELS: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'critical']);
+
+function toTimelineSource(value: unknown): TimelineSource {
+  return typeof value === 'string' && TIMELINE_SOURCES.has(value)
+    ? (value as TimelineSource)
+    : DEFAULT_SOURCE;
+}
+
+function toPermissionVisibility(value: unknown): PermissionVisibility {
+  return typeof value === 'string' && PERMISSION_VISIBILITIES.has(value)
+    ? (value as PermissionVisibility)
+    : 'visible';
+}
+
+function toRiskLevel(value: unknown): TimelineEvent['riskLevel'] {
+  return typeof value === 'string' && RISK_LEVELS.has(value)
+    ? (value as TimelineEvent['riskLevel'])
+    : undefined;
+}
 
 /** 将原始事件归一化为统一 TimelineEventModel（缺失字段给安全默认值）。 */
 export function normalizeTimelineEvent(raw: RawTimelineEvent): TimelineEventModel {
   const timestamp = raw.timestamp ?? raw.createdAt ?? new Date().toISOString();
   const objectId = raw.objectId ?? raw.id;
   const action = raw.action ?? raw.eventType ?? 'updated';
-  const source = raw.source ?? DEFAULT_SOURCE;
+  const source = toTimelineSource(raw.source);
   const actor = raw.actor ?? 'system';
   const credibility: CredibilityInfo = raw.credibility
     ? { ...raw.credibility }
@@ -95,11 +121,11 @@ export function normalizeTimelineEvent(raw: RawTimelineEvent): TimelineEventMode
     causationId: raw.causationId ?? null,
     evidence,
     credibility,
-    permissionVisibility: raw.permissionVisibility ?? 'visible',
+    permissionVisibility: toPermissionVisibility(raw.permissionVisibility),
     severity: raw.severity,
     title: raw.title,
     status: raw.status,
-    riskLevel: raw.riskLevel,
+    riskLevel: toRiskLevel(raw.riskLevel),
     meta: raw.meta,
   };
 }
@@ -145,24 +171,45 @@ export function buildCorrelationChain(
   const start = byId.get(startEventId);
   if (!start) return [];
 
+  // CLI-530：预建关联索引，替代 BFS 内层对全量事件的线性扫描（O(n²) →
+  // O(n + m)）。关联语义：某事件的 correlationId/causationId 指向另一个
+  // 事件的 id。
+  const byCorrelation = new Map<string, TimelineEventModel[]>();
+  const byCausation = new Map<string, TimelineEventModel[]>();
+  for (const ev of events) {
+    if (ev.correlationId) {
+      const list = byCorrelation.get(ev.correlationId) ?? [];
+      list.push(ev);
+      byCorrelation.set(ev.correlationId, list);
+    }
+    if (ev.causationId) {
+      const list = byCausation.get(ev.causationId) ?? [];
+      list.push(ev);
+      byCausation.set(ev.causationId, list);
+    }
+  }
+
   const chain: TimelineEventModel[] = [start];
   const seen = new Set<string>([start.id]);
   const queue: TimelineEventModel[] = [start];
 
   while (queue.length > 0) {
     const current = queue.shift()!;
-    for (const ev of events) {
-      if (seen.has(ev.id)) continue;
-      const linked =
-        ev.correlationId === current.id ||
-        ev.causationId === current.id ||
-        current.correlationId === ev.id ||
-        current.causationId === ev.id;
-      if (linked) {
-        seen.add(ev.id);
-        chain.push(ev);
-        queue.push(ev);
-      }
+    // 指向 current 的事件（后继）。
+    const successors = [
+      ...(byCorrelation.get(current.id) ?? []),
+      ...(byCausation.get(current.id) ?? []),
+    ];
+    // current 指向的事件（前驱，直接按 id 查）。
+    const predecessors = [
+      current.correlationId ? byId.get(current.correlationId) : undefined,
+      current.causationId ? byId.get(current.causationId) : undefined,
+    ];
+    for (const neighbor of [...successors, ...predecessors]) {
+      if (!neighbor || seen.has(neighbor.id)) continue;
+      seen.add(neighbor.id);
+      chain.push(neighbor);
+      queue.push(neighbor);
     }
   }
 

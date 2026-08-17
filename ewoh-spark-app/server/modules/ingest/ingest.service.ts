@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, HttpException, HttpStatus, Optional } from '@nestjs/common';
 import { randomUUID, createHash } from 'crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
@@ -246,7 +246,15 @@ export class IngestService {
       if (deviceId && !deviceUpserts.has(deviceId)) {
         const newFaultCode = p.frame.device?.fault_code ?? p.frame.fault_code ?? null;
         if (newFaultCode) {
-          this.detectFaultTransition(deviceId, newFaultCode, ctx);
+          // NEST-214：fire-and-forget 显式 catch（未处理 rejection 会污染进程级
+          // unhandledRejection 信号；重排失败由 ReplanCoordinator 熔断兜底）。
+          void this.detectFaultTransition(deviceId, newFaultCode, ctx).catch(
+            (err) => {
+              this.logger.warn(
+                `detectFaultTransition failed device=${deviceId}: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            },
+          );
         }
         const deviceRow = this.mapDeviceRow(p.frame, deviceId, p.sourceType, now, p.rawRef);
         // ADR-075：device 行归属注入（001 ewoh_org_visible RLS 对齐）。
@@ -273,7 +281,9 @@ export class IngestService {
           .insert(ewohDevice)
           .values(Array.from(deviceUpserts.values()))
           .onConflictDoUpdate({
-            target: ewohDevice.deviceId,
+            // NEST-205（standalone_057 配套）：唯一约束已改 (org_id, device_id)，
+            // 冲突目标同步为复合键（防跨租户同 deviceId 互相覆盖）。
+            target: [ewohDevice.orgId, ewohDevice.deviceId],
             set: {
               online: true,
               lastTelemetryAt: now,
@@ -550,6 +560,37 @@ export class IngestService {
         this.logger.error(
           `事件行写入失败 ${envelope.eventId}：${error instanceof Error ? error.message : String(error)}`,
         );
+        // NEST-206：event 主事实写失败时回滚 dedup 占位行（恢复重放能力）；
+        // 回滚失败才落死信（人审重放），绝不留下"dedup 已落账但无事件"的
+        // 永久阻断态。
+        try {
+          await this.db
+            .delete(ewohIngestEventDedup)
+            .where(
+              and(
+                eq(ewohIngestEventDedup.orgId, orgId),
+                eq(ewohIngestEventDedup.source, envelope.source),
+                eq(ewohIngestEventDedup.eventId, envelope.eventId),
+              ),
+            );
+        } catch (rollbackError) {
+          this.logger.error(
+            `dedup 回滚失败（落死信人审重放）${envelope.eventId}：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+          );
+          void this.deadLetterService
+            ?.record(
+              {
+                sourceId: 'cloud:ingest',
+                reason: 'event_write_failed',
+                envelope: envelope as unknown as Record<string, unknown>,
+                correlationId: String(envelope.correlationId ?? '') || null,
+              },
+              orgId,
+            )
+            .catch((err) => {
+              this.logger.warn(`死信落账失败: ${String(err)}`);
+            });
+        }
         rejected += 1;
         results.push({ ...base, accepted: false, duplicate: false, error: 'event_write_failed' });
         continue;
@@ -863,8 +904,9 @@ export class IngestService {
 
   // ===== 摄像头结构化检测接入 =====
 
-  async ingestCamera(frame: CameraFrameDto): Promise<IngestResponse> {
-    return this.sensorIngest.ingestCamera(frame);
+  async ingestCamera(frame: CameraFrameDto, orgId?: string | null): Promise<IngestResponse> {
+    // NEST-204/210：透传 org 上下文（写入归属）。
+    return this.sensorIngest.ingestCamera(frame, orgId);
   }
 
 
@@ -922,32 +964,40 @@ export class IngestService {
       };
     } catch (error) {
       this.logger.error(`创建 MES 工单失败 order=${order.order_id}`, error);
-      return {
-        accepted: false,
-        skipped: false,
-        record_id: recordId,
-        data_quality: 'invalid',
-        events_triggered: 0,
-        error: '写入失败',
-      };
+      // NEST-215：MES 工单写失败返回非 200（原 accepted=false + HTTP 200 需要
+      // 客户端 inspect body 才能发现失败）。携带 record_id/order_id 供对账。
+      throw new HttpException(
+        {
+          code: 'MES_WORK_ORDER_WRITE_FAILED',
+          message: 'MES 工单写入失败',
+          record_id: recordId,
+          order_id: order.order_id,
+          detail: error instanceof Error ? error.message : String(error),
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
     }
   }
 
   // ===== 场景直接建模接入（多源融合） =====
 
-  /** 空间扫描产物接入（3DGS/LiDAR/视觉SLAM）→ upsert ewoh_spatial_entity */
+  /** 空间扫描产物接入（3DGS/LiDAR/视觉SLAM）→ upsert ewoh_spatial_entity
+   *（NEST-204/210：透传 org 上下文）。 */
   async ingestSpatialScan(
     scan: import('@shared/api.interface').SpatialScanDto,
+    orgId?: string | null,
   ): Promise<IngestResponse> {
-    return this.sensorIngest.ingestSpatialScan(scan);
+    return this.sensorIngest.ingestSpatialScan(scan, orgId);
   }
 
 
-  /** 定位坐标流接入（UWB/Wi-Fi/视觉融合）→ ewoh_world_state */
+  /** 定位坐标流接入（UWB/Wi-Fi/视觉融合）→ ewoh_world_state
+   *（NEST-204/210：透传 org 上下文）。 */
   async ingestLocation(
     loc: import('@shared/api.interface').LocationFrameDto,
+    orgId?: string | null,
   ): Promise<IngestResponse> {
-    return this.sensorIngest.ingestLocation(loc);
+    return this.sensorIngest.ingestLocation(loc, orgId);
   }
 
 
@@ -1047,7 +1097,8 @@ export class IngestService {
           lastRawRef: rawRef,
         })
         .onConflictDoUpdate({
-          target: ewohDevice.deviceId,
+          // NEST-205（standalone_057 配套）：冲突目标改为复合 (org_id, device_id)。
+          target: [ewohDevice.orgId, ewohDevice.deviceId],
           set: {
             batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? undefined,
             online: true,
@@ -1191,13 +1242,19 @@ export class IngestService {
     }
   }
 
-  /** 计算 raw_ref（SHA256） */
+  /**
+   * 计算 raw_ref（SHA256）。
+   * NEST-224：record_id 缺失时用随机 nonce 参与哈希——同 device+event_time+
+   * battery+load 的多帧不再互相碰撞（第二帧被静默 skip 当重复 = 数据丢失）；
+   * 代价是无 record_id 的帧不可传输级幂等（可接受：丢失比重复更不可接受）。
+   */
   private computeRawRef(frame: ExoskeletonFrameDto): string {
     const batteryPct = frame.device?.battery_pct ?? frame.battery_pct ?? '';
     const loadScore = this.normalizeLoadScore(
       frame.load?.cumulative_load_score ?? frame.load_score,
     );
-    const payload = `${frame.device_id ?? frame.entity_id}|${frame.event_time}|${frame.record_id ?? ''}|${batteryPct}|${loadScore ?? ''}`;
+    const recordToken = frame.record_id ?? `nonce:${randomUUID()}`;
+    const payload = `${frame.device_id ?? frame.entity_id}|${frame.event_time}|${recordToken}|${batteryPct}|${loadScore ?? ''}`;
     return createHash('sha256').update(payload).digest('hex');
   }
 

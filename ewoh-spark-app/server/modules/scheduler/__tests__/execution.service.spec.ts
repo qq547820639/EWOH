@@ -48,7 +48,11 @@ describe('ExecutionService（P4-EXEC：正式执行领域）', () => {
         from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve([])) })) })),
       })),
       insert: jest.fn(() => ({
-        values: jest.fn(() => ({ returning: jest.fn(() => Promise.resolve([inserted])) })),
+        values: jest.fn(() => ({
+          // NEST-010：真实路径为 INSERT ... ON CONFLICT DO NOTHING（幂等跳过）。
+          onConflictDoNothing: jest.fn(() => ({ returning: jest.fn(() => Promise.resolve([inserted])) })),
+          returning: jest.fn(() => Promise.resolve([inserted])),
+        })),
       })),
     } as never;
     const svc = new ExecutionService(db, outbox, metrics);

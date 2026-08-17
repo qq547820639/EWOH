@@ -3,7 +3,10 @@
 import { BaseComboboxContent } from '@client/src/components/business-ui/entity-combobox/base-combobox-content';
 import { BaseComboboxList } from '@client/src/components/business-ui/entity-combobox/base-combobox-list';
 import { BaseComboboxSearch } from '@client/src/components/business-ui/entity-combobox/base-combobox-search';
-import { BaseComboboxTrigger } from '@client/src/components/business-ui/entity-combobox/base-combobox-trigger';
+import {
+  BaseComboboxTrigger,
+  type BaseComboboxTriggerProps,
+} from '@client/src/components/business-ui/entity-combobox/base-combobox-trigger';
 import { useEntityComboboxContext } from '@client/src/components/business-ui/entity-combobox/context';
 import type {
   ItemValue,
@@ -97,14 +100,14 @@ export function PopoverWrapper<
             triggerType={triggerType}
             size={size}
             placeholder={placeholder}
-            renderTrigger={renderTrigger as any}
+            renderTrigger={renderTrigger as BaseComboboxTriggerProps['renderTrigger']}
             maxTagCount={maxTagCount}
             maxTagTextLength={maxTagTextLength}
             tagClosable={tagClosable}
             classNames={classNames}
             onFocus={onFocus}
             onBlur={onBlur}
-            renderTag={renderTag as any}
+            renderTag={renderTag as BaseComboboxTriggerProps['renderTag']}
             getOptionDisabled={
               getOptionDisabled as ((value: ItemValue) => boolean) | undefined
             }
@@ -128,14 +131,14 @@ export function PopoverWrapper<
               triggerType={triggerType}
               size={size}
               placeholder={placeholder}
-              renderTrigger={renderTrigger as any}
+              renderTrigger={renderTrigger as BaseComboboxTriggerProps['renderTrigger']}
               maxTagCount={maxTagCount}
               maxTagTextLength={maxTagTextLength}
               tagClosable={tagClosable}
               classNames={classNames}
               onFocus={onFocus}
               onBlur={onBlur}
-              renderTag={renderTag as any}
+              renderTag={renderTag as BaseComboboxTriggerProps['renderTag']}
               getOptionDisabled={
                 getOptionDisabled as ((value: ItemValue) => boolean) | undefined
               }

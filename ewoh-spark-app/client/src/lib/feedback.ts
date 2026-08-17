@@ -49,14 +49,30 @@ function vibrate(pattern: number[]): void {
   }
 }
 
-function beep(frequency: number, durationMs: number): void {
-  if (typeof window === 'undefined') return;
+/** CLI-535：AudioContext 单例——每次 beep 新建 context 会快速耗尽浏览器
+ * 的 AudioContext 数量上限（Chrome 约每页面 6 个挂起实例）。 */
+let sharedAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
   try {
     const Ctor =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return;
-    const context = new Ctor();
+    if (!Ctor) return null;
+    if (!sharedAudioContext) {
+      sharedAudioContext = new Ctor();
+    }
+    return sharedAudioContext;
+  } catch {
+    return null;
+  }
+}
+
+function beep(frequency: number, durationMs: number): void {
+  const context = getAudioContext();
+  if (!context) return;
+  try {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.connect(gain);
@@ -70,9 +86,7 @@ function beep(frequency: number, durationMs: number): void {
     );
     oscillator.start();
     oscillator.stop(context.currentTime + durationMs / 1000);
-    oscillator.onended = () => {
-      void context.close();
-    };
+    // CLI-535：复用共享 context，不再在 onended 关闭。
   } catch {
     // 音频为 best-effort，忽略失败。
   }

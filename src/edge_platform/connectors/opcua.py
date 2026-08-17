@@ -33,7 +33,11 @@ class OpcUaNodeId:
 
 
 def parse_opcua_node_id(node_id: str) -> OpcUaNodeId:
-    """Parse an OPC UA node ID string like ``ns=2;i=85`` or ``ns=2;s=temp``."""
+    """Parse an OPC UA node ID string like ``ns=2;i=85`` or ``ns=2;s=temp``.
+
+    EDGE-223：重复 identifier 键（如 ``ns=2;i=1;i=85``）显式报错，
+    不再静默以最后出现者覆盖。
+    """
     if not isinstance(node_id, str) or not node_id:
         raise OpcUaError("nodeId must be a non-empty string")
     parts = node_id.split(";")
@@ -47,6 +51,8 @@ def parse_opcua_node_id(node_id: str) -> OpcUaNodeId:
             except ValueError as exc:
                 raise OpcUaError(f"invalid namespace in nodeId {node_id}") from exc
         elif part.startswith(("i=", "s=", "g=", "b=")):
+            if identifier is not None:
+                raise OpcUaError(f"duplicate identifier in nodeId {node_id}")
             identifier_type = part[0]
             identifier = part[2:]
     if identifier is None or identifier == "":

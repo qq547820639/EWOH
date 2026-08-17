@@ -24,6 +24,12 @@ describe('alertStateTransitionAllowed（ADR-031 alert.yaml 单一事实源）', 
     expect(alertStateTransitionAllowed('closed', 'reopened', undefined)).toBe(false);
   });
 
+  it('SH-004：handler 转移无角色 fail-closed（不缺省放行）', () => {
+    expect(alertStateTransitionAllowed('open', 'acknowledged', undefined)).toBe(false);
+    expect(alertStateTransitionAllowed('processing', 'closed', undefined)).toBe(false);
+    expect(alertStateTransitionAllowed('open', 'acknowledged', 'global_admin')).toBe(false);
+  });
+
   it('reopened→acknowledged/processing（handler 任一处置角色）', () => {
     expect(alertStateTransitionAllowed('reopened', 'acknowledged', 'workshop_lead')).toBe(true);
     expect(alertStateTransitionAllowed('reopened', 'processing', 'dispatcher')).toBe(true);

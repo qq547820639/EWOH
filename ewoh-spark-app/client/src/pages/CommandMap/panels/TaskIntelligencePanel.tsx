@@ -46,8 +46,9 @@ function CandidateRow({ c }: { c: CandidateExplainItem }) {
       <td className="px-2 py-1">
         {Number.isFinite(c.score) ? c.score.toFixed(1) : '∞'}
       </td>
-      <td className="px-2 py-1">{c.etaSeconds}s</td>
-      <td className="px-2 py-1">{c.distanceMeters}m</td>
+      {/* CLI-032：eta/distance 判空兜底（后端缺失时显示 '—' 而非 'NaNs/NaNm'）。 */}
+      <td className="px-2 py-1">{c.etaSeconds != null ? `${c.etaSeconds}s` : '—'}</td>
+      <td className="px-2 py-1">{c.distanceMeters != null ? `${c.distanceMeters}m` : '—'}</td>
       <td className="px-2 py-1">
         {c.batteryPct != null ? `${c.batteryPct}%` : '—'}
       </td>

@@ -134,6 +134,15 @@ class StateStore:
         """返回所有 (entity_id, state_type) 主键列表。"""
         return list(self._history.keys())
 
+    def iter_history(self):
+        """按插入顺序迭代全部历史状态（公开迭代器）。
+
+        EDGE-228（2026-08-17 审计整改）：为 ContractWorldStore.snapshot 提供
+        公共遍历面，替代直接访问 _history 内部结构（保持封装）。
+        """
+        for lst in self._history.values():
+            yield from lst
+
     def state_types(self, entity_id):
         """返回某实体的全部 state_type 列表。"""
         return [st for (eid, st) in self._history.keys() if eid == entity_id]

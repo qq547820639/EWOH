@@ -116,7 +116,12 @@ export class ExoConfigService {
     };
     let inserted;
     try {
-      inserted = (await this.db.insert(ewohExoConfig).values(row).returning())[0];
+      // NEST-431：主事实与观测事件同事务（事件写失败整体回滚，消除
+      // “主事实已提交、审计事件丢失仅 warn”的留痕缺口）。
+      await this.db.transaction(async (tx) => {
+        inserted = (await tx.insert(ewohExoConfig).values(row).returning())[0];
+        await this.recordEventOn(tx, inserted, orgId);
+      });
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === '23505') {
@@ -131,7 +136,6 @@ export class ExoConfigService {
       }
       throw err;
     }
-    await this.recordEvent(inserted, orgId);
     return this.toRecord(inserted);
   }
 
@@ -196,23 +200,27 @@ export class ExoConfigService {
           ),
         );
     }
-    const updated = (
-      await this.db
-        .update(ewohExoConfig)
-        .set({
-          status: 'active',
-          setBy: setBy?.trim() || target.setBy,
-          recordJson: {
-            ...(target.recordJson as Record<string, unknown>),
+    // NEST-431：激活主事实与观测事件同事务。
+    const updated = await this.db.transaction(async (tx) => {
+      const row = (
+        await tx
+          .update(ewohExoConfig)
+          .set({
             status: 'active',
-            setBy: setBy?.trim() || (target.recordJson as Record<string, unknown>).setBy,
-          },
-          updatedAt: new Date(),
-        })
-        .where(and(eq(ewohExoConfig.orgId, orgId), eq(ewohExoConfig.id, target.id)))
-        .returning()
-    )[0];
-    await this.recordEvent(updated, orgId);
+            setBy: setBy?.trim() || target.setBy,
+            recordJson: {
+              ...(target.recordJson as Record<string, unknown>),
+              status: 'active',
+              setBy: setBy?.trim() || (target.recordJson as Record<string, unknown>).setBy,
+            },
+            updatedAt: new Date(),
+          })
+          .where(and(eq(ewohExoConfig.orgId, orgId), eq(ewohExoConfig.id, target.id)))
+          .returning()
+      )[0];
+      await this.recordEventOn(tx, row, orgId);
+      return row;
+    });
     return this.toRecord(updated);
   }
 
@@ -277,45 +285,48 @@ export class ExoConfigService {
     };
   }
 
-  private async recordEvent(row: typeof ewohExoConfig.$inferSelect, orgId: string) {
-    try {
-      const eventId = `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
-      const now = new Date();
-      const nowIso = now.toISOString();
-      const envelope = buildEventEnvelope({
-        eventId,
-        eventType: 'ExoConfigRecorded',
-        occurredAt: nowIso,
-        observedAt: nowIso,
-        receivedAt: nowIso,
-        source: 'cloud:exo-config',
-        subject: row.configId,
+  /**
+   * NEST-431：事件写入与主事实同事务执行（executor=事务句柄）。
+   * 事件失败 → 事务回滚（主事实不落“无事件”的半态）。
+   */
+  private async recordEventOn(
+    executor: Pick<PostgresJsDatabase, 'insert'>,
+    row: typeof ewohExoConfig.$inferSelect,
+    orgId: string,
+  ) {
+    const eventId = `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const envelope = buildEventEnvelope({
+      eventId,
+      eventType: 'ExoConfigRecorded',
+      occurredAt: nowIso,
+      observedAt: nowIso,
+      receivedAt: nowIso,
+      source: 'cloud:exo-config',
+      subject: row.configId,
+      correlationId: currentTraceId() ?? null,
+    });
+    const envelopeRecord = envelopeForEvidence(envelope);
+    await executor.insert(ewohEvent).values({
+      eventId,
+      eventType: 'ExoConfigRecorded',
+      eventCode: 'EXO_CONFIG_RECORDED',
+      severity: 'low',
+      title: `ExoConfigRecorded: ${row.configId}`,
+      status: 'open',
+      sourceType: 'exo-config',
+      orgId,
+      createdAt: now,
+      evidenceJson: {
+        configId: row.configId,
+        kind: row.kind,
+        exoId: row.exoId,
+        status: row.status,
         correlationId: currentTraceId() ?? null,
-      });
-      const envelopeRecord = envelopeForEvidence(envelope);
-      await this.db.insert(ewohEvent).values({
-        eventId,
-        eventType: 'ExoConfigRecorded',
-        eventCode: 'EXO_CONFIG_RECORDED',
-        severity: 'low',
-        title: `ExoConfigRecorded: ${row.configId}`,
-        status: 'open',
-        sourceType: 'exo-config',
-        orgId,
-        createdAt: now,
-        evidenceJson: {
-          configId: row.configId,
-          kind: row.kind,
-          exoId: row.exoId,
-          status: row.status,
-          correlationId: currentTraceId() ?? null,
-          envelopeRecord: envelopeRecord.envelope,
-          envelopeSemantics: envelopeRecord.envelopeSemantics,
-        },
-      });
-    } catch (err) {
-      // 事件为审计/通知面（观测型）；落账主事实已成功——失败显式留痕不阻断（§33 不吞异常）。
-      this.logger.warn(`ExoConfigRecorded event failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+        envelopeRecord: envelopeRecord.envelope,
+        envelopeSemantics: envelopeRecord.envelopeSemantics,
+      },
+    });
   }
 }

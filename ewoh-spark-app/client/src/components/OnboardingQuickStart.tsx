@@ -8,6 +8,10 @@
  */
 
 import {
+  useEffect,
+  useState,
+} from 'react';
+import {
   Check,
   ChevronRight,
   CircleHelp,
@@ -62,16 +66,30 @@ export const OnboardingQuickStart = ({
   roles = [],
   onClose,
 }: OnboardingQuickStartProps): React.ReactElement | null => {
-  const prefs = readOnboarding(userId);
+  // CLI-320：改为 state + storage 事件监听——同页其他标签/组件写入引导
+  // 状态时能触发重渲染（原先 render 中同步读 localStorage，外部变更不可见）。
+  const [prefs, setPrefs] = useState(() => readOnboarding(userId));
+
+  useEffect(() => {
+    const sync = () => setPrefs(readOnboarding(userId));
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+    };
+  }, [userId]);
+
   const role: OnboardingRoleKey = onboardingRoleKey(roles);
   const steps = quickStartSteps(role);
   const remainder = nextIncompleteStep('onboarding', prefs.completedSteps);
   const resumeStep = remainder ?? steps[0].id;
 
-  const stepById = (id: string) => steps.find((s) => s.id === id);
+  // 本组件自身的写入不会触发本 tab 的 storage 事件（该事件仅跨 tab），
+  // 写后手动同步 state。
+  const refreshPrefs = () => setPrefs(readOnboarding(userId));
 
   const handleCompleteStep = (stepId: OnboardingStepId) => {
     completeOnboardingStep(userId, stepId, ONBOARDING_VERSION);
+    refreshPrefs();
     reportOnboardingEvent('onboarding.step_completed', {
       flow: 'onboarding',
       step: stepId,
@@ -84,12 +102,14 @@ export const OnboardingQuickStart = ({
 
   const handleDismiss = () => {
     dismissOnboarding(userId, ONBOARDING_VERSION);
+    refreshPrefs();
     reportOnboardingEvent('onboarding.dismissed', { flow: 'onboarding', role });
     onClose?.();
   };
 
   const handleReopen = () => {
     reopenOnboarding(userId);
+    refreshPrefs();
   };
 
   const handleOpen = () => {
@@ -114,12 +134,12 @@ export const OnboardingQuickStart = ({
                 <li
                   key={step.id}
                   className={`flex items-center gap-2 rounded border p-2 text-sm ${
-                    done ? 'border-emerald-200 bg-emerald-50' : ''
+                    done ? 'border-risk-normal-border bg-risk-normal-soft' : ''
                   }`}
                 >
                   <span className="shrink-0">
                     {done ? (
-                      <Check className="size-4 text-emerald-600" aria-hidden />
+                      <Check className="size-4 text-success" aria-hidden />
                     ) : (
                       <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
                     )}

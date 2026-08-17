@@ -26,6 +26,11 @@ def parse_simple_yaml(text: str) -> dict:
 
     支持：顶层 key: value、列表项 "- { ... }"、内联 dict "{k: v, k: [v1, v2]}"、
     注释行。仅用于状态机契约（无嵌套复杂结构）。不适用于一般 YAML。
+
+    EDGE-230 文档化限制：transitions 仅识别**内联 dict** 条目
+    （``- {from: a, to: b}``）；多行块样式 dict（``- from: a`` 换行续写）
+    不支持，遇到即抛 ValueError（fail-closed，绝不猜结构）。
+    contracts/state-machines/*.yaml 全部使用内联格式，为既定约定。
     """
     result: dict[str, object] = {}
     states: list[str] = []

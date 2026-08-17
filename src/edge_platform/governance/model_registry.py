@@ -19,6 +19,7 @@ start_canary → activate。
 """
 
 import enum
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -261,7 +262,16 @@ class ModelRegistry:
 
         规范上线路径为 submit_for_review → approve_review；本方法保留以兼容既有调用，
         允许跳过评审直接进入影子运行。
+
+        EDGE-125（2026-08-17 审计整改）：标记 deprecated 并在每次调用时输出
+        审计告警（安全评审强制要求不得静默绕过）；新调用方请走
+        submit_for_review → approve_review 正规链路。
         """
+        logging.getLogger(__name__).warning(
+            "promote_to_shadow 已 deprecated（EDGE-125）：模型 %s 跳过评审直接进入 SHADOW，"
+            "请改用 submit_for_review → approve_review 正规链路",
+            model_id,
+        )
         rec = self._require(model_id)
         if rec.status is not ModelStatus.CANDIDATE:
             raise ValueError(f"仅 CANDIDATE 可进入影子运行，当前状态: {rec.status.value}")

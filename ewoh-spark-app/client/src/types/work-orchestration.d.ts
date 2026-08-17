@@ -1106,18 +1106,87 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         WorkOverview: {
+            generatedAt: string;
+            phase: string;
+            criticalPath: string;
+            /** @description WorkGraph.summary counts (itemCount, edgeCount, statusCounts, ...) */
+            counts: {
+                [key: string]: unknown;
+            };
+            gates: components["schemas"]["WorkGate"][];
+            conflicts: string[];
+            writable: boolean;
+        } & {
             [key: string]: unknown;
         };
         WorkGraph: {
+            schema: string;
+            generatedAt?: string;
+            sourceRoot?: string;
+            criticalPath?: string;
+            summary?: {
+                [key: string]: unknown;
+            };
+            items: components["schemas"]["WorkItem"][];
+            edges: components["schemas"]["WorkEdge"][];
+            actors?: components["schemas"]["WorkActor"][];
+            artifacts?: ({
+                artifactId?: string;
+                path?: string;
+                mediaType?: string;
+                checksum?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+            evidence?: components["schemas"]["WorkEvidence"][];
+            gates: components["schemas"]["WorkGate"][];
+            risks?: components["schemas"]["WorkRisk"][];
+            decisions?: ({
+                id?: string;
+                title?: string;
+                date?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+            resources?: components["schemas"]["WorkResource"][];
+            handoffs?: components["schemas"]["WorkHandoff"][];
+        } & {
             [key: string]: unknown;
         };
         WorkItem: {
+            id: string;
+            title: string;
+            type: string;
+            status: string;
+            owner: string;
+            agents?: string[];
+            wave?: string;
+            evidence?: string;
+            summary?: string;
+        } & {
             [key: string]: unknown;
         };
         WorkEdge: {
+            id: string;
+            from: string;
+            to: string;
+            edgeType: string;
+            blocking?: boolean;
+            condition?: string;
+            evidenceRequirement?: string;
+        } & {
             [key: string]: unknown;
         };
         WorkActor: {
+            actorId: string;
+            name: string;
+            kind: string;
+            role: string;
+            ownership?: string;
+            permissions?: string[];
+            runtime?: string;
+            status?: string;
+        } & {
             [key: string]: unknown;
         };
         WorkEvidence: {
@@ -1143,24 +1212,73 @@ export interface components {
             [key: string]: unknown;
         };
         EvidenceContent: {
+            evidenceId: string;
+            path: string;
+            lines: number;
+            truncated: boolean;
+            content: string;
+        } & {
             [key: string]: unknown;
         };
         WorkGate: {
+            gateId: string;
+            title: string;
+            calculatedStatus: string;
+            humanDecision?: string | null;
+            conditions?: string[];
+            approver?: string | null;
+            decidedAt?: string | null;
+        } & {
             [key: string]: unknown;
         };
         WorkRisk: {
+            id: string;
+            title: string;
+            severity: string;
+            status?: string;
+        } & {
             [key: string]: unknown;
         };
         WorkResource: {
+            resourceId: string;
+            name: string;
+            kind: string;
+            status: string;
+            purpose?: string;
+            lock?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
             [key: string]: unknown;
         };
         WorkHandoff: {
+            handoffId: string;
+            fromActor: string;
+            toActor: string;
+            status: string;
+            createdAt?: string;
+        } & {
             [key: string]: unknown;
         };
         WorkCatalog: {
+            schemaVersion: string;
+            catalogId: string;
+            generatedAt?: string;
+            assets: {
+                [key: string]: unknown;
+            }[];
+        } & {
             [key: string]: unknown;
         };
         GitSyncPlan: {
+            schema: string;
+            itemCount: number;
+            trackedCount: number;
+            missingCount: number;
+            items: {
+                [key: string]: unknown;
+            }[];
+        } & {
             [key: string]: unknown;
         };
         GitSyncApplyRequest: {
@@ -1176,6 +1294,23 @@ export interface components {
             [key: string]: unknown;
         };
         SiteReadinessSummary: {
+            sourcePath: string;
+            example?: boolean;
+            factoryName?: string;
+            siteContact?: string;
+            ready: boolean;
+            requiredCount?: number;
+            requiredPassed?: number;
+            requiredFailed?: number;
+            checks?: ({
+                id?: string;
+                label?: string;
+                passed?: boolean;
+                status?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+        } & {
             [key: string]: unknown;
         };
         ResourceLockRequest: {
@@ -1186,12 +1321,31 @@ export interface components {
             [key: string]: unknown;
         };
         ResourceLockRecord: {
+            resourceId: string;
+            holder: string;
+            purpose?: string;
+            acquiredAt?: string;
+            expiresAt?: string;
+            active: boolean;
+        } & {
             [key: string]: unknown;
         };
         ResourceReleaseResult: {
+            resourceId: string;
+            released: boolean;
+            holder?: string;
+            persisted?: string;
+        } & {
             [key: string]: unknown;
         };
         HandoffRequest: {
+            fromActor: string;
+            toActor: string;
+            scope: string;
+            contextPack?: string;
+            openQuestions?: string[];
+            acceptance?: string;
+        } & {
             [key: string]: unknown;
         };
         HandoffStateRequest: {
@@ -1217,6 +1371,13 @@ export interface components {
             [key: string]: unknown;
         };
         GateDecisionRecord: {
+            gateId: string;
+            /** @enum {string} */
+            decision: "approved" | "rejected" | "conditional";
+            approver: string;
+            decidedAt: string;
+            conditions?: string[];
+        } & {
             [key: string]: unknown;
         };
         GateRevokeRequest: {

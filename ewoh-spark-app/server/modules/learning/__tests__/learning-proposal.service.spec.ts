@@ -125,6 +125,8 @@ function createProposalDb(rows: Array<Record<string, unknown>> = []) {
         return { returning: jest.fn(async () => [row]) };
       }),
     })),
+    // NEST-344：事务透传（终态转移与事件同事务）。
+    transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(db)),
     update: jest.fn((table: unknown) => ({
       set: jest.fn((patch: Record<string, unknown>) => ({
         where: jest.fn((cond: unknown) => {

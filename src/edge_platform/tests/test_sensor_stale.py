@@ -28,8 +28,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-import edge_platform.routes._util as route_util  # noqa: E402
+import edge_platform.routes._util as route_util  # noqa: E402,F401 - 保留 import 面向运行时函数
 from edge_platform import server, stubs  # noqa: E402
+from edge_platform.config import Settings  # noqa: E402
 
 
 def _iso(dt):
@@ -37,7 +38,12 @@ def _iso(dt):
 
 
 class _SensorStaleFixture:
-    """受控 server fixture：离线阈值可调（monkeypatch server/_util 模块级常量）。"""
+    """受控 server fixture：离线阈值经 EWOH_OFFLINE_AFTER_SEC + Settings.reset 注入。
+
+    EDGE-045 整改后 offline_after_sec() 运行时读取 Settings（不再 import 时固化），
+    测试改为走真实配置路径（env → Settings.reset → 运行时读取），
+    比旧 monkeypatch 模块常量的方式更接近生产行为。
+    """
 
     def __init__(self, offline_after_sec=10):
         self.offline_after_sec = int(offline_after_sec)
@@ -57,13 +63,19 @@ class _SensorStaleFixture:
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
-        # 受控离线阈值（test_p0_acceptance.py 同款模式）：替换模块级常量保证确定性。
-        self._saved = (server.OFFLINE_AFTER_SEC, route_util.OFFLINE_AFTER_SEC)
-        server.OFFLINE_AFTER_SEC = self.offline_after_sec
-        route_util.OFFLINE_AFTER_SEC = self.offline_after_sec
+        # 受控离线阈值：真实配置路径（env + reset），运行时函数即时生效。
+        self._old_env = os.environ.get("EWOH_OFFLINE_AFTER_SEC")
+        os.environ["EWOH_OFFLINE_AFTER_SEC"] = str(self.offline_after_sec)
+        Settings.reset()
+        # 增强（EDGE-045）：断言运行时读取路径确实反映新配置。
+        assert route_util.offline_after_sec() == self.offline_after_sec
 
     def stop(self):
-        server.OFFLINE_AFTER_SEC, route_util.OFFLINE_AFTER_SEC = self._saved
+        if self._old_env is None:
+            os.environ.pop("EWOH_OFFLINE_AFTER_SEC", None)
+        else:
+            os.environ["EWOH_OFFLINE_AFTER_SEC"] = self._old_env
+        Settings.reset()
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join(timeout=3)

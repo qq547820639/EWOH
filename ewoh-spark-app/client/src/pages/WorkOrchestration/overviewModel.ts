@@ -177,7 +177,8 @@ export function deriveExecutionOverview(graph: WorkGraph): ExecutionOverview {
   const needsHumanDecision = risks
     .filter(
       (risk) =>
-        risk.status.toLowerCase().includes('open') &&
+        // CLI-227：运行时判空防御（契约 string 但历史数据可能 null，直接 toLowerCase 会抛）。
+        (risk.status ?? '').toLowerCase().includes('open') &&
         (risk.severity === 'high' || risk.severity === 'critical'),
     )
     .slice(0, 8);

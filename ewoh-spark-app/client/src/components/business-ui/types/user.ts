@@ -69,6 +69,7 @@ export type UserInput =
       email?: string;
       user_type?: UserType;
       userType?: UserType;     // 兼容驼峰
-      department?: Department | any;
+      // CLI-418：显式联合类型（外部联系人的部门可能是宽松负载），不再写 any。
+      department?: Department | Record<string, unknown> | undefined;
       status?: number;
     };

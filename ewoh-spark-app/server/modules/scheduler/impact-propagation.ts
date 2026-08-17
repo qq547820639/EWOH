@@ -139,6 +139,12 @@ export function propagateImpact(
       return true;
     }
     if (affectedTasks.taskIds().length >= maxAffectedTasks) {
+      // NEST-022（2026-08-17）：截断不再静默——留痕（纯函数模块，console.warn；
+      // 影响面即重排范围，静默丢失会导致"以为已重排实则未含"的静默偏差）。
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[impact-propagation] maxAffectedTasks=${maxAffectedTasks} reached; task ${taskId} (${reason}) excluded from affected set`,
+      );
       return false;
     }
     affectedTasks.add(taskId, reason);
@@ -204,22 +210,29 @@ export function propagateImpact(
     }
   }
   //    safety blocked → fail-closed：纳入 affected 说明（求解器消费 hard 过滤，传播层仅说明）。
-  for (const personId of sortedSet(safetyBlockedPersonIds)) {
-    affectedPersons.add(personId);
-    for (const taskId of [...(tasksByPerson.get(personId) ?? [])].sort()) {
-      addAffectedTask(taskId, `SAFETY_BLOCK:${personId}`);
+  //    NEST-021 修复（2026-08-17）：仅当触发类型与安全相关（SAFETY_*）时才把
+  //    全部安全阻断资源扩散进 affected——无关触发（如 ROUTE_BLOCKED）不再
+  //    无差别纳入全部安全阻断任务（影响集虚增、局部重排退化为大面积重排）。
+  //    安全阻断的 frozen 语义不受影响（上方 frozenSet 判定始终生效）。
+  const safetyRelatedTrigger = /SAFETY/i.test(seed.triggerType ?? '');
+  if (safetyRelatedTrigger) {
+    for (const personId of sortedSet(safetyBlockedPersonIds)) {
+      affectedPersons.add(personId);
+      for (const taskId of [...(tasksByPerson.get(personId) ?? [])].sort()) {
+        addAffectedTask(taskId, `SAFETY_BLOCK:${personId}`);
+      }
     }
-  }
-  for (const deviceId of sortedSet(safetyBlockedDeviceIds)) {
-    affectedDevices.add(deviceId);
-    for (const taskId of [...(tasksByDevice.get(deviceId) ?? [])].sort()) {
-      addAffectedTask(taskId, `SAFETY_BLOCK:${deviceId}`);
+    for (const deviceId of sortedSet(safetyBlockedDeviceIds)) {
+      affectedDevices.add(deviceId);
+      for (const taskId of [...(tasksByDevice.get(deviceId) ?? [])].sort()) {
+        addAffectedTask(taskId, `SAFETY_BLOCK:${deviceId}`);
+      }
     }
-  }
-  for (const zoneId of sortedSet(forbiddenZoneIds)) {
-    affectedZones.add(zoneId);
-    for (const taskId of [...(tasksByZone.get(zoneId) ?? [])].sort()) {
-      addAffectedTask(taskId, `SAFETY_BLOCK:${zoneId}`);
+    for (const zoneId of sortedSet(forbiddenZoneIds)) {
+      affectedZones.add(zoneId);
+      for (const taskId of [...(tasksByZone.get(zoneId) ?? [])].sort()) {
+        addAffectedTask(taskId, `SAFETY_BLOCK:${zoneId}`);
+      }
     }
   }
 

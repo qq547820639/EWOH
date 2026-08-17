@@ -94,16 +94,22 @@ def split_by_person(samples, ratios=(0.7, 0.15, 0.15), seed=42):
     for s in samples:
         buckets[pid_to_split[s["person_id"]]].append(s)
 
-    # 严格不变量断言：三组 person_id 两两不相交
+    # 严格不变量校验：三组 person_id 两两不相交
+    # EDGE-106（2026-08-17 审计整改）：assert 改为显式 raise——python -O 下
+    # assert 被剥离，人员泄漏不变量必须始终生效。
     s_train = {s["person_id"] for s in buckets["train"]}
     s_val = {s["person_id"] for s in buckets["val"]}
     s_test = {s["person_id"] for s in buckets["test"]}
-    assert not (s_train & s_val), f"train/val 人员泄漏: {sorted(s_train & s_val)}"
-    assert not (s_train & s_test), f"train/test 人员泄漏: {sorted(s_train & s_test)}"
-    assert not (s_val & s_test), f"val/test 人员泄漏: {sorted(s_val & s_test)}"
-    assert s_train | s_val | s_test == persons, "人员集合不完整"
-    if persons:
-        assert s_train, "train 不可为空（至少 1 个人员时）"
+    if s_train & s_val:
+        raise ValueError(f"train/val 人员泄漏: {sorted(s_train & s_val)}")
+    if s_train & s_test:
+        raise ValueError(f"train/test 人员泄漏: {sorted(s_train & s_test)}")
+    if s_val & s_test:
+        raise ValueError(f"val/test 人员泄漏: {sorted(s_val & s_test)}")
+    if s_train | s_val | s_test != persons:
+        raise ValueError("人员集合不完整")
+    if persons and not s_train:
+        raise ValueError("train 不可为空（至少 1 个人员时）")
 
     return buckets
 

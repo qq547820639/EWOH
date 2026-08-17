@@ -3,21 +3,25 @@
 import { logger } from '@lark-apaas/client-toolkit/logger';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// CLI-416（裁决）：飞书 H5 jsapi 签名算法由协议规定为 SHA1
+// （https://open.feishu.cn/document/server-docs/api-reference/jsapi/overview），
+// 此处的 SHA1 仅用于协议签名、不承载安全强度，保持 crypto-js/sha1。
 import SHA1 from 'crypto-js/sha1';
 
 import {
   fetchUserProfile,
   getAssetsUrl,
-} from '@client/src/components/business-ui/api/user-profiles/service';
-import { ErrorImage } from '@client/src/components/business-ui/user-profile/error-image';
+} from '@/components/business-ui/api/user-profiles/service';
+import { ErrorImage } from '@/components/business-ui/user-profile/error-image';
 import { getEnv } from '@lark-apaas/client-toolkit/utils/getEnv';
-import { useExternalScript } from '@client/src/components/business-ui/user-profile/user-external-script';
+import { useExternalScript } from '@/components/business-ui/user-profile/user-external-script';
+import { isSafeRedirectUrl } from '@/lib/urlSafety';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
-import { UserInput } from '@client/src/components/business-ui/types/user';
+import { UserInput } from '@/components/business-ui/types/user';
 
 type WebComponentAPI = {
   config(params: {
@@ -54,14 +58,28 @@ interface UserProfileProps {
   readonly accountType?: 'apaas' | 'lark' | undefined;
 }
 
+/**
+ * CLI-405：jsapi 签名 nonce 改用密码学随机源（crypto.getRandomValues），
+ * 拒绝可预测 nonce；环境不支持 WebCrypto 时抛错而非退化到 Math.random。
+ */
 function generateRandomString(length: number): string {
   const characters =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  if (typeof crypto === 'undefined' || !crypto.getRandomValues) {
+    throw new Error('WebCrypto is required for jsapi nonce generation');
+  }
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
   let result = '';
-
   for (let i = 0; i < length; i += 1) {
-    const randomIndex = Math.floor(Math.random() * characters.length);
-    result += characters.charAt(randomIndex);
+    // 拒绝采样消除 2^32 % 62 的模偏差（对 nonce 强度无实质影响，顺手做对）。
+    const limit = Math.floor(0x100000000 / characters.length) * characters.length;
+    while (bytes[i] >= limit) {
+      const extra = new Uint32Array(1);
+      crypto.getRandomValues(extra);
+      bytes[i] = extra[0];
+    }
+    result += characters.charAt(bytes[i] % characters.length);
   }
 
   return result;
@@ -168,7 +186,8 @@ function UserProfile(props: UserProfileProps) {
   const userId =
     (typeof value === 'string'
       ? value
-      : (value as any)?.user_id || (value as any)?.userId) ||
+      : (value && 'user_id' in value && value.user_id) ||
+        (value && 'userId' in value && value.userId)) ||
     user_id ||
     originUserId;
 
@@ -182,13 +201,25 @@ function UserProfile(props: UserProfileProps) {
 
   const onAuthError = useCallback(() => {
     globalThis.webComponent.onAuthError(function (error: Error) {
-      const errorMessage = JSON.parse(error.message);
+      // CLI-406：error.message 不保证是合法 JSON，解析失败时记录原文而非抛出。
+      let errorMessage: { msg?: { code?: number; msg?: string } } | null = null;
+      try {
+        errorMessage = JSON.parse(error.message) as { msg?: { code?: number; msg?: string } };
+      } catch {
+        logger.info('webComponent onAuthError non-JSON message', error.message);
+      }
       // 存在token过期情况，但后端无法识别，需要前端这边主动识别error，并进行鉴权重定向
       if (
         errorMessage?.msg?.code === 20442 &&
         errorMessage?.msg?.msg === 'jsapi-ticket not exist'
       ) {
-        globalThis.location.replace(redirectURLRef.current);
+        // CLI-408：redirectURL 来自 API 响应，仅同源相对路径/白名单 origin 可跳转。
+        const target = redirectURLRef.current;
+        if (isSafeRedirectUrl(target)) {
+          globalThis.location.replace(target);
+        } else if (target) {
+          logger.info('blocked unsafe redirectURL', target);
+        }
       }
     });
 
@@ -197,14 +228,22 @@ function UserProfile(props: UserProfileProps) {
     });
   }, []);
 
-  // 按需注入飞书 H5 JS SDK，仅在组件使用时加载
-  const larkSdkURl =
+  // 按需注入飞书 H5 JS SDK，仅在组件使用时加载。
+  // CLI-407 裁决：字节 CDN 未发布该 SDK 的官方 SRI 哈希，无法加 integrity
+  // （盲猜哈希会导致合法更新即加载失败）。已收敛：脚本锁定 https 协议且
+  // origin 经 useExternalScript 白名单校验（CLI-404）。后续动作：跟随
+  // SDK 升级切换到官方 npm 包自托管后补 SRI。
+  const larkSdkUrl =
     'https://lf3-cdn-tos.bytegoofy.com/obj/goofy/locl/lark/external_js_sdk/h5-js-sdk-1.2.21.js';
   const scriptOptions = useMemo(
-    () => ({ onloadCallback: onAuthError }),
+    () => ({
+      onloadCallback: onAuthError,
+      // CLI-404：仅允许从飞书/字节 CDN origin 加载外部脚本。
+      allowedOrigins: ['https://lf3-cdn-tos.bytegoofy.com'],
+    }),
     [onAuthError],
   );
-  const scriptStatus = useExternalScript(larkSdkURl, scriptOptions);
+  const scriptStatus = useExternalScript(larkSdkUrl, scriptOptions);
 
   const fetchData = useCallback(async () => {
     if (!userId) return;
@@ -252,9 +291,7 @@ function UserProfile(props: UserProfileProps) {
         className="flex min-h-124 w-80 flex-col items-center justify-center gap-4 border-0 p-0"
       >
         <ErrorImage />
-        {/* <Button variant="outline" className="border-red-500 text-black hover:bg-red-50" onClick={fetchData}>
-        加载失败 请重试
-      </Button> */}
+        {/* CLI-430：已删除注释掉的旧版重试按钮代码块。 */}
         <div>
           <span className="text-sm">加载失败 请</span>
           <Button
@@ -298,6 +335,12 @@ function BaseUserProfile(props: BaseUserProfileProps) {
       return null;
     }
 
+    // CLI-408：仅同源相对路径或白名单 origin（飞书/lark）允许跳转。
+    if (!isSafeRedirectUrl(redirectURL)) {
+      logger.info('blocked unsafe redirectURL', redirectURL);
+      return null;
+    }
+
     globalThis.location.replace(redirectURL);
     return null;
   }
@@ -337,7 +380,7 @@ function SimpleUserProfile(props: {
             <div className="flex items-center gap-2 pt-0.5 pb-1.5 leading-tight font-semibold">
               <span className="text-xl">{userProfileInfo.name}</span>
               {userProfileInfo.userType === '_externalUser' && (
-                <Badge className="rounded-sm border-0 bg-blue-500/20 pt-px pr-1.5 pb-px pl-1 text-sm text-blue-900">
+                <Badge className="rounded-sm border-0 bg-info/20 pt-px pr-1.5 pb-px pl-1 text-sm text-primary">
                   外部
                 </Badge>
               )}

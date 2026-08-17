@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type {
   ChurnConfig,
   SchedulingAssignment,
@@ -58,6 +59,9 @@ export interface EvaluatePlanOutput {
 }
 
 export class SchedulingObjectiveEvaluator {
+  /** NEST-142：无效日期告警留痕（指标少计可观测）。 */
+  private readonly logger = new Logger(SchedulingObjectiveEvaluator.name);
+
   evaluate(input: EvaluatePlanInput): EvaluatePlanOutput {
     const { snapshot, assignments, policy, baseline, horizonMinutes, nowMs } =
       input;
@@ -106,7 +110,14 @@ export class SchedulingObjectiveEvaluator {
       const task = taskById.get(a.taskId);
       const startMs = a.plannedStart ? Date.parse(a.plannedStart) : NaN;
       const endMs = a.plannedEnd ? Date.parse(a.plannedEnd) : NaN;
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+        // NEST-142 修复（2026-08-17）：无效/缺失日期不再静默跳过——warn 留痕
+        // （指标少计是可观测的数据质量问题，调用方需知情）。
+        this.logger.warn(
+          `objective evaluation: assignment ${a.taskId} has invalid dates (plannedStart=${a.plannedStart ?? 'null'}, plannedEnd=${a.plannedEnd ?? 'null'}); excluded from metrics`,
+        );
+        continue;
+      }
 
       // P0-3：软 due 解析（dueAtMs → planEnd 回退 → horizonEnd）。
       const softDueMs =

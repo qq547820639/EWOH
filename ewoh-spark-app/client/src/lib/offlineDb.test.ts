@@ -4,7 +4,7 @@ import {
   backoffDelayWithJitter,
   exportOfflineData,
   flushOfflineQueue,
-  generateIdempotencyKey,
+  generateTraceKey,
   isAuthError,
   migratePendingActionsFromLocalStorage,
   MIGRATION_FLAG_KEY,
@@ -58,11 +58,11 @@ function createStorage(initial: Record<string, string> = {}): StorageLike {
 
 describe('offlineDb', () => {
   it('generates idempotency keys that carry orderId/stepId/action', () => {
-    const key = generateIdempotencyKey('WO-1', 'S1', 'report');
+    const key = generateTraceKey('WO-1', 'S1', 'report');
     expect(key).toContain('WO-1');
     expect(key).toContain('S1');
     expect(key).toContain('report');
-    const other = generateIdempotencyKey('WO-1', 'S1', 'report');
+    const other = generateTraceKey('WO-1', 'S1', 'report');
     expect(key).not.toBe(other);
   });
 
@@ -617,22 +617,42 @@ describe('offlineDb', () => {
       auditLog,
     } as unknown as OfflineDatabase;
 
-    const snapshot = await exportOfflineData(db);
-    expect(snapshot.schema).toBe('ewoh.offline.export.v1');
-    expect(snapshot.pendingActions).toHaveLength(1);
-    expect(snapshot.pendingActions[0].idempotencyKey).toBe('k-export');
-    expect(snapshot.attachments).toHaveLength(1);
-    // Blob converted to a data URL so the export is a single JSON document.
-    expect(snapshot.attachments[0].dataUrl).toContain('data:image/jpeg');
-    expect(snapshot.drafts).toHaveLength(1);
-    expect(snapshot.syncState).toHaveLength(1);
-    expect(snapshot.serverVersion).toHaveLength(1);
-    expect(snapshot.auditLog).toHaveLength(1);
+    // CLI-523：无 FileReader 的环境导出附件会显式拒绝（不再静默产出空
+    // data URL）。本用例注入最小 FileReader stub 以验证正常序列化路径。
+    class FileReaderStub {
+      result: string | ArrayBuffer | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsDataURL(blob: Blob): void {
+        void blob.text().then((text) => {
+          this.result = `data:image/jpeg;base64,${btoa(text)}`;
+          this.onload?.();
+        });
+      }
+    }
+    const globalWithReader = globalThis as unknown as { FileReader?: unknown };
+    const originalReader = globalWithReader.FileReader;
+    globalWithReader.FileReader = FileReaderStub;
+    try {
+      const snapshot = await exportOfflineData(db);
+      expect(snapshot.schema).toBe('ewoh.offline.export.v1');
+      expect(snapshot.pendingActions).toHaveLength(1);
+      expect(snapshot.pendingActions[0].idempotencyKey).toBe('k-export');
+      expect(snapshot.attachments).toHaveLength(1);
+      // Blob converted to a data URL so the export is a single JSON document.
+      expect(snapshot.attachments[0].dataUrl).toContain('data:image/jpeg');
+      expect(snapshot.drafts).toHaveLength(1);
+      expect(snapshot.syncState).toHaveLength(1);
+      expect(snapshot.serverVersion).toHaveLength(1);
+      expect(snapshot.auditLog).toHaveLength(1);
+    } finally {
+      globalWithReader.FileReader = originalReader;
+    }
   });
 
   it('repeated clicks queue distinct idempotency keys (no collision for duplicate actions)', async () => {
-    const keyA = generateIdempotencyKey('WO-1', 'S1', 'report');
-    const keyB = generateIdempotencyKey('WO-1', 'S1', 'report');
+    const keyA = generateTraceKey('WO-1', 'S1', 'report');
+    const keyB = generateTraceKey('WO-1', 'S1', 'report');
     // Two rapid identical clicks still produce unique keys so the backend can
     // dedupe correctly instead of the second overwriting the first.
     expect(keyA).not.toBe(keyB);

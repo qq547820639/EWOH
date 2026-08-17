@@ -186,7 +186,7 @@ export class PlanService {
    * 按创建时间倒序。供 ReplanPreviewService 基线对比（预览只读，不落库）。
    * R-5 N+1 修复：assignments 一次 inArray 批量加载（原每方案一次查询）。
    */
-  async listActivePlans(): Promise<SchedulingPlanV2[]> {
+  async listActivePlans(actor?: OrgContext): Promise<SchedulingPlanV2[]> {
     const activeStatuses = [
       'draft',
       'shadow',
@@ -195,10 +195,22 @@ export class PlanService {
       'dispatched',
       'executing',
     ];
+    // NEST-039/152（2026-08-17）：活跃方案列表按 actor org 过滤（org 匹配或
+    // NULL 存量）——replan preview 基线此前可取自他租户方案。
     const rows = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, activeStatuses))
+      .where(
+        and(
+          inArray(ewohSchedulePlan.status, activeStatuses),
+          actor
+            ? or(
+                isNull(ewohSchedulePlan.orgId),
+                eq(ewohSchedulePlan.orgId, actor.primaryOrgId),
+              )
+            : undefined,
+        ),
+      )
       .orderBy(desc(ewohSchedulePlan.createdAt));
     if (rows.length === 0) return [];
 
@@ -602,19 +614,22 @@ export class PlanService {
     planId: string,
     ctx: OrgContext,
   ): Promise<SchedulingPlanV2> {
-    // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 dispatch（不靠前端隐藏按钮）。
+    // NEST-026 修复（2026-08-17）：租户守卫先行——先 assertPlanTenantVisible
+    // 再查 isShadow（旧顺序对跨租户 shadow 方案先抛 SHADOW_PLAN_GUARD，泄露
+    // 「该 planId 存在且为 shadow」的存在性事实；跨租户一律 404 同语义）。
     const [planRow] = await this.db
       .select()
       .from(ewohSchedulePlan)
       .where(eq(ewohSchedulePlan.planId, planId))
       .limit(1);
+    // ADR-071：变面租户守卫（行缺失由 DispatchCoordinator 以 NotFound 处理）。
+    assertPlanTenantVisible(planRow?.orgId, ctx, planId);
+    // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 dispatch（不靠前端隐藏按钮）。
     if (planRow?.isShadow) {
       throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be dispatched');
     }
-    // ADR-071：变面租户守卫（行缺失由 DispatchCoordinator 以 NotFound 处理）。
-    assertPlanTenantVisible(planRow?.orgId, ctx, planId);
     await this.dispatchCoordinator.dispatch(planId, ctx);
-    return this.getPlan(planId);
+    return this.getPlan(planId, ctx);
   }
 
   /**
@@ -705,19 +720,45 @@ export class PlanService {
     actor: OrgContext,
     reason = '',
   ): Promise<{ ok: boolean; constraintId: string }> {
+    // NEST-028 修复（2026-08-17）：SELECT 与 UPDATE 均带 org 条件（org 匹配或
+    // NULL 存量）——跨租户 constraintId 一律 404，不再被停用；UPDATE 返回行数
+    // 校验兜底（0 行=行被并发删除/不可见 → 404）。
+    const orgCond = actor.primaryOrgId
+      ? or(
+          isNull(ewohSchedulingConstraint.orgId),
+          eq(ewohSchedulingConstraint.orgId, actor.primaryOrgId),
+        )
+      : undefined;
     const [row] = await this.db
       .select()
       .from(ewohSchedulingConstraint)
-      .where(eq(ewohSchedulingConstraint.constraintId, constraintId))
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulingConstraint.constraintId, constraintId), orgCond)
+          : eq(ewohSchedulingConstraint.constraintId, constraintId),
+      )
       .limit(1);
     if (!row) throw new NotFoundException(`Constraint ${constraintId} not found`);
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(actor),
       async () => {
-        await this.db
+        const updated = await this.db
           .update(ewohSchedulingConstraint)
           .set({ active: false, updatedAt: new Date() })
-          .where(eq(ewohSchedulingConstraint.constraintId, constraintId));
+          .where(
+            orgCond
+              ? and(
+                  eq(ewohSchedulingConstraint.constraintId, constraintId),
+                  orgCond,
+                )
+              : eq(ewohSchedulingConstraint.constraintId, constraintId),
+          )
+          .returning({ id: ewohSchedulingConstraint.id });
+        if (updated.length === 0) {
+          throw new NotFoundException(
+            `Constraint ${constraintId} not found (concurrent delete or invisible)`,
+          );
+        }
         await this.db.insert(ewohScheduleAudit).values({
           auditId: `AUDIT-${Date.now()}-${this.randomSuffix()}`,
           planId: row.planId ?? undefined,
@@ -830,9 +871,17 @@ export class PlanService {
       async () => {
         // P0-2：落库本次新增的有效约束（含请求约束；继承的约束已在原 plan 下，
         // 保持原 constraintId 以便后续解除与审计追溯——此处仅落库新请求项）。
-        if (effectiveConstraints.length > 0) {
+        // NEST-029 修复（2026-08-17）：过滤继承项——effectiveConstraints 混含
+        // 原方案已落库的继承约束（其 c.id 已存在于原 plan 下），全部重插会
+        // 撞 constraint_id 唯一键（org 复合键下同 org 同 id）或产生重复行；
+        // 仅落库本次请求新增项（无 id 的请求约束）。继承约束经 planId 继承
+        // 机制继续生效（loadForPlan），无需复制到新 plan。
+        const newConstraints = effectiveConstraints.filter(
+          (c) => c.id == null,
+        );
+        if (newConstraints.length > 0) {
           await this.db.insert(ewohSchedulingConstraint).values(
-            effectiveConstraints.map((c, i) => ({
+            newConstraints.map((c, i) => ({
               constraintId:
                 c.id ?? `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
               planId: newPlanId,
@@ -891,14 +940,17 @@ export class PlanService {
     return newPlan;
   }
 
-  /** 对比两个方案的分配与指标差异。 */
+  /** 对比两个方案的分配与指标差异。NEST-030：读取透传 actor（租户校验）。 */
   async comparePlans(
     planId: string,
     otherPlanId: string,
+    actor?: OrgContext,
   ): Promise<Record<string, unknown>> {
+    // NEST-030 修复（2026-08-17）：两个方案读取都经 ADR-071 getPlan 守卫
+    // （此前 getPlan 不传 actor，跨租户方案可被对比）。
     const [a, b] = await Promise.all([
-      this.getPlan(planId),
-      this.getPlan(otherPlanId),
+      this.getPlan(planId, actor),
+      this.getPlan(otherPlanId, actor),
     ]);
     const diffByTask = new Map<string, Record<string, unknown>>();
     const aByTask = new Map(a.assignments.map((x) => [x.taskId, x]));

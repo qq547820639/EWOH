@@ -6,6 +6,13 @@ import { SchedulerMetricsService } from './scheduler-metrics.service';
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_BATCH = 500;
+/**
+ * NEST-141（2026-08-17）：单次 poll 的追赶批次数上限。轮询改为 sinceSequence
+ * 增量后，积压（如服务重启/长空闲）可能超过单批 500 条；每次 poll 最多连续
+ * 拉 DRAIN_MAX_BATCHES 批（500×10=5000 条）追平，仍追不平则等下一个 tick
+ * 继续（lastSequence 游标保证不丢不重），替代旧 listLatest(500) 截断丢事件。
+ */
+const DRAIN_MAX_BATCHES = 10;
 
 /**
  * Outbox 通知监听器（Task 6：LISTEN/NOTIFY 低延迟 wake-up）。
@@ -78,7 +85,8 @@ export class SchedulerStreamService implements OnModuleDestroy {
 
   /** 读取最近 limit 条事件并映射为 SchedulingEvent（可选 orgId 过滤：null=全局事件+该 org）。 */
   async snapshot(limit: number, orgId?: string | null): Promise<SchedulingEvent[]> {
-    const events = await this.outboxService.listLatest(limit);
+    // NEST-015：org 过滤下推 DB（本 org + 全局事件），内存过滤保留为双保险。
+    const events = await this.outboxService.listLatest(limit, orgId ?? undefined);
     return events
       .map((e) => this.toEvent(e))
       .filter((e) => (orgId ? e.orgId == null || e.orgId === orgId : true));
@@ -105,6 +113,10 @@ export class SchedulerStreamService implements OnModuleDestroy {
       return { events: [], resyncNeeded: true, gap: true, currentSequence: latest };
     }
 
+    // NEST-014 说明（2026-08-17）：此处有意不向 listSince 传 org 过滤——缺口
+    // 判定（rows[0].sequence === base+1）必须建立在未过滤的全局 sequence 流上，
+    // org 级过滤会把他租户事件变成假缺口误触发 resync。租户隔离由下方映射后
+    // 的 orgId 过滤保证（内存过滤，事件不出本服务）。
     const rows = await this.outboxService.listSince(base);
 
     // 缺口判定：非全量请求下，回放首条 sequence 必须严格等于 base+1，
@@ -193,19 +205,31 @@ export class SchedulerStreamService implements OnModuleDestroy {
     return this.subject.asObservable();
   }
 
+  /** 服务器当前最大 sequence（SSE resync 信封用，NEST-113）。 */
+  async currentSequence(): Promise<number> {
+    return this.outboxService.latestSequence();
+  }
+
   private async poll(): Promise<void> {
     try {
       // Task 3 埋点：listener 未启用/订阅失败时的轮询兜底（每次 poll 计一次）。
       if (this.pollingIsFallback) this.metricsService?.recordPollFallback();
-      const events = await this.outboxService.listLatest(POLL_BATCH);
-      // 倒序 → 升序，保证按 sequence 顺序推送。
-      for (let i = events.length - 1; i >= 0; i--) {
-        const e = events[i];
-        if (e.sequence > this.lastSequence && !this.seenEventIds.has(e.id)) {
-          this.lastSequence = e.sequence;
-          this.rememberEventId(e.id);
-          this.subject.next(this.toEvent(e));
+      // NEST-141 修复（2026-08-17）：listLatest(500) 截断改为 sinceSequence 增量
+      // ——突发超过单批上限时旧事件不再丢失；本服务是进程内全局泵（租户过滤在
+      // 每个订阅者的 controller filter，NEST-113/114），poll 不带 org 过滤。
+      // lastSequence 游标 + seenEventIds 去重保证不重发；连续拉批追赶积压。
+      for (let batch = 0; batch < DRAIN_MAX_BATCHES; batch++) {
+        const events = await this.outboxService.listSince(this.lastSequence, POLL_BATCH);
+        if (events.length === 0) break;
+        // listSince 已按 sequence 升序返回，直接顺序推送。
+        for (const e of events) {
+          this.lastSequence = Math.max(this.lastSequence, e.sequence);
+          if (!this.seenEventIds.has(e.id)) {
+            this.rememberEventId(e.id);
+            this.subject.next(this.toEvent(e));
+          }
         }
+        if (events.length < POLL_BATCH) break;
       }
     } catch (err) {
       this.logger.error(
@@ -235,7 +259,7 @@ export class SchedulerStreamService implements OnModuleDestroy {
           ? payload.occurredAt
           : new Date().toISOString(),
       // P4-SSE：统一 envelope（orgId + correlationId；correlation 从 payload 或事件本身透传）。
-      orgId: (e as { orgId?: string | null }).orgId ?? null,
+      orgId: e.orgId ?? null,
       correlationId:
         typeof payload.correlationId === 'string'
           ? payload.correlationId

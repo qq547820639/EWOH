@@ -144,9 +144,11 @@ export async function transitionMaintenanceAsset(
   assetId: string,
   action: 'flag_maintenance' | 'activate' | 'decommission',
 ): Promise<MaintenanceAsset> {
+  // CLI-731：action 改由 axios params 序列化（自动 URL 编码），不再手拼 query。
   const res = await axiosForBackend({
-    url: `/api/operations/assets/${encodeURIComponent(assetId)}/state?action=${action}`,
+    url: `/api/operations/assets/${encodeURIComponent(assetId)}/state`,
     method: 'POST',
+    params: { action },
   });
   return res.data;
 }
@@ -179,9 +181,11 @@ export async function transitionMaintenanceTask(
   action: 'start' | 'complete' | 'cancel',
   body: { result?: string; note?: string } = {},
 ): Promise<MaintenanceTask> {
+  // CLI-731：action 改由 axios params 序列化（自动 URL 编码），不再手拼 query。
   const res = await axiosForBackend({
-    url: `/api/operations/tasks/${encodeURIComponent(taskId)}/state?action=${action}`,
+    url: `/api/operations/tasks/${encodeURIComponent(taskId)}/state`,
     method: 'POST',
+    params: { action },
     data: body,
   });
   return res.data;
@@ -211,9 +215,11 @@ export async function transitionMaintenanceTool(
   toolId: string,
   action: 'calibrate' | 'retire',
 ): Promise<MaintenanceTool> {
+  // CLI-731：action 改由 axios params 序列化（自动 URL 编码），不再手拼 query。
   const res = await axiosForBackend({
-    url: `/api/operations/tools/${encodeURIComponent(toolId)}/state?action=${action}`,
+    url: `/api/operations/tools/${encodeURIComponent(toolId)}/state`,
     method: 'POST',
+    params: { action },
   });
   return res.data;
 }

@@ -97,6 +97,23 @@ function main() {
     rules: options.rules.length > 0 ? options.rules : null,
   };
 
+  // TOOL-002: --exempt 校验——元规则 no-self-exemption 硬编码不可豁免；
+  // 未知规则 id 直接拒绝。error 级规则即使传入也无法真正豁免：
+  // no-self-exemption 规则会对高风险豁免报 error，且 error 级 finding
+  // 不受任何豁免抑制（engine.runRules）。
+  for (const id of options.exemptions) {
+    if (id === 'no-self-exemption') {
+      console.error(`error: --exempt ${id} rejected: the no-self-exemption meta-rule can never be exempted`);
+      process.exitCode = 2;
+      return;
+    }
+    if (!RULE_META[id]) {
+      console.error(`error: --exempt ${id} rejected: unknown rule id`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
   let ctx;
   try {
     ctx = buildContext(options.root, { exemptions: options.exemptions });

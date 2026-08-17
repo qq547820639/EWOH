@@ -119,7 +119,11 @@ def _resolve_path(value: Any, path: str) -> Any:
         if current is None:
             return None
         if isinstance(current, list) and segment.isdigit():
-            current = current[int(segment)]
+            try:
+                current = current[int(segment)]
+            except IndexError:
+                # 数组越界视为路径缺失（undefined），由策略表达式判 false/fail-closed
+                return None
         elif isinstance(current, dict):
             current = current.get(segment)
         else:

@@ -30,19 +30,44 @@ module = parse_rego(source)
 check("rego package", module.package == "ewoh.deploy")
 check("rego default deny", module.defaults.get("allow") is False)
 
+# deploy-gate 命名必检项输入（canonical 顺序，见 deploy-gate.rego 头注释）
+named_checks = [
+    {"id": "contract-identity", "passed": True},
+    {"id": "contract-domain", "passed": True},
+    {"id": "contract-envelope", "passed": True},
+]
+
 allow = evaluate_rego(
     source,
-    {"artifacts_present": True, "checks_passed": 4, "missing_contracts": 0},
+    {"artifacts_present": True, "checks": named_checks, "missing_contracts": 0},
 )
 check("rego allow", allow["decision"] == "allow" and allow["denied"] is False)
 
 deny = evaluate_rego(
     source,
-    {"artifacts_present": True, "checks_passed": 4, "missing_contracts": 2},
+    {"artifacts_present": True, "checks": named_checks, "missing_contracts": 2},
 )
 check(
     "rego deny message",
     deny["decision"] == "deny" and "missing contracts" in deny["messages"],
+)
+
+failed_check = evaluate_rego(
+    source,
+    {
+        "artifacts_present": True,
+        "checks": [
+            {"id": "contract-identity", "passed": True},
+            {"id": "contract-domain", "passed": False},
+            {"id": "contract-envelope", "passed": True},
+        ],
+        "missing_contracts": 0,
+    },
+)
+check(
+    "rego deny named check not passed",
+    failed_check["decision"] == "deny"
+    and "required check not passed: contract-domain" in failed_check["messages"],
 )
 
 failed = [name for name, ok in checks if not ok]

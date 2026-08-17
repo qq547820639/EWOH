@@ -13,17 +13,42 @@ type Row = Record<string, unknown>;
 
 function makeFakeDb(rows: Row[] = []) {
   const state = { rows: [...rows] };
-  const selectResult = () => {
-    const thenable = Promise.resolve(state.rows) as Promise<Row[]> & {
+  /**
+   * NEST-448：fake.where 尊重 org 谓词——从 drizzle 条件对象提取字符串值，
+   * 若条件含 org 值（org-* 形态）且与行 orgId 不同，则该行不可见
+   * （跨租户查询返回空，租户隔离语义可被真实断言）。
+   */
+  const collectStrings = (node: unknown, out: string[] = [], seen = new Set<unknown>()): string[] => {
+    if (node === null || node === undefined) return out;
+    if (typeof node === 'string') {
+      out.push(node);
+      return out;
+    }
+    if (typeof node !== 'object' || seen.has(node)) return out;
+    seen.add(node);
+    for (const child of Object.values(node as Record<string, unknown>)) {
+      collectStrings(child, out, seen);
+    }
+    return out;
+  };
+  const filterByCondition = (condition: unknown): Row[] => {
+    const values = collectStrings(condition);
+    const orgValues = values.filter((value) => /^org-[0-9]+$/.test(value));
+    if (orgValues.length === 0) return state.rows;
+    return state.rows.filter((row) => orgValues.includes(String(row.orgId)));
+  };
+  const selectResult = (condition?: unknown) => {
+    const filtered = condition === undefined ? state.rows : filterByCondition(condition);
+    const thenable = Promise.resolve(filtered) as Promise<Row[]> & {
       limit: jest.Mock;
     };
-    thenable.limit = jest.fn(() => Promise.resolve(state.rows));
+    thenable.limit = jest.fn(() => Promise.resolve(filtered));
     return thenable;
   };
   const fake = {
     select: jest.fn(() => fake),
     from: jest.fn(() => fake),
-    where: jest.fn(() => selectResult()),
+    where: jest.fn((condition?: unknown) => selectResult(condition)),
     insert: jest.fn(() => ({
       values: jest.fn((v: Row) => ({
         returning: jest.fn(() => {
@@ -36,7 +61,10 @@ function makeFakeDb(rows: Row[] = []) {
     })),
     update: jest.fn(() => ({
       set: jest.fn(() => ({
-        where: jest.fn(() => Promise.resolve([])),
+        // NEST-436：CAS update 带 returning（命中行回读）。
+        where: jest.fn(() => ({
+          returning: jest.fn(() => Promise.resolve([{ id: 'cas-hit' }])),
+        })),
       })),
     })),
     __state: state,
@@ -112,6 +140,14 @@ describe('MaintenanceService', () => {
     ).rejects.toThrow(/非法状态转移/);
   });
 
+  it('NEST-448：跨租户转移 404（fake.where 尊重 org 谓词）', async () => {
+    // 行属 org-1，org-2 上下文查询不可见 → BadRequest（不存在）。
+    const service = new MaintenanceService(makeFakeDb([{ ...BASE_ROW }]) as never, makeWorkOrderService() as never);
+    await expect(
+      service.transitionCondition('mc:1', { to: 'acknowledged' }, 'org-2'),
+    ).rejects.toThrow(/维护状态不存在/);
+  });
+
   it('合法转移：acknowledged → work_order_created（带工单引用，委托 WorkOrderService 建单）', async () => {
     const fake = makeFakeDb([{ ...BASE_ROW, status: 'acknowledged' }]);
     const workOrderService = makeWorkOrderService();
@@ -176,5 +212,14 @@ describe('MaintenanceService', () => {
     );
     const list2 = await resolved.listConditions('org-1');
     expect(list2[0].overdue).toBe(false);
+  });
+
+  it('NEST-448：listConditions 跨租户返回空（org 谓词生效）', async () => {
+    const service = new MaintenanceService(
+      makeFakeDb([{ ...BASE_ROW, dueAt: null }]) as never,
+      makeWorkOrderService() as never,
+    );
+    const other = await service.listConditions('org-2');
+    expect(other).toHaveLength(0);
   });
 });

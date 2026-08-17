@@ -8,7 +8,19 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { createHash } from 'node:crypto';
-import { sql, asc, desc, gt, type SQL } from 'drizzle-orm';
+import { sql, asc, desc, gt, eq, and, type SQL } from 'drizzle-orm';
+
+/**
+ * NEST-648（2026-08-17 审计裁决，按 spec 维持 2026-08-04 已有裁决）：
+ * world 与 world-cursor 是两条**有意并存**的世界状态读路径——
+ *   - world（/api/world/state|replay）：业务回放视图，读
+ *     ewoh_spatial_entity + ewoh_world_state + ewoh_event 等业务事实表；
+ *   - world-cursor（/api/world/snapshot|delta）：增量同步协议面，读
+ *     ewoh_world_snapshot + ewoh_world_delta_log（原生 SQL 游标协议，
+ *     snapshotVersion/seq 为全局版本键，ADR-004 GLOBAL_SHARED 语义）。
+ * 收敛到单一数据源会破坏游标协议的版本语义；本裁决仅以本注释文档化边界，
+ * 两条路径各自带 org 作用域（NEST-609 已修），不合并。
+ */
 
 export interface WorldEntity {
   id: string;
@@ -76,10 +88,26 @@ export class WorldCursorService {
 
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async applyUpsert(entity: WorldEntity): Promise<void> {
+  /**
+   * NEST-609（2026-08-17 审计整改）：snapshot/delta 读写按 org 作用域。
+   * ewoh_world_snapshot / ewoh_world_delta_log 的 org_id 为 uuid 列
+   * （GUC 默认）；读路径显式 eq(orgId)，写路径（delta 追加）显式携带。
+   */
+  private requireOrgId(orgId?: string): string {
+    const trimmed = orgId?.trim();
+    if (!trimmed) {
+      throw new BadRequestException(
+        'org context missing: world cursor operations require tenant context',
+      );
+    }
+    return trimmed;
+  }
+
+  async applyUpsert(entity: WorldEntity, orgId?: string): Promise<void> {
     if (!entity?.id) {
       throw new BadRequestException('entity id is required');
     }
+    const scope = orgId ? this.requireOrgId(orgId) : null;
     // ADR-079：drizzle 类型安全（raw SQL 完整清零）。
     await this.safeExecute('persist world upsert', this.db.insert(ewohWorldDeltaLog).values({
       snapshotVersion: sql`coalesce((select max(snapshot_version) from ${ewohWorldSnapshotCursor}), 0)`,
@@ -88,13 +116,15 @@ export class WorldCursorService {
       deltaType: 'upsert',
       payload: entity as unknown as Record<string, unknown>,
       sourceType: 'service',
+      ...(scope ? { orgId: scope } : {}),
     }));
   }
 
-  async applyRemoval(id: string): Promise<void> {
+  async applyRemoval(id: string, orgId?: string): Promise<void> {
     if (!id?.trim()) {
       throw new BadRequestException('entity id is required');
     }
+    const scope = orgId ? this.requireOrgId(orgId) : null;
     await this.safeExecute('persist world removal', this.db.insert(ewohWorldDeltaLog).values({
       snapshotVersion: sql`coalesce((select max(snapshot_version) from ${ewohWorldSnapshotCursor}), 0)`,
       entityType: 'entity',
@@ -102,10 +132,12 @@ export class WorldCursorService {
       deltaType: 'removal',
       payload: null,
       sourceType: 'service',
+      ...(scope ? { orgId: scope } : {}),
     }));
   }
 
-  async getSnapshot(): Promise<WorldSnapshot> {
+  async getSnapshot(orgId?: string): Promise<WorldSnapshot> {
+    const scope = this.requireOrgId(orgId);
     const [latest] = await this.safeExecute<WorldSnapshotRow>('read latest world snapshot', this.db
       .select({
         snapshot_version: ewohWorldSnapshotCursor.snapshotVersion,
@@ -113,6 +145,7 @@ export class WorldCursorService {
         entity_count: ewohWorldSnapshotCursor.entityCount,
       })
       .from(ewohWorldSnapshotCursor)
+      .where(eq(ewohWorldSnapshotCursor.orgId, scope))
       .orderBy(desc(ewohWorldSnapshotCursor.snapshotVersion))
       .limit(1));
     const currentVersion = latest ? Number(latest.snapshot_version) : 0;
@@ -132,8 +165,25 @@ export class WorldCursorService {
         payload: ewohWorldDeltaLog.payload,
       })
       .from(ewohWorldDeltaLog)
-      .where(gt(ewohWorldDeltaLog.seq, lastSeq))
+      .where(
+        and(
+          eq(ewohWorldDeltaLog.orgId, scope),
+          gt(ewohWorldDeltaLog.seq, lastSeq),
+        ),
+      )
       .orderBy(asc(ewohWorldDeltaLog.seq)));
+
+    // NEST-638：仅当有新 delta（或首拍无快照）才落新 snapshot 行——
+    // 无变化重复读不再膨胀 ewoh_world_snapshot。
+    if (changes.length === 0 && latest) {
+      return {
+        snapshotVersion: currentVersion,
+        cursor: encodeCursor(currentVersion, lastSeq),
+        entities,
+        generatedAt: this.parseSnapshotPayload(latest.payload).generatedAt,
+      };
+    }
+
     const entityMap = new Map(entities.map((entity) => [entity.id, entity]));
     for (const change of changes) {
       const seq = Number(change.seq);
@@ -162,6 +212,7 @@ export class WorldCursorService {
       entityCount: nextEntities.length,
       checksum,
       sourceType: 'service',
+      orgId: scope,
     }));
     return {
       snapshotVersion,
@@ -171,13 +222,15 @@ export class WorldCursorService {
     };
   }
 
-  async getDelta(cursor: string, limit = 200): Promise<WorldDelta> {
+  async getDelta(cursor: string, limit = 200, orgId?: string): Promise<WorldDelta> {
+    const scope = this.requireOrgId(orgId);
     const decoded = decodeCursor(cursor);
     const [latest] = await this.safeExecute<{ snapshot_version: number }>(
       'read current world snapshot version',
       this.db
         .select({ snapshot_version: ewohWorldSnapshotCursor.snapshotVersion })
         .from(ewohWorldSnapshotCursor)
+        .where(eq(ewohWorldSnapshotCursor.orgId, scope))
         .orderBy(desc(ewohWorldSnapshotCursor.snapshotVersion))
         .limit(1),
     );
@@ -185,7 +238,11 @@ export class WorldCursorService {
     if (decoded.snapshotVersion !== currentVersion) {
       throw new CursorExpiredError();
     }
-    const safeLimit = Number.isFinite(limit) && limit >= 0 ? Math.trunc(limit) : 200;
+    // NEST-639：delta limit 上限（防极大值一次拉全量 delta log）。
+    const safeLimit = Math.min(
+      Number.isFinite(limit) && limit >= 0 ? Math.trunc(limit) : 200,
+      1000,
+    );
     const rows = await this.safeExecute<WorldDeltaRow>('read world delta page', this.db
       .select({
         seq: ewohWorldDeltaLog.seq,
@@ -194,7 +251,12 @@ export class WorldCursorService {
         payload: ewohWorldDeltaLog.payload,
       })
       .from(ewohWorldDeltaLog)
-      .where(gt(ewohWorldDeltaLog.seq, decoded.lastSeq))
+      .where(
+        and(
+          eq(ewohWorldDeltaLog.orgId, scope),
+          gt(ewohWorldDeltaLog.seq, decoded.lastSeq),
+        ),
+      )
       .orderBy(asc(ewohWorldDeltaLog.seq))
       .limit(safeLimit + 1));
     const page = rows.slice(0, safeLimit);

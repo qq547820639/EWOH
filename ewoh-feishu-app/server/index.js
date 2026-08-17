@@ -9,17 +9,16 @@
 
 const path = require('path');
 const express = require('express');
-const cors = require('cors');
 
 const dbm = require('./db');
 const { startSimulator, stopSimulator } = require('./simulator');
 const { evaluateRules } = require('./rules');
 const { createApiRouter } = require('./api');
 const { apiAuth } = require('./auth');
+const middleware = require('./middleware');
+const { createWebhookCardHandler } = require('./webhook');
 const feishu = require('./feishu');
 const sync = require('./sync');
-const events = require('./events');
-const security = require('./security');
 const health = require('./health');
 
 // 初始化数据库（建表 + 预置设备/规则）
@@ -67,37 +66,15 @@ function initFeishuIntegration() {
 }
 
 // 创建 Express 应用
+// FS-007/013/014/001：安全头 + x-powered-by 禁用 + trust proxy + CORS 头补齐 +
+// rawBody 捕获统一收敛到 middleware.configureApp（与集成测试共用同一装配）
 const app = express();
-
-// P0-SEC-003：CORS 显式 allowlist。默认仅本地开发源；配置 FEISHU_CORS_ORIGINS 指定。
-function resolveCorsOrigins() {
-  const raw = (process.env.FEISHU_CORS_ORIGINS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (raw.includes('*')) {
-    throw new Error('FEISHU_CORS_ORIGINS 不得包含 *（与 credentials 冲突）');
-  }
-  // 默认：仅本地前端（端口 3000 由本服务自身 + 常见本地端口）
-  const defaults = ['http://localhost:3000', 'http://127.0.0.1:3000'];
-  const origins = raw.length > 0 ? raw : defaults;
-  console.log(`[cors] 允许来源: ${origins.join(', ')}`);
-  return origins;
-}
-app.use(
-  cors({
-    origin: resolveCorsOrigins(),
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Lark-Signature'],
-    credentials: true,
-  })
-);
-app.use(express.json({ limit: process.env.FEISHU_BODY_LIMIT || '1mb' }));
+middleware.configureApp(app);
 
 // 静态文件（前端）
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// 挂载 /api 路由（v1.1.0 D1：统一鉴权中间件，写操作 fail-closed）
+// 挂载 /api 路由（v1.1.0 D1：统一鉴权中间件，写操作 fail-closed；FS-010 限流）
 app.use('/api', apiAuth, createApiRouter(db));
 
 // 根路径健康检查
@@ -111,24 +88,8 @@ app.get('/', (req, res) => {
 // 探针免鉴权；不改变 / 与 /api/status 既有行为
 health.registerHealthRoutes(app);
 
-// ---- 模拟器（P0-SEC-002）：默认关闭 ----
-function simulatorEnabled() {
-  const raw = (process.env.FEISHU_SIMULATOR_ENABLED || '').trim().toLowerCase();
-  const enabled = raw === 'true' || raw === '1' || raw === 'yes';
-  if (!enabled) return false;
-  const isProd = (process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-  if (isProd) {
-    const allow = (process.env.ALLOW_SIMULATOR_IN_PRODUCTION || '').trim().toLowerCase();
-    if (allow !== 'true' && allow !== '1') {
-      console.error('[simulator] NODE_ENV=production 且未设置 ALLOW_SIMULATOR_IN_PRODUCTION=true，拒绝启动模拟器');
-      return false;
-    }
-    console.warn('[simulator] 警告：production 环境显式允许模拟器（ALLOW_SIMULATOR_IN_PRODUCTION=true）');
-  }
-  return true;
-}
-
-if (simulatorEnabled()) {
+// ---- 模拟器（P0-SEC-002）：默认关闭（实现移至 middleware.js，FS-018 供测试直测） ----
+if (middleware.simulatorEnabled()) {
   // 启动模拟器：每帧生成遥测后立即评估规则，触发的事件写入 events 表
   startSimulator(db, (frame) => {
     try {
@@ -153,115 +114,12 @@ if (simulatorEnabled()) {
 // L1 对齐：旧格式 { open_id, action: {...} } 已不再支持——写操作必须通过验签
 //（token/timestamp/签名/重放四道校验），旧格式缺少 header.token 必然 401，
 // 不提供无验签的旧格式兼容路径（P0-SEC-001 安全边界）。
-app.post('/webhook/card', async (req, res) => {
-  const body = req.body || {};
-  const value = (body.action && body.action.value) || {};
-  const actionType = value.action_type;
-  const eventId = value.event_id || (body.header && body.header.event_id);
+// FS-009：handler 实现收敛到 server/webhook.js（含 FS-004/005/010/011 修复），
+// 生产入口与集成测试共用同一实现，消除测试副本漂移。
+app.post('/webhook/card', createWebhookCardHandler(db));
 
-  // P0-SEC-001：验签（token + timestamp + 签名 + 重放保护）——写操作必须通过
-  const result = security.verifyWebhookRequest(req);
-  if (!result.ok) {
-    security.auditWebhook(db, req, result, actionType, eventId);
-    return res.status(401).json({ ok: false, error: result.error, code: result.code });
-  }
-  security.auditWebhook(db, req, { ok: true }, actionType, eventId);
-
-  try {
-    if (!actionType || !eventId) {
-      return res.json({ ok: false, error: 'missing action_type or event_id' });
-    }
-
-    // v1.1.0 D3：业务幂等 —— 同一事件同一处置动作只执行一次。
-    // 飞书卡片回调对同一事件可能重复推送（不同 event_id 的卡片回调、网络重试等），
-    // 幂等键 (event_id, action_type) 由 webhook_dedup 表唯一约束保证。
-    const dedup = dbm.tryAcquireWebhookDedup(db, {
-      event_id: eventId,
-      action_type: actionType,
-      actor_id: body.open_id || (body.operator && body.operator.open_id) || 'unknown',
-      result: { status: 'processing' },
-    });
-    if (dedup.error) {
-      return res.json({ ok: false, error: dedup.error });
-    }
-    if (dedup.duplicated) {
-      // 已处理过：返回幂等命中（200），不重复执行处置动作
-      return res.json({ ok: true, duplicated: true, event_id: eventId, action: actionType });
-    }
-
-    const event = events.getEvent(db, eventId);
-    if (!event) {
-      return res.json({ ok: false, error: `event not found: ${eventId}` });
-    }
-    // 补充 worker_name 供卡片展示
-    const dev = dbm.getDevice(db, event.device_id);
-    if (dev) event.worker_name = dev.worker_name;
-
-    const cfg = feishu.getConfig();
-    const chatId = cfg && cfg.chat_id;
-    const messageId = event.evidence && event.evidence.feishu_message_id;
-    const openId = body.open_id || (body.operator && body.operator.open_id) || 'unknown';
-
-    let label;
-    try {
-      if (actionType === 'acknowledge') {
-        events.handleEvent(db, eventId, { handler_id: openId, action: 'acknowledge' });
-        label = '已确认';
-      } else if (actionType === 'resolve') {
-        events.handleEvent(db, eventId, { handler_id: openId, action: 'resolve' });
-        label = '已解决';
-      } else if (actionType === 'escalate') {
-        try {
-          await feishu.createApproval(event);
-        } catch (e) {
-          console.error('[webhook] createApproval 失败:', e.message);
-        }
-        events.handleEvent(db, eventId, { handler_id: openId, action: 'escalate' });
-        label = '已上报（审批中）';
-      } else {
-        dbm.deleteWebhookDedup(db, eventId, actionType);
-        return res.status(400).json({ ok: false, error: `unknown action_type: ${actionType}` });
-      }
-    } catch (e) {
-      // 处置失败：删除幂等记录，允许重试（否则会永久拦截）
-      dbm.deleteWebhookDedup(db, eventId, actionType);
-      const isClosedViolation = String(e.message || '').includes('already closed');
-      return res.status(isClosedViolation ? 409 : 400).json({ ok: false, error: e.message });
-    }
-
-    // 处置成功：更新幂等记录结果（审计/溯源）
-    dbm.updateWebhookDedupResult(db, eventId, actionType, { status: 'done', label, at: new Date().toISOString() });
-
-    // 更新原卡片为"已处置"状态（best-effort，失败靠跟进消息兜底）
-    try {
-      const card = feishu.buildHandledCard(event, label);
-      await feishu.updateCardMessage(messageId, card);
-    } catch (e) {
-      console.error('[webhook] updateCardMessage 失败:', e.message);
-    }
-
-    // 发送跟进文本消息到群聊
-    try {
-      if (chatId) {
-        await feishu.sendFollowupMessage(
-          chatId,
-          `✅ 事件处置通知\n事件: ${event.title || '-'}\n设备: ${event.device_id}\n处置人: ${openId}\n结果: ${label}`
-        );
-      }
-    } catch (e) {
-      console.error('[webhook] sendFollowupMessage 失败:', e.message);
-    }
-
-    // v1.1.1：业务处置成功后标记重放已处理（失败时允许合法重试，不被 401 拦截）
-    security.markReplayHandled(eventId);
-
-    res.json({ ok: true });
-  } catch (e) {
-    // 兜底：未知异常不记录 dedup（下次可重试），仅记录错误
-    console.error('[webhook] /webhook/card 处理异常:', e.message);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
+// FS-007：自定义错误中间件（兜底未知异常，对外通用文案，详情仅日志）
+app.use(middleware.errorHandler);
 
 // 监听端口（先启动 HTTP，飞书集成延迟到 setImmediate 执行，不阻塞服务可用性）
 const PORT = process.env.PORT || 3000;

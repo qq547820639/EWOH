@@ -61,6 +61,9 @@ def validate_outcome_annotation(record: Any) -> list[str]:
         for value in measured.values():
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return ["bad_measured"]
+            # EDGE-222：NaN/Inf 检查仅对 float 有意义——int 在 IEEE-754 语义下
+            # 不可能是 NaN/Inf（math.isnan/math.isinf 对 int 恒 False），
+            # 故 int 走此路径即为安全，无需额外检查。
             if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
                 return ["bad_measured"]
     comment = record.get("comment")

@@ -26,18 +26,29 @@ interface FakeDb {
   execute: jest.Mock;
 }
 
-/** 构造 db mock：首次 select().from() 查询以 typed 57P01 拒绝，随后全部恢复成功。 */
+/** 构造 db mock：首次 select().from() 查询以 typed 57P01 拒绝，随后全部恢复成功。
+ *
+ * NEST-101 后 collectState 对 from() 结果先挂 .where(org 条件) 再 await——
+ * fake 必须实现完整 drizzle 链式 thenable（带 where 的可 await 对象），
+ * 故障注入延迟到结算时（构造期不产生 rejected promise，避免 unhandled
+ * rejection 击穿 worker）。
+ */
 function makeDbWithTransientFailure(typedError: Error): FakeDb {
   let fromCalls = 0;
   const select = jest.fn(() => ({
-    from: jest.fn((table: unknown) => {
+    from: jest.fn((_table: unknown) => {
       fromCalls += 1;
-      if (fromCalls === 1) return Promise.reject(typedError);
-      // reservation/binding 带 where 过滤链；其余表直接返回空数组。
-      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
-        return { where: () => Promise.resolve([]) };
-      }
-      return Promise.resolve([]);
+      const shouldFail = fromCalls === 1;
+      const result = shouldFail
+        ? Promise.reject(typedError)
+        : Promise.resolve([]);
+      return {
+        where: () => result,
+        then: (
+          onFulfilled: (v: unknown[]) => unknown,
+          onRejected?: (e: unknown) => unknown,
+        ) => result.then(onFulfilled, onRejected),
+      };
     }),
   }));
   const execute = jest.fn().mockResolvedValue([{ last_seq: 1 }]);

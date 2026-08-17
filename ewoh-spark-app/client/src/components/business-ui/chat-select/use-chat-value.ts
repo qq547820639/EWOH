@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { logger } from '@lark-apaas/client-toolkit/logger';
 import { listChatsByIds } from '@client/src/components/business-ui/api/chats/service';
 import type {
   Chat,
@@ -99,7 +100,13 @@ export function useChatValue(
           return next;
         });
       } catch (error) {
-        console.error('Failed to resolve chat IDs:', error);
+        // CLI-321：不向生产日志输出原始错误对象（可能携带内部接口/租户
+        // 信息），仅记录失败规模与错误类别。
+        logger.warn(
+          `[useChatValue] resolve chat ids failed: ${ids.length} ids, ${
+            error instanceof Error ? error.name : 'unknown error'
+          }`,
+        );
         if (!cancelled) {
           setResolvedChats((prev) => {
             const next = new Map(prev);

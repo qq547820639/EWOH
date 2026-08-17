@@ -5,16 +5,16 @@ import React from 'react';
 import {
   ItemPill,
   renderPillAvatar,
-} from '@client/src/components/business-ui/entity-combobox/item-pill';
-import type { ComboboxSize } from '@client/src/components/business-ui/entity-combobox/size-variants';
-import { UserProfile } from '@client/src/components/business-ui/user-profile/user-profile';
-import type { AccountType } from '@client/src/components/business-ui/user-select/types';
+} from '@/components/business-ui/entity-combobox/item-pill';
+import type { ComboboxSize } from '@/components/business-ui/entity-combobox/size-variants';
+import { UserProfile } from '@/components/business-ui/user-profile/user-profile';
+import type { AccountType } from '@/components/business-ui/user-select/types';
 import { cn } from '@/lib/utils';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@client/src/components/ui/popover';
+} from '@/components/ui/popover';
 
 export type UserPillProps = {
   /**

@@ -2,27 +2,27 @@
 
 import { Loader2 } from 'lucide-react';
 
-import { BaseComboboxItem } from '@client/src/components/business-ui/entity-combobox/base-combobox-item';
-import { HighlightText } from '@client/src/components/business-ui/entity-combobox/highlight-text';
-import { isHexColor } from '@client/src/components/business-ui/entity-combobox/item-pill';
+import { BaseComboboxItem } from '@/components/business-ui/entity-combobox/base-combobox-item';
+import { HighlightText } from '@/components/business-ui/entity-combobox/highlight-text';
+import { isHexColor } from '@/components/business-ui/entity-combobox/item-pill';
 import {
   listItemAvatarVariants,
   listItemNameVariants,
   listItemSubTextVariants,
   listItemVariants,
   type ComboboxSize,
-} from '@client/src/components/business-ui/entity-combobox/size-variants';
-import type { UserSelectItemValue } from '@client/src/components/business-ui/user-select/types';
+} from '@/components/business-ui/entity-combobox/size-variants';
+import type { UserSelectItemValue } from '@/components/business-ui/user-select/types';
 import { cn } from '@/lib/utils';
-import { getI18nText } from '@client/src/components/business-ui/utils/user';
+import { getI18nText } from '@/components/business-ui/utils/user';
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from '@client/src/components/ui/avatar';
+} from '@/components/ui/avatar';
 
 const ExternalUserTag = () => (
-  <span className="dark:blue-200 inline-flex shrink-0 items-center rounded-sm bg-blue-500/20 px-1.5 py-0.5 text-xs leading-4 text-blue-900">
+  <span className="inline-flex shrink-0 items-center rounded-sm bg-info/20 px-1.5 py-0.5 text-xs leading-4 text-primary">
     外部
   </span>
 );
@@ -75,7 +75,7 @@ export const UserItem = ({
           )}
         </Avatar>
         {isConverting && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-foreground/40">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
           </div>
         )}

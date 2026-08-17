@@ -1,9 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { ewohPolicyReplay, ewohWorldStateSnapshot } from '@server/database/schema';
 import type {
   PolicyReplayEvaluation,
@@ -57,7 +63,7 @@ export class PolicyReplayService {
     candidateVersion: number,
     ctx?: OrgContext,
   ): Promise<PolicyReplayEvaluation | null> {
-    const snapshotRow = await this.latestSnapshotRow();
+    const snapshotRow = await this.latestSnapshotRow(ctx);
     if (!snapshotRow) {
       this.logger.warn(
         `policy replay skipped: no historical snapshot (candidate v${candidateVersion})`,
@@ -109,10 +115,24 @@ export class PolicyReplayService {
     return evaluation;
   }
 
-  private async latestSnapshotRow() {
+  /**
+   * 最近历史快照（NEST-036 修复，2026-08-17）：ctx 携带 primaryOrgId 时按
+   * org 血缘列过滤（standalone_057 补列；或 NULL 全局行）——replay 基线不再
+   * 取到他租户快照（跨租户事实污染）。缺省 = 系统后台流。
+   */
+  private async latestSnapshotRow(ctx?: OrgContext) {
+    const orgId = ctx?.primaryOrgId?.trim();
     const rows = await this.db
       .select()
       .from(ewohWorldStateSnapshot)
+      .where(
+        orgId
+          ? or(
+              isNull(ewohWorldStateSnapshot.orgId),
+              eq(ewohWorldStateSnapshot.orgId, orgId),
+            )
+          : undefined,
+      )
       .orderBy(desc(ewohWorldStateSnapshot.createdAt))
       .limit(1);
     return rows[0] ?? null;
@@ -191,6 +211,7 @@ export class PolicyReplayService {
   ): Promise<import('@shared/api.interface').PolicyReplayRecord> {
     const replayId = `RPL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const startedAt = new Date();
+    // NEST-036：快照基线按 ctx org 血缘过滤（同 latestSnapshotRow 语义）。
     const snapshotRow = opts?.snapshotVersion
       ? (
           await this.db
@@ -199,14 +220,18 @@ export class PolicyReplayService {
             .where(eq(ewohWorldStateSnapshot.snapshotVersion, opts.snapshotVersion))
             .limit(1)
         )[0]
-      : await this.latestSnapshotRow();
+      : await this.latestSnapshotRow(opts?.ctx);
     if (!snapshotRow) {
-      throw new Error('policy replay: no historical snapshot available');
+      // NEST-038（2026-08-17）：裸 Error → HttpException（409：前置数据缺失）。
+      throw new ConflictException('policy replay: no historical snapshot available');
     }
     const snapshot = (snapshotRow.snapshotJson ?? {}) as Parameters<SolverService['solve']>[0];
-    const active = await this.policyService.getActivePolicy();
+    const active = await this.policyService.getActivePolicy(opts?.orgId ?? undefined);
     const candidate = await this.policyService.getPolicy(candidateVersion);
-    if (!candidate) throw new Error(`policy v${candidateVersion} not found`);
+    if (!candidate) {
+      // NEST-038：404（候选版本不存在）。
+      throw new NotFoundException(`policy v${candidateVersion} not found`);
+    }
     const seed = opts?.seed ?? Math.floor(Math.random() * 1_000_000);
 
     const perRunResults: Array<Record<string, unknown>> = [];
@@ -306,14 +331,24 @@ export class PolicyReplayService {
     return record;
   }
 
-  /** 读取持久化 replay 记录（activate 守卫用）。 */
+  /**
+   * 读取持久化 replay 记录（activate 守卫用）。
+   * NEST-037 修复（2026-08-17）：orgId 提供时按 org 过滤（跨租户 replayId
+   * 不可读）；缺省 = 系统后台流。
+   */
   async getReplayRecord(
     replayId: string,
+    orgId?: string | null,
   ): Promise<import('@shared/api.interface').PolicyReplayRecord | null> {
     const [row] = await this.db
       .select()
       .from(ewohPolicyReplay)
-      .where(eq(ewohPolicyReplay.replayId, replayId))
+      .where(
+        and(
+          eq(ewohPolicyReplay.replayId, replayId),
+          orgId ? eq(ewohPolicyReplay.orgId, orgId) : undefined,
+        ),
+      )
       .limit(1);
     if (!row) return null;
     return {
@@ -372,8 +407,9 @@ export class PolicyReplayService {
     failures: Array<{ runId?: string; reason: string }>,
     ctx?: OrgContext,
   ): Promise<Record<string, unknown> | null> {
-    void seed;
-    void ctx;
+    // NEST-035 修复（2026-08-17）：seed 不再 `void` 丢弃——透传 SolverService
+    // .solve（SolveOptions.seed → CP-SAT request.seed），replay 记录的确定性
+    // 声明有事实支撑；ctx.orgId 同步透传（CANARY 采样/审计）。
     try {
       const plan: SchedulingPlanV2 = await this.solverService.solve(
         snapshot,
@@ -386,6 +422,8 @@ export class PolicyReplayService {
           snapshotVersion: snapshot.snapshotVersion ?? 'replay',
           horizonMinutes: 480,
           policy,
+          seed,
+          orgId: ctx?.primaryOrgId ?? null,
         },
       );
       return {

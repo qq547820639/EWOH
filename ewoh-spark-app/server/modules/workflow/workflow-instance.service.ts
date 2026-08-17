@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -78,12 +78,16 @@ export class WorkflowInstanceService {
         { step: workflow.start, at: now, actor: actor?.userId ?? 'system' },
       ],
     };
+    // NEST-625：写入显式 orgId（ewoh_scheduler_config.org_id NOT NULL；
+    // 冲突目标 (orgId, configKey) 原先 values 不带 orgId 依赖 GUC 兜底）。
+    const orgId = actor?.primaryOrgId?.trim();
     const [row] = await this.db
       .insert(ewohSchedulerConfig)
       .values({
         configKey,
         configValue: value,
         updatedBy: actor?.userId ?? 'system',
+        ...(orgId ? { orgId } : {}),
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -95,7 +99,7 @@ export class WorkflowInstanceService {
       .returning();
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: orgId ?? row.orgId ?? '',
       action: 'workflow.instance.start',
       entityType: 'workflow_instance',
       entityId: configKey,
@@ -105,11 +109,20 @@ export class WorkflowInstanceService {
     return this.parseInstance(row);
   }
 
-  async list() {
+  async list(actor?: OrgContext) {
+    // NEST-625：org 过滤（global_admin 放行，与 RLS 例外一致）。
+    const orgCond =
+      actor?.isGlobalAdmin || !actor?.primaryOrgId
+        ? undefined
+        : eq(ewohSchedulerConfig.orgId, actor.primaryOrgId);
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, 'workflow.%'))
+      .where(
+        orgCond
+          ? and(like(ewohSchedulerConfig.configKey, 'workflow.%'), orgCond)
+          : like(ewohSchedulerConfig.configKey, 'workflow.%'),
+      )
       .orderBy(desc(ewohSchedulerConfig.updatedAt));
     return rows.map((row) => this.parseInstance(row));
   }
@@ -119,10 +132,18 @@ export class WorkflowInstanceService {
     body: { roles: string[]; toStep?: string },
     actor?: OrgContext,
   ) {
+    const orgCond =
+      actor?.isGlobalAdmin || !actor?.primaryOrgId
+        ? undefined
+        : eq(ewohSchedulerConfig.orgId, actor.primaryOrgId);
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, key));
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulerConfig.configKey, key), orgCond)
+          : eq(ewohSchedulerConfig.configKey, key),
+      );
     if (!row) {
       throw new NotFoundException(`Workflow instance ${key} not found`);
     }
@@ -160,11 +181,15 @@ export class WorkflowInstanceService {
         configValue: value,
         updatedBy: actor?.userId ?? 'system',
       })
-      .where(eq(ewohSchedulerConfig.configKey, key))
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulerConfig.configKey, key), orgCond)
+          : eq(ewohSchedulerConfig.configKey, key),
+      )
       .returning();
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: actor?.primaryOrgId ?? row.orgId ?? '',
       action: 'workflow.instance.advance',
       entityType: 'workflow_instance',
       entityId: key,

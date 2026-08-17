@@ -14,9 +14,13 @@ PrometheusExporter）。设备/数据库/事件计数等可派生指标在 snaps
 纯 Python 标准库实现。
 """
 
+import logging
 import threading
 import time
 from collections import deque
+
+# EDGE-210：快照派生指标异常的 warning 留痕 logger
+_LOGGER = logging.getLogger("ewoh.monitoring.collector")
 
 # 推理耗时样本上限（足够覆盖 P95 计算且避免无界增长）
 _LATENCY_MAX = 10000
@@ -166,17 +170,20 @@ class MetricsCollector:
 
         # 派生指标：优先从 storage 读取当前态（db_counts / open_event_count）
         # 在锁外调用 storage 避免 I/O 阻塞其他 record_*
+        # EDGE-210：storage 异常不再被静默吞掉——warning 留痕（可观测）。
         open_event_count = 0
         if storage is not None:
             try:
                 events = storage.list_events(10000) or []
                 open_event_count = sum(1 for e in events if (e.get("status") == "open"))
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 - 指标派生失败不阻断快照，但留痕
+                _LOGGER.warning("snapshot: list_events 失败，open_event_count 回落 0: %s", exc)
                 open_event_count = 0
             if not db_counts:
                 try:
                     db_counts = dict(storage.counts() or {})
-                except Exception:
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.warning("snapshot: counts() 失败，db_counts 回落空: %s", exc)
                     db_counts = {}
 
         return {

@@ -15,7 +15,8 @@ import {
   ewohProductionTask,
   ewohAssignmentEvent,
 } from '@server/database/schema';
-import { and, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import type { DispatchCoordinatorResult } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
@@ -81,26 +82,45 @@ export class DispatchCoordinatorService {
    * 步骤 2 的快照新鲜度校验在事务之前执行。
    */
   async dispatch(planId: string, ctx: OrgContext): Promise<DispatchCoordinatorResult> {
+    // NEST-008 修复（2026-08-17）：dispatch 初始 SELECT 补 org 条件（org 匹配
+    // 或 NULL 存量）——事务前无 GUC 的裸读此前仅靠 RLS 兜底且存在时序缺口；
+    // 跨租户 planId 直接 404（与"不存在"同语义，反枚举）。
+    const orgCond = ctx.primaryOrgId
+      ? or(
+          isNull(ewohSchedulePlan.orgId),
+          eq(ewohSchedulePlan.orgId, ctx.primaryOrgId),
+        )
+      : undefined;
     const [plan] = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulePlan.planId, planId), orgCond)
+          : eq(ewohSchedulePlan.planId, planId),
+      )
       .limit(1);
     if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
     if (plan.status !== 'approved') {
       throw new ConflictException('PLAN_NOT_APPROVED');
     }
 
-    // 快照新鲜度强校验（事务之前）。
+    // 快照新鲜度强校验（事务之前）。NEST-101：透传 ctx（同 org 时间切片比较）。
     await this.worldStateSnapshotService.assertFreshForApprove(
       plan.snapshotVersion ?? '',
+      ctx,
     );
 
     // v0.7 Batch6.3 SAFETY_EVENT 派工熔断：方案基于最新世界状态时，
     // 若任何派工涉及被安全事件阻断（L2/L3 open）的人员/设备 → 拒绝下发。
     // 安全阻断不可被人工覆盖绕过（与求解器 SAFETY_BLOCK 硬约束同源语义）。
     // P0-7：同时从当前世界状态读取工位容量（station.capacity），供预占容量感知。
-    const currentWorld = await this.worldStateSnapshotService.getCurrentWorldState();
+    // NEST-101：世界状态读取透传 ctx（org 过滤）。
+    const currentWorld = await this.worldStateSnapshotService.getCurrentWorldState(ctx);
+    // NEST-009（2026-08-17）：本次 dispatch 的固定基准时间——缺失 plannedStart
+    // 的 assignment 统一使用同一 nowMs（此前逐 assignment 取 Date.now()，
+    // 重试/慢事务下预占时间窗漂移）。
+    const dispatchNowMs = Date.now();
     const stationCapacityById = new Map<string, number>(
       (currentWorld.stations ?? []).map((s) => [s.id, s.capacity ?? 1]),
     );
@@ -181,7 +201,7 @@ export class DispatchCoordinatorService {
       const stationInputs: ReservationInput[] = [];
       for (const a of assignments) {
         if (!a.stationId) continue;
-        const startMs = a.plannedStart ? a.plannedStart.getTime() : Date.now();
+        const startMs = a.plannedStart ? a.plannedStart.getTime() : dispatchNowMs;
         const endMs = a.plannedEnd
           ? a.plannedEnd.getTime()
           : startMs + fallbackDurationMs;
@@ -265,7 +285,7 @@ export class DispatchCoordinatorService {
         for (const a of assignments) {
           const startMs = a.plannedStart
             ? a.plannedStart.getTime()
-            : Date.now();
+            : dispatchNowMs;
           const endMs = a.plannedEnd
             ? a.plannedEnd.getTime()
             : startMs + fallbackDurationMs;
@@ -338,7 +358,8 @@ export class DispatchCoordinatorService {
         // 9. 写入分配事件。
         for (const a of assignments) {
           await this.db.insert(ewohAssignmentEvent).values({
-            eventId: `EVT-${Date.now()}-${this.randomSuffix()}`,
+            // NEST-047（2026-08-17）：Date.now()+短随机后缀 → randomUUID。
+            eventId: `EVT-${randomUUID()}`,
             assignmentId: a.assignmentId,
             taskId: a.taskId ?? null,
             personId: a.personId ?? null,
@@ -413,7 +434,7 @@ export class DispatchCoordinatorService {
               `派工决策投影缺口（显式跳过，§33）：${issues.join(',')}`,
             );
           }
-          await this.appendDecisionRecords(planId, projected.records);
+          await this.appendDecisionRecords(planId, projected.records, ctx.primaryOrgId || null);
         } catch (err) {
           this.logger.warn(
             `派工决策台账追加失败（不阻断派工主流程）：${err instanceof Error ? err.message : String(err)}`,
@@ -487,16 +508,9 @@ export class DispatchCoordinatorService {
   private async appendDecisionRecords(
     planId: string,
     records: DecisionRecord[],
+    orgId?: string | null,
   ): Promise<void> {
-    await appendPlanDecisionRecords(this.db, planId, records);
-  }
-
-  private randomSuffix(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < 4; i++) {
-      s += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return s;
+    // NEST-024：决策台账追加携带 org 条件（跨租户 planId 不再被追加）。
+    await appendPlanDecisionRecords(this.db, planId, records, orgId ?? null);
   }
 }

@@ -65,16 +65,27 @@ describe('GamificationService player roles', () => {
     }
   });
 
-  it('maps workshop director permissions from the environment role', () => {
-    process.env.EWOH_PLAYER_ROLE = 'workshop_director';
-    process.env.EWOH_PLAYER_NAME = '车间主任';
+  it('maps workshop director permissions from the RBAC role (actor.roles → 玩家角色)', () => {
+    // 角色映射（W4）：dispatcher/workshop_lead/safety_admin → 车间主任
+    // （EWOH_PLAYER_ROLE env 不再参与角色判定）。
     const service = new GamificationService({} as never);
 
-    const role = service.getRole();
+    const role = service.getRole({
+      userId: 'u1',
+      primaryOrgId: 'ORG-1',
+      roles: ['dispatcher'],
+    });
     expect(role.role).toBe('workshop_director');
     expect(role.roleName).toBe('车间主任');
     expect(role.permissions).toContain('dispatch_plan');
     expect(role.permissions).not.toContain('adjust_weights');
+
+    const byLegacyRole = service.getRole({
+      userId: 'u2',
+      primaryOrgId: 'ORG-1',
+      role: 'workshop_lead',
+    });
+    expect(byLegacyRole.role).toBe('workshop_director');
   });
 
   it('defaults to shift leader when no role is configured', () => {
@@ -100,9 +111,14 @@ describe('GamificationService dispatch and feedback', () => {
     const { db, updateWhere } = createDispatchDb([plan], devices);
     const service = new GamificationService(db as never);
 
-    const result = await service.dispatchPlan('P-1', {
-      operator: 'supervisor',
-    });
+    const result = await service.dispatchPlan(
+      'P-1',
+      {
+        operator: 'supervisor',
+      },
+      // W4：写操作显式租户上下文（NULL orgId 存量行放行）。
+      { userId: 'supervisor', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.status).toBe('dispatched');
     expect(result.conflicts).toEqual([]);
@@ -122,9 +138,13 @@ describe('GamificationService dispatch and feedback', () => {
     const { db, updateWhere } = createDispatchDb([plan], devices);
     const service = new GamificationService(db as never);
 
-    const result = await service.dispatchPlan('P-1', {
-      operator: 'supervisor',
-    });
+    const result = await service.dispatchPlan(
+      'P-1',
+      {
+        operator: 'supervisor',
+      },
+      { userId: 'supervisor', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.status).toBe('conflict');
     expect(result.conflicts[0]).toContain('离线');
@@ -137,10 +157,15 @@ describe('GamificationService dispatch and feedback', () => {
     ]);
     const service = new GamificationService(db as never);
 
-    const result = await service.sendExoFeedback('EXO-1', {
-      type: 'tactile',
-      tactilePattern: 'vibrate_high',
-    });
+    const result = await service.sendExoFeedback(
+      'EXO-1',
+      {
+        type: 'tactile',
+        tactilePattern: 'vibrate_high',
+      },
+      // NEST-311：设备按 (orgId, deviceId) 定位，需显式租户上下文。
+      { userId: 'supervisor', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.accepted).toBe(false);
     expect(result.error).toBe('设备离线');
@@ -152,11 +177,15 @@ describe('GamificationService dispatch and feedback', () => {
     ]);
     const service = new GamificationService(db as never);
 
-    const result = await service.sendExoFeedback('EXO-1', {
-      type: 'voice',
-      message: '负荷过高，请休息',
-      priority: 'high',
-    });
+    const result = await service.sendExoFeedback(
+      'EXO-1',
+      {
+        type: 'voice',
+        message: '负荷过高，请休息',
+        priority: 'high',
+      },
+      { userId: 'supervisor', primaryOrgId: 'ORG-1' },
+    );
 
     expect(result.accepted).toBe(true);
     expect(result.delivered).toBe(true);
@@ -249,16 +278,17 @@ describe('GamificationService plan org isolation (ADR-071 / NO-13v)', () => {
     expect(auditRow?.row.orgId).toBe('ORG-1');
   });
 
-  it('allocateResources 无 actor → orgId null（与 persistPlan 语义一致）', async () => {
+  it('allocateResources 无 actor → fail-closed 拒绝（W4：写操作必须带租户上下文）', async () => {
     const { db, insertRows } = createPlanWriteDb();
     const service = new GamificationService(db as never);
-    await service.allocateResources({
-      allocations: [
-        { entityId: 'EXO-1', targetType: 'workstation', targetId: 'station:s1' },
-      ],
-    });
-    const planRow = insertRows.find((e) => e.table === ewohSchedulePlan);
-    expect(planRow?.row.orgId).toBeNull();
+    await expect(
+      service.allocateResources({
+        allocations: [
+          { entityId: 'EXO-1', targetType: 'workstation', targetId: 'station:s1' },
+        ],
+      }),
+    ).rejects.toThrow(/org context missing/);
+    expect(insertRows).toHaveLength(0);
   });
 
   it('orchestrateTask 写方案行 orgId=primaryOrgId（ctx 归属）', async () => {

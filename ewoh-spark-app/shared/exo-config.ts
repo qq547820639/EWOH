@@ -150,7 +150,8 @@ export function validateExoConfig(record: unknown): string[] {
     }
     const fromMs = isoMs(r.effectiveFrom);
     if (fromMs === null) {
-      return r.effectiveFrom === undefined ? ['missing_field:effectiveFrom'] : ['bad_effective_from'];
+      // SH-013：null/undefined 同语义（Python .get() 缺键与显式 None 同归 missing_field）。
+      return r.effectiveFrom == null ? ['missing_field:effectiveFrom'] : ['bad_effective_from'];
     }
     if (r.effectiveTo !== undefined) {
       const toMs = isoMs(r.effectiveTo);

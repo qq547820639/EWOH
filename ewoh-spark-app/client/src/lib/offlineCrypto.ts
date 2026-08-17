@@ -72,14 +72,13 @@ export async function importCryptoKey(exported: string): Promise<CryptoKey> {
 }
 
 function randomBytes(length: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(new ArrayBuffer(length));
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < length; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
+  // CLI-505：crypto.getRandomValues 不可用时直接抛错拒绝加密——
+  // Math.random 生成的 AES-GCM IV 可预测，会使加密降级为可恢复明文。
+  if (typeof crypto === 'undefined' || !crypto.getRandomValues) {
+    throw new Error('crypto.getRandomValues is not available; refusing to encrypt');
   }
+  const bytes = new Uint8Array(new ArrayBuffer(length));
+  crypto.getRandomValues(bytes);
   return bytes;
 }
 
@@ -140,14 +139,24 @@ export class SensitiveCipher {
     return this.keyPromise !== null;
   }
 
-  /** Lazily initializes (or re-initializes) the key. */
+  /**
+   * Lazily initializes (or re-initializes) the key.
+   *
+   * CLI-524：keyPromise 的生成/导入 Promise 是同步创建并同步赋值的，
+   * 并发调用天然复用同一个 in-flight Promise（Promise 缓存即并发锁），
+   * 不会各自 generateKey。失败时清除缓存的 rejected Promise，允许重试。
+   */
   async ensureKey(existingExport?: string): Promise<CryptoKey> {
     if (!this.keyPromise) {
-      if (existingExport) {
-        this.keyPromise = importCryptoKey(existingExport);
-      } else {
-        this.keyPromise = generateCryptoKey();
-      }
+      const pending = existingExport
+        ? importCryptoKey(existingExport)
+        : generateCryptoKey();
+      this.keyPromise = pending;
+      pending.catch(() => {
+        if (this.keyPromise === pending) {
+          this.keyPromise = null;
+        }
+      });
     }
     return this.keyPromise;
   }
@@ -172,6 +181,10 @@ export class SensitiveCipher {
    * Rotates the key: derives a fresh key and re-encrypts all provided
    * ciphertext blobs. Returns the new key export plus the re-encrypted blobs.
    * Used when the current key is compromised or on a scheduled rotation.
+   *
+   * CLI-502：原子换 key——全程先用旧 key 解密、新 key 重加密，全部成功后
+   * 才替换内存中的 keyPromise。中途任一步失败时实例仍持有旧 key，
+   * 旧密文依旧可解，不会出现「内存新 key + 落盘旧密文」的不一致窗口。
    */
   async rotate(
     blobs: Array<{ ref: string; ciphertext: string }>,
@@ -185,13 +198,14 @@ export class SensitiveCipher {
     );
     const newKey = await generateCryptoKey();
     const newExport = await exportCryptoKey(newKey);
-    this.keyPromise = Promise.resolve(newKey);
     const reencrypted = await Promise.all(
       decrypted.map(async (item) => ({
         ref: item.ref,
         ciphertext: await encryptString(newKey, item.plaintext),
       })),
     );
+    // 全部重加密成功后才切换内存 key。
+    this.keyPromise = Promise.resolve(newKey);
     return { newKeyExport: newExport, reencrypted };
   }
 

@@ -1,5 +1,5 @@
 import type { AccountType } from '@lark-apaas/client-toolkit/tools/services';
-import type { UserInput } from '@client/src/components/business-ui/types/user';
+import type { UserInput } from '@/components/business-ui/types/user';
 
 export interface UserWithAvatarProps {
   /**

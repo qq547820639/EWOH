@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Activity,
   BriefcaseBusiness,
@@ -52,7 +53,12 @@ const TABS = ['总览', '维保资产', '维保任务', '工装校验', '工作�
 type Tab = (typeof TABS)[number];
 
 const formatTime = (value: string | null | undefined): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
+  value
+    ? new Date(value).toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false,
+      })
+    : '—';
 
 const emptyFlags: WorkCenterFlags = {
   firstInspectionRequired: false,
@@ -145,7 +151,8 @@ const Operations = (): React.ReactElement => {
   const [taskAsset, setTaskAsset] = useState('');
   const [taskType, setTaskType] = useState('preventive');
   const [taskPriority, setTaskPriority] = useState('medium');
-  const [completeResult, setCompleteResult] = useState('');
+  // CLI-203：完成结果按 taskId 维护（原共享单值，A 任务输入残留到 B 任务提交）。
+  const [completeResults, setCompleteResults] = useState<Record<string, string>>({});
 
   const [toolName, setToolName] = useState('');
   const [toolCategory, setToolCategory] = useState('tooling');
@@ -231,6 +238,7 @@ const Operations = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
+  // CLI-204：以下 9 个写操作 mutation 全部补 onError（失败 toast 透传 err.message）。
   const addAsset = useMutation({
     mutationFn: () =>
       registerMaintenanceAsset({
@@ -244,11 +252,21 @@ const Operations = (): React.ReactElement => {
       setAssetName('');
       setAssetLocation('');
     },
+    onError: (err) => {
+      toast.error('资产登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const assetAction = useMutation({
     mutationFn: (vars: { assetId: string; action: 'flag_maintenance' | 'activate' | 'decommission' }) =>
       transitionMaintenanceAsset(vars.assetId, vars.action),
     onSuccess: invalidateAll,
+    onError: (err) => {
+      toast.error('资产状态变更失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const addTask = useMutation({
@@ -264,6 +282,11 @@ const Operations = (): React.ReactElement => {
       setTaskTitle('');
       setTaskAsset('');
     },
+    onError: (err) => {
+      toast.error('任务登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const taskAction = useMutation({
     mutationFn: (vars: {
@@ -273,11 +296,27 @@ const Operations = (): React.ReactElement => {
     }) =>
       transitionMaintenanceTask(vars.taskId, vars.action, {
         result: vars.result,
-        note: vars.action === 'complete' ? 'workbench complete' : undefined,
+        // CLI-229：note 由用户输入的结果注入（原硬编码 'workbench complete'）。
+        note:
+          vars.action === 'complete' && vars.result?.trim()
+            ? `完成结果：${vars.result.trim()}`
+            : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       invalidateAll();
-      setCompleteResult('');
+      // CLI-203：仅清除该任务的完成结果输入。
+      if (vars.action === 'complete') {
+        setCompleteResults((current) => {
+          const next = { ...current };
+          delete next[vars.taskId];
+          return next;
+        });
+      }
+    },
+    onError: (err) => {
+      toast.error('任务状态变更失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -292,11 +331,21 @@ const Operations = (): React.ReactElement => {
       invalidateAll();
       setToolName('');
     },
+    onError: (err) => {
+      toast.error('工装登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const toolAction = useMutation({
     mutationFn: (vars: { toolId: string; action: 'calibrate' | 'retire' }) =>
       transitionMaintenanceTool(vars.toolId, vars.action),
     onSuccess: invalidateAll,
+    onError: (err) => {
+      toast.error('工装操作失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const saveWorkCenter = useMutation({
@@ -317,6 +366,11 @@ const Operations = (): React.ReactElement => {
       setWcCapabilities('');
       setWcFlags(emptyFlags);
     },
+    onError: (err) => {
+      toast.error('工作中心保存失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const addStandardHour = useMutation({
@@ -331,6 +385,11 @@ const Operations = (): React.ReactElement => {
       invalidateAll();
       setShCode('');
       setShName('');
+    },
+    onError: (err) => {
+      toast.error('标准工时登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -349,6 +408,11 @@ const Operations = (): React.ReactElement => {
       setEfCode('');
       setEfActual('');
       setEfStandard('');
+    },
+    onError: (err) => {
+      toast.error('效率记录登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 
@@ -668,8 +732,13 @@ const Operations = (): React.ReactElement => {
                           {task.status === 'in_progress' && (
                             <>
                               <input
-                                value={completeResult}
-                                onChange={(event) => setCompleteResult(event.target.value)}
+                                value={completeResults[task.taskId] ?? ''}
+                                onChange={(event) =>
+                                  setCompleteResults((current) => ({
+                                    ...current,
+                                    [task.taskId]: event.target.value,
+                                  }))
+                                }
                                 placeholder="结果"
                                 className="h-8 w-28 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs"
                               />
@@ -679,7 +748,7 @@ const Operations = (): React.ReactElement => {
                                   taskAction.mutate({
                                     taskId: task.taskId,
                                     action: 'complete',
-                                    result: completeResult,
+                                    result: completeResults[task.taskId] ?? '',
                                   })
                                 }
                               >

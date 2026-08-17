@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import {
   OnboardingService,
-  SAMPLE_FACTORY_DEV_TOKEN,
   SAMPLE_FACTORY_PREFIX,
   SAMPLE_FACTORY_TOKEN_ENV,
   assertSampleFactoryGuard,
@@ -39,17 +38,19 @@ describe('样例工厂守卫纯函数（sample factory guard logic）', () => {
     });
   });
 
-  it('非生产环境缺少显式 token 时允许内置开发 token', () => {
+  it('NEST-636: 非生产环境未配置 token 同样 BLOCKED（内置开发 token 已删除）', () => {
     const env = { NODE_ENV: 'development' } as NodeJS.ProcessEnv;
-    expect(resolveSampleFactoryGuardToken(env)).toBe(SAMPLE_FACTORY_DEV_TOKEN);
-    expect(assertSampleFactoryGuard(SAMPLE_FACTORY_DEV_TOKEN, env)).toEqual({
-      ok: true,
+    expect(resolveSampleFactoryGuardToken(env)).toBeNull();
+    // 旧内置 dev token 不再被接受。
+    expect(assertSampleFactoryGuard('ewoh-demo-2026', env)).toEqual({
+      ok: false,
+      reason: 'GUARD_TOKEN_NOT_CONFIGURED',
     });
   });
 
   it('显式配置 token 后必须精确匹配，否则返回 GUARD_TOKEN_MISMATCH', () => {
     const env = {
-      NODE_ENV: 'production',
+      NODE_ENV: 'development',
       [SAMPLE_FACTORY_TOKEN_ENV]: 'secret-token',
     } as NodeJS.ProcessEnv;
     expect(assertSampleFactoryGuard('wrong', env)).toEqual({
@@ -73,9 +74,23 @@ describe('样例工厂守卫纯函数（sample factory guard logic）', () => {
 });
 
 describe('OnboardingService 样例工厂 init/clear 守卫', () => {
+  const TOKEN = 'explicit-test-token';
+
   afterEach(() => {
     delete process.env[SAMPLE_FACTORY_TOKEN_ENV];
     delete process.env.NODE_ENV;
+  });
+
+  it('未配置 token：init 一律 BLOCKED（无开发后门，NEST-636）', async () => {
+    const installGoldenFactory = jest.fn();
+    const { service } = createService({
+      installGoldenFactory,
+      isDatabaseAvailable: jest.fn().mockResolvedValue(true),
+    });
+    await expect(
+      service.sampleFactoryInit({ token: 'ewoh-demo-2026', factoryName: 'x' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(installGoldenFactory).not.toHaveBeenCalled();
   });
 
   it('init 时 token 不匹配 → ForbiddenException（BLOCKED），不触碰数据库', async () => {
@@ -91,19 +106,20 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
   });
 
   it('init 时数据库不可用 → ServiceUnavailableException（DATABASE_UNAVAILABLE），不假装成功', async () => {
+    process.env[SAMPLE_FACTORY_TOKEN_ENV] = TOKEN;
     const installGoldenFactory = jest.fn();
     const { service } = createService({
       installGoldenFactory,
       isDatabaseAvailable: jest.fn().mockResolvedValue(false),
     });
     await expect(
-      service.sampleFactoryInit({ token: SAMPLE_FACTORY_DEV_TOKEN }),
+      service.sampleFactoryInit({ token: TOKEN }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(installGoldenFactory).not.toHaveBeenCalled();
   });
 
   it('init 成功时在演示前缀下创建数据并记录审计', async () => {
-    process.env.NODE_ENV = 'development';
+    process.env[SAMPLE_FACTORY_TOKEN_ENV] = TOKEN;
     const installGoldenFactory = jest.fn().mockResolvedValue({
       factoryName: `${SAMPLE_FACTORY_PREFIX}样例工厂`,
       profileId: 'PRF-demo-1',
@@ -115,7 +131,7 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
       isDatabaseAvailable: jest.fn().mockResolvedValue(true),
     });
     const result = await service.sampleFactoryInit({
-      token: SAMPLE_FACTORY_DEV_TOKEN,
+      token: TOKEN,
     });
     expect(result.status).toBe('created');
     expect(installGoldenFactory).toHaveBeenCalledWith(
@@ -130,6 +146,7 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
   });
 
   it('init 拒绝非演示前缀的工厂名', async () => {
+    process.env[SAMPLE_FACTORY_TOKEN_ENV] = TOKEN;
     const installGoldenFactory = jest.fn();
     const { service } = createService({
       installGoldenFactory,
@@ -137,7 +154,7 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
     });
     await expect(
       service.sampleFactoryInit({
-        token: SAMPLE_FACTORY_DEV_TOKEN,
+        token: TOKEN,
         factoryName: 'line-1',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -145,17 +162,18 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
   });
 
   it('clear 时数据库不可用 → ServiceUnavailableException', async () => {
+    process.env[SAMPLE_FACTORY_TOKEN_ENV] = TOKEN;
     const { service } = createService({
       isDatabaseAvailable: jest.fn().mockResolvedValue(false),
       clearDemoProfiles: jest.fn(),
     });
     await expect(
-      service.sampleFactoryClear({ token: SAMPLE_FACTORY_DEV_TOKEN }),
+      service.sampleFactoryClear({ token: TOKEN }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('clear 仅清理演示前缀数据并返回移除数量', async () => {
-    process.env.NODE_ENV = 'development';
+    process.env[SAMPLE_FACTORY_TOKEN_ENV] = TOKEN;
     const clearDemoProfiles = jest.fn().mockResolvedValue({
       removed: 2,
       profileIds: ['PRF-demo-1', 'PRF-demo-2'],
@@ -165,7 +183,7 @@ describe('OnboardingService 样例工厂 init/clear 守卫', () => {
       clearDemoProfiles,
     });
     const result = await service.sampleFactoryClear({
-      token: SAMPLE_FACTORY_DEV_TOKEN,
+      token: TOKEN,
     });
     expect(result.status).toBe('cleared');
     expect(result.removed).toBe(2);

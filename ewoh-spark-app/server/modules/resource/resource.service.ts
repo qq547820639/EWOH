@@ -100,57 +100,62 @@ export class ResourceService {
       throw new BadRequestException('resourceId and positive quantity are required');
     }
     return this.withResourceLock(resourceId, async () => {
-      await this.ensureSeededInventory(resourceId, actor);
-      const inventoryQty = await this.loadInventoryQuantity(resourceId);
-      const active = await this.loadActivePreorders(resourceId);
-      if (availableQuantity(inventoryQty, active) < quantity) {
-        throw new BadRequestException('Insufficient available quantity');
-      }
-      const preorder: Preorder = {
-        id: nextId(),
-        resourceId,
-        quantity,
-        issuedQty: 0,
-        status: 'pending',
-      };
-      const [row] = await this.safeExecute<PreorderRow>('create resource preorder', this.db
-        .insert(ewohResourcePreorder)
-        .values({
-          preorderId: preorder.id,
-          resourceType: 'inventory',
+      // NEST-631：可用量「检查-插入」以 pg_advisory_xact_lock 跨实例串行化
+      // （原先仅进程内 withResourceLock，多实例并发可超卖预占）。
+      return this.db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`res:${resourceId}`}))`);
+        await this.ensureSeededInventory(resourceId, actor);
+        const inventoryQty = await this.loadInventoryQuantity(resourceId);
+        const active = await this.loadActivePreorders(resourceId);
+        if (availableQuantity(inventoryQty, active) < quantity) {
+          throw new BadRequestException('Insufficient available quantity');
+        }
+        const preorder: Preorder = {
+          id: nextId(),
           resourceId,
-          quantity: sql`${quantity}`,
-          reservedQty: sql`${quantity}`,
-          issuedQty: sql`${0}`,
-          consumedQty: sql`${0}`,
-          returnedQty: sql`${0}`,
+          quantity,
+          issuedQty: 0,
           status: 'pending',
-          ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
-        })
-        .returning({
-          preorder_id: ewohResourcePreorder.preorderId,
-          resource_id: ewohResourcePreorder.resourceId,
-          quantity: ewohResourcePreorder.quantity,
-          reserved_qty: ewohResourcePreorder.reservedQty,
-          issued_qty: ewohResourcePreorder.issuedQty,
-          status: ewohResourcePreorder.status,
-        }));
-      const created = this.mapPreorder(row);
-      await this.recordAudit(
-        {
-          action: 'resource.preorder',
-          entityType: 'resource_preorder',
-          entityId: created.id,
-          before: null,
-          after: {
-            resourceId: created.resourceId,
-            quantity: created.quantity,
-            status: created.status,
+        };
+        const [row] = await this.safeExecute<PreorderRow>('create resource preorder', tx
+          .insert(ewohResourcePreorder)
+          .values({
+            preorderId: preorder.id,
+            resourceType: 'inventory',
+            resourceId,
+            quantity: sql`${quantity}`,
+            reservedQty: sql`${quantity}`,
+            issuedQty: sql`${0}`,
+            consumedQty: sql`${0}`,
+            returnedQty: sql`${0}`,
+            status: 'pending',
+            ...(actor?.primaryOrgId ? { orgId: actor.primaryOrgId } : {}),
+          })
+          .returning({
+            preorder_id: ewohResourcePreorder.preorderId,
+            resource_id: ewohResourcePreorder.resourceId,
+            quantity: ewohResourcePreorder.quantity,
+            reserved_qty: ewohResourcePreorder.reservedQty,
+            issued_qty: ewohResourcePreorder.issuedQty,
+            status: ewohResourcePreorder.status,
+          }));
+        const created = this.mapPreorder(row);
+        await this.recordAudit(
+          {
+            action: 'resource.preorder',
+            entityType: 'resource_preorder',
+            entityId: created.id,
+            before: null,
+            after: {
+              resourceId: created.resourceId,
+              quantity: created.quantity,
+              status: created.status,
+            },
           },
-        },
-        actor,
-      );
-      return created;
+          actor,
+        );
+        return created;
+      });
     });
   }
 
@@ -239,8 +244,21 @@ export class ResourceService {
 
   async release(preorderId: string, actor?: OrgContext): Promise<Preorder> {
     const preorder = await this.getPreorder(preorderId);
+    // NEST-632：release 状态白名单——仅 pending/issued 可释放（原先
+    // consumed/released 状态重复释放=库存重复返还）。
+    if (preorder.status !== 'pending' && preorder.status !== 'issued') {
+      throw new BadRequestException(
+        `Preorder ${preorderId} cannot be released from status ${preorder.status} (only pending or issued)`,
+      );
+    }
     return this.withResourceLock(preorder.resourceId, async () => {
       const fresh = await this.getPreorder(preorderId);
+      // 锁内复核状态（锁外检查与锁内执行间状态可能被并发改变）。
+      if (fresh.status !== 'pending' && fresh.status !== 'issued') {
+        throw new BadRequestException(
+          `Preorder ${preorderId} cannot be released from status ${fresh.status} (only pending or issued)`,
+        );
+      }
       const remaining = fresh.quantity - fresh.issuedQty;
       await this.ensureSeededInventory(fresh.resourceId, actor);
       const [releasedRow] = await this.safeExecute<InventoryRow>(

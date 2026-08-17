@@ -157,6 +157,12 @@ interface ReuseContext {
 export class HeuristicSchedulingSolver implements SchedulingSolver {
   private readonly logger = new Logger(HeuristicSchedulingSolver.name);
 
+  /**
+   * NEST-048（2026-08-17）：负载等级罚系数——loadLevel 每级计 60s 等效成本
+   * （原为两处散落魔数 60*1000；与 candidate-engine LOAD_PENALTY_MS_PER_LEVEL 同源）。
+   */
+  private static readonly LOAD_PENALTY_MS_PER_LEVEL = 60 * 1000;
+
   constructor(
     private readonly policyService: SchedulingPolicyService,
     private readonly routingService: RoutingService,
@@ -1107,7 +1113,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                   stationChanged * (churnCfg.stationChangePenalty ?? 0)
                 : undefined;
             const changeCost = personChanged;
-            const loadPenalty = person.loadLevel * 60 * 1000;
+            const loadPenalty =
+              person.loadLevel * HeuristicSchedulingSolver.LOAD_PENALTY_MS_PER_LEVEL;
             const changeCostMs = changeCost * 60 * 1000;
             // T03 / P1-4：setup/changeover 成本入评分（station 换型）。
             const changeover = task.stationId != null && task.stationId !== stationId;
@@ -1826,7 +1833,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationChanged * (churnCfg.stationChangePenalty ?? 0)
         : undefined;
     const changeCost = 0; // person 不变
-    const loadPenalty = person.loadLevel * 60 * 1000;
+    const loadPenalty =
+      person.loadLevel * HeuristicSchedulingSolver.LOAD_PENALTY_MS_PER_LEVEL;
     const changeCostMs = changeCost * 60 * 1000;
     const changeover = task.stationId != null && task.stationId !== entry.stationId;
     const setupMinutes = ctx.config.setupMinutes ?? 15;

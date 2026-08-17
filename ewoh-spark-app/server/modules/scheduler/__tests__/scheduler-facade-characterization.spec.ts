@@ -678,7 +678,9 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const route = await svc.calculateRouteV2({ personId: 'p1', taskId: 't1' });
       expect(route).toEqual({ routeId: 'ROUTE-1' });
-      expect(mocks.routingService.calculateRoute).toHaveBeenCalledWith('p1', 't1');
+      // NEST-118（2026-08-17）：单点路由计算透传 actor（无认证上下文时
+      // undefined = 系统语义；controller 层负责传入 userContext）。
+      expect(mocks.routingService.calculateRoute).toHaveBeenCalledWith('p1', 't1', undefined);
     });
 
     it('calculateRouteV2 批量候选模式返回 RouteCandidatesResponse', async () => {
@@ -701,7 +703,8 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.getTaskCandidates('t1');
       expect(res.solverVersion).toBe('candidate-engine-v1');
-      expect(mocks.candidateEngineService.evaluateTaskCandidates).toHaveBeenCalledWith('t1');
+      // NEST-111（2026-08-17）：透传 actor（undefined = 系统语义，controller 层传 userContext）。
+      expect(mocks.candidateEngineService.evaluateTaskCandidates).toHaveBeenCalledWith('t1', undefined);
     });
 
     it('getTaskCandidates（未注入 candidateEngine）→ 回退旧逻辑（资格+路由+排序）', async () => {
@@ -745,7 +748,8 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.comparePlansV2('P-1', 'P-2');
       expect(res).toEqual({ changed: true });
-      expect(mocks.planService.comparePlans).toHaveBeenCalledWith('P-1', 'P-2');
+      // NEST-030：comparePlans 透传 actor（租户守卫）。
+      expect(mocks.planService.comparePlans).toHaveBeenCalledWith('P-1', 'P-2', undefined);
     });
   });
 
@@ -906,7 +910,8 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.listConflicts({});
       expect(res).toEqual({ conflicts: [], total: 0 });
-      expect(mocks.conflictService.listConflicts).toHaveBeenCalledWith({});
+      // NEST-107：冲突列表透传 actor。
+      expect(mocks.conflictService.listConflicts).toHaveBeenCalledWith({}, undefined);
     });
 
     it('未注入 conflictService → 回退内存推导（double booking / low battery / stale plan）', async () => {

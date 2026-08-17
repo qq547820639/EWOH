@@ -267,6 +267,7 @@
       "browser": "5/5",
       "repoFacts": "38/38",
       "workGraph": "252 items / 209 edges / 48 actors / 191 evidence / 14 gates / 0 conflicts / 220 missing evidence / 4 gates need approval",
+      "db": "74 managed tables / 77 physical tables (unverified figure from schema-manifest header, 2026-08-17 口径统一；历史轮次计数已废弃)",
       "pilotReadiness": "NOT READY (env-fingerprint: no-runtime-env)",
       "pilotEnvironmentFingerprint": "no-runtime-env"
     },

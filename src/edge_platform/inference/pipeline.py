@@ -294,9 +294,20 @@ class InferencePipeline:
         try:
             allowed = self._consent_manager.is_allowed(person_id, CONSENT_PURPOSE_TELEMETRY)
         except Exception:
-            # 授权服务异常时 fail-open，避免授权故障导致全平台停摆；
-            # 异常本身不写入审计以免噪声。
-            return True
+            # EDGE-107（2026-08-17 审计整改）：授权服务异常时 fail-closed——
+            # 授权态不可判定即跳过该帧（隐私优先），并记录审计计数便于诊断；
+            # 授权服务恢复后自动回到正常判定路径。
+            self.consent_denied_log.append(
+                {
+                    "ts": _now_iso(),
+                    "person_id": person_id,
+                    "device_id": msg.get("device_id"),
+                    "frame_ts": msg.get("timestamp"),
+                    "reason": "consent_service_error",
+                    "purpose": CONSENT_PURPOSE_TELEMETRY,
+                }
+            )
+            return False
         if not allowed:
             self.consent_denied_log.append(
                 {
@@ -437,8 +448,8 @@ class InferencePipeline:
             "subject_id": f"device:{dev}",
             "ood_indicator": {"flag": label == "unknown", "reasons": ood_reasons},
         }
-        # NO-08b：契约自检（fail-closed 留痕）——校验失败不阻断推理主路，
-        # 但必须显式记录 violations（绝不静默吞掉契约漂移）。
+        # NO-08b：契约自检（fail-closed）——校验失败的记录落库留痕但不发布到
+        # 推理流（EDGE-108：违约记录不进入订阅/上行链路；violations 显式标记）。
         violations = validate_inference_result({
             "inferenceId": res["inference_id"],
             "subjectId": res["subject_id"],
@@ -466,6 +477,11 @@ class InferencePipeline:
             )
         res["contract_violations"] = violations
         self.storage.insert_inference(res)
+        # EDGE-108（2026-08-17 审计整改）：契约校验失败时不再发布到推理流——
+        # 记录仍落库（含 violations 留痕，可审计/修复），但订阅方（事件/上行
+        # 链路）不消费违约记录（与 docstring 的 fail-closed 声明一致）。
+        if violations:
+            return res
         self.bus.publish(STREAM_INFERENCE, res)
         # Task 33：记录推理指标到 MetricsCollector（若已注入）
         if self._metrics is not None:

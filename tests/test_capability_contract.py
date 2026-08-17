@@ -16,6 +16,7 @@ from edge_platform.contracts import capability as cap
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VECTORS_PATH = REPO_ROOT / "contracts" / "capability" / "capability.test-vectors.json"
+SCHEMA_PATH = REPO_ROOT / "contracts" / "capability" / "capability.schema.json"
 
 
 def _load() -> list:
@@ -31,8 +32,14 @@ def test_vector(case):
         assert errors[0] == case["expectError"], (case["name"], errors)
 
 
-def test_registries_shape():
-    assert len(cap.CAPABILITY_KINDS) == 5
-    assert len(cap.PROVIDER_TYPES) == 7
+def test_registries_match_schema():
+    """TEST-006：加载 capability.schema.json 与 Python 注册表逐项交叉核对（顺序敏感）。"""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert list(cap.CAPABILITY_KINDS) == schema["capabilityKinds"]
+    assert list(cap.PROVIDER_TYPES) == schema["providerTypes"]
+    assert list(cap.KNOWN_VALUES) == schema["knownValues"]
     for value in cap.KNOWN_VALUES:
         assert isinstance(value, str) and value
+    # properties.enum 与注册表同源一致性
+    assert schema["properties"]["kind"]["enum"] == list(cap.CAPABILITY_KINDS)
+    assert schema["properties"]["providerType"]["enum"] == list(cap.PROVIDER_TYPES)

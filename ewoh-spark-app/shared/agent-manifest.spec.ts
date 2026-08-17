@@ -88,6 +88,23 @@ describe('agent-manifest contract', () => {
     ).toEqual(['safety_role_write_forbidden']);
   });
 
+  it('SH-019：Safety 禁止 L2/L3 自治（safety_autonomy_forbidden）；critical+L3 冲突', () => {
+    expect(
+      validateAgentManifest({
+        ...BASE,
+        role: 'Safety',
+        approvalRequirement: { autonomousLevel: 'L2', approvalRequiredFor: ['dispatch_task'] },
+      }),
+    ).toEqual(['safety_autonomy_forbidden']);
+    expect(
+      validateAgentManifest({
+        ...BASE,
+        riskLevel: 'critical',
+        approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['dispatch_task'] },
+      }),
+    ).toEqual(['level_risk_conflict']);
+  });
+
   it('auditTrail 强制 true；budget/timeout 下界；fallback 封闭', () => {
     expect(validateAgentManifest({ ...BASE, auditTrail: false })).toEqual(['audit_required']);
     expect(

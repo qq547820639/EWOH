@@ -17,7 +17,7 @@ export async function listAlerts(): Promise<AlertRecord[]> {
 
 export async function transitionAlert(eventId: string, action: string): Promise<AlertRecord> {
   const res = await axiosForBackend({
-    url: `/api/alerts/${eventId}/state`,
+    url: `/api/alerts/${encodeURIComponent(eventId)}/state`,
     method: 'POST',
     params: { action },
   });

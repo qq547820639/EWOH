@@ -246,7 +246,8 @@ export const listItemSubTextVariants = cva(
  */
 export const itemPillVariants = cva(
   [
-    'w-fit gap-1 rounded-full border-0 bg-[#E8E8E9] font-normal dark:bg-[#3D3E3E]',
+    // CLI-346：HEX 硬编码替换为 muted 令牌（暗色模式由 token 自动翻转）。
+    'w-fit gap-1 rounded-full border-0 bg-muted font-normal',
     'pt-px pb-px pl-0.5',
   ],
   {

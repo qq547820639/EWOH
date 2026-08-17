@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -22,7 +24,11 @@ import type {
 } from '@shared/api.interface';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
 import { aggregateApprovalStatus } from './approval.service';
+
+/** approval.yaml role:high_privilege_admin 在系统角色表中的映射（最高权限角色）。 */
+const HIGH_PRIVILEGE_ROLE = 'global_admin';
 
 const STEP_STATUSES = new Set<ApprovalStepStatus>([
   'pending',
@@ -133,7 +139,7 @@ export class ApprovalPersistenceService {
 
   async createApproval(
     input: CreateApprovalRequest,
-    _actor?: OrgContext,
+    actor?: OrgContext,
   ): Promise<ApprovalInstance> {
     if (
       !input.entityType?.trim() ||
@@ -141,6 +147,13 @@ export class ApprovalPersistenceService {
       !input.roles?.length
     ) {
       throw new BadRequestException('entityType, entityId and roles are required');
+    }
+    // NEST-401：HTTP 创建必须带租户上下文（org 缺失 401，绝不静默写全局行）。
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：审批创建必须带租户上下文',
+      );
     }
     const now = new Date();
     const id = randomUUID();
@@ -159,10 +172,14 @@ export class ApprovalPersistenceService {
       status: 'pending',
       createdAt: now,
       sourceType: 'approval',
+      // NEST-401：写入显式携带 orgId。
+      orgId,
       evidenceJson: {
         entityType,
         entityId,
         createdAt: now.toISOString(),
+        // NEST-405：记录发起人（cancel 的 initiator 校验依据）。
+        createdBy: actor?.userId ?? 'system',
       },
     });
     await this.db.insert(ewohEventChain).values(
@@ -185,7 +202,8 @@ export class ApprovalPersistenceService {
     };
   }
 
-  async getApproval(id: string): Promise<ApprovalInstance> {
+  /** NEST-402：读取带 org 守卫（NULL legacy 行/同 org/global_admin 放行，跨租户 404）。 */
+  async getApproval(id: string, actor?: OrgContext): Promise<ApprovalInstance> {
     const [event] = await this.db
       .select()
       .from(ewohEvent)
@@ -198,6 +216,11 @@ export class ApprovalPersistenceService {
     if (!event) {
       throw new NotFoundException(`Approval ${id} not found`);
     }
+    assertTenantVisible(
+      (event as EventRow & { orgId?: string | null }).orgId,
+      actor,
+      `Approval ${id}`,
+    );
     const chainRows = await this.db
       .select()
       .from(ewohEventChain)
@@ -225,7 +248,7 @@ export class ApprovalPersistenceService {
     if (!STEP_ACTIONS.has(action)) {
       throw new BadRequestException(`Unsupported approval action ${action}`);
     }
-    const instance = await this.getApproval(id);
+    const instance = await this.getApproval(id, actor);
     if (instance.status !== 'pending') {
       throw new BadRequestException(`Approval ${id} is not pending`);
     }
@@ -235,6 +258,16 @@ export class ApprovalPersistenceService {
     }
     if (step.status !== 'pending') {
       throw new BadRequestException(`Step ${stepId} is not pending`);
+    }
+    // NEST-403：step 角色匹配（global_admin 越权放行；角色不满足 403）。
+    const actorRoles = actor?.roles ?? [];
+    if (
+      !actorRoles.includes(HIGH_PRIVILEGE_ROLE) &&
+      !actorRoles.includes(step.role)
+    ) {
+      throw new ForbiddenException(
+        `Step ${stepId} requires role '${step.role}' (actor roles: ${actorRoles.join(', ') || 'none'})`,
+      );
     }
 
     const nextStep: ApprovalStep = { ...step };
@@ -322,7 +355,15 @@ export class ApprovalPersistenceService {
     reason: string,
     actor?: OrgContext,
   ): Promise<ApprovalInstance> {
-    const instance = await this.getApproval(id);
+    // NEST-404：approval.yaml 要求 high_privilege_admin（映射 global_admin）；
+    // 原 fallback 仅 workshop_lead/safety_admin 即可绕过。
+    const actorRoles = actor?.roles ?? [];
+    if (!actorRoles.includes(HIGH_PRIVILEGE_ROLE)) {
+      throw new ForbiddenException(
+        'approval.bypass requires high_privilege_admin (global_admin)',
+      );
+    }
+    const instance = await this.getApproval(id, actor);
     if (instance.status !== 'pending') {
       throw new BadRequestException(`Approval ${id} is not pending`);
     }
@@ -376,6 +417,8 @@ export class ApprovalPersistenceService {
       action: 'approval.bypass',
       entityType: 'approval',
       entityId: id,
+      // NEST-415：approval.yaml audit:high_risk——bypass 显式标 risk:true。
+      risk: true,
       before: { instanceStatus: instance.status, steps: instance.steps },
       after: { instanceStatus: 'bypassed', steps: nextSteps },
     });
@@ -384,13 +427,34 @@ export class ApprovalPersistenceService {
   }
 
   async cancel(id: string, actor?: OrgContext): Promise<ApprovalInstance> {
-    const instance = await this.getApproval(id);
+    const instance = await this.getApproval(id, actor);
     if (
       instance.status === 'approved' ||
       instance.status === 'rejected' ||
       instance.status === 'bypassed'
     ) {
       throw new BadRequestException(`Approval ${id} is terminal`);
+    }
+    // NEST-405：approval.yaml 要求 role:initiator——非发起人（且非
+    // global_admin）不可取消；legacy 行（无 createdBy）保持可操作不锁死。
+    const actorRoles = actor?.roles ?? [];
+    if (
+      actor &&
+      !actorRoles.includes(HIGH_PRIVILEGE_ROLE)
+    ) {
+      const [evidenceRow] = await this.db
+        .select({ evidenceJson: ewohEvent.evidenceJson })
+        .from(ewohEvent)
+        .where(eq(ewohEvent.eventId, id));
+      const evidence =
+        ((evidenceRow?.evidenceJson as Record<string, unknown> | null) ?? {});
+      const createdBy =
+        typeof evidence.createdBy === 'string' ? evidence.createdBy : null;
+      if (createdBy && createdBy !== actor.userId) {
+        throw new ForbiddenException(
+          'approval.cancel requires the initiator (or global_admin)',
+        );
+      }
     }
     const [updatedInstance] = await this.db
       .update(ewohEvent)

@@ -19,6 +19,9 @@ export interface DagTask {
  * 计算每个任务的传递下游可达数（distinct transitive descendant count）。
  * 边方向：task.predecessorIds 中的前驱 p → 当前 task（p 阻塞 task）。
  * 返回 Map<taskId, 可达数>；无后继任务为 0。
+ * NEST-122 修复（2026-08-17）：剔除自指边（predecessorIds 含自身 id 的脏数据
+ * 常见于导入/合并）——自指会在 DFS 结果集中把任务自身计入 reach（多算 1 且
+ * 与「后代=阻塞的他人」语义矛盾）。构建 children 时跳过 pred === t.id。
  */
 export function computeBlockingReach(tasks: DagTask[]): Map<string, number> {
   // children[x] = 把 x 作为前驱的直接后继任务集合（x 直接阻塞它们）。
@@ -27,6 +30,8 @@ export function computeBlockingReach(tasks: DagTask[]): Map<string, number> {
   for (const t of tasks) {
     ids.push(t.id);
     for (const pred of t.predecessorIds) {
+      // NEST-122：自指边不入图（数据卫生守卫，不改变正常 DAG 语义）。
+      if (pred === t.id) continue;
       const list = children.get(pred);
       if (list) list.push(t.id);
       else children.set(pred, [t.id]);
@@ -49,6 +54,8 @@ export function computeBlockingReach(tasks: DagTask[]): Map<string, number> {
       result.add(child);
       for (const d of descendants(child)) result.add(d);
     }
+    // NEST-122：环经其他路径把 id 自身带回结果集时剔除（descendants 语义不含自身）。
+    result.delete(id);
     visiting.delete(id);
 
     memo.set(id, result);

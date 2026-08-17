@@ -17,8 +17,8 @@ import shutil
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
+import unittest.mock  # EDT-013：受控时钟
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -198,11 +198,25 @@ class ListBackupsTest(unittest.TestCase):
         self.assertEqual(self.mgr.list_backups(os.path.join(self.tmp, "nope")), [])
 
     def test_lists_backups_newest_first(self):
-        # 创建两个备份（间隔足以区分时间戳）
-        p1 = self.mgr.backup(self.db_path, self.output_dir)
-        # 间隔 1 秒以确保文件名时间戳不同
-        time.sleep(1.0)
-        p2 = self.mgr.backup(self.db_path, self.output_dir)
+        # EDT-013：以受控时钟区分备份时间戳（原 time.sleep(1.0) 依赖 wall clock
+        # 秒级分辨率；mock now() 返回固定递增时刻，零等待且确定性）。
+        import datetime as _dt
+
+        real_datetime = _dt.datetime
+        t0 = real_datetime(2026, 8, 17, 10, 0, 0)
+        clock = {"now": t0}
+
+        class _FakeDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock["now"]
+
+        p1 = None
+        p2 = None
+        with unittest.mock.patch("edge_platform.backup.manager.datetime", _FakeDatetime):
+            p1 = self.mgr.backup(self.db_path, self.output_dir)
+            clock["now"] = t0 + _dt.timedelta(seconds=1)
+            p2 = self.mgr.backup(self.db_path, self.output_dir)
         items = self.mgr.list_backups(self.output_dir)
         self.assertEqual(len(items), 2)
         # 最新在前（倒序）

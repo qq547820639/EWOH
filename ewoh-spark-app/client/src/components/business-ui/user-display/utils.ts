@@ -1,14 +1,30 @@
-import { normalizeUser, isValidUserId } from '@client/src/components/business-ui/utils/user';
-import type { User } from '@client/src/components/business-ui/types/user';
+import { normalizeUser, isValidUserId } from '@/components/business-ui/utils/user';
+import type { User } from '@/components/business-ui/types/user';
 import type { UserInfo } from '@lark-apaas/client-toolkit/tools/services';
-import type { AccountType } from '@client/src/components/business-ui/api/users/service';
+import type { AccountType } from '@/components/business-ui/api/users/service';
 
 // 直接导出统一的函数
 export { normalizeUser, isValidUserId };
 
+/**
+ * CLI-419：avatar 兼容两种负载——完整 UserInfo 的结构化头像
+ * （avatar.image.large）与搜索接口的字符串 URL。
+ */
+type AvatarLike = { image?: { large?: string } } | string | undefined | null;
+
+/** user-display 侧接受的最小用户负载形状（UserInfo 或其搜索变体）。 */
+type RawUserLike = {
+  userID?: string;
+  larkUserID?: string;
+  name?: UserInfo['name'];
+  avatar?: AvatarLike;
+  userType?: User['user_type'];
+  department?: unknown;
+};
+
 // user-display 专用的转换函数
 export function userInfoToUser(
-  userInfo: (UserInfo & { avatar?: any }) | any,
+  userInfo: RawUserLike,
   accountType: AccountType,
 ): User {
   let avatarUrl: string | undefined;
@@ -25,7 +41,10 @@ export function userInfoToUser(
     name: userInfo.name,
     avatar: avatarUrl,
     user_type: userInfo.userType,
-    department: userInfo.department as any,
+    // CLI-419：unknown 负载收窄为本地 Department，替代 as any。
+    department: userInfo.department
+      ? (userInfo.department as User['department'])
+      : undefined,
   };
 }
 

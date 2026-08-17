@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, or, isNull } from 'drizzle-orm';
+import { eq, or, isNull, and } from 'drizzle-orm';
 import { ewohRouteNode, ewohRouteEdge, ewohSpatialEntity } from '@server/database/schema';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { SchedulingPolicyService } from './scheduling-policy.service';
@@ -66,17 +66,36 @@ export class RoutingService {
     mediumRiskFactor: number;
   } | null = null;
 
+  /**
+   * NEST-133（2026-08-17）：策略边代价系数 TTL 缓存时间戳。此前每次
+   * calculateRouteBetween 都 refreshEdgeFactors（一次 policy 查询），
+   * 候选矩阵 N×M 次路由计算即 N×M 次 DB 读。策略版本翻转频率远低于
+   * 路由计算，30s TTL 足够新鲜且消除 N+1。
+   */
+  private edgeFactorsRefreshedAt = 0;
+  private static readonly EDGE_FACTORS_TTL_MS = 30_000;
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly policyService: SchedulingPolicyService,
   ) {}
 
+  /**
+   * NEST-118（2026-08-17）：路由计算统一接受 actor（OrgContext）或裸 orgId，
+   * 图加载/坐标解析按 org 过滤；缺省 = 系统后台流（GUC/RLS 兜底）。
+   */
+  private orgIdOf(actor?: OrgContext | string | null): string | undefined {
+    if (!actor) return undefined;
+    return typeof actor === 'string' ? actor : actor.primaryOrgId || undefined;
+  }
+
   /** 加载完整路由图。 */
-  async loadGraph(actor?: OrgContext): Promise<RouteGraph> {
-    // ADR-074：路由拓扑读面 org 条件（org 匹配或 NULL 存量，与 RLS 语义等价）。
-    const orgCond = actor
+  async loadGraph(actor?: OrgContext | string | null): Promise<RouteGraph> {
+    // ADR-074 / NEST-118：路由拓扑读面 org 条件（org 匹配或 NULL 存量，与 RLS 语义等价）。
+    const orgId = this.orgIdOf(actor);
+    const orgCond = orgId
       ? (col: { orgId: unknown }) =>
-          or(isNull(col.orgId as never), eq(col.orgId as never, actor.primaryOrgId))
+          or(isNull(col.orgId as never), eq(col.orgId as never, orgId))
       : undefined;
     const [nodeRows, edgeRows] = await Promise.all([
       orgCond
@@ -126,7 +145,8 @@ export class RoutingService {
   async calculateRouteBetween(
     from: Point,
     to: Point,
-    meta?: { personId?: string; taskId?: string },
+    meta?: { personId?: string; taskId?: string; graphVersion?: number | null },
+    actor?: OrgContext | string | null,
   ): Promise<Route> {
     const personId = meta?.personId ?? 'unknown';
     const taskId = meta?.taskId ?? 'unknown';
@@ -140,7 +160,8 @@ export class RoutingService {
     // 满足"从不抛异常"约定；该 Route 显式标记降级，绝不静默当作权威路线。
     let graph: RouteGraph;
     try {
-      graph = await this.loadGraph();
+      // NEST-118：图加载透传 actor（org 过滤拓扑）。
+      graph = await this.loadGraph(actor);
     } catch (err) {
       this.logger.warn(
         `route graph load failed; explicit degraded euclidean fallback (graph_unavailable): ${err instanceof Error ? err.message : String(err)}`,
@@ -192,7 +213,10 @@ export class RoutingService {
         .map((n) => ({ x: n.x, y: n.y })),
       source: 'route_graph',
       riskLevel: this.routeRiskLevel(graph, path),
-      graphVersion: null,
+      // NEST-135 修复（2026-08-17）：透传调用方的 worldVersion 代理
+      // （TravelCostService.routeGraphVersionOf），恢复版本追溯；无版本上下文
+      // 的调用（如 nearestNode）保持 null（诚实缺失，不伪造）。
+      graphVersion: meta?.graphVersion ?? null,
       calculatedAt: new Date().toISOString(),
       feasible: true,
       fallbackReason: null,
@@ -206,17 +230,33 @@ export class RoutingService {
    * 查不到坐标 → 显式不可行（feasible=false、fallbackReason=coords_unknown、
    * dataQuality=UNKNOWN），绝不返回 0,0 伪坐标（见 02 §10 修复点）。
    */
-  async calculateRoute(personId: string, taskId: string): Promise<Route> {
+  async calculateRoute(
+    personId: string,
+    taskId: string,
+    actor?: OrgContext | string | null,
+  ): Promise<Route> {
+    // NEST-118：坐标解析按 org 过滤（org 匹配或 NULL 存量，防跨租户实体解析）。
+    const orgId = this.orgIdOf(actor);
+    const entityCond = (entityId: string) =>
+      orgId
+        ? and(
+            eq(ewohSpatialEntity.entityId, entityId),
+            or(
+              isNull(ewohSpatialEntity.orgId),
+              eq(ewohSpatialEntity.orgId, orgId),
+            ),
+          )
+        : eq(ewohSpatialEntity.entityId, entityId);
     const [personRows, taskRows] = await Promise.all([
       this.db
         .select()
         .from(ewohSpatialEntity)
-        .where(eq(ewohSpatialEntity.entityId, personId))
+        .where(entityCond(personId))
         .limit(1),
       this.db
         .select()
         .from(ewohSpatialEntity)
-        .where(eq(ewohSpatialEntity.entityId, taskId))
+        .where(entityCond(taskId))
         .limit(1),
     ]);
     const from = this.pointFromEntity(personRows[0]);
@@ -230,7 +270,7 @@ export class RoutingService {
         dataQuality: 'UNKNOWN',
       });
     }
-    return this.calculateRouteBetween(from, to, { personId, taskId });
+    return this.calculateRouteBetween(from, to, { personId, taskId }, actor);
   }
 
   /** P1-ROUTE-001：读取统一行走速度（policy），用于欧氏兜底 ETA 计算。 */
@@ -357,6 +397,9 @@ export class RoutingService {
     }
 
     const open: string[] = [startId];
+    // NEST-134（2026-08-17）：open 集合成员判定 O(n) includes → Set O(1)，
+    // 大图（万级节点）下消除 O(n²) 扫描。
+    const openSet = new Set<string>([startId]);
     const cameFrom = new Map<string, string>();
     const gScore = new Map<string, number>([[startId, 0]]);
     const fScore = new Map<string, number>([
@@ -375,6 +418,7 @@ export class RoutingService {
         }
       }
       open.splice(currentIdx, 1);
+      openSet.delete(current);
 
       if (current === goalId) {
         return this.reconstructPath(cameFrom, current);
@@ -391,15 +435,26 @@ export class RoutingService {
           const toNode = nodeById.get(to);
           const h = toNode ? this.heuristic(toNode, goal) : 0;
           fScore.set(to, tentative + h);
-          if (!open.includes(to)) open.push(to);
+          if (!openSet.has(to)) {
+            open.push(to);
+            openSet.add(to);
+          }
         }
       }
     }
     return null;
   }
 
-  /** P1-SCHED-003：从 versioned policy 刷新边代价系数（失败时保留上次值，绝不阻断路由）。 */
-  private async refreshEdgeFactors(): Promise<void> {
+  /** P1-SCHED-003：从 versioned policy 刷新边代价系数（失败时保留上次值，绝不阻断路由）。NEST-133：TTL 缓存。 */
+  private async refreshEdgeFactors(force = false): Promise<void> {
+    if (
+      !force &&
+      this.edgeFactors != null &&
+      Date.now() - this.edgeFactorsRefreshedAt <
+        RoutingService.EDGE_FACTORS_TTL_MS
+    ) {
+      return; // TTL 内复用缓存（NEST-133：消除逐路由计算的 policy N+1 读）
+    }
     try {
       const config = this.policyService
         ? await this.policyService.getConfig()
@@ -423,6 +478,7 @@ export class RoutingService {
             ? config.mediumRiskFactor
             : 1.3,
       };
+      this.edgeFactorsRefreshedAt = Date.now();
     } catch (err) {
       this.logger.warn(
         `policy route factors unavailable, using cached: ${err instanceof Error ? err.message : String(err)}`,

@@ -19,6 +19,9 @@ export type {
  * Synchronous in-memory approval service retained for unit smoke coverage
  * (`test/scenarios`). The HTTP module is wired to ApprovalPersistenceService,
  * which maps approvals to ewoh_event/ewoh_event_chain/ewoh_audit_log.
+ *
+ * @deprecated NEST-440：内存版不接 HTTP、无 org/角色校验——生产路径一律使用
+ * ApprovalPersistenceService；保留仅为 test/scenarios 冒烟，后续随测试迁移移除。
  */
 let seq = 0;
 
@@ -43,6 +46,7 @@ export function aggregateApprovalStatus(
 }
 
 @Injectable()
+/** @deprecated 见文件头注释（NEST-440）。 */
 export class ApprovalService {
   private readonly instances = new Map<string, ApprovalInstance>();
 

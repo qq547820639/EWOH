@@ -77,8 +77,11 @@ export async function transitionMobileStep(
   idempotencyKey?: string,
 ): Promise<MobileWorkbenchStep> {
   const res = await axiosForBackend({
-    url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/state?action=${action}`,
+    // CLI-708：action 改经 axios params 传参（自动 URL 编码），
+    // 含 & / = / 中文等字符不再破坏 query 语义。
+    url: `/api/mobile/workbench/orders/${encodeURIComponent(orderId)}/steps/${encodeURIComponent(stepId)}/state`,
     method: 'POST',
+    params: { action },
     data: idempotencyKey ? { ...body, idempotencyKey } : body,
   });
   return res.data;

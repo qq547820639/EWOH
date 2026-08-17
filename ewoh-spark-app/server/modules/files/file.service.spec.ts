@@ -36,8 +36,10 @@ class FakeDriver implements StorageDriver {
     return buffer;
   }
 
-  async list(): Promise<FileRecord[]> {
-    return Array.from(this.meta.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async list(orgId?: string): Promise<FileRecord[]> {
+    const all = Array.from(this.meta.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // NEST-306：驱动层 org 过滤语义（fake 与真实驱动对齐）。
+    return orgId ? all.filter((record) => record.orgId === orgId) : all;
   }
 
   async remove(id: string): Promise<void> {
@@ -102,6 +104,12 @@ describe('FileService (quarantine / org isolation / scan gate)', () => {
     await expect(service.download(UUID_1, userA)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('NEST-334: missing scanStatus (legacy record) is treated as pending quarantine', async () => {
+    const driver = new FakeDriver([[recordOf(UUID_1, { scanStatus: undefined }), Buffer.from('pdf')]]);
+    const service = new FileService(driver);
+    await expect(service.download(UUID_1, userA)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('allows download of a clean file within the owning org', async () => {
     const driver = new FakeDriver([[recordOf(UUID_1), Buffer.from('pdfbody')]]);
     const service = new FileService(driver);
@@ -141,7 +149,7 @@ describe('FileService (quarantine / org isolation / scan gate)', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('rejects a forged duplicate idempotency write from another org', async () => {
+  it('same-org duplicate idempotency key returns the existing record without a second write', async () => {
     const driver = new FakeDriver([
       [recordOf(UUID_1, { idempotencyKey: 'ik-1' }), Buffer.from('pdf')],
     ]);
@@ -157,6 +165,29 @@ describe('FileService (quarantine / org isolation / scan gate)', () => {
     );
     expect(dup.id).toBe(UUID_1);
     expect(await driver.list()).toHaveLength(1);
+  });
+
+  it('NEST-354: another org reusing the same idempotency key gets a NEW record (no cross-org dedupe collision)', async () => {
+    const driver = new FakeDriver([
+      [recordOf(UUID_1, { idempotencyKey: 'ik-1' }), Buffer.from('pdf')],
+    ]);
+    const service = new FileService(driver);
+    const userB: FileAccessContext = { orgId: orgB, userId: 'user-2' };
+    const forged = await service.save(
+      Buffer.from('%PDF-1.7 forged body'),
+      'a.pdf',
+      'application/pdf',
+      userB,
+      undefined,
+      'ik-1',
+    );
+    // 跨 org 幂等键不碰撞：org B 产生自己的新记录，而不是读到 org A 的文件。
+    expect(forged.id).not.toBe(UUID_1);
+    expect(forged.orgId).toBe(orgB);
+    expect(await driver.list()).toHaveLength(2);
+    // org 作用域列表互不可见（驱动层 orgId 过滤，NEST-306）。
+    expect((await driver.list(orgA)).map((r) => r.id)).toEqual([UUID_1]);
+    expect((await driver.list(orgB)).map((r) => r.id)).toEqual([forged.id]);
   });
 
   it('save rejects a malicious upload (bad magic) with BadRequest', async () => {

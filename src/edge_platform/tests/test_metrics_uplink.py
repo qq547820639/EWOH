@@ -99,15 +99,23 @@ class TestMetricsUplink(unittest.TestCase):
         self.assertFalse(uplink.enabled)
 
     def test_loop_cycle_counts_stats(self):
-        """一轮循环：快照→发送成功→sent_samples/batches 累计（周期 5s 最小）。"""
+        """一轮循环：快照→发送成功→sent_samples/batches 累计（周期 5s 最小）。
+
+        EDT-009：以 deadline 条件轮询替代固定 time.sleep(0.5)——慢机环境下
+        等待首轮循环真正完成，消除 batches 计数的偶发抖动。
+        """
         collector = MetricsCollector()
         uplink = MetricsUplink(collector, "http://cloud", edge_id="edge-a", interval_sec=5)
         resp = mock.Mock(status=200)
         with mock.patch("urllib.request.urlopen", return_value=mock.MagicMock(__enter__=mock.Mock(return_value=resp), __exit__=mock.Mock(return_value=False))):
             uplink.start()
-            time.sleep(0.5)
-            uplink.stop()
-            time.sleep(0.2)
+            try:
+                deadline = time.time() + 8.0
+                while time.time() < deadline and uplink.health()["stats"]["batches"] < 1:
+                    time.sleep(0.05)
+            finally:
+                uplink.stop()
+                time.sleep(0.2)
         h = uplink.health()
         self.assertGreaterEqual(h["stats"]["batches"], 1)
         self.assertGreater(h["stats"]["sent_samples"], 0)

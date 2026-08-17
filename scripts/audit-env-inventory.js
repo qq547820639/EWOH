@@ -137,6 +137,20 @@ function collectEnvFromFile(file, rel) {
         hits.get(name).add(i + 1);
       }
     }
+
+    // SCR-037: 覆盖 const { X, Y } = process.env 解构模式（JS）。
+    if (!isPy) {
+      const destructRe = /\{\s*([A-Z][A-Z0-9_]*(?:\s*,\s*[A-Z][A-Z0-9_]*)*)\s*\}\s*=\s*process\.env\b/g;
+      let dm;
+      while ((dm = destructRe.exec(line)) !== null) {
+        for (const rawName of dm[1].split(',')) {
+          const name = rawName.trim();
+          if (!ENV_NAME_RE.test(name)) continue;
+          if (!hits.has(name)) hits.set(name, new Set());
+          hits.get(name).add(i + 1);
+        }
+      }
+    }
   }
 
   // 文本级扫描：捕获跨行的 os.environ.get(\n "EWOH_X" ...) 引用。

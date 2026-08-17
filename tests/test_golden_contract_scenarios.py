@@ -310,6 +310,21 @@ def _run_case(domain: str, case: dict):
         raise AssertionError(f"unknown domain {domain}")
 
 
+def _all_scenario_cases():
+    """TEST-010：展开为 (domain, case) 参数化用例，单 case 失败不阻断其余场景。"""
+    cases = []
+    for scenario in _load()["scenarios"]:
+        for index, case in enumerate(scenario["cases"]):
+            cases.append(
+                pytest.param(
+                    scenario["domain"],
+                    case,
+                    id=f"{scenario['id']}[{case.get('name', index)}]",
+                )
+            )
+    return cases
+
+
 class TestGoldenContractScenarios:
     def test_all_scenarios_declared_domains_covered(self):
         data = _load()
@@ -341,8 +356,6 @@ class TestGoldenContractScenarios:
             "exo_config_contract",
         }
 
-    def test_scenario(self):
-        scenarios = _load()["scenarios"]
-        for scenario in scenarios:
-            for case in scenario["cases"]:
-                _run_case(scenario["domain"], case)
+    @pytest.mark.parametrize("domain,case", _all_scenario_cases())
+    def test_scenario(self, domain, case):
+        _run_case(domain, case)

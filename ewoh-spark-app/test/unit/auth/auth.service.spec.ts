@@ -67,7 +67,7 @@ describe('standalone JWT auth', () => {
 
     const refreshed = await service.refresh(tokens.refreshToken);
 
-    expect(service.verifyToken(refreshed.accessToken).sub).toBe('admin');
+    expect((await service.verifyToken(refreshed.accessToken)).sub).toBe('admin');
   });
 
   it('rotates refresh tokens and invalidates the previous jti', async () => {
@@ -81,7 +81,7 @@ describe('standalone JWT auth', () => {
       UnauthorizedException,
     );
     const second = await service.refresh(refreshed.refreshToken);
-    expect(service.verifyToken(second.accessToken).sub).toBe('admin');
+    expect((await service.verifyToken(second.accessToken)).sub).toBe('admin');
   });
 
   it('logout revokes the current refresh token', async () => {
@@ -90,6 +90,17 @@ describe('standalone JWT auth', () => {
 
     await service.logout(tokens.refreshToken);
     await expect(service.refresh(tokens.refreshToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('logout revokes the presented access token (NEST-418)', async () => {
+    const { service } = createService();
+    const tokens = await service.login('admin', 'correct-password');
+
+    // 登出同时吊销 access（jti 黑名单），token 未过期也不再可用。
+    await service.logout(tokens.refreshToken, tokens.accessToken);
+    await expect(service.verifyToken(tokens.accessToken)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
   });
@@ -107,15 +118,19 @@ describe('standalone JWT auth', () => {
     const { service } = createService();
     const tokens = await service.login('admin', 'correct-password');
 
-    expect(() => service.verifyToken(tokens.refreshToken)).toThrow(UnauthorizedException);
+    await expect(service.verifyToken(tokens.refreshToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 
-  it('rejects a signed access token with an incomplete payload', () => {
+  it('rejects a signed access token with an incomplete payload', async () => {
     const { service } = createService();
     const malformed = sign({ sub: 'admin', type: 'access' }, JWT_SECRET, {
       algorithm: 'HS256',
     });
 
-    expect(() => service.verifyToken(malformed)).toThrow(UnauthorizedException);
+    await expect(service.verifyToken(malformed)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 });

@@ -28,11 +28,15 @@ function evt(sequence: number): OutboxEvent {
   };
 }
 
-function makeOutbox(listLatestImpl?: jest.Mock) {
+/**
+ * NEST-141（2026-08-17）：poll 由 listLatest(500) 截断改为 listSince(lastSequence)
+ * 增量——mock 种子改挂 listSince；listLatest 保留为未被 poll 调用的哨兵。
+ */
+function makeOutbox(listSinceImpl?: jest.Mock) {
   return {
     latestSequence: jest.fn().mockResolvedValue(0),
-    listSince: jest.fn().mockResolvedValue([]),
-    listLatest: listLatestImpl ?? jest.fn().mockResolvedValue([]),
+    listSince: listSinceImpl ?? jest.fn().mockResolvedValue([]),
+    listLatest: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -74,11 +78,11 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
     await svc.start();
     expect(listener.subscribe).toHaveBeenCalledTimes(1);
     // 启动本身不立即 poll（仅启动 2s 定时器）。
-    expect(outbox.listLatest).not.toHaveBeenCalled();
+    expect(outbox.listSince).not.toHaveBeenCalled();
 
     fire();
     await flush();
-    expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+    expect(outbox.listSince).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.sequence)).toEqual([1]);
 
     sub.unsubscribe();
@@ -104,7 +108,7 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
 
       // 轮询兜底：推进一个 2s 周期后事件仍被推送（NOTIFY 失败不影响事件交付）。
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(outbox.listSince).toHaveBeenCalledTimes(1);
       expect(events.map((e) => e.sequence)).toEqual([1]);
 
       svc.stop();
@@ -123,10 +127,10 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
       const sub = svc.events().subscribe((e) => events.push(e));
 
       await svc.start();
-      expect(outbox.listLatest).not.toHaveBeenCalled();
+      expect(outbox.listSince).not.toHaveBeenCalled();
 
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(outbox.listSince).toHaveBeenCalledTimes(1);
       expect(events.map((e) => e.sequence)).toEqual([1]);
 
       svc.stop();
@@ -197,7 +201,7 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
       // NOTIFY wake-up：即时 poll + 计数
       fire();
       await jest.advanceTimersByTimeAsync(0);
-      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(outbox.listSince).toHaveBeenCalledTimes(1);
       expect(events.map((e) => e.sequence)).toEqual([1]);
       expect(metrics.recordNotifyWakeup).toHaveBeenCalledTimes(1);
       expect(metrics.recordPollFallback).not.toHaveBeenCalled();
@@ -224,7 +228,7 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
 
       await svc.start();
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(outbox.listSince).toHaveBeenCalledTimes(1);
       expect(events.map((e) => e.sequence)).toEqual([1]);
       expect(metrics.recordPollFallback).toHaveBeenCalledTimes(1);
 
@@ -253,7 +257,7 @@ describe('SchedulerStreamService OUTBOX LISTEN/NOTIFY wake-up（Task 6）', () =
       expect(throwingListener.subscribe).toHaveBeenCalledTimes(1);
 
       await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-      expect(outbox.listLatest).toHaveBeenCalledTimes(1);
+      expect(outbox.listSince).toHaveBeenCalledTimes(1);
       expect(events.map((e) => e.sequence)).toEqual([1]);
       expect(metrics.recordPollFallback).toHaveBeenCalledTimes(1);
 

@@ -199,7 +199,14 @@ const EntityDetail = ({
           <Row label="边界框" value={`${entity.bboxW} × ${entity.bboxH}`} />
           <Row label="状态" value={entity.status || '—'} />
           <Row label="来源" value={entity.sourceType || '—'} />
-          <Row label="置信度" value={`${(entity.confidence * 100).toFixed(1)}%`} />
+          <Row
+            label="置信度"
+            value={
+              entity.confidence != null && Number.isFinite(entity.confidence)
+                ? `${(entity.confidence * 100).toFixed(1)}%`
+                : '—'
+            }
+          />
           <Row label="版本" value={`v${entity.version}`} />
           <Row label="更新时间" value={formatTime(entity.updatedAt)} />
         </div>
@@ -295,8 +302,9 @@ const EntityDetail = ({
                 </div>
                 <div className="space-y-0.5">
                   {exp.reasons.length > 0 ? (
-                    exp.reasons.map((r, i) => (
-                      <div key={i} className="flex items-start gap-1 text-[11px] text-white/75">
+                    // CLI-014：内容作稳定 key（去重，替代索引 key）。
+                    Array.from(new Set(exp.reasons)).map((r) => (
+                      <div key={`reason-${r}`} className="flex items-start gap-1 text-[11px] text-white/75">
                         <span className="text-white/30">·</span>
                         <span>{r}</span>
                       </div>
@@ -311,7 +319,10 @@ const EntityDetail = ({
                 <div className="space-y-0.5">
                   {exp.alternatives.length > 0 ? (
                     exp.alternatives.map((alt, i) => (
-                      <div key={i} className="text-[11px] text-white/60">
+                      <div
+                        key={String(alt.personId ?? alt.person ?? `alt-${i}`)}
+                        className="text-[11px] text-white/60"
+                      >
                         {String(alt.personId ?? alt.person ?? '—')}
                         {alt.reason ? ` — ${String(alt.reason)}` : ''}
                       </div>
@@ -336,8 +347,8 @@ const EntityDetail = ({
                     />
                     {exp.decisionTrace.priority.factors.length > 0 && (
                       <div className="space-y-0.5">
-                        {exp.decisionTrace.priority.factors.map((f, i) => (
-                          <div key={i} className="flex items-start gap-1 text-[11px] text-white/70">
+                        {exp.decisionTrace.priority.factors.map((f) => (
+                          <div key={`factor-${f.label}`} className="flex items-start gap-1 text-[11px] text-white/70">
                             <span className="text-white/30">·</span>
                             <span>
                               {f.label}: {f.value.toFixed(3)}
@@ -359,7 +370,7 @@ const EntityDetail = ({
                         </div>
                         <div className="space-y-0.5">
                           {exp.decisionTrace.rejectedAlternatives.map((alt, i) => (
-                            <div key={i} className="text-[11px] text-white/60">
+                            <div key={alt.personId ?? `rejected-${i}`} className="text-[11px] text-white/60">
                               {alt.personId ?? '—'}
                               {Array.isArray(alt.reason) && alt.reason.length > 0
                                 ? ` — ${alt.reason.join(', ')}`

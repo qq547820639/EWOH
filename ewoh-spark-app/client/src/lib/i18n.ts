@@ -33,9 +33,20 @@ export const zhCN: Messages = {
 /** 将 {key} 占位符替换为变量值。 */
 export function interpolate(template: string, vars?: Variables): string {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    vars[key] !== undefined ? String(vars[key]) : match,
-  );
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value: unknown = vars[key];
+    if (value === undefined) return match;
+    // CLI-538：运行时绕过类型传入的非原始值序列化为 JSON，
+    // 不再渲染成「[object Object]」。
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value) ?? match;
+    } catch {
+      return match;
+    }
+  });
 }
 
 /** 创建一个基于给定词典的翻译函数。 */

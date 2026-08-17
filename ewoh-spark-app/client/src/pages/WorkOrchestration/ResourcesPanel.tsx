@@ -41,12 +41,24 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
       setConfirmLock(false);
       toast.success('资源已加锁');
     },
+    // CLI-216：加锁失败显式反馈（§33 失败不静默）。
+    onError: (err) => {
+      toast.error('资源加锁失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const releaseMutation = useMutation({
     mutationFn: (id: string) => releaseResourceLock(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workResources });
       toast.success('资源已释放');
+    },
+    // CLI-216：释放失败显式反馈。
+    onError: (err) => {
+      toast.error('资源释放失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 

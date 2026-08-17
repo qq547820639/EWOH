@@ -43,7 +43,11 @@ export function createValidationExceptionFactory() {
 
 export function createEwohValidationPipe(): ValidationPipe {
   return new ValidationPipe({
-    whitelist: false,
+    // NEST-510 修复（2026-08-17）：whitelist+forbidNonWhitelisted 收敛 mass
+    // assignment 面——未知属性不再透传到 DTO 实例（原 whitelist:false 会把
+    // 非声明字段原样保留在 transformed 对象上）。
+    whitelist: true,
+    forbidNonWhitelisted: true,
     transform: true,
     forbidUnknownValues: true,
     exceptionFactory: createValidationExceptionFactory(),

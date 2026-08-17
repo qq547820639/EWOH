@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   AlertCircle,
@@ -28,40 +28,19 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { getEntities } from '../../api/spatial';
-import { createReplayItem, getReplay, getWorldState } from '../../api/world';
-import { getRoutes, getTaskCandidates } from '../../api/scheduler';
-import {
-  getOverview,
-  getEvents,
-  handleEvent,
-  getEnvironmentSummary,
-  searchDevices,
-} from '../../api/dashboard';
-import { listOrganizations, listPersonnel } from '../../api/organization';
+import { createReplayItem } from '../../api/world';
+import { getEvents, handleEvent } from '../../api/dashboard';
 import type {
   ConflictPreviewResult,
-  CurrentWorldState,
   DecisionTrace,
-  DeviceInfo,
-  EnvironmentReading,
-  EventInfo,
-  OrganizationInfo,
-  OverviewStats,
-  PersonnelInfo,
   PlanCompareResult,
   PlanOverrideKind,
-  ReplaySnapshot,
-  RouteGraph,
   SchedulingConflict,
   SchedulingPlanV2,
   SchedulingContextResponse,
-  SpatialEntity,
-  TaskCandidatesResponse,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
-import { queryKeys } from '@client/src/hooks/queryKeys';
-import { OPERATIONAL_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '@client/src/hooks/queryConfig';
+import { logger } from '../../lib/logger';
 import { getCurrentOperator } from '../../lib/auth';
 import {
   advanceReplayTime,
@@ -77,12 +56,8 @@ import DataStates from '../../components/DataStates';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
 import { useCommandMapController, CommandMapStoreSseBridge } from './hooks/useCommandMapController';
-import {
-  useUrlOperatorContext,
-  type UrlIdKind,
-  type UrlInvalidIdNotice,
-  type UrlOperatorContext,
-} from './hooks/useUrlOperatorContext';
+import { useCommandMapQueries } from './hooks/useCommandMapQueries';
+import { useCommandMapUrlSync } from './hooks/useCommandMapUrlSync';
 import { SchedulerRealtimeProvider, useSchedulerRealtime } from '@client/src/scheduler/SchedulerRealtimeProvider';
 import { isContextStale } from './hooks/schedulerRealtimeCore';
 import { useSchedulerRealtimeSlice } from './store/commandMapStore';
@@ -97,11 +72,7 @@ import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type 
 import { useQuery as useQueryCompare } from '@tanstack/react-query';
 import { comparePlansV2 } from '@client/src/api/scheduler';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
-import {
-  collectQueryErrors,
-  retryAll,
-  type QueryStateSnapshot,
-} from './queryState';
+import { retryAll } from './queryState';
 import MapViewport from './MapViewport';
 import ReplayWorkspace from './ReplayWorkspace';
 import SchedulerWorkspace from './SchedulerWorkspace';
@@ -322,166 +293,41 @@ const CommandMapShell = (): React.ReactElement => {
   const searchRef = useRef<HTMLInputElement>(null);
   const replayTimeRef = useRef<string | null>(null);
   const helpCloseRef = useRef<HTMLButtonElement>(null);
+  const helpDialogRef = useRef<HTMLDivElement>(null);
   const helpPreviousFocusRef = useRef<HTMLElement | null>(null);
   const queryClient = useQueryClient();
 
-  // 静态空间实体，30 秒刷新
+  // CLI-004 拆分：全部事实源查询移至 hooks/useCommandMapQueries（机械提取）。
   const {
-    data: entities,
-    isError: entitiesError,
-    dataUpdatedAt: entitiesUpdatedAt,
-    refetch: refetchEntities,
-  } = useQuery<SpatialEntity[]>({
-    queryKey: queryKeys.spatialEntities,
-    queryFn: () => getEntities(),
-    refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
+    entitiesQuery,
+    worldQuery,
+    overviewQuery,
+    replayQuery,
+    environmentQuery,
+    organizationsQuery,
+    personnelQuery,
+    devicesQuery,
+    eventsQuery,
+    routeGraphQuery,
+    candidatesQuery,
+    failedQueries,
+  } = useCommandMapQueries({ replayMode, selectedTaskId, mode });
 
-  // 动态世界状态，2 秒刷新
-  const {
-    data: worldState,
-    isError: worldError,
-    dataUpdatedAt: worldUpdatedAt,
-    refetch: refetchWorld,
-  } = useQuery<CurrentWorldState>({
-    queryKey: queryKeys.worldState,
-    queryFn: ({ signal }) => getWorldState(signal),
-    refetchInterval: 2000,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  // KPI，5 秒刷新
-  const {
-    data: overview,
-    isError: overviewError,
-    dataUpdatedAt: overviewUpdatedAt,
-    refetch: refetchOverview,
-  } = useQuery<OverviewStats>({
-    queryKey: queryKeys.overview,
-    queryFn: getOverview,
-    refetchInterval: 5000,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  // 回放快照：非回放时 30 秒刷新，回放中冻结
-  const {
-    data: replaySnapshots,
-    isLoading: replayLoading,
-    isError: replayError,
-  } = useQuery<ReplaySnapshot[]>({
-    queryKey: queryKeys.replaySnapshots,
-    queryFn: ({ signal }) => getReplay(undefined, undefined, 120, signal),
-    refetchInterval: replayMode ? 0 : 30000,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  const {
-    data: environmentReadings,
-    isError: environmentError,
-    dataUpdatedAt: environmentUpdatedAt,
-    refetch: refetchEnvironment,
-  } = useQuery<EnvironmentReading[]>({
-    queryKey: queryKeys.environmentSummary,
-    queryFn: getEnvironmentSummary,
-    refetchInterval: 30000,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  const querySnapshots = useMemo<QueryStateSnapshot[]>(
-    () => [
-      {
-        key: 'entities',
-        label: '空间实体',
-        isError: entitiesError,
-        dataUpdatedAt: entitiesUpdatedAt,
-        refetch: refetchEntities,
-      },
-      {
-        key: 'world',
-        label: '世界状态',
-        isError: worldError,
-        dataUpdatedAt: worldUpdatedAt,
-        refetch: refetchWorld,
-      },
-      {
-        key: 'overview',
-        label: '总览指标',
-        isError: overviewError,
-        dataUpdatedAt: overviewUpdatedAt,
-        refetch: refetchOverview,
-      },
-      {
-        key: 'environment',
-        label: '环境数据',
-        isError: environmentError,
-        dataUpdatedAt: environmentUpdatedAt,
-        refetch: refetchEnvironment,
-      },
-    ],
-    [
-      entitiesError,
-      entitiesUpdatedAt,
-      refetchEntities,
-      worldError,
-      worldUpdatedAt,
-      refetchWorld,
-      overviewError,
-      overviewUpdatedAt,
-      refetchOverview,
-      environmentError,
-      environmentUpdatedAt,
-      refetchEnvironment,
-    ],
-  );
-  const failedQueries = useMemo(
-    () => collectQueryErrors(querySnapshots),
-    [querySnapshots],
-  );
-
-  const { data: organizations } = useQuery<OrganizationInfo[]>({
-    queryKey: queryKeys.organizations,
-    queryFn: listOrganizations,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  const { data: personnel } = useQuery<PersonnelInfo[]>({
-    queryKey: queryKeys.personnel(),
-    queryFn: () => listPersonnel(),
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  const {
-    data: devices,
-    dataUpdatedAt: devicesUpdatedAt,
-  } = useQuery<DeviceInfo[]>({
-    queryKey: queryKeys.devices({ pageSize: 200 }),
-    queryFn: () => searchDevices({ pageSize: 200 }),
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  const { data: events } = useQuery<EventInfo[]>({
-    queryKey: queryKeys.events(),
-    queryFn: () => getEvents(200),
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  // 调度路由图（供调度方案覆盖层渲染拥堵/阻断边）
-  const { data: routeGraph } = useQuery<RouteGraph>({
-    queryKey: ['schedule-route-graph'],
-    queryFn: getRoutes,
-    refetchInterval: 30000,
-    staleTime: QUERY_STALE_TIME_MS,
-  });
-
-  // 智能调度驾驶舱：选中任务时拉取后端候选资源（只读展示，不本地复算资格）。
-  const { data: candidates } = useQuery<TaskCandidatesResponse | null>({
-    queryKey: queryKeys.schedulerTaskCandidates(selectedTaskId ?? 'none'),
-    queryFn: () =>
-      selectedTaskId ? getTaskCandidates(selectedTaskId) : Promise.resolve<TaskCandidatesResponse | null>(null),
-    enabled: !!selectedTaskId && mode === 'scheduling',
-    staleTime: QUERY_STALE_TIME_MS,
-  });
+  const entities = entitiesQuery.data;
+  const worldState = worldQuery.data;
+  const worldUpdatedAt = worldQuery.dataUpdatedAt;
+  const overview = overviewQuery.data;
+  const replaySnapshots = replayQuery.data;
+  const replayLoading = replayQuery.isLoading;
+  const replayError = replayQuery.isError;
+  const environmentReadings = environmentQuery.data;
+  const organizations = organizationsQuery.data;
+  const personnel = personnelQuery.data;
+  const devices = devicesQuery.data;
+  const devicesUpdatedAt = devicesQuery.dataUpdatedAt;
+  const events = eventsQuery.data;
+  const routeGraph = routeGraphQuery.data;
+  const candidates = candidatesQuery.data;
 
   // 离开调度模式或清空方案时，重置任务选择与驾驶舱面板（store 唯一真源写入）。
   useEffect(() => {
@@ -589,160 +435,49 @@ const CommandMapShell = (): React.ReactElement => {
         .then((events) => {
           const evt = events.find((e) => e.eventId === eventId || e.id === eventId);
           if (evt?.deviceId) {
+            // CLI-006：精确匹配（includes 会误命中 EXO-1 / EXO-10 前缀重叠）。
             const entity = list.find(
-              (e) => e.entityType === 'device' && e.entityId.includes(evt.deviceId),
+              (e) => e.entityType === 'device' && e.entityId === evt.deviceId,
             );
             if (entity) setSelectedEntityId(entity.entityId);
           }
       })
-        .catch(() => {});
+        .catch((err: unknown) => {
+          // CLI-005：不再静默吞错（定位非关键路径，记日志不打断主流程）。
+          logger.warn('focusEventEntity: 加载事件失败，无法定位关联设备', { eventId, err });
+        });
     },
     [entities],
   );
 
   // ---- Task 9 / 9.1：URL 背书的操作上下文（镜像 ⇄ 恢复；深链聚焦）----
-  // 写规则：一律 history.replaceState——mode/level/selection/tab/冲突/事件/回放时间戳/
-  // compare 均属连续变化，不入历史栈；后退/前进只跨真实导航（深链/外部跳转），
-  // 与操作员直觉一致。瞬态 UI（对话框/动画/抽屉可见性）不镜像。
-  const urlCtx = useMemo<UrlOperatorContext>(
-    () => ({
-      mode: ctl.mode,
-      level: ctl.level,
-      entityId: selectedEntityId,
-      taskId: selectedTaskId,
-      planId: selectedPlanId,
-      tab: activeTab,
-      conflictId: previewConflict?.conflictId ?? null,
-      eventId: selectedEventId,
-      replayTs: replayMode ? replayTime : null,
-      compareBaseline: showCompare ? compareUi.baselinePlanId : null,
-      compareCandidate: showCompare ? compareUi.candidatePlanId : null,
-    }),
-    [
-      ctl.mode,
-      ctl.level,
-      selectedEntityId,
-      selectedTaskId,
-      selectedPlanId,
-      activeTab,
-      previewConflict,
-      selectedEventId,
-      replayMode,
-      replayTime,
-      showCompare,
-      compareUi.baselinePlanId,
-      compareUi.candidatePlanId,
-    ],
-  );
-
-  // URL 提供的 id 是否存在于已加载权威数据（不存在 → 降级默认 + 用户可见提示）。
-  const validateUrlId = useCallback(
-    (kind: UrlIdKind, id: string): boolean => {
-      switch (kind) {
-        case 'plan':
-          return schedulerState.plans.some((p) => p.planId === id);
-        case 'task': {
-          const inSnapshot = schedulerState.snapshot?.tasks.some((t) => t.id === id) ?? false;
-          const inPlan = schedulerState.plans.some((p) =>
-            p.assignments.some((a) => a.taskId === id),
-          );
-          return inSnapshot || inPlan;
-        }
-        case 'entity':
-          return entityList.some((e) => e.entityId === id);
-        case 'conflict':
-          return schedulerState.conflicts.items.some((c) => c.conflictId === id);
-        case 'event':
-          return (events ?? []).some((e) => e.eventId === id || e.id === id);
-      }
-    },
-    [schedulerState.plans, schedulerState.snapshot, schedulerState.conflicts, entityList, events],
-  );
+  // CLI-004 拆分：镜像/恢复编排移至 hooks/useCommandMapUrlSync（机械提取）。
+  // 写规则：一律 history.replaceState——mode/level/selection/tab/冲突/事件/回放
+  // 时间戳/compare 均属连续变化，不入历史栈；瞬态 UI（对话框/动画/抽屉）不镜像。
   const isValidUrlTab = useCallback((tab: string) => TABS.some((t) => t.key === tab), []);
-
-  // 恢复 URL 上下文 → 写 store / 本地 state（状态所有权不变，仅镜像）。
-  // 深链（plan_id/task_id/event_id）：选中 + 打开对应标签 + 聚焦。
-  const restoreUrlContext = useCallback(
-    (ctx: UrlOperatorContext) => {
-      if (ctx.mode && ctx.mode !== ctl.mode) ctl.setMode(ctx.mode);
-      if (ctx.level && ctx.level !== ctl.level) ctl.setLevel(ctx.level as MapLevel);
-      if (ctx.entityId) ctl.selectEntity(ctx.entityId);
-      if (ctx.taskId) {
-        ctl.setMode('scheduling');
-        ctl.selectTask(ctx.taskId);
-        setActiveTab('schedule');
-      }
-      if (ctx.planId) {
-        ctl.selectPlan(ctx.planId);
-        setActiveTab('schedule');
-      }
-      if (ctx.tab) setActiveTab(ctx.tab);
-      if (ctx.conflictId) {
-        const vmItem = schedulerState.conflicts.items.find(
-          (c) => c.conflictId === ctx.conflictId,
-        );
-        if (vmItem) {
-          // ConflictVMItem 为 SchedulingConflict 展示子集，预览面板所需字段齐全。
-          setPreviewConflict({
-            conflictId: vmItem.conflictId,
-            type: vmItem.type,
-            severity: vmItem.severity,
-            scope: vmItem.scope,
-            resourceId: vmItem.resourceId,
-            resourceType: vmItem.resourceType,
-            taskIds: vmItem.taskIds,
-            message: vmItem.message,
-            resolution: vmItem.resolution,
-            createdAt: vmItem.detectedAt ?? '',
-            snapshotVersion: null,
-            status: vmItem.status,
-            detectedAt: vmItem.detectedAt,
-            acknowledgedBy: vmItem.acknowledgedBy,
-            resolvedBy: vmItem.resolvedBy,
-            suppressUntil: vmItem.suppressUntil,
-          } as SchedulingConflict);
-          setPreviewResult(null);
-        }
-      }
-      if (ctx.eventId) {
-        setActiveTab('events');
-        focusEventEntity(ctx.eventId);
-      }
-      if (ctx.replayTs) {
-        ctl.setReplayMode(true);
-        ctl.setReplayTime(ctx.replayTs);
-      }
-      if (
-        ctx.compareBaseline &&
-        ctx.compareCandidate &&
-        ctx.compareBaseline !== ctx.compareCandidate
-      ) {
-        setCompareUi((u) => ({
-          ...u,
-          baselinePlanId: ctx.compareBaseline!,
-          candidatePlanId: ctx.compareCandidate!,
-          focusedTaskId: null,
-        }));
-        setShowCompare(true);
-      }
-    },
-    [ctl, schedulerState.conflicts, focusEventEntity],
-  );
-
-  // 失效 id 通知：toast 瞬态提示；内联 banner 由返回的 notices 渲染。
-  const handleInvalidUrlIds = useCallback((invalid: UrlInvalidIdNotice[]) => {
-    for (const notice of invalid) {
-      toast.warning(notice.message, { description: `URL 参数 ${notice.kind}_id=${notice.id}` });
-    }
-  }, []);
-
-  const { notices: urlNotices, dismissNotice: dismissUrlNotice } = useUrlOperatorContext({
-    state: urlCtx,
-    ready: !schedulerState.loading,
-    onRestore: restoreUrlContext,
-    validateId: validateUrlId,
+  const { notices: urlNotices, dismissNotice: dismissUrlNotice } = useCommandMapUrlSync({
+    ctl,
+    activeTab,
+    selectedEntityId,
+    selectedTaskId,
+    selectedPlanId,
+    selectedEventId,
+    previewConflict,
+    replayMode,
+    replayTime,
+    showCompare,
+    compareUi,
+    schedulerState,
+    entityList,
+    events,
+    focusEventEntity,
+    setActiveTab,
+    setPreviewConflict,
+    setPreviewResult,
+    setCompareUi,
+    setShowCompare,
     isValidTab: isValidUrlTab,
-    onInvalidId: handleInvalidUrlIds,
+    ready: !schedulerState.loading,
   });
 
   // 层级循环 L0 → L1 → L2 → L3 → L4 → L0
@@ -786,9 +521,20 @@ const CommandMapShell = (): React.ReactElement => {
   // 全屏切换
   const handleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+      document.documentElement
+        .requestFullscreen?.()
+        .then(() => setIsFullscreen(true))
+        .catch((err: unknown) => {
+          // CLI-008：不再静默吞错（浏览器策略拒绝等场景记日志）。
+          logger.warn('requestFullscreen 被拒绝', err);
+        });
     } else {
-      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+      document.exitFullscreen
+        ?.()
+        .then(() => setIsFullscreen(false))
+        .catch((err: unknown) => {
+          logger.warn('exitFullscreen 失败', err);
+        });
     }
   }, []);
 
@@ -1304,7 +1050,7 @@ const CommandMapShell = (): React.ReactElement => {
       {/* 实时告警弹窗 */}
       <AlertToast onViewEvent={handleViewEvent} onHandleEvent={handleHandleEvent} />
 
-      {/* 快捷键帮助浮层 */}
+      {/* 快捷键帮助浮层（CLI-038：Tab 焦点陷阱，防焦点逃出对话框） */}
       {showHelp && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
@@ -1313,10 +1059,34 @@ const CommandMapShell = (): React.ReactElement => {
           aria-modal="true"
           aria-labelledby="shortcut-help-title"
           onKeyDown={(event) => {
-            if (event.key === 'Escape') setShowHelp(false);
+            if (event.key === 'Escape') {
+              setShowHelp(false);
+              return;
+            }
+            if (event.key === 'Tab') {
+              const dialog = helpDialogRef.current;
+              if (!dialog) return;
+              const focusables = Array.from(
+                dialog.querySelectorAll<HTMLElement>(
+                  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+                ),
+              );
+              if (focusables.length === 0) return;
+              const first = focusables[0];
+              const last = focusables[focusables.length - 1];
+              const active = document.activeElement;
+              if (event.shiftKey && (active === first || !dialog.contains(active))) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && active === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }
           }}
         >
           <div
+            ref={helpDialogRef}
             className="bg-[hsl(220_14%_14%)] border border-white/10 rounded-xl p-6 shadow-2xl min-w-[320px]"
             onClick={(e) => e.stopPropagation()}
           >

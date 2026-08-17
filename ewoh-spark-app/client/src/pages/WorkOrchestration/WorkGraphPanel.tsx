@@ -421,7 +421,11 @@ const WorkGraphPanel = (): React.ReactElement => {
         ? { scale: transformState.scale, x: transformState.positionX, y: transformState.positionY }
         : undefined,
     };
-    localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch {
+      // CLI-226：私有模式/配额满时静默跳过（视图保存非关键路径，不中断交互）。
+    }
   };
 
   const restoreView = () => {

@@ -82,6 +82,14 @@ function defaultBroadcast(): BroadcastLike | null {
 
 interface BroadcastElector {
   promise: Promise<LeaderResult>;
+  /**
+   * CLI-503：跟随者侧 lease 监督。距上次收到 leader 心跳（ping/claim）
+   * 超过 leaseMs 即判定 leader 失联（崩溃且未 release），选举结果过期，
+   * 下一次 acquireLeader 会丢弃缓存并重新选举，允许其它 tab 接管。
+   */
+  isStale?: () => boolean;
+  /** 丢弃该选举缓存时释放底层 channel 与定时器。 */
+  dispose?: () => void;
 }
 
 export class FlushLeaseManager {
@@ -143,7 +151,14 @@ export class FlushLeaseManager {
   async acquireLeader(name: string): Promise<LeaderResult> {
     const existing = this.electors.get(name);
     if (existing) {
-      return existing.promise;
+      // CLI-503：lease 过期的旧选举（leader 失联）不再复用，重新发起选举，
+      // 使幸存的 tab 可以接管 flush 职责。
+      if (existing.isStale?.()) {
+        existing.dispose?.();
+        this.electors.delete(name);
+      } else {
+        return existing.promise;
+      }
     }
     const elector = this.startElection(name);
     this.electors.set(name, elector);
@@ -168,11 +183,28 @@ export class FlushLeaseManager {
       };
     }
 
+    // CLI-503 相关状态提升到 executor 外，供 isStale/dispose 闭包读取。
+    let released = false;
+    let lastSeen = this.now();
+
     const resultPromise = new Promise<LeaderResult>((resolve) => {
       let settled = false;
       let isLeader = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-      let lastSeen = this.now();
+
+      const stopHeartbeat = () => {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      };
+
+      const teardownFollower = () => {
+        released = true;
+        stopHeartbeat();
+        channel.close();
+        if (this.electors.get(name)?.promise === resultPromise) {
+          this.electors.delete(name);
+        }
+      };
 
       const settle = (leader: boolean, self: boolean): LeaderResult => {
         if (settled && !self) return { isLeader: false, release: () => undefined };
@@ -199,6 +231,12 @@ export class FlushLeaseManager {
         if (msg.type === 'claim' && !settled) {
           // Another tab claimed leadership first — yield.
           resolve(settle(false, true));
+          return;
+        }
+        if (msg.type === 'release' && settled && !isLeader) {
+          // CLI-503：leader 主动释放 lease，本 tab 的跟随状态作废；
+          // 下一次 acquireLeader 会重新选举（本 tab 可抢主）。
+          teardownFollower();
         }
       };
       channel.onmessage = onMessage;
@@ -228,7 +266,16 @@ export class FlushLeaseManager {
       }, delay);
     });
 
-    return { promise: resultPromise };
+    return {
+      promise: resultPromise,
+      // CLI-503：跟随者侧 lease 超时判定——超过 leaseMs 未收到 leader
+      // 心跳（leader 崩溃且未 release）即视为过期，允许重新选举。
+      isStale: () => released || this.now() - lastSeen > this.leaseMs,
+      dispose: () => {
+        if (channel.onmessage) channel.onmessage = null;
+        channel.close();
+      },
+    };
   }
 }
 

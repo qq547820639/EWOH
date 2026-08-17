@@ -3,7 +3,7 @@
 # 开发环境推荐以进程方式运行（make run），docker-compose 用于试点部署。
 # 代码采用 src/ 布局，运行入口通过 PYTHONPATH=src 解析 edge_platform 包。
 
-.PHONY: run run-stub demo test test-contract production-smoke connector-tck aas-tck rego-tck cross-tenant-tck contract-identity contract-domain contract-golden contract-envelope pilot-readiness lint lint-fix security format clean help
+.PHONY: run run-stub demo test test-contract production-smoke connector-tck aas-tck rego-tck cross-tenant-tck contract-identity contract-domain contract-golden contract-envelope audit-regression-gates pilot-readiness lint lint-fix security format clean help
 
 PYTHON ?= python3
 
@@ -46,6 +46,29 @@ scheduler-golden:  ## Phase 7 / NO-07+NO-07b：Golden Scheduler TCK（求解段 
 contract-envelope:  ## ADR-009：Event Envelope 契约门禁（独立仲裁 + 目录交叉校验）+ 契约测试
 	@node scripts/audit-event-envelope.js
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_event_envelope.py -q
+
+audit-regression-gates:  ## 2026-08-17 审计 §4 十条主线防回归门禁（W13：租户隔离/边缘GET鉴权/SSRF/前端XSS/迁移链/门禁自测/事务边界/契约parity/状态机role/演示残留）
+	@echo '── 主线1 租户隔离：org 表查询链静态扫描（audit-org-predicates）'
+	@node scripts/audit-org-predicates.js
+	@echo '── 主线2 边缘 GET 面鉴权：路由清单完整性 + production 匿名 401 TCK'
+	PYTHONPATH=src $(PYTHON) -m pytest src/edge_platform/tests/test_get_route_auth_matrix.py -q
+	@echo '── 主线3 SSRF：出站凭据/地址请求体键名白名单比对（audit-ssrf-surface）'
+	@node scripts/audit-ssrf-surface.js
+	@echo '── 主线4 前端 XSS/凭据：storage 凭据 + href sink 扫描（audit-client-security-sinks）'
+	@node scripts/audit-client-security-sinks.js
+	@echo '── 主线5 迁移链：全新库可安装顺序校验（默认静态；设 EWOH_PG_URL 启用真实空库执行）'
+	bash scripts/migration-fresh-install-check.sh
+	@echo '── 主线6 门禁自测：canonical ID 正则向量 + truth-manifest 缺 baseline fail（Jest）'
+	cd ewoh-spark-app && npx jest --silent test/unit/scripts/gate-scripts.selftest.spec.ts
+	@echo '── 主线7 调度事务边界：persistPlan 调用点 + 关键链路清单（audit-scheduler-transactions）'
+	@node scripts/audit-scheduler-transactions.js
+	@echo '── 主线8 契约漂移：TS↔Python parity 全共享契约（pytest 门禁，复用既有测试）'
+	PYTHONPATH=src $(PYTHON) -m pytest tests/test_ts_python_contract_parity.py -q
+	@echo '── 主线9 状态机 role 约束：yaml↔TS 锁定表双向一致 TCK（audit-state-machine-roles）'
+	@node scripts/audit-state-machine-roles.js
+	@echo '── 主线10 演示/伪造残留：grep 白名单登记制扫描（audit-demo-residue）'
+	@node scripts/audit-demo-residue.js
+	@echo '✅ audit-regression-gates：十条主线门禁全部通过'
 
 production-smoke:  ## P0-EDGE-006：Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_production_assembly.py tests/test_bus_contract.py -q

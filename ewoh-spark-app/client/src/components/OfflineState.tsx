@@ -22,15 +22,15 @@ const OfflineState = ({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex flex-col gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm"
+      className="flex flex-col gap-3 rounded-lg border border-risk-offline-border bg-risk-offline-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <WifiOff className="mt-0.5 size-5 shrink-0 text-sky-600" />
+        <WifiOff className="mt-0.5 size-5 shrink-0 text-risk-offline" />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">{title}</p>
-          <p className="mt-0.5 text-[hsl(220_14%_14%)]">{description}</p>
+          <p className="font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-foreground">{description}</p>
           {typeof pendingCount === 'number' && pendingCount >= 0 && (
-            <p className="mt-1 text-[hsl(218_10%_42%)]">
+            <p className="mt-1 text-muted-foreground">
               待同步 {pendingCount} 项操作
             </p>
           )}

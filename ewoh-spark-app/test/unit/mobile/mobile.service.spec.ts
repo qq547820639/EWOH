@@ -45,7 +45,8 @@ describe('MobileService', () => {
     const mes = { getWorkOrder: jest.fn(), transitionStep: jest.fn() };
     const service = new MobileService(db as never, mes as never);
 
-    const rows = await service.listWorkbench('P-1', {
+    // NEST-412：personId 必须是本人（或特权角色）——查询与身份同源。
+    const rows = await service.listWorkbench('user-1', {
       userId: 'user-1',
       primaryOrgId: 'org-1',
     });
@@ -57,8 +58,35 @@ describe('MobileService', () => {
       (where as unknown as jest.Mock).mock.calls[0]?.[0] ?? '',
     );
     expect(predicate).toContain('assigned_person_id');
-    expect(predicate).toContain('P-1');
+    expect(predicate).toContain('user-1');
     expect(predicate).toContain('org-1');
+  });
+
+  it('NEST-412: querying another person\'s workbench without a privileged role → Forbidden', async () => {
+    const db = { select: jest.fn() };
+    const service = new MobileService(db as never, {} as never);
+
+    await expect(
+      service.listWorkbench('person-other', {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+      }),
+    ).rejects.toThrow(/personId mismatch/);
+    // 特权角色（workshop_lead）可代查。
+    const orderBy = jest.fn().mockResolvedValue([]);
+    const where = jest.fn(() => ({ orderBy }));
+    const privilegedDb = {
+      select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })),
+    };
+    const privilegedService = new MobileService(privilegedDb as never, {} as never);
+    await expect(
+      privilegedService.listWorkbench('person-other', {
+        userId: 'user-1',
+        primaryOrgId: 'org-1',
+        roles: ['workshop_lead'],
+      }),
+    ).resolves.toEqual([]);
+    expect(where).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when the caller has no person or org context', async () => {
@@ -72,7 +100,7 @@ describe('MobileService', () => {
       }),
     ).resolves.toEqual([]);
     await expect(
-      service.listWorkbench('P-1', undefined),
+      service.listWorkbench('user-1', undefined),
     ).resolves.toEqual([]);
     expect(db.select).not.toHaveBeenCalled();
   });

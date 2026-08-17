@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { currentRequestContext } from '../../common/request-context';
+import { sql } from 'drizzle-orm';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -141,6 +143,19 @@ export class SchedulingFeedbackService {
         const plannedWait = assignmentId ? waitByAssignment.get(assignmentId) ?? null : null;
 
         // 幂等：同一 assignment 已存在则回填 planned 基线，否则新增。
+        // NEST-127 修复（2026-08-17）：check-then-insert 竞态（并发同 assignment
+        // 双插入）——feedback 表无 (plan, assignment) 唯一约束可作 ON CONFLICT
+        // target，改为事务内 advisory lock（键=plan|assignment）串行化同一
+        // assignment 的基线写入；无 execute 能力的测试替身跳过锁（保持旧行为）。
+        if (assignmentId) {
+          try {
+            await this.db.execute(
+              sql`SELECT pg_advisory_xact_lock(hashtext(${planId} || '|' || ${assignmentId}))`,
+            );
+          } catch {
+            // 测试替身/无 execute 环境：跳过锁（单进程测试无并发）
+          }
+        }
         const [existing] = assignmentId
           ? await this.db
               .select()
@@ -203,16 +218,29 @@ export class SchedulingFeedbackService {
     return written;
   }
 
-  /** 记录 plan 审批结果（accepted）。观测型，不影响审批流程。 */
+  /** 记录 plan 审批结果（accepted）。观测型，不影响审批流程。NEST-117：org 条件。 */
   async recordAcceptance(planId: string, accepted: boolean, ctx?: OrgContext): Promise<void> {
     const gucSettings = buildGucSettings(
       ctx ?? { userId: 'system', primaryOrgId: '' },
     );
+    const orgId = ctx?.primaryOrgId || null;
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
+      // NEST-117 修复（2026-08-17）：UPDATE 按 org 过滤（无 ctx 时不再跨租户
+      // 改他租户 feedback 行的 accepted 标记；org 匹配或 NULL 存量）。
       await this.db
         .update(ewohSchedulingFeedback)
         .set({ accepted })
-        .where(eq(ewohSchedulingFeedback.planId, planId));
+        .where(
+          and(
+            eq(ewohSchedulingFeedback.planId, planId),
+            orgId
+              ? or(
+                  isNull(ewohSchedulingFeedback.orgId),
+                  eq(ewohSchedulingFeedback.orgId, orgId),
+                )
+              : undefined,
+          ),
+        );
     });
     this.logger.log(
       `scheduling feedback acceptance=${String(accepted)} recorded for plan ${planId}`,
@@ -246,7 +274,13 @@ export class SchedulingFeedbackService {
     const toDate = (v: Date | string | null | undefined): Date | null =>
       v == null || v === '' ? null : new Date(v);
 
-    const summary = { advancedAssignments: 0, advancedTaskSteps: 0, skips: [] as string[] };
+    const summary = {
+      advancedAssignments: 0,
+      advancedTaskSteps: 0,
+      skips: [] as string[],
+      // NEST-121（2026-08-17）：UPDATE ... RETURNING 真实命中行数（matched 事实）。
+      matchedRows: 0,
+    };
 
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
       const conditions: any[] = [];
@@ -258,6 +292,16 @@ export class SchedulingFeedbackService {
       }
       if (input.taskId) {
         conditions.push(eq(ewohSchedulingFeedback.taskId, input.taskId));
+      }
+      // NEST-160 修复（2026-08-17）：回填 UPDATE 按 org 过滤（ctx 携带 org 时
+      // 仅本 org 行 + NULL 存量；此前任意 planId/taskId 可跨租户改反馈行）。
+      if (ctx?.primaryOrgId) {
+        conditions.push(
+          or(
+            isNull(ewohSchedulingFeedback.orgId),
+            eq(ewohSchedulingFeedback.orgId, ctx.primaryOrgId),
+          ),
+        );
       }
       if (conditions.length === 0) return;
 
@@ -271,10 +315,13 @@ export class SchedulingFeedbackService {
         patch.actualResourceJson = input.actualResource as unknown as Record<string, unknown>;
       }
 
-      await this.db
+      // NEST-121：RETURNING 统计命中行数（matched 事实，供响应 matched 字段）。
+      const updatedRows = await this.db
         .update(ewohSchedulingFeedback)
         .set(patch)
-        .where(and(...conditions));
+        .where(and(...conditions))
+        .returning({ id: ewohSchedulingFeedback.id });
+      summary.matchedRows = updatedRows.length;
 
       // NO-13a / ADR-050：执行反馈完成腿——真实执行事实推进 assignment/task 状态
       //（CAS + 事件 + 契约状态机最短合法链；失败只 log 不阻断反馈写入，§33）。
@@ -476,8 +523,15 @@ export class SchedulingFeedbackService {
     return rows.map((r) => this.toFeedback(r));
   }
 
-  /** 全部反馈行（离线评估视图）。 */
+  /** 全部反馈行（离线评估视图）。NEST-108：HTTP 上下文强制 orgId。 */
   async list(orgId?: string | null): Promise<SchedulingFeedback[]> {
+    // NEST-108 修复（2026-08-17）：HTTP 请求上下文内 orgId 必传（无 org 即
+    // 全表反馈暴露）；系统后台流（无 request context）保持全量系统语义。
+    if (!orgId && currentRequestContext()) {
+      throw new BadRequestException(
+        'orgId required for feedback listing（NEST-108）',
+      );
+    }
     // ADR-073：feedback 读面 org 条件（org 匹配或 NULL 存量；RLS 语义等价）。
     const rows = orgId
       ? await this.db
@@ -499,6 +553,12 @@ export class SchedulingFeedbackService {
    * plan churn / conflict rate / replan success rate）。输入缺省时显式 null 标注缺数据，不伪造。
    */
   async deriveKpis(orgId?: string | null): Promise<SchedulingFeedbackKpis> {
+    // NEST-108：同 list——HTTP 上下文内 orgId 必传（无认证调用不再全表 KPI）。
+    if (!orgId && currentRequestContext()) {
+      throw new BadRequestException(
+        'orgId required for KPI derivation（NEST-108）',
+      );
+    }
     const rows = orgId
       ? await this.db
           .select()

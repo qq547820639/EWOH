@@ -5,6 +5,12 @@
 - Task：draft → pending_confirm → pending_approval → pending_dispatch
   → dispatched → received → executing → paused → exception → completed / cancelled。
 
+EDGE-102（2026-08-17 审计整改说明）：Python 侧状态机即 plan.yaml/task.yaml
+canonical 语义（下方 PLAN_TRANSITIONS/TASK_TRANSITIONS 与契约文件逐条一致）；
+TS 侧 scheduler.ts 的 PlanStatus/AssignmentStatus 曾与此漂移，由共享契约层
+任务（W6/SH-006 族）将 TS 收敛到 canonical——Python 侧保持现状不动，
+两端以 contracts/state-machines/*.yaml 为唯一事实源。
+
 非法状态转换必须由后端拒绝（抛 ValueError），不能只靠前端拦截。
 
 纯 Python 标准库实现。
@@ -351,6 +357,23 @@ class SchedulePlan:
             "confirmed_by": self.confirmed_by,
             "confirm_reason": self.confirm_reason,
         }
+        # EDGE-104（2026-08-17 审计整改）：补序列化运行期动态属性——
+        # executed_at/reject_reason/frozen_assignments/_reservations 此前由
+        # 服务层动态设置但 to_dict 丢失，导致落库/响应缺字段。
+        executed_at = getattr(self, "executed_at", None)
+        if executed_at:
+            d["executed_at"] = executed_at
+        reject_reason = getattr(self, "reject_reason", None)
+        if reject_reason:
+            d["reject_reason"] = reject_reason
+        frozen = getattr(self, "frozen_assignments", None)
+        if frozen:
+            d["frozen_assignments"] = [
+                a.to_dict() if hasattr(a, "to_dict") else dict(a) for a in frozen
+            ]
+        reservations = getattr(self, "_reservations", None)
+        if reservations:
+            d["reservations"] = list(reservations)
         # P0-SCHED-OWNERSHIP：advisory 方案显式标记（Edge 建议 ≠ 云端正式方案），
         # 调用方/UI 必须把它呈现为"建议"，不得展示为正式 approved/dispatched。
         if getattr(self, "advisory", False):

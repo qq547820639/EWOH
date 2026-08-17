@@ -11,7 +11,7 @@ the control-plane questions in one command:
 - 哪些任务会受影响：从阻塞节点沿依赖边向下游传播的任务集合。
 
 ```bash
-node tools/work-console/index.js --root /Volumes/Extra/CodeProj/EWOH \
+node tools/work-console/index.js --root "$(pwd)" \
   --output output/work-console.json --strict
 ```
 

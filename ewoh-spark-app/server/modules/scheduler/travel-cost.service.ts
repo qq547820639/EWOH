@@ -48,12 +48,15 @@ export class TravelCostService {
    * 有 from/to 坐标时优先走 calculateRouteBetween（真实 route graph）；
    * 否则走 calculateRoute（内部查 spatial entity 坐标，失败则显式 euclidean fallback）。
    * route graph 不可行时显式回退到 euclidean 并携带 fallbackReason / dataQuality。
+   * NEST-116/135（2026-08-17）：opts.orgId 透传路由图/坐标解析的 org 过滤；
+   * opts.graphVersion 透传 worldVersion 代理（Route.graphVersion 版本追溯）。
    */
   async estimate(
     personId: string,
     taskId: string,
     from?: { x: number | null; y: number | null },
     to?: { x: number | null; y: number | null },
+    opts?: { orgId?: string | null; graphVersion?: number | null },
   ): Promise<RouteCost> {
     const hasFrom = from != null && this.hasCoord(from);
     const hasTo = to != null && this.hasCoord(to);
@@ -61,7 +64,8 @@ export class TravelCostService {
       const route = await this.routingService.calculateRouteBetween(
         { x: from!.x as number, y: from!.y as number },
         { x: to!.x as number, y: to!.y as number },
-        { personId, taskId },
+        { personId, taskId, graphVersion: opts?.graphVersion ?? null },
+        opts?.orgId ?? null,
       );
       if (route.feasible && route.source === 'route_graph') {
         return this.fromRoute(route);
@@ -75,7 +79,11 @@ export class TravelCostService {
 
     // 坐标缺失：尝试通过 spatial entity 解析真实起终点；仍失败则显式 UNKNOWN（不伪造 0,0）。
     try {
-      const route = await this.routingService.calculateRoute(personId, taskId);
+      const route = await this.routingService.calculateRoute(
+        personId,
+        taskId,
+        opts?.orgId ?? null,
+      );
       if (route.feasible && route.source === 'route_graph') {
         return this.fromRoute(route);
       }
@@ -116,8 +124,9 @@ export class TravelCostService {
     snapshot: WorldStateSnapshot,
     task: WorldStateSnapshot['tasks'][number],
     candidates: Array<{ personId: string | null; deviceId: string | null; stationId: string | null }>,
+    orgId?: string | null,
   ): Promise<RouteCostMatrix> {
-    const policy = await this.policy.getActivePolicy();
+    const policy = await this.policy.getActivePolicy(orgId ?? undefined);
     const routeGraphVersion = this.routeGraphVersionOf(snapshot);
     const candHash = candidateSetHash(candidates);
     const cached = await this.getCachedMatrix(
@@ -126,6 +135,7 @@ export class TravelCostService {
       policy.version,
       routeGraphVersion,
       candHash,
+      orgId ?? undefined,
     );
     if (cached && cached.candidates.length >= candidates.length) {
       return cached;
@@ -137,8 +147,9 @@ export class TravelCostService {
       policy,
       routeGraphVersion,
       candHash,
+      orgId ?? null,
     );
-    await this.persistMatrix(matrix);
+    await this.persistMatrix(matrix, orgId ?? null);
     return matrix;
   }
 
@@ -148,28 +159,37 @@ export class TravelCostService {
    */
   async buildEligibilityMatrix(
     snapshot: WorldStateSnapshot,
+    orgId?: string | null,
   ): Promise<Map<string, { personIds: string[]; deviceIds: string[] }>> {
     const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
     const result = new Map<
       string,
       { personIds: string[]; deviceIds: string[] }
     >();
+    const graphVersion = snapshot.worldVersion ?? null;
     for (const task of snapshot.tasks) {
       const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
       const taskPoint = taskStation
         ? { x: taskStation.x, y: taskStation.y }
         : undefined;
-      const personIds: string[] = [];
-      for (const p of snapshot.persons) {
-        const personStation = p.stationId ? stationById.get(p.stationId) : undefined;
-        const personPoint = personStation
-          ? { x: personStation.x, y: personStation.y }
-          : p.x != null && p.y != null
-            ? { x: p.x, y: p.y }
-            : undefined;
-        const cost = await this.estimate(p.id, task.id, personPoint, taskPoint);
-        if (cost.feasible) personIds.push(p.id);
-      }
+      // NEST-162 修复（2026-08-17）：逐 person 顺序 await（O(tasks×persons) 串行
+      // RTT）→ 每任务内并行估算（单任务候选集有界，内存可控）。
+      const personIdList = await Promise.all(
+        snapshot.persons.map(async (p) => {
+          const personStation = p.stationId ? stationById.get(p.stationId) : undefined;
+          const personPoint = personStation
+            ? { x: personStation.x, y: personStation.y }
+            : p.x != null && p.y != null
+              ? { x: p.x, y: p.y }
+              : undefined;
+          const cost = await this.estimate(p.id, task.id, personPoint, taskPoint, {
+            orgId: orgId ?? null,
+            graphVersion,
+          });
+          return cost.feasible ? p.id : null;
+        }),
+      );
+      const personIds = personIdList.filter((id): id is string => id != null);
       // 设备：仅有真实位置（坐标非 null）的设备才允许进入求解请求（可路由）。
       const deviceIds = snapshot.devices
         .filter((d) => d.x != null && d.y != null)
@@ -193,8 +213,11 @@ export class TravelCostService {
     policyVersion: number,
     routeGraphVersion: string,
     candidateSetHashKey: string,
+    orgId?: string | null,
   ): Promise<RouteCostMatrix | null> {
     try {
+      // NEST-116（2026-08-17）：缓存读取按 org 过滤（snapshotVersion 全局唯一
+      // 已保证跨租户不复用，org 条件是同口径的纵深防御）。
       const rows = await this.db
         .select()
         .from(ewohRouteCostMatrix)
@@ -202,6 +225,7 @@ export class TravelCostService {
           and(
             eq(ewohRouteCostMatrix.taskId, taskId),
             eq(ewohRouteCostMatrix.snapshotVersion, snapshotVersion),
+            orgId ? eq(ewohRouteCostMatrix.orgId, orgId) : undefined,
           ),
         )
         .limit(1);
@@ -222,48 +246,49 @@ export class TravelCostService {
     }
   }
 
-  /** 写缓存矩阵（决策 D-D；同键幂等覆盖）。 */
-  async persistMatrix(matrix: RouteCostMatrix): Promise<void> {
+  /**
+   * 写缓存矩阵（决策 D-D；同键幂等覆盖）。
+   * NEST-161 修复（2026-08-17）：check-then-insert 竞态（并发同键双插入撞
+   * uq_ewoh_route_cost_matrix_task_snapshot）→ 原子 ON CONFLICT DO UPDATE
+   * （target=(taskId, snapshotVersion)，standalone_026 全键唯一索引）。
+   * NEST-116 配套：org_id 显式落库（standalone_057 起 NOT NULL；系统路径
+   * orgId=null 时回填 'system' 哨兵——DB 层 NOT NULL 硬约束）。
+   */
+  async persistMatrix(matrix: RouteCostMatrix, orgId?: string | null): Promise<void> {
     try {
-      const existing = await this.db
-        .select({ id: ewohRouteCostMatrix.id })
-        .from(ewohRouteCostMatrix)
-        .where(
-          and(
-            eq(ewohRouteCostMatrix.taskId, matrix.taskId),
-            eq(ewohRouteCostMatrix.snapshotVersion, matrix.snapshotVersion),
-          ),
-        )
-        .limit(1);
-      if (existing[0]) {
-        await this.db
-          .update(ewohRouteCostMatrix)
-          .set({
-            matrixId: matrix.matrixId,
-            policyVersion: matrix.policyVersion,
-            solverVersion: matrix.solverVersion,
-            // Task 4 / P0-4：全键唯一索引维度（standalone_026），与逻辑缓存 key 对齐。
-            routeGraphVersion: matrix.routeGraphVersion != null ? String(matrix.routeGraphVersion) : null,
-            candidateSetHash: matrix.candidateSetHash ?? null,
-            candidatesJson: this.toJsonbArray(matrix.candidates),
-            generatedAt: new Date(matrix.generatedAt),
+      const values = {
+        matrixId: matrix.matrixId,
+        orgId: orgId ?? 'system',
+        taskId: matrix.taskId,
+        snapshotVersion: matrix.snapshotVersion,
+        policyVersion: matrix.policyVersion,
+        solverVersion: matrix.solverVersion,
+        // Task 4 / P0-4：全键唯一索引维度（standalone_026），与逻辑缓存 key 对齐。
+        routeGraphVersion: matrix.routeGraphVersion != null ? String(matrix.routeGraphVersion) : null,
+        candidateSetHash: matrix.candidateSetHash ?? null,
+        candidatesJson: this.toJsonbArray(matrix.candidates),
+        generatedAt: new Date(matrix.generatedAt),
+      };
+      await this.db
+        .insert(ewohRouteCostMatrix)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [
+            ewohRouteCostMatrix.taskId,
+            ewohRouteCostMatrix.snapshotVersion,
+          ],
+          set: {
+            matrixId: values.matrixId,
+            orgId: values.orgId,
+            policyVersion: values.policyVersion,
+            solverVersion: values.solverVersion,
+            routeGraphVersion: values.routeGraphVersion,
+            candidateSetHash: values.candidateSetHash,
+            candidatesJson: values.candidatesJson,
+            generatedAt: values.generatedAt,
             updatedAt: new Date(),
-          })
-          .where(eq(ewohRouteCostMatrix.id, existing[0].id));
-      } else {
-        await this.db.insert(ewohRouteCostMatrix).values({
-          matrixId: matrix.matrixId,
-          taskId: matrix.taskId,
-          snapshotVersion: matrix.snapshotVersion,
-          policyVersion: matrix.policyVersion,
-          solverVersion: matrix.solverVersion,
-          // Task 4 / P0-4：全键唯一索引维度（standalone_026），与逻辑缓存 key 对齐。
-          routeGraphVersion: matrix.routeGraphVersion != null ? String(matrix.routeGraphVersion) : null,
-          candidateSetHash: matrix.candidateSetHash ?? null,
-          candidatesJson: this.toJsonbArray(matrix.candidates),
-          generatedAt: new Date(matrix.generatedAt),
+          },
         });
-      }
     } catch (err) {
       this.logger.warn(
         `route cost matrix cache write failed (task=${matrix.taskId}): ${(err as Error)?.message ?? err}`,
@@ -300,6 +325,7 @@ export class TravelCostService {
     policy: { version: number; solverVersion: string; weights: ObjectiveWeights },
     routeGraphVersion: string,
     candidateSetHashKey: string,
+    orgId?: string | null,
   ): Promise<RouteCostMatrix> {
     const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
     const personById = new Map(snapshot.persons.map((p) => [p.id, p]));
@@ -309,33 +335,41 @@ export class TravelCostService {
       : undefined;
     const hasBlockedEdge =
       (snapshot.routeStatus ?? []).some((r) => r.status === 'blocked') ?? false;
+    // NEST-163 修复（2026-08-17）：禁区判定仅按 zoneId（与任务 zone 同一 ID 空间）；
+    // 移除 f.zoneId === task.stationId 的跨 ID 空间比对（zoneId≠stationId，
+    // 恒 false 之外还可能在两个 ID 空间意外撞名时误封候选）。
     const forbiddenZone =
-      (snapshot.forbiddenZones ?? []).some(
-        (f) => f.zoneId === task.zoneId || f.zoneId === task.stationId,
-      ) ?? false;
+      (snapshot.forbiddenZones ?? []).some((f) => f.zoneId === task.zoneId) ??
+      false;
+    const graphVersionNum = snapshot.worldVersion ?? null;
 
-    const matrixCandidates: CandidateRouteCost[] = [];
-    for (const cand of candidates) {
-      const person = cand.personId ? personById.get(cand.personId) : undefined;
-      const personPoint = person
-        ? person.stationId
+    // NEST-162 修复（2026-08-17）：候选估算并行化（原逐候选顺序 await）。
+    const matrixCandidates = await Promise.all(
+      candidates.map(async (cand) => {
+        const person = cand.personId ? personById.get(cand.personId) : undefined;
+        const personStation = person?.stationId
           ? stationById.get(person.stationId)
-            ? { x: stationById.get(person.stationId)!.x, y: stationById.get(person.stationId)!.y }
-            : person.x != null && person.y != null
-              ? { x: person.x, y: person.y }
-              : undefined
-          : person.x != null && person.y != null
+          : undefined;
+        const personPoint = personStation
+          ? { x: personStation.x, y: personStation.y }
+          : person && person.x != null && person.y != null
             ? { x: person.x, y: person.y }
-            : undefined
-        : undefined;
-      const cost = await this.estimate(cand.personId ?? 'unknown', task.id, personPoint, taskPoint);
-      matrixCandidates.push(
-        this.toCandidateRouteCost(cand, cost, hasBlockedEdge, forbiddenZone),
-      );
-    }
+            : undefined;
+        const cost = await this.estimate(
+          cand.personId ?? 'unknown',
+          task.id,
+          personPoint,
+          taskPoint,
+          { orgId: orgId ?? null, graphVersion: graphVersionNum },
+        );
+        return this.toCandidateRouteCost(cand, cost, hasBlockedEdge, forbiddenZone);
+      }),
+    );
 
     return {
-      matrixId: `RCM-${routeGraphVersion}-${candidateSetHashKey}-${Date.now()}-${task.id}`,
+      // NEST-164（2026-08-17）：matrixId 前缀字段用 '#' 分隔（parseMatrixRow
+      // 按定界符解析前两个字段），taskId（可含 '-'）位于尾部不再参与 split 解析。
+      matrixId: `RCM-${routeGraphVersion}#${candidateSetHashKey}#${Date.now()}#${task.id}`,
       snapshotVersion: snapshot.snapshotVersion,
       policyVersion: policy.version,
       solverVersion: policy.solverVersion,
@@ -498,11 +532,21 @@ export class TravelCostService {
       ? (row.candidatesJson as unknown[]).filter(this.isCandidateRouteCost)
       : [];
     if (!Array.isArray(row.candidatesJson)) return null;
-    // Task 4（Option B）：routeGraphVersion/candidateSetHash 无独立列，编码在 matrixId
-    // 的 `RCM-<rv>-<hash>-<ts>-<taskId>` 前缀中，读取时解出用于缓存 key 校验。
-    const parts = row.matrixId.split('-');
-    const routeGraphVersion = parts[1] ?? null;
-    const candidateSetHashKey = parts[2] ?? null;
+    // Task 4（Option B）+ NEST-164（2026-08-17）：routeGraphVersion/candidateSetHash
+    // 无独立列，编码在 matrixId 前缀。新格式 `RCM-<rv>#<hash>#<ts>#<taskId>`
+    // 用 '#' 定界（taskId 可含 '-'/'#' 也不再错位）；旧格式 `RCM-<rv>-<hash>-…`
+    // 兼容回退 split('-')。只解析前两个字段，尾部（ts+taskId）不参与。
+    const hashDelimited = /^RCM-([^#]+)#([^#]+)#/.exec(row.matrixId);
+    let routeGraphVersion: string | null;
+    let candidateSetHashKey: string | null;
+    if (hashDelimited) {
+      routeGraphVersion = hashDelimited[1] ?? null;
+      candidateSetHashKey = hashDelimited[2] ?? null;
+    } else {
+      const parts = row.matrixId.split('-');
+      routeGraphVersion = parts[1] ?? null;
+      candidateSetHashKey = parts[2] ?? null;
+    }
     return {
       matrixId: row.matrixId,
       snapshotVersion: row.snapshotVersion ?? '',

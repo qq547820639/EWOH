@@ -22,12 +22,12 @@ const PendingInbox = ({ pendingCount }: { pendingCount: number }) => {
         <button
           type="button"
           aria-label={`待处理事项${pendingCount > 0 ? `，${pendingCount} 条待同步` : ''}`}
-          className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] hover:text-[hsl(220_14%_14%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(221_83%_53%)]"
+          className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Inbox className="h-4 w-4" aria-hidden />
           {pendingCount > 0 && (
             <span
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[hsl(0_84%_60%)] px-1 text-[10px] font-semibold text-white"
+              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white"
               aria-hidden
             >
               {pendingCount}
@@ -44,8 +44,13 @@ const PendingInbox = ({ pendingCount }: { pendingCount: number }) => {
           指挥中心
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        {/* CLI-322：离线队列为真实数据；上方两个入口在真实后端契约接入前
+            显式标注「演示」，避免用户误认为已有告警/审批数据源。 */}
         <DropdownMenuItem disabled>
           待同步 {pendingCount} 条（离线队列）
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled>
+          风险告警 / 指挥中心入口为演示导航（待接入真实数据）
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

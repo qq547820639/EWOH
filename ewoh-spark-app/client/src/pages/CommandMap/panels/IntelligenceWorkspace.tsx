@@ -40,10 +40,15 @@ import { ScrollArea } from '@client/src/components/ui/scroll-area';
  * 前端只展示后端权威值（KPI 聚合、replay 记录、gate 评估、激活审计），不重算。
  */
 export default function IntelligenceWorkspace() {
-  const operator = getCurrentOperator() ?? 'admin';
+  // CLI-021：不再 ?? 'admin' 冒充管理员身份；未登录（anonymous）时禁用
+  // 关键策略操作并显式提示登录。
+  const operator = getCurrentOperator();
+  const operatorLoggedIn = operator !== 'anonymous';
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<'kpi' | 'policy'>('kpi');
   const [policyVersion, setPolicyVersion] = useState<string>('');
+  // CLI-023：激活理由改为收集用户输入（必填），不再硬编码审计文案。
+  const [activationReason, setActivationReason] = useState('');
   const [gateResult, setGateResult] = useState<PolicyGateEvaluation | null>(null);
 
   const kpi = useQuery({ queryKey: ['scheduler-kpi'], queryFn: () => getKpi(true) });
@@ -92,10 +97,11 @@ export default function IntelligenceWorkspace() {
 
   const activateMut = useMutation({
     mutationFn: (version: number) =>
-      activatePolicy(version, { operator, reason: 'intelligence-workspace activation' }),
+      activatePolicy(version, { operator, reason: activationReason.trim() }),
     onSuccess: (r) => {
       toast.success(`策略 v${r.policyVersion} 已激活（rollback target v${r.rollbackTarget}）`);
       setGateResult(null);
+      setActivationReason('');
       qc.invalidateQueries({ queryKey: ['policy-activations'] });
     },
     onError: (e: Error) => toast.error(`激活被拒: ${e.message}`),
@@ -127,6 +133,12 @@ export default function IntelligenceWorkspace() {
 
         {activeTab === 'policy' && (
           <div className="space-y-2">
+            {/* CLI-021：未登录显式提示（不再默认 admin 身份） */}
+            {!operatorLoggedIn && (
+              <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9.5px] text-amber-300">
+                当前未登录（anonymous）：SHADOW / 激活操作需登录后执行。
+              </div>
+            )}
             <div className="flex gap-1">
               <input
                 value={policyVersion}
@@ -146,7 +158,7 @@ export default function IntelligenceWorkspace() {
               <Button
                 size="sm"
                 className="h-6 text-[10px] px-2"
-                disabled={!policyVersion || shadowMut.isPending}
+                disabled={!policyVersion || shadowMut.isPending || !operatorLoggedIn}
                 onClick={() => shadowMut.mutate(Number(policyVersion))}
               >
                 <Shield className="h-3 w-3" /> SHADOW
@@ -174,12 +186,26 @@ export default function IntelligenceWorkspace() {
               <Button
                 size="sm"
                 className="h-6 text-[10px] px-2 bg-emerald-600/80 hover:bg-emerald-600"
-                disabled={!policyVersion || activateMut.isPending || !gateResult?.passed}
+                disabled={
+                  !policyVersion ||
+                  activateMut.isPending ||
+                  !gateResult?.passed ||
+                  !operatorLoggedIn ||
+                  !activationReason.trim()
+                }
                 onClick={() => activateMut.mutate(Number(policyVersion))}
               >
                 <CheckCircle2 className="h-3 w-3" /> 激活
               </Button>
             </div>
+
+            {/* CLI-023：激活理由输入（必填，写入激活审计） */}
+            <input
+              value={activationReason}
+              onChange={(e) => setActivationReason(e.target.value)}
+              placeholder="激活理由（必填，写入审计）"
+              className="w-full rounded border border-white/15 bg-white/5 px-1.5 py-1 text-[10px]"
+            />
 
             {gateResult && <GateResultView gate={gateResult} />}
 
@@ -217,7 +243,9 @@ export default function IntelligenceWorkspace() {
                   </Badge>
                 </div>
                 <div className="text-white/45">
-                  {a.operator} · rollback→v{a.rollbackTarget} · {a.createdAt.slice(0, 19)}
+                  {/* CLI-022：createdAt 判空，缺失显式 '—'（不假设非空） */}
+                  {a.operator} · rollback→v{a.rollbackTarget} ·{' '}
+                  {a.createdAt ? a.createdAt.slice(0, 19) : '—'}
                 </div>
               </div>
             ))}

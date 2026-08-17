@@ -36,8 +36,8 @@ const FavoriteViewsMenu = ({ pathname }: { pathname: string }) => {
         <button
           type="button"
           aria-label="收藏视图"
-          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] hover:text-[hsl(220_14%_14%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(221_83%_53%)] ${
-            currentIsFavorite ? 'text-[hsl(38_92%_50%)]' : ''
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            currentIsFavorite ? 'text-warning' : ''
           }`}
         >
           <Star
@@ -57,7 +57,7 @@ const FavoriteViewsMenu = ({ pathname }: { pathname: string }) => {
             {favorites.map((path) => (
               <DropdownMenuItem key={path} onSelect={() => navigate(path)}>
                 <span className="truncate">{resolveNavLabel(path) ?? path}</span>
-                <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+                <span className="ml-auto text-xs text-muted-foreground">
                   {path}
                 </span>
               </DropdownMenuItem>

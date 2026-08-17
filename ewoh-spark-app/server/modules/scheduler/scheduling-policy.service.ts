@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, desc, or, isNull } from 'drizzle-orm';
+import { eq, desc, and, or, isNull } from 'drizzle-orm';
 import { ewohSchedulingPolicy } from '@server/database/schema';
 import { projectPolicyActivationDecision } from './decision-projection';
 import type { DecisionRecord } from '@shared/decision';
@@ -160,9 +160,11 @@ export class SchedulingPolicyService {
   /**
    * 读取当前生效策略（active=true，按 configVersion 降序取最新）。
    * 若无生效行则返回硬编码默认策略。
+   * NEST-105（2026-08-17）：orgId 提供时按 org 过滤（本 org + NULL 存量全局行），
+   * 杜绝 getActivePolicy 返回他租户策略；缺省 = 系统后台流（GUC/RLS 兜底）。
    */
-  async getActivePolicy(): Promise<SchedulingPolicy> {
-    const row = await this.findActiveRow();
+  async getActivePolicy(orgId?: string | null): Promise<SchedulingPolicy> {
+    const row = await this.findActiveRow(orgId);
     if (!row) {
       this.logger.warn('no active scheduling policy row; using default policy');
       return DEFAULT_POLICY;
@@ -173,9 +175,10 @@ export class SchedulingPolicyService {
 
   /**
    * 读取当前生效配置（active=true 最新）。若无则返回默认配置。
+   * NEST-105：同 getActivePolicy，orgId 提供时按 org 过滤。
    */
-  async getConfig(): Promise<SchedulingPolicyConfig> {
-    const row = await this.findActiveRow();
+  async getConfig(orgId?: string | null): Promise<SchedulingPolicyConfig> {
+    const row = await this.findActiveRow(orgId);
     if (!row) {
       this.logger.warn('no active scheduling policy row; using default config');
       return DEFAULT_CONFIG;
@@ -282,6 +285,9 @@ export class SchedulingPolicyService {
   /**
    * 保存新配置：configVersion 取当前最大值 + 1，active=true，
    * 并将此前所有 active 行置为 active=false。
+   * NEST-104（2026-08-17）：deactivate 作用域按 org 收敛——orgId 非空时仅
+   * 归档本 org 的 active 行；orgId 为空（系统/全局策略路径）仅归档 NULL 全局行。
+   * 绝不跨租户归档他 org 的生效策略。
    */
   async savePolicy(
     config: SchedulingPolicyConfig,
@@ -289,7 +295,7 @@ export class SchedulingPolicyService {
     updatedBy: string,
   ): Promise<SchedulingPolicyConfig> {
     try {
-      const nextVersion = await this.computeNextVersion();
+      const nextVersion = await this.computeNextVersion(orgId);
 
       const toSave: SchedulingPolicyConfig = {
         ...config,
@@ -305,7 +311,12 @@ export class SchedulingPolicyService {
       await this.db
         .update(ewohSchedulingPolicy)
         .set({ active: false })
-        .where(eq(ewohSchedulingPolicy.active, true));
+        .where(
+          and(
+            eq(ewohSchedulingPolicy.active, true),
+            this.orgScopeCondition(orgId),
+          ),
+        );
 
       await this.db.insert(ewohSchedulingPolicy).values({
         configVersion: nextVersion,
@@ -367,7 +378,8 @@ export class SchedulingPolicyService {
     orgId: string | null,
     updatedBy: string,
   ): Promise<SchedulingPolicyConfig> {
-    const nextVersion = await this.computeNextVersion();
+    // NEST-165：版本号按 org 作用域递增（见 computeNextVersion 注释）。
+    const nextVersion = await this.computeNextVersion(orgId);
     const toSave: SchedulingPolicyConfig = {
       ...config,
       configVersion: nextVersion,
@@ -403,11 +415,16 @@ export class SchedulingPolicyService {
         `Scheduling policy version ${configVersion} not found`,
       );
     }
-    // 1) 解除当前生效版本。
+    // 1) 解除当前生效版本（NEST-104：org 作用域，绝不归档他租户 active 行）。
     await this.db
       .update(ewohSchedulingPolicy)
       .set({ active: false })
-      .where(eq(ewohSchedulingPolicy.active, true));
+      .where(
+        and(
+          eq(ewohSchedulingPolicy.active, true),
+          this.orgScopeCondition(orgId),
+        ),
+      );
     // 2) 激活目标版本（NO-13o / ADR-064：激活决策与 active 翻转同一
     // UPDATE 原子写 decisionJson；缺口显式留 NULL 不阻断主流程）。
     const decisionJson = this.projectPolicyActivationDecision(
@@ -455,12 +472,36 @@ export class SchedulingPolicyService {
     return record;
   }
 
-  /** 查询当前生效行（active=true 最新一条）。 */
-  private async findActiveRow() {
+  /**
+   * org 作用域条件（NEST-104）：orgId 非空 → 本 org 行；orgId 为空 → NULL
+   * 全局行（系统路径只管理全局策略，不误伤租户行）。
+   */
+  private orgScopeCondition(orgId: string | null | undefined) {
+    return orgId
+      ? eq(ewohSchedulingPolicy.orgId, orgId)
+      : isNull(ewohSchedulingPolicy.orgId);
+  }
+
+  /** org 可见性条件（NEST-105）：本 org 行 + NULL 存量全局行（与 RLS 等价）。 */
+  private orgVisibilityCondition(orgId: string | null | undefined) {
+    return orgId
+      ? or(isNull(ewohSchedulingPolicy.orgId), eq(ewohSchedulingPolicy.orgId, orgId))
+      : undefined;
+  }
+
+  /** 查询当前生效行（active=true 最新一条）。NEST-105：orgId 过滤。 */
+  private async findActiveRow(orgId?: string | null) {
+    // NEST-105：无 orgId 时保持原查询形状 eq(active)（不过度包装 and()，
+    // 兼容按形状解析 SQL 的测试替身）；有 orgId 时叠加 org 可见性条件。
+    const orgCond = this.orgVisibilityCondition(orgId);
     const rows = await this.db
       .select()
       .from(ewohSchedulingPolicy)
-      .where(eq(ewohSchedulingPolicy.active, true))
+      .where(
+        orgCond
+          ? and(eq(ewohSchedulingPolicy.active, true), orgCond)
+          : eq(ewohSchedulingPolicy.active, true),
+      )
       .orderBy(desc(ewohSchedulingPolicy.configVersion))
       .limit(1);
     return rows[0] ?? null;
@@ -476,11 +517,19 @@ export class SchedulingPolicyService {
     return rows[0] ?? null;
   }
 
-  /** 计算下一个 configVersion（当前最大值 + 1，无数据则从 1 开始）。 */
-  private async computeNextVersion(): Promise<number> {
-    const rows = await this.db
+  /**
+   * 计算下一个 configVersion（当前最大值 + 1，无数据则从 1 开始）。
+   * NEST-165 修复（2026-08-17）：max 按 org 作用域取（orgId 非空 → 本 org +
+   * NULL 全局行；orgId 空 → NULL 全局行）——否则两租户并发注册会取到同一
+   * 全局 max+1 造成版本碰撞。uq (org, active) 部分唯一约束的最终落库兜底。
+   */
+  private async computeNextVersion(orgId?: string | null): Promise<number> {
+    // NEST-165：无 orgId 时不附加 where（保持无过滤原形状，测试替身兼容）。
+    const orgCond = this.orgVisibilityCondition(orgId);
+    const baseQuery = this.db
       .select({ configVersion: ewohSchedulingPolicy.configVersion })
-      .from(ewohSchedulingPolicy)
+      .from(ewohSchedulingPolicy);
+    const rows = await (orgCond ? baseQuery.where(orgCond) : baseQuery)
       .orderBy(desc(ewohSchedulingPolicy.configVersion))
       .limit(1);
     const max = rows[0]?.configVersion ?? 0;
@@ -664,11 +713,16 @@ export class SchedulingPolicyService {
     v: unknown,
     fallback: import('@shared/api.interface').SolverActivationState,
   ): import('@shared/api.interface').SolverActivationState {
+    // NEST-120 修复（2026-08-17）：补全契约枚举——SolverActivationState 含
+    // RULE_BASED/MILP（shared/scheduler.ts:1346），白名单漏掉会使合法持久化值
+    // 被误回退缺省（契约漂移）。
     if (
       v === 'OFF' ||
       v === 'SHADOW' ||
       v === 'CANARY' ||
-      v === 'PRODUCTION'
+      v === 'PRODUCTION' ||
+      v === 'RULE_BASED' ||
+      v === 'MILP'
     ) {
       return v;
     }

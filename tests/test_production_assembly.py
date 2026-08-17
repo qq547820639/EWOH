@@ -16,6 +16,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -105,6 +106,10 @@ class ProductionAssemblyTest(unittest.TestCase):
 
         sub_id = bus.subscribe("inference", on_inference)
         pipeline.start()
+
+        def _received_first() -> bool:
+            return len(received) >= 1
+
         try:
             # 真实 pipeline 需要 WINDOW_SIZE=40 帧（@20Hz 2s 窗口）才触发一次推理
             base = {
@@ -122,21 +127,37 @@ class ProductionAssemblyTest(unittest.TestCase):
                 "quality": {"status": "good"},
                 "firmware_version": "v1.0.0",
             }
-            import time
-
             for i in range(50):
                 ts = f"2026-08-08T00:00:{int(i):02}.000+08:00"
                 pipeline.handle_telemetry({**base, "sequence": i + 1, "timestamp": ts})
-            time.sleep(0.3)
+            # TEST-002：条件等待（deadline 轮询）替代固定 time.sleep，避免 CI 慢机 flake
+            deadline = time.monotonic() + 5.0
+            while not _received_first():
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
         finally:
             bus.unsubscribe("inference", sub_id)
             if hasattr(pipeline, "stop"):
                 pipeline.stop()
 
         self.assertTrue(
-            len(received) >= 1,
+            _received_first(),
             "production pipeline 应发布 inference 事件（handler 契约）",
         )
+        # TEST-003：校验消息结构（Canonical Inference Result 字段），而非仅计数
+        msg = received[0]
+        self.assertEqual(msg["device_id"], "EXO-PROD-1")
+        self.assertEqual(msg["subject_id"], "device:EXO-PROD-1")
+        self.assertIn(msg["level"], ("L1_deterministic_rules", "L2_statistical_ml"))
+        self.assertIsInstance(msg["label"], str)
+        self.assertTrue(msg["label"])
+        self.assertIsInstance(msg["confidence"], (int, float))
+        self.assertGreaterEqual(msg["confidence"], 0.0)
+        self.assertLessEqual(msg["confidence"], 1.0)
+        self.assertIsInstance(msg["inference_id"], str)
+        self.assertTrue(msg["inference_id"].startswith("INF"))
+        self.assertEqual(msg["contract_violations"], [])
 
     # ---- development 语义 ----
     def test_development_without_allow_stub_fails_on_bad_db(self):

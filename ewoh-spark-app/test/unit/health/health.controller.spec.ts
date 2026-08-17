@@ -2,6 +2,11 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { HealthController } from '../../../server/modules/health/health.controller';
 import { ReplanGuardStatusService } from '../../../server/modules/health/replan-guard-status.service';
 
+/** NEST-437：带凭证（authorization/userContext）才返回完整 checks。 */
+const authenticatedRequest = {
+  headers: { authorization: 'Bearer healthz-token' },
+} as never;
+
 describe('HealthController', () => {
   it('reports liveness without touching the database', () => {
     const execute = jest.fn();
@@ -11,11 +16,25 @@ describe('HealthController', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('reports readiness after a successful database query', async () => {
+  it('NEST-437: anonymous probe gets {status} only (no internal checks detail)', async () => {
     const execute = jest.fn().mockResolvedValue([{ ready: 1 }]);
     const controller = new HealthController({ execute } as never);
 
     await expect(controller.ready()).resolves.toEqual({
+      status: 'ok',
+      service: 'ewoh-api',
+    });
+    await expect(controller.ready({} as never)).resolves.toEqual({
+      status: 'ok',
+      service: 'ewoh-api',
+    });
+  });
+
+  it('reports readiness with full checks after a successful database query (authenticated)', async () => {
+    const execute = jest.fn().mockResolvedValue([{ ready: 1 }]);
+    const controller = new HealthController({ execute } as never);
+
+    await expect(controller.ready(authenticatedRequest)).resolves.toEqual({
       status: 'ok',
       service: 'ewoh-api',
       checks: { database: 'ok' },
@@ -27,6 +46,9 @@ describe('HealthController', () => {
     const controller = new HealthController({ execute } as never);
 
     await expect(controller.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(controller.ready(authenticatedRequest)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 
   it('reports scheduler.replanGuard ok when no guard degradation was recorded', async () => {
@@ -34,7 +56,7 @@ describe('HealthController', () => {
     const guardStatus = new ReplanGuardStatusService();
     const controller = new HealthController({ execute } as never, undefined, guardStatus);
 
-    await expect(controller.ready()).resolves.toEqual({
+    await expect(controller.ready(authenticatedRequest)).resolves.toEqual({
       status: 'ok',
       service: 'ewoh-api',
       checks: { database: 'ok', scheduler: { replanGuard: 'ok' } },
@@ -47,7 +69,7 @@ describe('HealthController', () => {
     guardStatus.recordDegradation('advisory lock unavailable (test)');
     const controller = new HealthController({ execute } as never, undefined, guardStatus);
 
-    await expect(controller.ready()).resolves.toEqual({
+    await expect(controller.ready(authenticatedRequest)).resolves.toEqual({
       status: 'degraded',
       service: 'ewoh-api',
       checks: {

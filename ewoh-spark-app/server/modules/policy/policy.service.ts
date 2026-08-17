@@ -115,12 +115,20 @@ export class PolicyService {
       reasons.push(`${rule.field} ${rule.operator} ${ok ? 'matched' : 'failed'}`);
       return ok;
     });
+    // NEST-635（2026-08-17 审计整改）：未匹配时的默认决策按 effect 语义
+    // 收敛——deny/warn 策略未命中=不触发拒绝（allow）；allow 策略未命中=
+    // 未获授权（deny，fail-closed）。原先一律 allow 对 allow 型策略是放行漏洞。
+    const decision = matched
+      ? policy.effect
+      : policy.effect === 'allow'
+        ? 'deny'
+        : 'allow';
     return {
       policyId: policy.policyId,
       version: policy.version,
       effect: policy.effect,
       matched,
-      decision: matched ? policy.effect : 'allow',
+      decision,
       reasons,
     };
   }

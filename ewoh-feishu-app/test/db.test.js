@@ -163,3 +163,58 @@ test('D5: 规则从 DB 加载（唯一事实源），DB 空时回退默认', (t)
   assert.strictEqual(r001b.threshold_sec, 12);
   db.close();
 });
+
+test('FS-017: DEFAULT_RULES 由 SEED_RULES 派生（单一事实源，无第二份阈值）', () => {
+  const rules = require('../server/rules');
+  assert.strictEqual(rules.DEFAULT_RULES.length, dbm.SEED_RULES.length);
+  for (const seed of dbm.SEED_RULES) {
+    const d = rules.DEFAULT_RULES.find((r) => r.rule_id === seed.rule_id);
+    assert.ok(d, `DEFAULT_RULES 应包含 ${seed.rule_id}`);
+    assert.deepStrictEqual(
+      { ...d },
+      { rule_id: seed.rule_id, severity: seed.severity, ...seed.config },
+      `${seed.rule_id} 派生字段应与 SEED_RULES 一致`
+    );
+  }
+});
+
+test('FS-020: getRuleByCode 索引化 SQL 查询（json_extract）', (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+
+  const hit = dbm.getRuleByCode(db, 'POSTURE_BEND_LONG');
+  assert.ok(hit, 'seed 规则应可按 event_code 命中');
+  assert.strictEqual(hit.rule_id, 'R001');
+  assert.strictEqual(hit.config.event_code, 'POSTURE_BEND_LONG');
+  assert.strictEqual(hit.enabled, true);
+
+  assert.strictEqual(dbm.getRuleByCode(db, 'NO_SUCH_CODE'), undefined, '未命中返回 undefined');
+  db.close();
+});
+
+test('FS-020: getLatestTelemetryAll 单条 SQL 取各设备最新一帧（消除 N+1）', (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+
+  const at = (s) => new Date(s).toISOString();
+  const frame = (deviceId, ts, pitch) => ({
+    device_id: deviceId, ts, pitch_deg: pitch, roll_deg: 0, torque_nm: 0,
+    assist_pct: 0, battery_pct: 100, gyro_dps: [0, 0, 0], quality_status: 'good', confidence: 1,
+  });
+  dbm.insertTelemetry(db, frame('EXO-001', at('2026-08-17T01:00:00Z'), 1));
+  dbm.insertTelemetry(db, frame('EXO-001', at('2026-08-17T02:00:00Z'), 2));
+  dbm.insertTelemetry(db, frame('EXO-001', at('2026-08-17T03:00:00Z'), 3));
+  dbm.insertTelemetry(db, frame('EXO-002', at('2026-08-17T02:30:00Z'), 9));
+
+  const rows = dbm.getLatestTelemetryAll(db);
+  assert.strictEqual(rows.length, 2, '每设备仅返回最新一帧');
+  const byDev = Object.fromEntries(rows.map((r) => [r.device_id, r]));
+  assert.strictEqual(byDev['EXO-001'].ts, at('2026-08-17T03:00:00Z'), 'EXO-001 应取最新帧');
+  assert.strictEqual(byDev['EXO-002'].ts, at('2026-08-17T02:30:00Z'), 'EXO-002 应取最新帧');
+
+  // 无遥测设备不产生行
+  db.prepare("DELETE FROM telemetry WHERE device_id = 'EXO-002'").run();
+  const rows2 = dbm.getLatestTelemetryAll(db);
+  assert.strictEqual(rows2.length, 1);
+  db.close();
+});

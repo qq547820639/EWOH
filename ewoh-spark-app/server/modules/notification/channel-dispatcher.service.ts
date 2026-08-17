@@ -189,6 +189,12 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
         .limit(batch);
       const summary: DispatchSummary = { claimed: rows.length, sent: 0, failed: 0 };
       for (const row of rows) {
+        // NEST-643（2026-08-17 审计裁决，文档化）：NotificationLike 支持
+        // deviceId 字段（buildLarkMessage/buildEmailMessage 均渲染「设备：X」），
+        // 但 ewoh_notification 无 device_id 列——deviceId 无法从台账行透传，
+        // 设备信息目前仅存在于 body 文案（如「设备 X 安灯已开」）。补列属
+        // DB 迁移域（db/migrations，W1 归属）；列落地后此处仅需
+        // `deviceId: row.deviceId` 一行接线。
         const notification = {
           notificationId: row.notificationId,
           title: row.title,

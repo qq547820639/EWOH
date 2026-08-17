@@ -4856,7 +4856,9 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             responses: {
@@ -5444,7 +5446,9 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             responses: {
@@ -6542,7 +6546,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -8858,7 +8864,9 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            items?: Record<string, never>[];
+                            items?: {
+                                [key: string]: unknown;
+                            }[];
                             total?: number;
                             skippedInvalid?: number;
                             sources?: {
@@ -10398,7 +10406,9 @@ export interface paths {
                     "application/json": {
                         agentId: string;
                         command: string;
-                        payload?: Record<string, never>;
+                        payload?: {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };
@@ -10449,7 +10459,9 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            suggestion?: Record<string, never>;
+                            suggestion?: {
+                                [key: string]: unknown;
+                            };
                             result?: components["schemas"]["ExecuteAgentCommandResult"];
                         };
                     };
@@ -10488,7 +10500,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -10506,7 +10520,9 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             responses: {
@@ -10516,7 +10532,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -10557,7 +10575,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -10598,7 +10618,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -10636,7 +10658,9 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         status: "completed" | "failed";
-                        outcomeJson?: Record<string, never>;
+                        outcomeJson?: {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };
@@ -10647,7 +10671,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -10688,7 +10714,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -10725,7 +10753,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -11335,7 +11365,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -11378,7 +11410,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -11418,7 +11452,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -11568,7 +11604,9 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        facts: Record<string, never>[];
+                        facts: {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
             };
@@ -14463,7 +14501,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -14525,7 +14565,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14565,7 +14607,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -14614,7 +14658,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14655,7 +14701,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -14694,7 +14742,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14734,7 +14784,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14785,7 +14837,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14834,7 +14888,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14874,7 +14930,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>[];
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -14917,7 +14975,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -14959,7 +15019,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
                     };
                 };
                 BadRequest: components["responses"]["BadRequest"];
@@ -15758,7 +15820,9 @@ export interface components {
             };
         };
         CursorPage: {
-            items?: Record<string, never>[];
+            items?: {
+                [key: string]: unknown;
+            }[];
             nextCursor?: string | null;
             /** @description Whether another page exists */
             hasMore?: boolean;
@@ -15770,12 +15834,12 @@ export interface components {
             password: string;
         };
         RefreshRequest: {
-            /** @description Refresh JWT */
-            refreshToken: string;
+            /** @description Refresh JWT (legacy transition only; the server reads the httpOnly ewoh_refresh_token cookie first — CLI-501/701) */
+            refreshToken?: string;
         };
         LogoutRequest: {
-            /** @description Refresh JWT to revoke */
-            refreshToken: string;
+            /** @description Refresh JWT to revoke (legacy transition only; the server reads the httpOnly ewoh_refresh_token cookie first — CLI-501/701) */
+            refreshToken?: string;
         };
         UserSummary: {
             /** @description User identifier */
@@ -15789,8 +15853,6 @@ export interface components {
         AuthTokens: {
             /** @description Short-lived access JWT */
             accessToken: string;
-            /** @description Rotated refresh JWT */
-            refreshToken: string;
             user: components["schemas"]["UserSummary"];
         };
         UserContext: {
@@ -16207,7 +16269,9 @@ export interface components {
             validFrom?: string | null;
             /** Format: date-time */
             validTo?: string | null;
-            provenance?: Record<string, never> | null;
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** @description 知识条目（五层 scope 阶梯；tenantId 仅租户层条目返回） */
         KnowledgeEntry: {
@@ -16225,9 +16289,13 @@ export interface components {
             status: "draft" | "verified" | "superseded";
             sourceEvidenceIds: string[];
             relatedEntityIds?: string[];
-            provenance?: Record<string, never> | null;
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
             verifiedBy?: string | null;
-            timeSemantics?: Record<string, never>;
+            timeSemantics?: {
+                [key: string]: unknown;
+            };
             auditTrail: boolean;
             tenantId?: string;
         };
@@ -16311,7 +16379,9 @@ export interface components {
                 subjectId: string;
                 /** @enum {string} */
                 kind: "person" | "exo" | "machine" | "material" | "station" | "alert";
-                values: Record<string, never>;
+                values: {
+                    [key: string]: unknown;
+                };
                 evidenceIds: string[];
             }[];
             eventIds?: string[];
@@ -16339,7 +16409,10 @@ export interface components {
         ReasoningTrace: {
             traceId: string;
             engineVersion: string;
-            factsRef: Record<string, never>;
+            factsRef: {
+                snapshotVersion: number;
+                eventIds: string[];
+            };
             conclusions: components["schemas"]["ReasoningConclusion"][];
             auditTrail: boolean;
         };
@@ -16407,7 +16480,9 @@ export interface components {
                 candidateValue: number;
             };
             /** @description 历史事实窗口（可选；提供即确定性影子评估落 shadow_evaluated） */
-            facts?: Record<string, never>[];
+            facts?: {
+                [key: string]: unknown;
+            }[];
             evaluationRef?: {
                 evalId?: string;
             };
@@ -16418,8 +16493,12 @@ export interface components {
             kind: "rule_threshold";
             /** @enum {string} */
             status: "proposed" | "shadow_evaluated" | "approved" | "rolled_back" | "rejected";
-            change: Record<string, never>;
-            shadowEval?: Record<string, never>;
+            change: {
+                [key: string]: unknown;
+            };
+            shadowEval?: {
+                [key: string]: unknown;
+            };
             approvedBy?: string;
             /** Format: date-time */
             approvedAt?: string;
@@ -16427,7 +16506,9 @@ export interface components {
             rejectedReason?: string;
             rolledBackBy?: string;
             rolledBackReason?: string;
-            evaluationRef?: Record<string, never>;
+            evaluationRef?: {
+                [key: string]: unknown;
+            };
             auditTrail: boolean;
         };
         LearningProposalResponse: {
@@ -16441,9 +16522,15 @@ export interface components {
         /** @description 全链路 trace 三面缝合（ADR-022 / NO-10a，§19）：spans（ewoh_trace_span）+ events（evidence_json.envelope.correlationId = traceId）+ audit （ewoh_audit_log.request_id = traceId）。 */
         TraceStitch: {
             traceId: string;
-            spans: Record<string, never>[];
-            events: Record<string, never>[];
-            audit: Record<string, never>[];
+            spans: {
+                [key: string]: unknown;
+            }[];
+            events: {
+                [key: string]: unknown;
+            }[];
+            audit: {
+                [key: string]: unknown;
+            }[];
         };
         /** @description Edge→Cloud 指标上行批次（ADR-028 / NO-12d）：边缘 Prometheus 事实源 的 ewoh_* 规范家族样本（metricName 必须命中 metrics-registry 注册表， 未注册 = violation 显式，绝不静默并入）。 */
         EdgeMetricsBatchRequest: {
@@ -16470,7 +16557,9 @@ export interface components {
                 /** @enum {string} */
                 metricType?: "counter" | "gauge" | "histogram";
                 value?: number;
-                labels?: Record<string, never>;
+                labels?: {
+                    [key: string]: unknown;
+                };
             }[];
             registryViolations: string[];
         };
@@ -16481,7 +16570,9 @@ export interface components {
             /** @enum {string} */
             reason: "contract_violation" | "unknown_event_type" | "permanent_failure" | "ttl_expired" | "max_attempts_exceeded";
             /** @description 失败消息信封快照（§3 失败证据可审计） */
-            envelope: Record<string, never>;
+            envelope: {
+                [key: string]: unknown;
+            };
             correlationId?: string | null;
         };
         DeadLetter: {
@@ -16492,7 +16583,9 @@ export interface components {
             attempts: number;
             /** @enum {string} */
             status: "pending" | "requeued" | "discarded";
-            envelope: Record<string, never>;
+            envelope: {
+                [key: string]: unknown;
+            };
             correlationId?: string | null;
             discardedReason?: string | null;
             auditTrail: boolean;
@@ -16519,7 +16612,9 @@ export interface components {
                 scenarioId?: string;
             };
             /** @description 评估器输入（kind 决定形状，fail-closed） */
-            parameters: Record<string, never>;
+            parameters: {
+                [key: string]: unknown;
+            };
             engineVersion?: string;
         };
         SimulationRun: {
@@ -16529,9 +16624,15 @@ export interface components {
             /** @enum {string} */
             status: "created" | "running" | "completed" | "failed";
             isSimulation: boolean;
-            baseRef: Record<string, never>;
-            parameters: Record<string, never>;
-            results?: Record<string, never>;
+            baseRef: {
+                [key: string]: unknown;
+            };
+            parameters: {
+                [key: string]: unknown;
+            };
+            results?: {
+                [key: string]: unknown;
+            };
             failureReason?: string;
             engineVersion: string;
             auditTrail: boolean;
@@ -16609,8 +16710,11 @@ export interface components {
             severity?: string;
             /** @description Human-readable title */
             title?: string;
-            /** @description open, acknowledged, processing, handled, closed, etc. */
-            status?: string;
+            /**
+             * @description CLI-603 对齐 shared/alert-state-machine.ts ALERT_STATES（closed/reopened，无 handled）
+             * @enum {string}
+             */
+            status?: "open" | "acknowledged" | "processing" | "closed" | "reopened";
             createdAt?: string | null;
             handlerAction?: string | null;
             /** @description real, controlled_test, simulated, replayed, stale, or offline */
@@ -17662,8 +17766,12 @@ export interface components {
             causationId?: string;
             correlationId?: string;
             confidence?: number;
-            payload?: Record<string, never>;
-            evidence?: Record<string, never>;
+            payload?: {
+                [key: string]: unknown;
+            };
+            evidence?: {
+                [key: string]: unknown;
+            };
         };
         IngestEventResult: {
             eventId: string;
@@ -17689,15 +17797,33 @@ export interface components {
             purpose: string;
             allowedTools: string[];
             readScope: string[];
-            writeScope: Record<string, never>;
-            approvalRequirement: Record<string, never>;
+            writeScope: {
+                tokens?: string[];
+                commands?: string[];
+            };
+            approvalRequirement: {
+                /** @enum {string} */
+                autonomousLevel: "L0" | "L1" | "L2" | "L3";
+                approvalRequiredFor: string[];
+            };
             riskLevel: string;
-            inputContract: Record<string, never>;
-            outputContract: Record<string, never>;
+            inputContract: {
+                schemaRef: string;
+            };
+            outputContract: {
+                schemaRef: string;
+            };
             auditTrail: boolean;
-            budget: Record<string, never>;
+            budget: {
+                maxSteps: number;
+                maxTokens: number;
+                maxDurationSec: number;
+            };
             timeoutSec: number;
-            fallback: Record<string, never>;
+            fallback: {
+                /** @enum {string} */
+                onFailure: "degrade" | "queue" | "abort";
+            };
         };
         AgentManifestView: {
             agentId: string;
@@ -17707,7 +17833,9 @@ export interface components {
             status: string;
             autonomousLevel: string;
             riskLevel: string;
-            manifest: Record<string, never>;
+            manifest: {
+                [key: string]: unknown;
+            };
         };
         ExecuteAgentCommandResult: {
             executed: boolean;
@@ -18065,7 +18193,9 @@ export interface components {
             title?: string;
             status?: string;
             createdAt?: string;
-            evidenceJson?: Record<string, never> | null;
+            evidenceJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         ErpOrderList: components["schemas"]["ErpOrderEvent"][];
         ErpOutboundRequest: {
@@ -18073,7 +18203,9 @@ export interface components {
             /** @enum {string} */
             type: "production_report" | "material_consumption" | "inventory_receipt";
             externalOrderId: string;
-            payload: Record<string, never>;
+            payload: {
+                [key: string]: unknown;
+            };
         };
         ErpOutboundEvent: {
             eventId?: string;
@@ -18082,7 +18214,9 @@ export interface components {
             title?: string;
             status?: string;
             createdAt?: string;
-            evidenceJson?: Record<string, never> | null;
+            evidenceJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         ErpOutboundList: components["schemas"]["ErpOutboundEvent"][];
         ErpAckRequest: {
@@ -18092,11 +18226,15 @@ export interface components {
         ErpReconcileReport: {
             orders?: {
                 total?: number;
-                byStatus?: Record<string, never>;
+                byStatus?: {
+                    [key: string]: unknown;
+                };
             };
             outbound?: {
                 total?: number;
-                byStatus?: Record<string, never>;
+                byStatus?: {
+                    [key: string]: unknown;
+                };
             };
             completedErpWorkOrders?: number;
         };
@@ -18109,7 +18247,9 @@ export interface components {
             title?: string;
             status?: string;
             createdAt?: string;
-            evidenceJson?: Record<string, never> | null;
+            evidenceJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         DeviceStatusList: components["schemas"]["DeviceStatusEvent"][];
         DeviceStatusRecordRequest: {
@@ -18132,7 +18272,9 @@ export interface components {
             performance?: number;
             quality?: number;
             oee?: number;
-            statusDurations?: Record<string, never>;
+            statusDurations?: {
+                [key: string]: unknown;
+            };
             downtimeBreakdown?: {
                 reason?: string;
                 seconds?: number;
@@ -18147,7 +18289,9 @@ export interface components {
             title?: string;
             status?: string;
             createdAt?: string;
-            evidenceJson?: Record<string, never> | null;
+            evidenceJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         AndonList: components["schemas"]["AndonEvent"][];
         OpenAndonRequest: {
@@ -18177,8 +18321,12 @@ export interface components {
             inheritanceOrder?: number;
             /** @enum {string} */
             lifecycleStatus?: "draft" | "reviewed" | "certified" | "published" | "deprecated" | "retired";
-            configJson?: Record<string, never>;
-            manifestJson?: Record<string, never>;
+            configJson?: {
+                [key: string]: unknown;
+            };
+            manifestJson?: {
+                [key: string]: unknown;
+            };
             compatibleCore?: string | null;
             publishedAt?: string | null;
         };
@@ -18190,19 +18338,27 @@ export interface components {
             version: string;
             parentTemplateId?: string;
             inheritanceOrder?: number;
-            config?: Record<string, never>;
-            manifest?: Record<string, never>;
+            config?: {
+                [key: string]: unknown;
+            };
+            manifest?: {
+                [key: string]: unknown;
+            };
             compatibleCore?: string;
         };
         InstallTemplateRequest: {
             factoryName: string;
-            config?: Record<string, never>;
+            config?: {
+                [key: string]: unknown;
+            };
         };
         FactoryProfile: {
             profileId?: string;
             factoryName?: string;
             templateId?: string;
-            configJson?: Record<string, never>;
+            configJson?: {
+                [key: string]: unknown;
+            };
             status?: string;
             installedAt?: string | null;
         };
@@ -18444,14 +18600,20 @@ export interface components {
             protocol: string;
             inputProfile?: string;
             outputEvents?: string[];
-            configSchema?: Record<string, never>;
-            compatibility?: Record<string, never>;
+            configSchema?: {
+                [key: string]: unknown;
+            };
+            compatibility?: {
+                [key: string]: unknown;
+            };
         };
         ScenarioPackRequest: {
             packageId?: string;
             name: string;
             version: string;
-            requires?: Record<string, never>;
+            requires?: {
+                [key: string]: unknown;
+            };
             workflows?: string[];
             policies?: string[];
             acceptance?: string;
@@ -18480,7 +18642,9 @@ export interface components {
             packageType?: "template" | "connector" | "scenario" | "deploy" | "mapping";
             name?: string;
             version?: string;
-            manifestJson?: Record<string, never>;
+            manifestJson?: {
+                [key: string]: unknown;
+            };
             status?: string;
             publishedAt?: string | null;
         };
@@ -18491,13 +18655,17 @@ export interface components {
             packageType: "template" | "connector" | "scenario" | "deploy";
             name: string;
             version: string;
-            manifest?: Record<string, never>;
+            manifest?: {
+                [key: string]: unknown;
+            };
         };
         MesTraceGraph: {
             workOrder?: components["schemas"]["MesWorkOrder"];
             steps?: components["schemas"]["MesStepList"];
             materials?: components["schemas"]["MaterialConsumptionList"];
-            inspections?: Record<string, never>[];
+            inspections?: {
+                [key: string]: unknown;
+            }[];
             nodes?: {
                 id?: string;
                 type?: string;
@@ -18521,7 +18689,9 @@ export interface components {
             spatialEntityId?: string;
             progress?: number | null;
             actualStart?: string | null;
-            resultJson?: Record<string, never> | null;
+            resultJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         MobileWorkbenchList: components["schemas"]["MobileWorkbenchStep"][];
         MesWorkOrder: {
@@ -18554,7 +18724,9 @@ export interface components {
             assignedDeviceId?: string | null;
             spatialEntityId?: string | null;
             progress?: number;
-            resultJson?: Record<string, never> | null;
+            resultJson?: {
+                [key: string]: unknown;
+            } | null;
         };
         MesStepList: components["schemas"]["MesStep"][];
         MesWorkOrderDetail: {
@@ -18595,14 +18767,18 @@ export interface components {
             resolution: "local" | "server";
             idempotencyKey?: string;
             action?: string;
-            payload?: Record<string, never>;
+            payload?: {
+                [key: string]: unknown;
+            };
         };
         MesForceResolveResult: {
             stepId?: string;
             /** @enum {string} */
             resolution?: "local" | "server";
             applied?: boolean;
-            serverValue?: Record<string, never>;
+            serverValue?: {
+                [key: string]: unknown;
+            };
             note?: string;
             resolvedAt?: string;
         };
@@ -19093,7 +19269,9 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         /** @description Created */
@@ -19102,7 +19280,9 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         /** @description Bad request */

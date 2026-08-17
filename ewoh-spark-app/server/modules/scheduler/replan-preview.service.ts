@@ -153,14 +153,18 @@ export class ReplanPreviewService {
     ).length;
     const addedAssignmentCount = diff.added.length;
     const removedAssignmentCount = diff.removed.length;
-    const unchangedAssignmentCount = Math.max(
-      0,
-      impact.movableAssignmentIds.length +
-        impact.frozenAssignmentIds.length -
-        changedAssignmentCount -
-        addedAssignmentCount -
-        removedAssignmentCount,
-    );
+    // NEST-153 修复（2026-08-17）：unchanged = 可影响集 ∪ 冻结集 中未出现在
+    // diff 变更集（含 added/removed）的任务数——集合差运算（旧算式把 added/
+    // removed 同时计入减数且与 movable/frozen 集合不交，可能为负被 clamp 0）。
+    const changedOrMovedSet = new Set<string>([
+      ...diff.diffByTask.map((d) => d.taskId),
+    ]);
+    const unchangedAssignmentCount = Array.from(
+      new Set([
+        ...impact.movableAssignmentIds,
+        ...impact.frozenAssignmentIds,
+      ]),
+    ).filter((id) => !changedOrMovedSet.has(id)).length;
 
     return {
       baselinePlanId: baseline?.planId ?? null,
@@ -193,10 +197,12 @@ export class ReplanPreviewService {
     };
   }
 
-  /** 当前生效方案（active plan 最新）；无则 null。 */
-  private async loadBaselinePlan(_ctx: OrgContext): Promise<SchedulingPlanV2 | null> {
+  /** 当前生效方案（active plan 最新）；无则 null。NEST-039/152：ctx 透传 org 过滤。 */
+  private async loadBaselinePlan(ctx: OrgContext): Promise<SchedulingPlanV2 | null> {
     try {
-      const active = await this.planService.listActivePlans();
+      const active = await this.planService.listActivePlans(
+        ctx.primaryOrgId ? ctx : undefined,
+      );
       if (active && active.length > 0) return active[0];
       return null;
     } catch (err) {

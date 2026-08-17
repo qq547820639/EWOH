@@ -150,7 +150,11 @@ def _replay_once(frames, session_dir, host, port, speed, shuffle, disconnect_at,
             if idx > 0:
                 time.sleep(min(interval, 60.0))  # 单帧间隔上限 60s，防异常 ts 卡死
 
-            frame_path = os.path.join(session_dir, frame.get("frame_file", ""))
+            frame_path = os.path.normpath(os.path.join(session_dir, frame.get("frame_file", "")))
+            # EDGE-206：规范化后必须仍位于 session_dir 内（阻断 ../ 路径穿越读任意文件）
+            if not frame_path.startswith(os.path.normpath(session_dir) + os.sep):
+                log(f"  跳过非法帧路径（EDGE-206 路径穿越防御）: {frame.get('frame_file')!r}")
+                continue
             ok = _send_frame(sock, frame_path, log)
             if ok:
                 sent += 1

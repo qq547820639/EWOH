@@ -21,7 +21,9 @@ from dataclasses import dataclass
 # 硬约束类型常量（取值与 spec 列出一致）
 SKILL = "SKILL"
 STATION_AUTH = "STATION_AUTH"
-HEALTH_TABOO = "HEALTH禁忌"
+# EDGE-121（2026-08-17 审计整改）：值由 "HEALTH禁忌" 统一为 "HEALTH_TABOO"，
+# 与其他英文常量一致（violation type code 不再混入中文字符）。
+HEALTH_TABOO = "HEALTH_TABOO"
 FORBIDDEN_ZONE = "FORBIDDEN_ZONE"
 SHIFT_REST = "SHIFT_REST"
 EXO_MODEL_COMPAT = "EXO_MODEL_COMPAT"

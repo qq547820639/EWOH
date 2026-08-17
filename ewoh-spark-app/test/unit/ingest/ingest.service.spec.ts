@@ -452,7 +452,7 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
     expect(body.steps.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('ADR-004：ingestMes 转发失败 → accepted=false（不静默成功）', async () => {
+  it('ADR-004 / NEST-215：ingestMes 转发失败 → 502 MES_WORK_ORDER_WRITE_FAILED（不再 200+accepted=false 静默）', async () => {
     const { db } = createBatchDb({ existingEntities: [], existingRawRefs: [] });
     const mes = {
       createWorkOrder: jest.fn().mockRejectedValue(new Error('mes down')),
@@ -466,12 +466,15 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
       createIdentityService() as unknown as never,
     );
 
-    const result = await service.ingestMes(
-      { order_id: 'WO-MES-2' },
-      { userId: 'ingest', primaryOrgId: 'ORG-1' },
-    );
-    expect(result.accepted).toBe(false);
-    expect(result.data_quality).toBe('invalid');
+    await expect(
+      service.ingestMes(
+        { order_id: 'WO-MES-2' },
+        { userId: 'ingest', primaryOrgId: 'ORG-1' },
+      ),
+    ).rejects.toMatchObject({
+      status: 502,
+      response: { code: 'MES_WORK_ORDER_WRITE_FAILED' },
+    });
   });
 
   it('NO-04a：迟到帧（>10min）标记 is_late，不丢弃（ADR-009 Late Event 语义）', async () => {

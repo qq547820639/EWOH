@@ -100,6 +100,8 @@ function Carousel({
     api.on("select", onSelect)
 
     return () => {
+      // CLI-410：cleanup 需同时移除 reInit 监听，避免事件句柄泄漏。
+      api?.off("reInit", onSelect)
       api?.off("select", onSelect)
     }
   }, [api, onSelect])

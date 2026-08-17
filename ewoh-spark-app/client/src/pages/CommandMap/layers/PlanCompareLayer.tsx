@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { memo } from 'react';
-import type { PlanCompareMapVM, CompareMapEntry, PlanCompareMode } from '../vm/planCompareVM';
+import type { PlanCompareMapVM, CompareMapEntry } from '../vm/planCompareVM';
 
 interface PlanCompareLayerProps {
   vm: PlanCompareMapVM;
@@ -38,8 +38,6 @@ function changeColor(changeTypes: CompareMapEntry['changeTypes']): string {
 
 function changeBadge(changeTypes: CompareMapEntry['changeTypes']): string {
   // 取最有信息量的变化类型做徽标文字（前端不判断，仅展示后端分类）。
-  const priority: PlanCompareMode[] = [];
-  void priority;
   if (changeTypes.includes('ADDED')) return 'ADD';
   if (changeTypes.includes('REMOVED')) return 'RMV';
   if (changeTypes.includes('STATION_CHANGED')) return 'STA';

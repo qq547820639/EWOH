@@ -110,10 +110,8 @@ export function BaseComboboxList<T>({
       return (
         <>
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-popover opacity-40">
-            <BaseComboboxLoading
-              text={loadingText}
-              className={classNames.loading}
-            />
+            {/* CLI-334：BaseComboboxLoading 不再接受 text 参数。 */}
+            <BaseComboboxLoading className={classNames.loading} />
           </div>
           {(data as T[]).map((item) =>
             renderItem(

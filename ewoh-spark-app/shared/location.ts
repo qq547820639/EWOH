@@ -68,6 +68,9 @@ export function validateLocationRecord(record: unknown): string[] {
 
   const errors: string[] = [];
   if (coordinateType === 'WGS84') {
+    // SH-014：x/y 任一缺失即早返单条 bad_coordinate（对齐 Python 早返语义，
+    // 不再产生两条重复错误码）。
+    if (rec.x == null || rec.y == null) return ['bad_coordinate'];
     if (!isNumber(rec.x) || rec.x < -90 || rec.x > 90) errors.push('bad_coordinate');
     if (!isNumber(rec.y) || rec.y < -180 || rec.y > 180) errors.push('bad_coordinate');
   } else {

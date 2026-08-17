@@ -1,0 +1,84 @@
+# Tasks — 逐行审计 950 项发现全量整改
+
+> 输入：`docs/audit/2026-08-17-line-by-line-audit.md` §6 逐域清单（机器可读，管道符分隔）。
+> 原则：每条发现终态化（修复或按 spec「已裁决项」记录）；按文件域切分任务避免并行冲突；不削弱测试；迁移只增不改名。
+
+- [x] Task 1: W1 数据库层整改（SQL-001~110 + NEST-501~525）
+  - [x] 1.1 新增 `standalone_057_rls_null_reject.sql`：scheduler 8 表 + route_node/edge policy 去除 `OR org_id IS NULL`，补 `TO service_role`（SQL-001/007/054），org_id backfill 默认 org 后 `SET NOT NULL`（SQL-035/020/021/022/025~027），唯一约束改复合 (org_id,x)（SQL-013~019/023/024/017），device 唯一约束 (org_id,device_id)（NEST-205/SQL 对应）。
+  - [x] 1.2 回滚脚本补 `ALTER TABLE ... DISABLE ROW LEVEL SECURITY`（SQL-002/008），修正破坏性回滚（SQL-038/039/040/041/042/047）。
+  - [x] 1.3 迁移顺序修复：008/009/011/014 幂等化守卫（`ALTER TABLE IF EXISTS` + `ADD COLUMN IF NOT EXISTS`），017 补齐最终列与约束，空库顺序执行全绿（SQL-003~006），补 `db/verify` 5 个缺失脚本（SQL-103）。
+  - [x] 1.4 schema-manifest 三方对账：header 计数/notes/managed 分类/4 缺失表补登（SQL-028~032/049/101），runner fallback 51→68（SQL-109），verify expected 从 manifest 派生或 CI 对账（SQL-104/105/107）。
+  - [x] 1.5 seed 补 org_id（SQL-102/108/110），Drizzle schema 补 orgId 列与索引、统一 org_id 类型策略（NEST-501/502/512/513/521）。
+  - [x] 1.6 server 入口/共享层：ValidationPipe whitelist、statement timeout 默认、helmet/CSP、rate-limit guard 注册、SSE GUC 路径 org 断言（NEST-504/505/507/510/514/515/516）。
+- [x] Task 2: W2 调度模块整改（NEST-001~170 + NESP-001~119）
+  - [x] 2.1 org 隔离簇：world-state/resource-projection/resource-reservation/scheduling-policy/scheduler-query/scheduling-feedback/scheduling-context + outbox listSince/listLatest/publishPending + policy-activation/replay + shadow-policy + travel-cost + trigger + controller 透传 userContext（NEST-101~119、001~004、013~016、024、027~039、042~044、110~119、146、152、157、160~165）。
+  - [x] 2.2 事务与并发：persistPlan 统一事务（NEST-125/129）、约束落库与 replan 同事务（NEST-128）、advisory lock TOCTOU（NEST-124）、check-then-insert 全部改 upsert/ON CONFLICT（NEST-013/127/147/161）、状态机 CAS（NEST-627~630 涉调度项）。
+  - [x] 2.3 评分与正确性：candidate-engine 补 medium risk/changeoverMs/station 队列（NEST-005~007）、churn 双重计数（NEST-025）、task-dag 自指（NEST-122）、非契约状态清理（NEST-123/168）、matched 失真（NEST-121）、哈希/ID 密码学化（NEST-047/131/149/158）。
+  - [x] 2.4 SSE 与度量：无认证事件放行收敛（NEST-113/114）、/metrics 加 guard（NEST-139/138/427/428）、POLL_BATCH 增量化（NEST-141）。
+  - [x] 2.5 其余 M/L（性能 O(n²)、N+1、魔数、裸 Error→HttpException 等）与 NESP 测试加固（弱断言、恒真、5ms 时钟、fake-db where 语义、mock echo）。
+- [x] Task 3: W3 运营四模块 + 业务模块 a–m（NEST-201~231 + 401~450）
+  - [x] 3.1 operations/scale/ingest/work-orchestration：全部 list/read/resolve org 谓词、insert 带 orgId（NEST-201~204/210/218/222/223）、role-workbench camelCase（NEST-207）、retry 状态机（NEST-208）、乐观锁（NEST-209）、dedup 回滚（NEST-206）、幂等竞态（NEST-220）。
+  - [x] 3.2 approval/erp/alert/model/ai/control/exo/maintenance 等：写入 orgId + 查询 org 守卫 + bypass/cancel/initiator 角色校验（NEST-401~408/409~415/420~426/430/431/435/436）、AI 凭据 SSRF 收敛 + 审计（NEST-413/414/430）。
+  - [x] 3.3 其余 M/L（限流 Redis、恒定时间登录、token 吊销、metrics 路由模板、邮件头 CRLF NEST-620 等）与 spec 覆盖补测（NEST-446~450）。
+- [x] Task 4: W4 业务模块 n–z + mes/dashboard 组（NEST-301~362 + 601~648）
+  - [x] 4.1 dashboard/mes/oee/world/world-cursor/gamification/files/agent/learning 全读写 org 谓词 + 写入 orgId（NEST-301~319/330/331/601~607/609/612/614/622~624/640/641）。
+  - [x] 4.2 控制器角色：world-cursor/task/resource/simulator 补 @Roles（NEST-608/611/617/618）、workflow roles 改服务端 userContext（NEST-610）、system featureFlags context（NEST-613）、simulator ENABLED 检查（NEST-619）。
+  - [x] 4.3 MES 状态机对齐 ADR-012 + yaml 绑定（NEST-322/323）、事务包覆（NEST-320/321）、CAS（NEST-627~630/632/633/636）、files stream 下载/断言收紧（NEST-334/338/339）。
+  - [x] 4.4 其余 M/L（分页上限、N+1、Math.random、dev token NEST-636 删除、policy fail-open NEST-635、role 从 env 改 userContext NEST-351 等）。
+- [x] Task 5: W5 边缘平台整改（EDGE-001~230 + EDT-001~018）
+  - [x] 5.1 鉴权面：action_for_request 全 GET 路径映射 VIEW_*，未映射默认拒绝（EDGE-001 及 013/014/018~020/028~037/048/052）、legacy `/api/event/status` 与 `/api/reset` 收敛（EDGE-008/012）、SSRF 禁用户控 base_url（EDGE-002、NEST-430 联动）。
+  - [x] 5.2 并发与存储：exo_binding 补 `self._lock` + 唯一约束（EDGE-003/040）、telemetry/inference SQL 时间窗 + LIMIT 走索引（EDGE-004/005）、limit hard cap（EDGE-021/022）、SQLite 0600（EDGE-026）、auth 刷新竞态/锁定按 IP（EDGE-017/024）、bcrypt/argon2（EDGE-007）、TLS SSLContext（EDGE-009）、SSE/solver 资源上限（EDGE-006/010）。
+  - [x] 5.3 调度/推理/契约域（EDGE-101~125、201~230）：--register 走 governance（EDGE-103）、状态机对齐（EDGE-102 与 W6 联动）、预约回滚/先验后写（EDGE-109/110）、fail-open 收敛（EDGE-107/108）、assert 改 raise（EDGE-105/106/215）、路径穿越/zip bomb（EDGE-204/205/206/213）。
+  - [x] 5.4 EDT 测试加固（恒真断言、双解、sleep 轮询、fixture 抽取）。
+- [x] Task 6: W6 共享契约层 + 契约漂移（SH-001~020 + 联动项）
+  - [x] 6.1 SH Critical/High：exo-session isCanonicalIdentity（SH-001）、maintenance disposition（SH-002 + EDGE-201 同步）、schemaVersion const（SH-003）、roleSatisfies fail-closed（SH-004）、transitionAllowed 增 actorRole 并接入 agent-task/alert 两端（SH-005）。
+  - [x] 6.2 parity 对齐（SH-006~014、EDGE-211）：去重/错误收集/NaN/bool/null-undefined 语义统一（推荐 TS 严格语义），扩展 `tests/test_ts_python_contract_parity.py` 覆盖全部共享契约。
+  - [x] 6.3 openapi.yaml 全量 `type:object` 补 `additionalProperties`/properties（CLI-604~607 源头），重新生成 `client/src/types/openapi.d.ts`，`openapi:no-drift` 通过；alert.status 枚举修正（CLI-603）。
+  - [x] 6.4 死类型清理（CLI-608~612 common.ts/global.d.ts）、viewer 角色注册表（CLI-601/602）。
+- [x] Task 7: W7 前端安全（CLI-301/302/401~405/501/505/506、701/702、705~717）
+  - [x] 7.1 URL scheme 白名单工具（http/https/mailto/tel + blob 下载特例），接入 Timeline/streamdown/tiptap link-edit/attachment/redirect（CLI-301/302/401~403/408、CLI-205 联动）。
+  - [x] 7.2 凭据：refreshToken 迁 httpOnly cookie 或内存+sessionStorage（CLI-501/701，需与 server auth 联动改造）、IV Math.random 拒绝（CLI-505）、nonce/randomUUID 化（CLI-405/510/517/518）。
+  - [x] 7.3 API 层：路径参数全量 encodeURIComponent（CLI-707~712）、http.ts 空 token reject/isAuthCall 精确匹配（CLI-705/706/717）。
+  - [x] 7.4 其余注入面：SRI、redirectURL 白名单、CSS.escape、chart color 校验、image allowlist URL 解析（CLI-407/408/409/412/414）。
+- [x] Task 8: W8 前端 pages 批量（CLI-001~229 + 601~612 页面项）
+  - [x] 8.1 演示残留清理：AiDecision snapshot、HandoffsPanel AG-00、occupancy 0.5/WIP 派生、ContextBar 演示标签、PendingInbox 标识（CLI-001/011/012/201/303/322）。
+  - [x] 8.2 正确性：运算符优先级（CLI-020）、分页累加（CLI-103）、离线 conflict 误删（CLI-202）、stepError 串值（CLI-105）、决策驾驶舱 reason 收集（CLI-024）、CI_LABEL fallback（CLI-212）。
+  - [x] 8.3 约 40 处 mutation onError 补齐 + 空 catch 日志（CLI-002/005/101/102/204/209/211/214/215/216 等）。
+  - [x] 8.4 巨文件最小拆分：CommandMapShell/FactoryMap/SchedulePanel/MobileWorkbench 提取 hooks/子面板（CLI-004/010/027/110），key={i} 稳定化，子串匹配精确化（CLI-006/015/037）。
+- [x] Task 9: W9 前端 components + lib 批量（CLI-306~350、406~433、502~548、703~733）
+  - [x] 9.1 离线栈正确性：offlineDb tx.oncomplete、offlineCrypto 原子换 key、offlineLeader lease 驱逐、observability flush 守卫、迁移原子化（CLI-502~504/509/512/513/524/528）。
+  - [x] 9.2 组件批量：execCommand 移除（CLI-309~311）、时区显式 Asia/Shanghai（CLI-327/328/329 等）、AlertToast 副作用/轮询/泄漏、carousel cleanup、cookie SameSite、radix internal 替换（CLI-319）。
+  - [x] 9.3 设计令牌收敛：硬编码色批量替换至 token（CLI-336~350、424~429 等），`lint:design-tokens:strict` 通过。
+  - [x] 9.4 lib 其余 M/L（O(n²) 优化、类型 any 清理、路径别名统一、测试恢复全局态）。
+- [x] Task 10: W10 飞书应用（FS-001~021）
+  - [x] 10.1 签名算法对照飞书文档核实并纳入 raw body + fail-closed + timingSafeEqual（FS-001/002/003）、重放键统一（FS-005）、not-found dedup 回滚（FS-004）。
+  - [x] 10.2 安全头/CORS/错误脱敏/限流（FS-007/010/011/012/014）、时区统一（FS-006）、同步互斥与批量 upsert（FS-008/020/021）。
+  - [x] 10.3 规则单一事实源、token 注入方式、测试复用 handler（FS-009/015/016/017/018/019）。
+- [x] Task 11: W11 门禁脚本 + 工具（SCR-001~043 + TOOL-001~017）
+  - [x] 11.1 SCR Critical/High：`[^\s]` 正则 20+ 处（SCR-001）、ops-check 注入（SCR-002）、硬编码路径（SCR-003/004/025/026）、假成功收敛（SCR-005/006/007/008）、manifest --check 缺失即败（SCR-010/011）。
+  - [x] 11.2 SCR M/L：liveOpenapi 拼接、release 路径动态解析、p95 BLOCKED、revision 动态、Trivy checksum、main 守卫、回滚清单派生、阈值 manifest 化（SCR-012~031/032~043）。
+  - [x] 11.3 TOOL：no-self-exemption 授权检测、--exempt 分级、approver 校验、complete 排除 unknown、默认值判失败、counts 动态化（TOOL-001~009/010~017）。
+- [x] Task 12: W12 配置/Release/Python 测试（CFG-001~010 + REL 裁决 + TEST-001~015）
+  - [x] 12.1 CFG：compose 密码强制/占位服务清理/版本口径/镜像标签（CFG-001~004/010）、deploy-gate 按项校验（CFG-005）、access-matrix 对齐（CFG-006）、gitleaks 基线轮换确认（CFG-008）、ui innerHTML 转义（CFG-009）。
+  - [x] 12.2 REL 裁决落地：主树 bandit 固定、RELEASE-README 校验步骤、pyproject/version.json 对齐；rc 快照不动。
+  - [x] 12.3 TEST：恒真/弱断言修复、schema 交叉核对真实化、test-vectors Python 消费、参数化隔离（TEST-001~014）。
+- [x] Task 13: W13 防回归门禁（新增）
+  - [x] 13.1 租户隔离静态扫描：NestJS service select/update 缺 org 谓词白名单审计（扩展现有 rls-org-filter.audit 思路至全部模块 + EXPLAIN 强断言）。
+  - [x] 13.2 边缘 GET 面鉴权清单测试；前端 URL sink 扫描（href/window.open/innerHTML 赋值审计）。
+  - [x] 13.3 迁移链空库重建冒烟（docker/PG 临时库顺序执行 + verify）；门禁脚本自测（truth-manifest 假成功回归用例）。
+  - [x] 13.4 契约 parity 全覆盖门禁、状态机 role 约束 TCK、演示残留 grep（'演示'/'AG-00'/0.5 占位）、fake-db where 语义共享测试工具。
+  - [x] 13.5 十条主线门禁接入 Makefile（新增 `audit-regression-gates` 目标）与 truth 体系。
+- [x] Task 14: W14 全量验证与交付
+  - [x] 14.1 Python：`make test` + `make test-contract` + `pytest src/edge_platform/tests tests` 全绿。
+  - [x] 14.2 TS：`tsc -b --force` 0 错误；Jest server + client 全绿（`npm test` + `npm run test:client`）。
+  - [x] 14.3 契约门禁：`openapi:no-drift`、`make contract-identity contract-domain contract-golden contract-envelope contract-state-machine`、`make truth-check`、新增 `audit-regression-gates` 全绿。
+  - [x] 14.4 修复验证过程中暴露的回归；排除调试残留文件后提交并推送 `origin/main`。
+
+# Task Dependencies
+- Task 1（DB 层）最先：Task 2/3/4 的 org 写入依赖 1.1 列/约束落地（并行可先行开发，联调在 Task 1 合入后）。
+- Task 2、3、4 依赖 Task 1 的 schema 定稿；三者相互独立可并行。
+- Task 5（边缘）独立；Task 6 依赖 Task 5 的 EDGE-102/201 结论但可并行开发。
+- Task 7 依赖 Task 6 的 openapi 再生成（类型变化）；Task 8、9 独立于 6/7（页面层类型消费在 6 合入后联调）。
+- Task 10、11、12 完全独立，可随时并行。
+- Task 13 依赖 Task 1~12 全部完成（门禁针对修复后代码）。
+- Task 14 最后，依赖全部。

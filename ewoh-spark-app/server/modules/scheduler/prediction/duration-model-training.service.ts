@@ -7,7 +7,7 @@
  */
 import { Inject, Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, like } from 'drizzle-orm';
 import { ewohSchedulingFeedback, ewohProductionTask, ewohModelRegistry } from '@server/database/schema';
 import {
   durationModelVersion,
@@ -212,13 +212,20 @@ export class DurationModelTrainingService {
     }
   }
 
-  /** 启动时回填：注册表全量 → 内存过滤本租户经验模型（org 命名空间）→ 最新 active 重建。 */
+  /**
+   * 启动时回填：注册表 → 本租户经验模型（org 命名空间）→ 最新 active 重建。
+   * NEST-046 修复（2026-08-17）：SQL 层按 org 命名空间前缀过滤（LIKE
+   * 'orgModelPrefix%'，走 modelId 索引）——原全表扫描后 JS 过滤在大注册表
+   * （多租户模型累积）下加载全部无关行。
+   */
   async hydrateFromRegistry(orgId: string): Promise<void> {
     if (!orgId?.trim()) return;
     try {
+      const orgPrefix = `${orgModelId(orgId.trim())}`;
       const rows = await this.db
         .select()
         .from(ewohModelRegistry)
+        .where(like(ewohModelRegistry.modelId, `${orgPrefix}%`))
         .orderBy(desc(ewohModelRegistry.version));
       const empirical = rows.filter(
         (r) => isEmpiricalModelId(r.modelId) && orgIdFromModelId(r.modelId) === orgId.trim(),

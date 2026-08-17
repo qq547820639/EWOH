@@ -82,6 +82,12 @@ export function createRouteCostMemo(
       if (!p) {
         // 缓存 Promise 而非值：并发 await 去重；同键结果必然一致。
         p = provider.estimate(personId, taskId, from, to);
+        // NEST-132 修复（2026-08-17）：rejected Promise 不再常驻缓存——失败
+        // 即逐出（瞬时失败毒化缓存：同键后续调用永远拿到同一 rejection，
+        // 无法恢复）；下一次 get 重新发起估算。
+        p.catch(() => {
+          if (cache.get(key) === p) cache.delete(key);
+        });
         cache.set(key, p);
       }
       return p;

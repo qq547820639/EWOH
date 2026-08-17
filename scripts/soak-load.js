@@ -135,6 +135,12 @@ async function main() {
     results.push({ id: 'connection-pool-bounded', ok: mid <= baseline + 10, detail: `baseline=${baseline} mid=${mid}` });
 
     // 4+5. queue backlog + export task lifecycle
+    // SCR-005: 复位上次 soak 残留，保证断言可重复（inserted=100/claimed=80/succeeded=claimed）。
+    await sql.unsafe(`
+      update public.workbench_export_tasks
+        set status='queued', claimed_by=null, claimed_at=null, finished_at=null
+      where task_id like 'soak-%' and organization_id='orgA'
+    `);
     const [claim] = await sql.unsafe(`
       with inserted as (
         insert into public.workbench_export_tasks
@@ -162,7 +168,11 @@ async function main() {
       update public.workbench_export_tasks set status='succeeded', finished_at=now()
       where claimed_by='soak-worker' returning id, task_id
     `);
-    results.push({ id: 'queue-backlog', ok: true, detail: JSON.stringify({ inserted: Number(claim.inserted), claimed: Number(howMany.c), succeeded: succeeded.length }) });
+    // SCR-005: queue-backlog 不再恒 ok:true——断言入队/认领/完成生命周期完整。
+    const insertedCount = Number(claim.inserted);
+    const claimedCount = Number(howMany.c);
+    const queueOk = insertedCount === 100 && claimedCount === 80 && succeeded.length === claimedCount;
+    results.push({ id: 'queue-backlog', ok: queueOk, detail: JSON.stringify({ inserted: insertedCount, claimed: claimedCount, succeeded: succeeded.length }) });
 
     // 6. weak-network reconnect: abort a connection, confirm a fresh one recovers
     const probe = postgres(dbUrl, { max: 1, idle_timeout: 5_000 });
@@ -177,9 +187,19 @@ async function main() {
     const endCount = await dbConnections();
     results.push({ id: 'resource-leak', ok: endCount <= baseline + 5, detail: `baseline=${baseline} end=${endCount}` });
 
-    report.status = 'SUCCEEDED';
+    // SCR-005: 聚合断言——任一子项 ok:false 即整体 FAILED（消除假成功）。
+    const failedChecks = results.filter((r) => !r.ok);
     report.results = results;
     report.gates = results;
+    if (failedChecks.length > 0) {
+      report.status = 'FAILED';
+      report.error = failedChecks.map((r) => `${r.id}: ${r.detail}`).join('; ');
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
+      recordGate('FAILED', `负载/长稳门禁存在失败子项: ${report.error}`);
+      console.error('SOAK-LOAD FAILED: ' + report.error);
+      return 1;
+    }
+    report.status = 'SUCCEEDED';
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
     recordGate('SUCCEEDED', `7/7 负载/长稳门禁通过: ${results.map((r) => r.id).join(', ')}`);
     console.log('SOAK-LOAD OK: ' + results.map((r) => r.id).join(' -> '));

@@ -58,6 +58,9 @@ export function validateMaintenanceCondition(record: unknown): string[] {
     return ['unknown_severity'];
   }
   if (!isMaintenanceStatus(String(r.status))) return ['unknown_status'];
+  // SH-002/EDGE-201：MaintenanceCondition 契约无 disposition 字段，显式拒绝
+  // （fail-closed，与 Python validate_condition 的 unexpected_field 语义对齐）。
+  if (r.disposition !== undefined) return ['unexpected_field'];
   return [];
 }
 

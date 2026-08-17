@@ -184,11 +184,10 @@ export type BaseEntitySelectProps<TValue = ItemValue<unknown>> = {
   tagClosable?: boolean;
 
   /**
-   * 多选模式下，最多显示的标签数量
-   * - 数字: 最多显示指定数量的标签，超出部分显示 "+N"
-   * - "responsive": 根据容器宽度自动计算显示数量
+   * 多选模式下，最多显示的标签数量：最多显示指定数量的标签，
+   * 超出部分显示 "+N"（CLI-323：未实现的 "responsive" 已从类型移除）。
    */
-  maxTagCount?: number | 'responsive';
+  maxTagCount?: number;
 
   /**
    * 判断选项是否禁用
@@ -270,7 +269,7 @@ export type ComboboxPlaceholderProps = {
  */
 export type ComboboxTagProps = {
   tagClosable?: boolean;
-  maxTagCount?: number | 'responsive';
+  maxTagCount?: number; // CLI-323: 'responsive' 从未实现，已移除
   maxTagTextLength?: number;
 };
 

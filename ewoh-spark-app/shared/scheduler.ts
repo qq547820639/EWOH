@@ -358,6 +358,12 @@ export interface SolverRequest {
   solverVersion: string;
   horizonMinutes: number;
   nowMs: number;
+  /**
+   * 确定性 replay 种子（NEST-035，2026-08-17）：policy replay 持久化记录的
+   * seed 透传（缺省 undefined = 非确定性请求）。Worker 端消费以复现同一结果；
+   * 不识别该字段的旧 Worker 安全忽略（可选字段）。
+   */
+  seed?: number;
   /** 目标权重（来自版本化 SchedulingPolicy）。 */
   weights: {
     lateness: number;

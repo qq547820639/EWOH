@@ -165,7 +165,10 @@ describe('TracingService', () => {
       { traceId: 'trace-1', spanId: 'span-1', path: '/api/workorders', startedAt: new Date() },
     ]);
     const service = new TracingService(undefined, db as never);
-    const stitched = await service.getTrace('trace-1');
+    // W4：缝合查询显式租户上下文（org 过滤）。
+    const stitched = await service.getTrace('trace-1', {
+      primaryOrgId: 'org-a',
+    });
     expect(stitched.traceId).toBe('trace-1');
     expect(stitched.spans).toHaveLength(1);
     expect(stitched.events).toHaveLength(1);
@@ -178,7 +181,9 @@ describe('TracingService', () => {
     const service = new TracingService();
     service.record({ traceId: 'trace-a', spanId: 's1', method: 'GET', path: '/', status: 200, durationMs: 1, startedAt: '', finishedAt: '' });
     service.record({ traceId: 'trace-b', spanId: 's2', method: 'GET', path: '/', status: 200, durationMs: 1, startedAt: '', finishedAt: '' });
-    const stitched = await service.getTrace('trace-a');
+    const stitched = await service.getTrace('trace-a', {
+      primaryOrgId: 'org-a',
+    });
     expect(stitched.spans).toHaveLength(1);
     expect((stitched.spans[0] as Record<string, unknown>).traceId).toBe('trace-a');
     expect(stitched.events).toEqual([]);

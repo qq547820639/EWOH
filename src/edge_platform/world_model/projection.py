@@ -207,6 +207,13 @@ class TelemetryWorldProjector:
             self._counters["rejected_contract"] += 1
             return {"projected": False, "entity_id": entity_id, "skipped_reason": "bad_identity"}
         source = row.get("source_type", "real")
+        # EDGE-202（2026-08-17 审计整改）：采集面 sourceType 三态
+        # （real/controlled_test/simulated，连接器 manifest enum）与世界契约
+        # 三态（real/simulated/derived）不一致——受控采集（controlled_test，
+        # 真机录制回放）在世界模型侧显式映射为 derived（推导/回放数据），
+        # 消除"受控帧整类被拒投影"的静默数据缺口；real/simulated 原样透传。
+        if source == "controlled_test":
+            source = "derived"
         if source not in _CONTRACT_SOURCES:
             self._counters["rejected_source"] += 1
             logger.warning(

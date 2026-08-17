@@ -11,9 +11,13 @@
 --   5) 删除契约列；
 --   6) entry_id 全局唯一恢复。
 --
--- 不可逆部分（记录）：status 归一化（遗留值域 → 契约三态）不回放——
--- 值域收敛为 {draft, verified, superseded} 保留在 varchar(50) 列中，无结构损失；
+-- 不可逆部分（记录；审计 SQL-047 文档化，2026-08-17）：status 归一化
+-- （遗留值域 → 契约三态）不回放——正向迁移 039 已把 draft/verified/superseded
+-- 之外的遗留值（如 published/archived）统一改写为 'draft'，原始值不可恢复
+-- （数据损失：仅历史 status 标签，正文/证据/版本事实无损）；值域收敛为
+-- {draft, verified, superseded} 保留在 varchar(50) 列中，无结构损失；
 -- kind/scope 的遗留映射与 evidence 空数组的 legacy 标记随列删除。
+-- 若需保留原始 status 值域，应在执行 039 前先做归档备份（本回滚无法还原）。
 
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 

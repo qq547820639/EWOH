@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
-import { visionUnderstand, saveAiConfig, type VisionUnderstandResult } from '../../api/ai';
+import { visionUnderstand, saveAiConfig, getAiConfigStatus, type VisionUnderstandResult } from '../../api/ai';
 import {
   evaluateFeatureFlags,
   listSystemConfigs,
@@ -56,6 +57,21 @@ const parseParameterValue = (type: string, raw: string): unknown => {
   return raw;
 };
 
+/** CLI-210：脱敏兜底（后端 listConfigs 已 maskSensitiveConfig，此处对
+ * 历史/旁路数据源再做一次幂等 redact——[REDACTED] 值不受影响）。 */
+const SENSITIVE_CONFIG_KEY_RE = /(secret|token|password|api[-_]?key|credential)/i;
+function redactConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactConfigValue);
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = SENSITIVE_CONFIG_KEY_RE.test(key) ? '[REDACTED]' : redactConfigValue(item);
+    }
+    return result;
+  }
+  return value;
+}
+
 const System = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const [flagKeys, setFlagKeys] = useState('');
@@ -70,8 +86,10 @@ const System = (): React.ReactElement => {
   const [paramApproval, setParamApproval] = useState(false);
   const [paramUpdateValues, setParamUpdateValues] = useState<Record<string, string>>({});
   const [aiApiKey, setAiApiKey] = useState('');
-  const [aiBaseUrl, setAiBaseUrl] = useState('https://ark.cn-beijing.volces.com/api/v3');
-  const [aiModel, setAiModel] = useState('doubao-seed-2-1-pro-260628');
+  // CLI-224：AI Base URL/模型默认值由后端 /api/ai/config/status 派生
+  //（原前端硬编码 ark 地址与模型名）。
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiModel, setAiModel] = useState('');
   const [aiImageUrl, setAiImageUrl] = useState('');
   const [aiQuestion, setAiQuestion] = useState('你看见了什么？');
   const [aiResult, setAiResult] = useState<VisionUnderstandResult | null>(null);
@@ -100,6 +118,19 @@ const System = (): React.ReactElement => {
     staleTime: QUERY_STALE_TIME_MS,
   });
 
+  // CLI-224：全局 AI 配置状态（后端派生 baseUrl/model，填充表单默认值）。
+  const aiConfigQuery = useQuery({
+    queryKey: ['ai-config-status'],
+    queryFn: getAiConfigStatus,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+  useEffect(() => {
+    const cfg = aiConfigQuery.data;
+    if (!cfg) return;
+    setAiBaseUrl((current) => current || cfg.baseUrl);
+    setAiModel((current) => current || cfg.model);
+  }, [aiConfigQuery.data]);
+
   const evaluate = useMutation({
     mutationFn: () =>
       evaluateFeatureFlags(
@@ -117,6 +148,12 @@ const System = (): React.ReactElement => {
         },
       ),
     onSuccess: setEvaluation,
+    // CLI-211：评估失败显式反馈。
+    onError: (err) => {
+      toast.error('功能开关评估失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const invalidateParameters = () => {
@@ -140,6 +177,12 @@ const System = (): React.ReactElement => {
       setParamValue('');
       setParamApproval(false);
     },
+    // CLI-211：登记失败显式反馈。
+    onError: (err) => {
+      toast.error('参数登记失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const changeParameter = useMutation({
@@ -152,19 +195,39 @@ const System = (): React.ReactElement => {
       invalidateParameters();
       setParamUpdateValues({});
     },
+    onError: (err) => {
+      toast.error('参数更新失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const approveParam = useMutation({
     mutationFn: approveParameter,
     onSuccess: invalidateParameters,
+    onError: (err) => {
+      toast.error('参数审批失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const rollbackParam = useMutation({
     mutationFn: rollbackParameter,
     onSuccess: invalidateParameters,
+    onError: (err) => {
+      toast.error('参数回滚失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const retireParam = useMutation({
     mutationFn: retireParameter,
     onSuccess: invalidateParameters,
+    onError: (err) => {
+      toast.error('参数退役失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
 
   const testVision = useMutation({
@@ -743,7 +806,8 @@ const System = (): React.ReactElement => {
                 </span>
               </div>
               <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[hsl(220_14%_96%)] p-3 text-xs">
-                {JSON.stringify(row.configValue, null, 2)}
+                {/* CLI-210：展示前再脱敏（后端已 mask，此处兜底历史/旁路数据）。 */}
+                {JSON.stringify(redactConfigValue(row.configValue), null, 2)}
               </pre>
               <p className="mt-2 text-xs text-[hsl(218_10%_42%)]">更新人：{row.updatedBy ?? '—'}</p>
             </div>

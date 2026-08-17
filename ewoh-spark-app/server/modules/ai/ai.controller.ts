@@ -25,10 +25,18 @@ export class AiController {
     };
   }
 
-  /** PUT /api/ai/config — 保存全局 AI 配置（供整个系统共享）。成功时不返回密钥本值。 */
+  /**
+   * PUT /api/ai/config — 保存全局 AI 配置（供整个系统共享）。成功时不返回密钥本值。
+   * NEST-413：全局哨兵 org 凭据（API key/base_url）收紧为 global_admin 专属
+   * （approval.yaml high_privilege_admin 同款语义；dispatcher 不再可改全局配置）。
+   */
   @Put('config')
-  async saveConfig(@Body() body: { api_key?: string; base_url?: string; model?: string }) {
-    const saved = await this.arkService.saveConfig(body);
+  @Roles('global_admin')
+  async saveConfig(
+    @Body() body: { api_key?: string; base_url?: string; model?: string },
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    const saved = await this.arkService.saveConfig(body, request?.userContext);
     return {
       ok: true,
       configured: Boolean(saved.apiKey),
@@ -75,23 +83,41 @@ export class AiController {
   }
 
   @Post('plans')
-  plan(@Body() body: { suggestionId: string; content: Record<string, unknown> }) {
-    return this.aiService.createPlan(body.suggestionId, body.content ?? {});
+  plan(
+    @Body() body: { suggestionId: string; content: Record<string, unknown> },
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NEST-422：按租户作用域创建/校验建议归属。
+    return this.aiService.createPlan(
+      body.suggestionId,
+      body.content ?? {},
+      request?.userContext,
+    );
   }
 
   @Get('suggestions/:id')
-  getSuggestion(@Param('id') id: string) {
-    return this.aiService.getSuggestion(id);
+  getSuggestion(
+    @Param('id') id: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NEST-422：org 守卫（跨租户 404）。
+    return this.aiService.getSuggestion(id, request?.userContext);
   }
 
   @Get('plans/:id')
-  getPlan(@Param('id') id: string) {
-    return this.aiService.getPlan(id);
+  getPlan(
+    @Param('id') id: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NEST-422：org 守卫（跨租户 404）。
+    return this.aiService.getPlan(id, request?.userContext);
   }
 
   /**
    * POST /api/ai/vision/understand — 视觉理解代理。
-   * 转发到边缘平台 /api/vision/understand，支持请求级 api_key/base_url/model 覆盖。
+   * 转发到边缘平台 /api/vision/understand。
+   * NEST-430（SSRF 收敛）：不再转发用户可控 api_key/base_url——服务端凭据
+   * 由边缘侧全局配置持有，用户输入不可指定出站目标；model 白名单透传。
    */
   @Post('vision/understand')
   async visionUnderstand(
@@ -99,8 +125,6 @@ export class AiController {
     body: {
       image_url?: string;
       question?: string;
-      api_key?: string;
-      base_url?: string;
       model?: string;
     },
   ) {
@@ -110,8 +134,6 @@ export class AiController {
       body: JSON.stringify({
         image_url: body.image_url || '',
         question: body.question || '',
-        api_key: body.api_key || '',
-        base_url: body.base_url || '',
         model: body.model || '',
       }),
       signal: AbortSignal.timeout(60000),

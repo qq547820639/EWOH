@@ -40,9 +40,14 @@ export function buildCommandCenterKpis(
   }));
 }
 
-/** createdAt 缺失 → 显式空串（§33 不伪造时间）；存在 → 本地化展示。 */
+/** createdAt 缺失 → 显式空串（§33 不伪造时间）；存在 → 显式时区展示（CLI-003，不依赖浏览器时区）。 */
 export function formatEventTimestamp(createdAt?: string | null): string {
-  return createdAt ? new Date(createdAt).toLocaleString() : '';
+  return createdAt
+    ? new Date(createdAt).toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false,
+      })
+    : '';
 }
 
 /** 设备 · 严重度 · 状态 副标题（原始事实透出；字段缺省由契约保证）。 */

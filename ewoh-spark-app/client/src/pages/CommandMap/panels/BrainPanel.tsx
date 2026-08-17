@@ -78,7 +78,11 @@ function SuggestionCard({
 }): React.ReactElement {
   const meta = TYPE_META[suggestion.type] ?? TYPE_META.takt_improve;
   const Icon = meta.icon;
-  const confidencePct = Math.round(suggestion.confidence * 100);
+  // CLI-039：confidence 判空/NaN 防护（缺失时显示 '—'，条宽 0）。
+  const confidencePct =
+    suggestion.confidence != null && Number.isFinite(suggestion.confidence)
+      ? Math.round(suggestion.confidence * 100)
+      : null;
 
   return (
     <div
@@ -122,12 +126,14 @@ function SuggestionCard({
       <div className="mt-2">
         <div className="flex items-center justify-between text-[10px] text-white/60">
           <span>置信度</span>
-          <span className="tabular-nums text-white/70">{confidencePct}%</span>
+          <span className="tabular-nums text-white/70">
+            {confidencePct != null ? `${confidencePct}%` : '—'}
+          </span>
         </div>
         <div className="mt-0.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
           <div
             className={cn('h-full rounded-full', confidenceColor(suggestion.confidence))}
-            style={{ width: `${confidencePct}%` }}
+            style={{ width: `${confidencePct ?? 0}%` }}
           />
         </div>
       </div>
@@ -281,7 +287,7 @@ const BrainPanel = ({ onSelectPlan }: BrainPanelProps): React.ReactElement => {
                     <div className="grid grid-cols-1 gap-2">
                       {list.map((s, i) => (
                         <SuggestionCard
-                          key={`${s.title}-${i}`}
+                          key={s.suggestionId ?? `${s.title}-${i}`}
                           suggestion={s}
                           onAccept={handleAccept}
                           accepting={applyMutation.isPending}

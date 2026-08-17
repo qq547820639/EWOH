@@ -102,6 +102,34 @@ const events: EventInfo[] = [
     createdAt: '2026-08-04T00:20:00.000Z',
     handlerAction: null,
   },
+  {
+    // CLI-015：标题含人员姓名但 evidenceJson.personId 属于他人（无）——
+    // 子串匹配曾误关联同名事件，精确匹配后不得命中。
+    id: 'EVT-3',
+    eventId: 'EVT-3',
+    deviceId: 'EXO-999',
+    eventCode: 'TITLE_MENTION',
+    eventType: 'safety',
+    severity: 'low',
+    title: '张三设备 EXO-10 提及',
+    status: 'open',
+    createdAt: '2026-08-04T00:10:00.000Z',
+    handlerAction: null,
+  },
+  {
+    // CLI-015：deviceId 为 EXO-1 的前缀重叠设备（EXO-10）——
+    // 子串匹配曾误命中，精确匹配后不得关联到 EXO-001 的设备。
+    id: 'EVT-4',
+    eventId: 'EVT-4',
+    deviceId: 'EXO-10',
+    eventCode: 'PREFIX_OVERLAP',
+    eventType: 'maintenance',
+    severity: 'low',
+    title: 'EXO-10 保养',
+    status: 'open',
+    createdAt: '2026-08-04T00:05:00.000Z',
+    handlerAction: null,
+  },
 ];
 
 describe('resolveEntityDetailData', () => {
@@ -153,5 +181,29 @@ describe('resolveEntityDetailData', () => {
     );
     expect(unknownPerson.person?.personnel).toBeNull();
     expect(unknownPerson.person?.alerts).toEqual([]);
+  });
+
+  it('CLI-015：精确匹配——标题含人员姓名但无 personId 证据的事件不误关联', () => {
+    const result = resolveEntityDetailData(
+      entity('p-1', 'person', { personId: 'P-1' }),
+      personnel,
+      organizations,
+      devices,
+      events,
+    );
+    // EVT-1（personId 精确命中）应关联；EVT-3（仅标题提及"张三"）不得关联。
+    expect(result.person?.recentEvents.map((event) => event.eventId)).toEqual(['EVT-1']);
+  });
+
+  it('CLI-015：精确匹配——deviceId 前缀重叠（EXO-10 ≠ EXO-001）不误关联', () => {
+    const result = resolveEntityDetailData(
+      entity('d-1', 'device'),
+      personnel,
+      organizations,
+      devices,
+      events,
+    );
+    // 仅 EVT-1（deviceId === EXO-001）关联；EVT-4（EXO-10 前缀重叠）不得关联。
+    expect(result.device?.alerts.map((event) => event.eventId)).toEqual(['EVT-1']);
   });
 });

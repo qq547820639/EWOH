@@ -51,7 +51,10 @@ def skeleton_to_posture(skeleton_json):
     """
     if not skeleton_json:
         return None
-    hip = skeleton_json.get("hip") or skeleton_json.get("hips")
+    # EDGE-226：显式 None 检查（原 or 短路把合法的 [0,0,0] hip 误回退到 hips）
+    hip = skeleton_json.get("hip")
+    if hip is None:
+        hip = skeleton_json.get("hips")
     neck = skeleton_json.get("neck")
     if not hip or not neck:
         return None

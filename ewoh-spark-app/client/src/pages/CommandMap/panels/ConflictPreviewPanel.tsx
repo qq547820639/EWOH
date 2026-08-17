@@ -70,7 +70,11 @@ export function ConflictPreviewPanel({
   }, []);
 
   const previewMutation = useMutation({
-    mutationFn: () => previewConflictAction(conflict.conflictId, resolvePreviewAction(conflict) ? { action: resolvePreviewAction(conflict) } : {}),
+    // CLI-018：resolvePreviewAction 结果缓存到变量（原一行内重复调用两次）。
+    mutationFn: () => {
+      const action = resolvePreviewAction(conflict);
+      return previewConflictAction(conflict.conflictId, action ? { action } : {});
+    },
     onSuccess: (data) => {
       setPreview(data);
       onPreviewDiff(data);
@@ -243,13 +247,18 @@ export function ConflictPreviewPanel({
             )}
           </div>
 
-          {/* Remaining conflicts */}
+          {/* Remaining conflicts（CLI-019：仅展示前 3 条时显式标注「等 N 条」） */}
           {preview.remainingConflicts.length > 0 && (
             <div className="rounded border border-amber-500/20 bg-amber-500/5 px-1.5 py-1">
               <div className="text-[8.5px] text-amber-400/80">剩余冲突 {preview.remainingConflicts.length}</div>
               {preview.remainingConflicts.slice(0, 3).map((rc) => (
                 <div key={rc.conflictId} className="truncate text-[8.5px] text-white/50">· {rc.message}</div>
               ))}
+              {preview.remainingConflicts.length > 3 && (
+                <div className="text-[8.5px] text-white/40">
+                  …等共 {preview.remainingConflicts.length} 条
+                </div>
+              )}
             </div>
           )}
 

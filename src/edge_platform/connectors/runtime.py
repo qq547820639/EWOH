@@ -18,8 +18,11 @@ from pathlib import Path
 from typing import Any
 
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+")
+# EDGE-224：脱敏键模式扩充 bearer 与 auth 复合键（authHeader/auth_token 等）。
+# 注意 "auth" 单独成键时通常是配置容器（{"auth": {"password": ...}}），不整体
+# 脱敏——容器内的敏感子键（password/apiKey）由本模式逐键命中。
 SECRET_KEY_PATTERN = re.compile(
-    r"password|secret|token|api[_-]?key|private[_-]?key|credential",
+    r"password|secret|token|api[_-]?key|private[_-]?key|credential|bearer|auth[_-]?(header|token|key)",
     re.IGNORECASE,
 )
 

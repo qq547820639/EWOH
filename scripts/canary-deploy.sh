@@ -32,6 +32,7 @@ CANARY_POLL_INTERVAL="${CANARY_POLL_INTERVAL:-10}"  # seconds
 MAX_ERROR_RATE="${MAX_ERROR_RATE:-0.05}"    # 5% error rate allowed
 MAX_P95_MS="${MAX_P95_MS:-2000}"            # p95 latency budget
 BAD_IMAGE_TAG="${BAD_IMAGE_TAG:-ewoh-broken-canary}"  # image tag that will fail
+CANARY_TEST_ORG="${CANARY_TEST_ORG:-orgA}"    # SCR-040: 业务态校验用的 org，从 env 读取
 
 record() {
   node scripts/truth-gate-record.js \
@@ -75,6 +76,9 @@ command -v kubectl >/dev/null 2>&1 || blocked "kubectl binary 缺失"
 kubectl cluster-info >/dev/null 2>&1 || blocked "无可达集群"
 
 echo "== baseline health =="
+# SCR-014: 无 /metrics 时 error-rate/p95 阈值无法评估，不允许以回退探针冒充通过——记 BLOCKED。
+curl -sf "$API_URL/metrics" >/dev/null 2>&1 \
+  || blocked "/metrics 不可用（$API_URL/metrics）：错误率与 p95 阈值无法评估，canary 门禁不能给出可信结论"
 BASE="$(health_metrics)"
 echo "baseline: $BASE"
 
@@ -91,7 +95,19 @@ for i in $(seq 1 "$CANARY_POLLS"); do
   # auto-rollback decision
   if [ "$ready" != "1" ] || awk -v e="$err" -v m="$MAX_ERROR_RATE" 'BEGIN{exit !(e>m)}' || awk -v p="$p95" -v m="$MAX_P95_MS" 'BEGIN{exit !(p>m && p>0)}'; then
     echo "phenomenon: error_rate=$err p95=${p95}ms ready=$ready -> triggering rollback (poll $i)"
-    helm rollback "$RELEASE" 1 --namespace "$NAMESPACE" --wait --timeout "$HELM_TIMEOUT" \
+    # SCR-015: 回滚目标 revision 动态解析（当前最大 revision 的上一个），不再硬编码 1。
+    PREV_REV="$(helm history "$RELEASE" --namespace "$NAMESPACE" -o json | node -e '
+      let s = "";
+      process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        const hist = JSON.parse(s).map((h) => ({ ...h, revision: Number(h.revision) }));
+        const cur = Math.max(...hist.map((h) => h.revision));
+        const prev = Math.max(...hist.filter((h) => h.revision < cur).map((h) => h.revision));
+        if (!Number.isFinite(prev)) { console.error("no previous helm revision to rollback to"); process.exit(1); }
+        console.log(prev);
+      });
+    ')" || fail "无法从 helm history 解析回滚目标 revision"
+    echo "rollback target revision: $PREV_REV"
+    helm rollback "$RELEASE" "$PREV_REV" --namespace "$NAMESPACE" --wait --timeout "$HELM_TIMEOUT" \
       || fail "自动回滚命令失败"
     ROLLED_BACK=1
     break
@@ -108,8 +124,13 @@ read -r err p95 ready <<< "$(health_metrics)"
 [ "$ready" = "1" ] || fail "回滚后 /health/ready 未恢复"
 # business-state: org-scoped export task read + a valid org-scoped query
 curl -sf "$API_URL/health/ready" >/dev/null || fail "回滚后 API 不可达"
-curl -sf -H "X-Org-Id: orgA" "$API_URL/api/workbench/export-tasks?limit=1" >/dev/null \
-  || echo "note: export-tasks endpoint 未命中（视部署版本），业务状态校验以 API 可达为准"
+# SCR-007: 业务态校验不得退化为纯可达性检查——export-tasks org 域读取必须返回 2xx。
+BUSINESS_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Org-Id: $CANARY_TEST_ORG" "$API_URL/api/workbench/export-tasks?limit=1" || echo 000)"
+case "$BUSINESS_HTTP" in
+  2*) echo "business-state OK: export-tasks org=$CANARY_TEST_ORG http=$BUSINESS_HTTP" ;;
+  404|405) blocked "回滚后业务态校验被阻断：export-tasks 端点未部署（http=$BUSINESS_HTTP），不能宣称业务态通过" ;;
+  *) fail "回滚后业务态校验失败：export-tasks org=$CANARY_TEST_ORG http=$BUSINESS_HTTP" ;;
+esac
 
 echo "{\"gate\":\"$GATE_ID\",\"status\":\"SUCCEEDED\",\"baseline\":\"$BASE\",\"autoRolledBack\":true}" > "$REPORT"
 record SUCCEEDED "canary 失败被捕获并自动回滚；回滚后探针与业务态校验通过"

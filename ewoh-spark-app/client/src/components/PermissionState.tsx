@@ -49,13 +49,13 @@ const PermissionState = ({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"
+      className="flex flex-col gap-3 rounded-lg border border-risk-degraded-border bg-risk-degraded-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <ShieldX className="mt-0.5 size-5 shrink-0 text-amber-600" />
+        <ShieldX className="mt-0.5 size-5 shrink-0 text-risk-degraded" />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">{title}</p>
-          <p className="mt-0.5 text-[hsl(220_14%_14%)]">{resolvedDescription}</p>
+          <p className="font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-foreground">{resolvedDescription}</p>
         </div>
       </div>
 

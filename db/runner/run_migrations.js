@@ -17,6 +17,11 @@ const FILES = {
   users: path.join(root, 'db/migrations/002_ewoh_users.sql'),
   users_rollback: path.join(root, 'db/migrations/002_ewoh_users.rollback.sql'),
   users_seed: path.join(root, 'db/seed/002_default_admin.sql'),
+  users_verify: path.join(root, 'db/verify/002_ewoh_users_verify.sql'),
+  standalone_users_verify: path.join(root, 'db/verify/standalone_002_users_verify.sql'),
+  standalone_runtime_role_verify: path.join(root, 'db/verify/standalone_003_runtime_role_verify.sql'),
+  standalone_scheduling_persistence_verify: path.join(root, 'db/verify/standalone_007_scheduling_persistence_verify.sql'),
+  standalone_phase2_realtime_verify: path.join(root, 'db/verify/standalone_008_phase2_realtime_verify.sql'),
   standalone: path.join(root, 'db/migrations/standalone_001_schema.sql'),
   standalone_rollback: path.join(root, 'db/migrations/standalone_001_schema.rollback.sql'),
   standalone_verify: path.join(root, 'db/verify/standalone_001_verify.sql'),
@@ -156,6 +161,9 @@ const FILES = {
   standalone_learning_proposal_decision: path.join(root, 'db/migrations/standalone_053_learning_proposal_decision.sql'),
   standalone_policy_activation_decision: path.join(root, 'db/migrations/standalone_054_policy_activation_decision.sql'),
   standalone_route_org_isolation: path.join(root, 'db/migrations/standalone_056_route_org_isolation.sql'),
+  standalone_rls_null_reject: path.join(root, 'db/migrations/standalone_057_rls_null_reject.sql'),
+  standalone_rls_null_reject_rollback: path.join(root, 'db/migrations/standalone_057_rls_null_reject.rollback.sql'),
+  standalone_rls_null_reject_verify: path.join(root, 'db/verify/standalone_057_rls_null_reject.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -234,11 +242,17 @@ const ROLLBACK_COMMANDS = new Set([
   '--rollback-standalone-learning-proposal-decision',
   '--rollback-standalone-policy-activation-decision',
   '--rollback-standalone-route-org-isolation',
+  '--rollback-standalone-rls-null-reject',
 ]);
 const EXECUTE_COMMANDS = new Set([
   '--apply',
   '--rollback',
   '--verify',
+  '--verify-users',
+  '--verify-standalone-users',
+  '--verify-standalone-runtime-role',
+  '--verify-standalone-scheduling-persistence',
+  '--verify-standalone-phase2-realtime',
   '--seed',
   '--apply-users',
   '--rollback-users',
@@ -398,10 +412,96 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-route-org-isolation',
   '--rollback-standalone-route-org-isolation',
   '--verify-standalone-route-org-isolation',
+  '--apply-standalone-rls-null-reject',
+  '--rollback-standalone-rls-null-reject',
+  '--verify-standalone-rls-null-reject',
 ]);
+
+/** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
+ * 「okField === 1」断言的 verify handler 统一为表驱动，消除原先
+ * FILES / EXECUTE_COMMANDS / ALLOW_DDL 列表 / handler / which 映射 5 处
+ * 手工同步中的 handler 重复段。新增此类迁移只需：
+ *   1) FILES 加 <key> 与 <key>_verify 路径；
+ *   2) EXECUTE_COMMANDS 加 apply/rollback/verify 三个命令；
+ *   3) 本表登记一行 [fileKey, okField, 成功描述]；
+ *   4) which 映射加 apply/rollback 两行（verify 由本表驱动）。
+ * 结构：command → [FILES key, 断言字段, VERIFY OK 描述] */
+const SIMPLE_VERIFY_COMMANDS = {
+  '--verify-standalone-event-dedup': ['standalone_event_dedup_verify', 'standalone_036_verified', 'standalone_036 event dedup (TENANT_SCOPED + RLS + unique + time-semantics)'],
+  '--verify-standalone-agent-manifest': ['standalone_agent_manifest_verify', 'standalone_037_verified', 'standalone_037 agent manifest (TENANT_SCOPED + RLS + CHECK + unique)'],
+  '--verify-standalone-agent-task': ['standalone_agent_task_verify', 'standalone_038_verified', 'standalone_038 agent task (TENANT_SCOPED + RLS + CHECK + unique)'],
+  '--verify-standalone-knowledge-entry': ['standalone_knowledge_entry_verify', 'standalone_039_verified', 'standalone_039 knowledge entry (TENANT_SCOPED + RLS + scope CHECK + unique)'],
+  '--verify-standalone-inference-result': ['standalone_inference_result_verify', 'standalone_040_verified', 'standalone_040 inference result (TENANT_SCOPED + RLS + CHECK + unique)'],
+  '--verify-standalone-learning-evaluation': ['standalone_learning_evaluation_verify', 'standalone_041_verified', 'standalone_041 learning evaluation (TENANT_SCOPED + RLS + CHECK + unique)'],
+  '--verify-standalone-trace-span': ['standalone_trace_span_verify', 'standalone_042_verified', 'standalone_042 trace span (span checks + org/global visibility policy + unique)'],
+  '--verify-standalone-dead-letter': ['standalone_dead_letter_verify', 'standalone_043_verified', 'standalone_043 dead letter (TENANT_SCOPED + RLS + CHECK + unique)'],
+  '--verify-standalone-simulation-run': ['standalone_simulation_run_verify', 'standalone_044_verified', 'standalone_044 simulation run (TENANT_SCOPED + RLS + isolation CHECK)'],
+  '--verify-standalone-learning-proposal': ['standalone_learning_proposal_verify', 'standalone_045_verified', 'standalone_045 learning proposal (TENANT_SCOPED + RLS + shadow-gate/approval CHECK)'],
+  '--verify-standalone-exo-session': ['standalone_exo_session_verify', 'standalone_046_verified', 'standalone_046 exo session (TENANT_SCOPED + RLS + active-unique + end CHECK)'],
+  '--verify-standalone-outcome-annotation': ['standalone_outcome_annotation_verify', 'standalone_047_verified', 'standalone_047 outcome annotation (TENANT_SCOPED + RLS + registry CHECK)'],
+  '--verify-standalone-shadow-plan-isolation': ['standalone_shadow_plan_isolation_verify', 'standalone_048_verified', 'standalone_048 shadow plan isolation (CHECK 纵深防御：shadow 行禁生产状态/确认事实)'],
+  '--verify-standalone-agent-approval': ['standalone_agent_approval_verify', 'standalone_049_verified', 'standalone_049 agent approval (TENANT_SCOPED + RLS + status/resolved/roles CHECK + unique)'],
+  '--verify-standalone-decision-records': ['standalone_decision_records_verify', 'standalone_050_verified', 'standalone_050 decision records (decision_records_json jsonb 列 + DecisionRecord 形状 roundtrip + NULL 存量语义)'],
+  '--verify-standalone-exo-config': ['standalone_exo_config_verify', 'standalone_051_verified', 'standalone_051 exo config (TENANT_SCOPED + RLS exo_config_org_isolation + kind/status/mode/facts/time CHECK + unique)'],
+  '--verify-standalone-agent-approval-decision': ['standalone_agent_approval_decision_verify', 'standalone_052_verified', 'standalone_052 agent approval decision (decision_json jsonb 列 + agent_approval DecisionRecord 形状 roundtrip + NULL 存量语义)'],
+  '--verify-standalone-learning-proposal-decision': ['standalone_learning_proposal_decision_verify', 'standalone_053_verified', 'standalone_053 learning proposal decision (decision_json jsonb 列 + learning_proposal_activation DecisionRecord 形状 roundtrip + NULL 存量语义)'],
+  '--verify-standalone-policy-activation-decision': ['standalone_policy_activation_decision_verify', 'standalone_054_verified', 'standalone_054 policy activation decision (decision_json jsonb 列 + policy_activation DecisionRecord 形状 roundtrip + NULL 存量语义)'],
+  '--verify-standalone-route-org-isolation': ['standalone_route_org_isolation_verify', 'standalone_056_verified', 'standalone_056 route org isolation (route_node/edge org_id 列 + RLS org 匹配或 NULL 存量放行 + SET LOCAL GUC 可见性自证)'],
+  '--verify-standalone-identity-mapping': ['standalone_identity_mapping_verify', 'standalone_032_verified', 'standalone_032 identity mapping (TENANT_SCOPED + RLS + unique)'],
+  '--verify-standalone-maintenance-quality': ['standalone_maintenance_quality_verify', 'standalone_034_verified', 'standalone_034 maintenance/quality (TENANT_SCOPED + RLS + CHECK)'],
+  '--verify-standalone-work-order': ['standalone_work_order_verify', 'standalone_035_verified', 'standalone_035 work order (TENANT_SCOPED + RLS + CHECK)'],
+  '--verify-standalone-rls-null-reject': ['standalone_rls_null_reject_verify', 'standalone_057_verified', 'standalone_057 RLS NULL reject (policy 无 NULL 放行 + TO service_role + org_id NOT NULL + (org_id,x) 复合唯一 + ewoh_org_visible(text) 重载)'],
+  // 审计 SQL-103（2026-08-17）补齐的 5 个缺失 verify 脚本，同为单字段断言形态。
+  '--verify-users': ['users_verify', 'users_verified', '002_ewoh_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
+  '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
+  '--verify-standalone-runtime-role': ['standalone_runtime_role_verify', 'standalone_003_verified', 'standalone_003 runtime role (ewoh_api 最小权限 + service_role 成员 + search_path 固定)'],
+  '--verify-standalone-scheduling-persistence': ['standalone_scheduling_persistence_verify', 'standalone_007_verified', 'standalone_007 scheduling persistence (plan/assignment V2 元数据列)'],
+  '--verify-standalone-phase2-realtime': ['standalone_phase2_realtime_verify', 'standalone_008_verified', 'standalone_008 phase2 realtime (outbox entity 列 + sequence 索引)'],
+};
+
+/** 复杂型 verify 命令（多字段断言 / DO 块自证，保留独立 handler 分支）。 */
+const COMPLEX_VERIFY_COMMANDS = [
+  '--verify',
+  '--verify-standalone',
+  '--verify-standalone-domain',
+  '--verify-standalone-workbench-prod',
+  '--verify-standalone-scheduling',
+  '--verify-standalone-scheduling-feedback',
+  '--verify-standalone-reservation-conflict',
+  '--verify-standalone-outbox-sequence',
+  '--verify-standalone-domain-columns',
+  '--verify-standalone-route-cost-matrix',
+  '--verify-standalone-policy-weights',
+  '--verify-standalone-conflict-lifecycle',
+  '--verify-standalone-task-requirement',
+  '--verify-standalone-scheduling-tables-fix',
+  '--verify-standalone-execution-feedback',
+  '--verify-standalone-kpi-replay',
+  '--verify-standalone-policy-lifecycle',
+  '--verify-standalone-sse-envelope',
+  '--verify-standalone-reservation-capacity',
+  '--verify-standalone-scheduler-incremental',
+  '--verify-standalone-scheduler-outbox-notify',
+  '--verify-standalone-scheduler-rls',
+  '--verify-standalone-route-cost-matrix-full-key',
+  '--verify-standalone-resource-time-windows',
+  '--verify-standalone-assignment-event-tenancy',
+  '--verify-standalone-prediction-shadow-observation',
+  '--verify-standalone-snapshot-version-counter',
+  '--verify-standalone-solver-activation',
+];
 
 const TOKEN = '__EWOH_SCHEMA__';
 const DEFAULT_SCHEMA = 'workspace_aadknm4yzbyds';
+// SCR-026: legacy 001 DDL 现使用 __EWOH_ROLE_*__ 角色占位符，运行时按 schema 名
+// 派生（与 legacy Miaoda 命名 anon_<schema>/authenticated_<schema>/
+// user_authenticated_<schema>/service_role_<schema> 完全一致，行为不变）。
+const ROLE_TOKENS = [
+  ['__EWOH_ROLE_USER_AUTHENTICATED__', (schema) => `user_authenticated_${schema}`],
+  ['__EWOH_ROLE_AUTHENTICATED__', (schema) => `authenticated_${schema}`],
+  ['__EWOH_ROLE_ANON__', (schema) => `anon_${schema}`],
+  ['__EWOH_ROLE_SERVICE__', (schema) => `service_role_${schema}`],
+];
 
 function loadEnv() {
   try {
@@ -427,7 +527,11 @@ function validateSchema(value) {
 }
 
 function substitute(sqlText, schema) {
-  return sqlText.split(TOKEN).join(schema);
+  let out = sqlText.split(TOKEN).join(schema);
+  for (const [roleToken, render] of ROLE_TOKENS) {
+    out = out.split(roleToken).join(render(schema));
+  }
+  return out;
 }
 
 function read(file) {
@@ -478,19 +582,42 @@ function domainTableCountFromManifest() {
 /** 核心受管表数量：managed_tables 中除去 6 张 F61-02 域表后的物理表数。
  * 作为 --verify / --verify-standalone 中 managed_table_count 与 rls_enabled 的期望值，
  * 与 db/verify/001_verify.sql、db/verify/standalone_001_verify.sql 的 expected 列表一致。
- * 口径：schema-manifest.yaml 的 managed_count=57 是全量逻辑受管表数（51 核心 + 6 域表），
- * 本函数返回 51，二者是不同度量、非漂移。 */
+ * 口径（2026-08-17 审计 SQL-109/SQL-032 更新）：manifest header managed_count=74
+ * 是全量逻辑受管表数（68 核心 + 6 域表），本函数返回 68；二者是不同度量、非漂移。
+ * 审计 SQL-109 修复：解析失败或条目为空时直接抛错（fail-fast）——静默回退旧值
+ * （原硬编码 51）会在 manifest 损坏时以错误期望继续 verify，误报失败/掩盖漂移。 */
 function coreManagedTableCountFromManifest() {
-  try {
-    const tables = loadManifestManagedTables();
-    const core = tables.filter((t) => t && !F61_02_DOMAIN_TABLES.includes(t.physical_table));
-    if (core.length > 0) return core.length;
-    console.warn('[verify] schema-manifest 未找到核心受管表条目，回退硬编码 51');
-    return 51;
-  } catch (e) {
-    console.warn(`[verify] 解析 schema-manifest 失败（${e.message}），回退硬编码 51`);
-    return 51;
+  const tables = loadManifestManagedTables();
+  const core = tables.filter((t) => t && !F61_02_DOMAIN_TABLES.includes(t.physical_table));
+  if (core.length === 0) {
+    throw new Error('schema-manifest.yaml 解析失败或 managed_tables 为空：无法派生核心受管表数量（拒绝回退硬编码，见审计 SQL-109）');
   }
+  return core.length;
+}
+
+/** 核心受管表名集合（审计 SQL-104）：与 db/verify/001_verify.sql /
+ * standalone_001_verify.sql 中 expected(name) 静态列表对账，防止「manifest 删表
+ * 但 verify SQL 列表未同步」时 count 巧合相等掩盖表丢失。 */
+function coreManagedTableNamesFromManifest() {
+  const tables = loadManifestManagedTables();
+  return new Set(
+    tables
+      .filter((t) => t && !F61_02_DOMAIN_TABLES.includes(t.physical_table))
+      .map((t) => t.physical_table),
+  );
+}
+
+/** 从 verify SQL 文本提取 expected(name) AS (VALUES (...)) 静态列表（审计 SQL-104）。
+ * expected CTE 在 001_verify / standalone_001_verify 中为单行（首个换行前），
+ * 按行切片后提取全部单引号字面量。 */
+function expectedTableNamesFromVerifySql(sqlText) {
+  const marker = 'expected(name) AS (VALUES ';
+  const idx = sqlText.indexOf(marker);
+  if (idx === -1) return null;
+  const rest = sqlText.slice(idx + marker.length);
+  const lineEnd = rest.indexOf('\n');
+  const chunk = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
+  return new Set(Array.from(chunk.matchAll(/'([^']+)'/g), (m) => m[1]));
 }
 
 function renderAdminSeed(sqlText) {
@@ -524,6 +651,8 @@ function renderRuntimeRole(sqlText) {
 function usage() {
   console.error(`Usage: run_migrations.js --plan [${PLAN_NAMES.join('|')}]`);
   console.error('       run_migrations.js --apply | --rollback | --verify | --seed');
+  console.error('       run_migrations.js --verify-users | --verify-standalone-users | --verify-standalone-runtime-role');
+  console.error('       run_migrations.js --verify-standalone-scheduling-persistence | --verify-standalone-phase2-realtime | --verify-standalone-rls-null-reject');
   console.error('       run_migrations.js --apply-users | --rollback-users | --seed-users');
   console.error('       run_migrations.js --apply-standalone | --rollback-standalone | --verify-standalone | --seed-standalone');
   console.error('       run_migrations.js --apply-standalone-users | --rollback-standalone-users | --seed-standalone-admin');
@@ -580,7 +709,9 @@ function main() {
     console.error('EWOH_DATABASE_URL or SUDA_DATABASE_URL is required.');
     process.exit(2);
   }
-  if (!['--verify', '--verify-standalone', '--verify-standalone-domain', '--verify-standalone-workbench-prod', '--verify-standalone-outbox-sequence', '--verify-standalone-domain-columns', '--verify-standalone-route-cost-matrix', '--verify-standalone-policy-weights', '--verify-standalone-conflict-lifecycle', '--verify-standalone-task-requirement', '--verify-standalone-scheduling-tables-fix', '--verify-standalone-execution-feedback', '--verify-standalone-kpi-replay', '--verify-standalone-policy-lifecycle', '--verify-standalone-sse-envelope', '--verify-standalone-reservation-capacity', '--verify-standalone-scheduler-incremental', '--verify-standalone-scheduler-outbox-notify', '--verify-standalone-scheduler-rls', '--verify-standalone-route-cost-matrix-full-key', '--verify-standalone-resource-time-windows', '--verify-standalone-assignment-event-tenancy', '--verify-standalone-prediction-shadow-observation', '--verify-standalone-snapshot-version-counter', '--verify-standalone-solver-activation', '--verify-standalone-identity-mapping', '--verify-standalone-maintenance-quality', '--verify-standalone-work-order', '--verify-standalone-event-dedup', '--verify-standalone-agent-manifest', '--verify-standalone-agent-task', '--verify-standalone-knowledge-entry', '--verify-standalone-inference-result', '--verify-standalone-learning-evaluation', '--verify-standalone-trace-span', '--verify-standalone-dead-letter', '--verify-standalone-simulation-run', '--verify-standalone-learning-proposal', '--verify-standalone-exo-session', '--verify-standalone-outcome-annotation', '--verify-standalone-shadow-plan-isolation', '--verify-standalone-agent-approval', '--verify-standalone-decision-records', '--verify-standalone-exo-config', '--verify-standalone-agent-approval-decision', '--verify-standalone-learning-proposal-decision', '--verify-standalone-policy-activation-decision', '--verify-standalone-route-org-isolation'].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
+  // 审计 SQL-107（2026-08-17）：verify 命令清单从 SIMPLE_VERIFY_COMMANDS 表 +
+  // COMPLEX_VERIFY_COMMANDS 派生，不再手工维护第 5 份同步列表。
+  if (![...Object.keys(SIMPLE_VERIFY_COMMANDS), ...COMPLEX_VERIFY_COMMANDS].includes(command) && process.env.EWOH_ALLOW_DDL !== '1') {
     console.error('EWOH_ALLOW_DDL=1 is required for --apply and --rollback.');
     process.exit(2);
   }
@@ -596,6 +727,22 @@ function main() {
   });
 
   (async () => {
+    // 审计 SQL-107（2026-08-17）：简单型 verify（单行单字段 ===1 断言）统一走
+    // SIMPLE_VERIFY_COMMANDS 表驱动分支，替代原先 23 个结构相同的 if 分支。
+    if (SIMPLE_VERIFY_COMMANDS[command]) {
+      const [fileKey, okField, okLabel] = SIMPLE_VERIFY_COMMANDS[command];
+      const rows = await sql.unsafe(substitute(read(FILES[fileKey]), schema));
+      console.log(JSON.stringify(rows, null, 2));
+      const row = rows[0] || {};
+      if (Number(row[okField] || 0) !== 1) {
+        console.error(`VERIFY FAILED: ${command} did not return ${okField}=1`);
+        process.exitCode = 1;
+      } else {
+        console.log(`VERIFY OK: ${okLabel}`);
+      }
+      return;
+    }
+
     if (command === '--verify-standalone-domain') {
       const rows = await sql.unsafe(substitute(read(FILES.standalone_domain_verify), schema));
       console.log(JSON.stringify(rows, null, 2));
@@ -1017,9 +1164,11 @@ function main() {
       const columns = Number(row.route_cost_matrix_columns || 0);
       const indexes = Number(row.route_cost_matrix_indexes || 0);
       const uq = Number(row.route_cost_matrix_uq || 0);
-      // 期望值来源：standalone_015_route_cost_matrix.verify.sql 自述（11 列 / 3 索引 / 1 唯一键）。
-      if (columns !== 11 || indexes !== 3 || uq !== 1) {
-        console.error(`VERIFY FAILED: expected (11,3,1), got (${columns},${indexes},${uq})`);
+      // 期望值来源：standalone_015_route_cost_matrix.verify.sql 自述（11 列 / ≥3 索引 /
+      // 1 task_snapshot 唯一键）。索引数改用下限断言：026（full_key）与 057
+      // （org 复合唯一）后续追加同类前缀索引，精确计数会在链式应用后误报失败。
+      if (columns !== 11 || indexes < 3 || uq !== 1) {
+        console.error(`VERIFY FAILED: expected (11,>=3,1), got (${columns},${indexes},${uq})`);
         process.exitCode = 1;
       } else {
         console.log('VERIFY OK: route cost matrix cache table + unique key present');
@@ -1057,325 +1206,62 @@ function main() {
       return;
     }
 
-    if (command === '--verify-standalone-identity-mapping') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_identity_mapping_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_032_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_032 identity mapping verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_032 identity mapping (TENANT_SCOPED + RLS + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-maintenance-quality') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_maintenance_quality_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_034_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_034 maintenance/quality verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_034 maintenance/quality (TENANT_SCOPED + RLS + CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-work-order') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_work_order_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_035_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_035 work order verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_035 work order (TENANT_SCOPED + RLS + CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-outcome-annotation') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_outcome_annotation_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_047_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_047 outcome annotation verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_047 outcome annotation (TENANT_SCOPED + RLS + registry CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-shadow-plan-isolation') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_shadow_plan_isolation_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_048_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_048 shadow plan isolation verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_048 shadow plan isolation (CHECK 纵深防御：shadow 行禁生产状态/确认事实)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-agent-approval') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_approval_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_049_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_049 agent approval verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_049 agent approval (TENANT_SCOPED + RLS + status/resolved/roles CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-decision-records') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_decision_records_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_050_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_050 decision records verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_050 decision records (decision_records_json jsonb 列 + DecisionRecord 形状 roundtrip + NULL 存量语义)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-exo-config') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_exo_config_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_051_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_051 exo config verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_051 exo config (TENANT_SCOPED + RLS exo_config_org_isolation + kind/status/mode/facts/time CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-agent-approval-decision') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_approval_decision_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_052_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_052 agent approval decision verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_052 agent approval decision (decision_json jsonb 列 + agent_approval DecisionRecord 形状 roundtrip + NULL 存量语义)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-learning-proposal-decision') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_proposal_decision_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_053_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_053 learning proposal decision verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_053 learning proposal decision (decision_json jsonb 列 + learning_proposal_activation DecisionRecord 形状 roundtrip + NULL 存量语义)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-policy-activation-decision') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_policy_activation_decision_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_054_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_054 policy activation decision verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_054 policy activation decision (decision_json jsonb 列 + policy_activation DecisionRecord 形状 roundtrip + NULL 存量语义)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-route-org-isolation') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_route_org_isolation_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_056_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_056 route org isolation verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_056 route org isolation (route_node/edge org_id 列 + RLS org 匹配或 NULL 存量放行 + SET LOCAL GUC 可见性自证)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-exo-session') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_exo_session_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_046_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_046 exo session verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_046 exo session (TENANT_SCOPED + RLS + active-unique + end CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-learning-proposal') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_proposal_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_045_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_045 learning proposal verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_045 learning proposal (TENANT_SCOPED + RLS + shadow-gate/approval CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-simulation-run') {      const rows = await sql.unsafe(substitute(read(FILES.standalone_simulation_run_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_044_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_044 simulation run verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_044 simulation run (TENANT_SCOPED + RLS + isolation CHECK)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-dead-letter') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_dead_letter_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_043_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_043 dead letter verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_043 dead letter (TENANT_SCOPED + RLS + CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-trace-span') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_trace_span_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_042_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_042 trace span verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_042 trace span (span checks + org/global visibility policy + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-learning-evaluation') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_learning_evaluation_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_041_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_041 learning evaluation verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_041 learning evaluation (TENANT_SCOPED + RLS + CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-inference-result') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_inference_result_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_040_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_040 inference result verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_040 inference result (TENANT_SCOPED + RLS + CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-knowledge-entry') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_knowledge_entry_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_039_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_039 knowledge entry verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_039 knowledge entry (TENANT_SCOPED + RLS + scope CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-agent-task') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_task_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_038_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_038 agent task verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_038 agent task (TENANT_SCOPED + RLS + CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-agent-manifest') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_agent_manifest_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_037_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_037 agent manifest verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_037 agent manifest (TENANT_SCOPED + RLS + CHECK + unique)');
-      }
-      return;
-    }
-
-    if (command === '--verify-standalone-event-dedup') {
-      const rows = await sql.unsafe(substitute(read(FILES.standalone_event_dedup_verify), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
-      if (Number(row.standalone_036_verified || 0) !== 1) {
-        console.error('VERIFY FAILED: standalone_036 event dedup verify did not return 1');
-        process.exitCode = 1;
-      } else {
-        console.log('VERIFY OK: standalone_036 event dedup (TENANT_SCOPED + RLS + unique + time-semantics)');
-      }
-      return;
-    }
-
     if (['--verify', '--verify-standalone'].includes(command)) {
       const verifyFile = command === '--verify-standalone' ? FILES.standalone_verify : FILES.verify;
-      const rows = await sql.unsafe(substitute(read(verifyFile), schema));
+      const verifySqlText = read(verifyFile);
+
+      // 审计 SQL-104（2026-08-17）：verify SQL 的 expected(name) 静态列表与
+      // schema-manifest 核心表集合对账——manifest 删表但 verify 列表未同步时，
+      // managed_table_count 可能巧合相等而掩盖表丢失，此处集合级双向对账兜底。
+      const sqlExpected = expectedTableNamesFromVerifySql(verifySqlText);
+      const manifestCore = coreManagedTableNamesFromManifest();
+      if (!sqlExpected) {
+        console.error('VERIFY FAILED: verify SQL 中未找到 expected(name) 列表（SQL-104 对账无法执行）');
+        process.exitCode = 1;
+        return;
+      }
+      const onlyInSql = [...sqlExpected].filter((n) => !manifestCore.has(n));
+      const onlyInManifest = [...manifestCore].filter((n) => !sqlExpected.has(n));
+      if (onlyInSql.length || onlyInManifest.length) {
+        console.error(`VERIFY FAILED: verify expected 列表与 manifest 核心表漂移（SQL 多出: ${onlyInSql.join(',') || '无'}; manifest 多出: ${onlyInManifest.join(',') || '无'}）`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const rows = await sql.unsafe(substitute(verifySqlText, schema));
       console.log(JSON.stringify(rows, null, 2));
       const row = rows[0] || {};
-      // 期望值来源：schema-manifest.yaml（单一事实源），消除硬编码 51。
-      // 口径：managed_table_count / rls_enabled 只覆盖核心受管表（managed_tables 去掉 6 张
-      // F61-02 域表 = 51）；manifest 的 managed_count=57 是全量逻辑受管表数（51 核心 + 6 域表），
-      // 二者是不同度量、非漂移。6 张域表由 --verify-standalone-domain 单独验证。
+      // 期望值来源：schema-manifest.yaml（单一事实源）。
+      // 口径：managed_table_count / rls_enabled 只覆盖核心受管表（managed_tables
+      // 去掉 6 张 F61-02 域表 = 68）；manifest header managed_count=74 是全量逻辑
+      // 受管表数（68 核心 + 6 域表），二者是不同度量、非漂移。6 张域表由
+      // --verify-standalone-domain 单独验证。
       const coreCount = coreManagedTableCountFromManifest();
+      // 审计 SQL-105（2026-08-17）：显式列出 verify SQL 全部 14 个返回列的期望值，
+      // 不再用 `expected[key] || 0` 隐式期望——未登记列的期望漂移会被静默放行。
       const expected = {
         managed_table_count: coreCount,
+        missing_org_id: 0,
+        org_not_null_violations: 0,
+        missing_org_request_defaults: 0,
         rls_enabled: coreCount,
+        tables_without_policy: 0,
+        loose_policies: 0,
+        authenticated_dml_grants: 0,
+        anon_grants: 0,
         audit_seq_identity: 1,
         world_delta_seq_identity: 1,
         audit_function_count: 1,
+        quantity_numeric_mismatch: 0,
         scheduler_config_org_key: 1,
       };
-      const bad = Object.entries(row)
-        .filter(([key, value]) => Number(value) !== (expected[key] || 0))
-        .map(([key, value]) => `${key}=${value}`);
+      const bad = Object.entries(expected)
+        .filter(([key, value]) => Number(row[key]) !== value)
+        .map(([key]) => `${key}=${row[key]} (expected ${expected[key]})`);
+      const unknownColumns = Object.keys(row).filter((key) => !(key in expected));
+      if (unknownColumns.length) {
+        bad.push(`未登记的返回列（SQL-105 显式期望清单需同步）: ${unknownColumns.join(',')}`);
+      }
       if (bad.length) {
         console.error(`VERIFY FAILED: ${bad.join(', ')}`);
         process.exitCode = 1;
@@ -1507,6 +1393,8 @@ function main() {
       '--rollback-standalone-policy-activation-decision': 'standalone_policy_activation_decision_rollback',
       '--apply-standalone-route-org-isolation': 'standalone_route_org_isolation',
       '--rollback-standalone-route-org-isolation': 'standalone_route_org_isolation_rollback',
+      '--apply-standalone-rls-null-reject': 'standalone_rls_null_reject',
+      '--rollback-standalone-rls-null-reject': 'standalone_rls_null_reject_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

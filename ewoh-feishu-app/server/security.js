@@ -19,14 +19,24 @@
 //     "event": { ... }
 //   }
 //
-// 验签策略：
-//   - header.token 必须等于 FEISHU_VERIFICATION_TOKEN（配置）；
-//   - 若配置 FEISHU_ENCRYPT_KEY，则额外校验 X-Lark-Signature（可选增强）；
+// 验签策略（FS-001/002/003 修复后）：
+//   - header.token 必须等于 FEISHU_VERIFICATION_TOKEN（配置），
+//     常量时间比较 crypto.timingSafeEqual（FS-003）；
+//   - FEISHU_ENCRYPT_KEY 未配置时 fail-closed 直接拒绝并记录日志（FS-002，
+//     此前"未配置即放行"的降级路径已移除）；
+//   - 签名算法对照飞书开放平台事件订阅协议（URL 验证与事件推送同一规则）：
+//       X-Lark-Signature = hex( SHA256( timestamp + nonce + encrypt_key + body ) )
+//     其中 timestamp / nonce 取自请求头 X-Lark-Request-Timestamp /
+//     X-Lark-Request-Nonce 的原文，body 为**原始请求体字符串**（raw body），
+//     参与拼接的是请求体字节本身而非解析后的对象（FS-001：纳入 raw body）。
+//     签名以 hex 小写比较，使用 timingSafeEqual。
+//     （实现依据：飞书开放平台《事件订阅》文档公开的签名校验规则；本仓库
+//     测试环境无法访问真实飞书文档，按公开常识实现并在此标注依据。）
 //   - timestamp 必须位于 [now - FEISHU_WEBHOOK_TOLERANCE_SEC, now + tolerance]；
-//   - event_id / nonce 去重（内存滑动窗口 + SQLite 持久化可选项），防重放。
+//   - event_id / nonce 去重（内存滑动窗口），防重放。
 //
 // 说明：卡片回调 body 可能是 { open_id, action: {...} } 旧格式（当前代码支持），
-// 也可能是事件订阅信封。两种都做 token/时间/重放校验。
+// 也可能是事件订阅信封。两种都做 token/时间/签名/重放校验。
 
 const crypto = require('crypto');
 const dbm = require('./db');
@@ -72,7 +82,15 @@ function nowMs() {
   return Date.now();
 }
 
-/** 解析信封中的 timestamp（header.create_time / timestamp 字段）。 */
+// 常量时间字符串比较（长度不同直接 false，不泄露长度信息）
+function safeEqualStr(a, b) {
+  const ba = Buffer.from(String(a), 'utf8');
+  const bb = Buffer.from(String(b), 'utf8');
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+/** 解析信封中的 timestamp（header.create_time / timestamp 字段），返回 ms。 */
 function extractTimestamp(body) {
   const header = (body && body.header) || {};
   if (header.create_time) {
@@ -84,6 +102,20 @@ function extractTimestamp(body) {
     if (Number.isFinite(n)) return n * 1000; // 秒 → ms
   }
   return null;
+}
+
+/** 请求时间戳（ms）：优先 X-Lark-Request-Timestamp 请求头（飞书推送标准头，
+ * 秒/毫秒自适应），回退 body 内 create_time / timestamp 字段。 */
+function extractRequestTimestampMs(body, headers) {
+  const ht = headers && headers['x-lark-request-timestamp'];
+  if (ht != null && String(ht).trim() !== '') {
+    const n = Number(ht);
+    if (Number.isFinite(n) && n > 0) {
+      return n > 1e12 ? n : n * 1000; // 13 位按毫秒，其余按秒
+    }
+    return null;
+  }
+  return extractTimestamp(body);
 }
 
 function extractEventId(body) {
@@ -106,7 +138,9 @@ function isReplay(eventId) {
 /** 记录已成功处理的事件 id（重放窗口内防重放）。
  * v1.1.1 修复：仅业务处理成功后标记。此前"验证通过即标记"会导致
  * 业务失败（unknown action / already closed / not found）后 30 分钟内的
- * 合法重试被 WEBHOOK_REPLAY 401 拦截（应返回业务幂等结果而非 401）。 */
+ * 合法重试被 WEBHOOK_REPLAY 401 拦截（应返回业务幂等结果而非 401）。
+ * FS-005：调用方必须传 header.event_id（与 extractEventId 同源），
+ * 不得传业务 value.event_id（两键不一致会使内存重放保护失效）。 */
 function markReplayHandled(eventId) {
   if (!eventId) return;
   // 清理过期（保持窗口有界）
@@ -127,43 +161,23 @@ function markReplayHandled(eventId) {
   recentTimestamps.push({ ts: nowMs(), id: eventId });
 }
 
-/** 提取签名用时间戳（秒级字符串，飞书 HMAC 协议要求）。
- * 飞书规范：X-Lark-Signature = base64(hmac_sha256(encrypt_key, `${timestamp}${nonce}${encrypt_key}`))，
- * 其中 timestamp 为秒级 Unix 时间戳字符串（十位数字）。
- * v1.1.0 修复（D4）：旧代码用毫秒数参与 HMAC，配置 encrypt_key 时签名永远不匹配。
- */
-function extractSignatureTimestamp(body) {
-  const header = (body && body.header) || {};
-  // 优先：header.create_time（ISO 字符串）→ 转秒
-  if (header.create_time) {
-    const ms = Date.parse(header.create_time);
-    if (!Number.isNaN(ms)) return String(Math.floor(ms / 1000));
-  }
-  // 次优：body.timestamp（秒字符串，飞书事件订阅标准字段）
-  if (body && body.timestamp !== undefined && body.timestamp !== null) {
-    const n = Number(body.timestamp);
-    if (Number.isFinite(n)) return String(Math.floor(n)); // 已是秒，不再 ×1000
-  }
-  return null;
-}
-
-/** 校验签名（X-Lark-Signature = base64(hmac_sha256(encrypt_key, timestampSec + nonce + encrypt_key))）。 */
-function verifySignature(body, headers) {
+/** 校验签名（FS-001：飞书事件订阅协议）。
+ * X-Lark-Signature = hex( sha256( X-Lark-Request-Timestamp + X-Lark-Request-Nonce
+ *                                  + encrypt_key + rawBody ) )
+ * - timestamp / nonce 用请求头原文参与拼接（不猜测秒/毫秒，按飞书推送原样）；
+ * - rawBody 为原始请求体字符串（由 express.json verify 钩子挂到 req.rawBody）；
+ * - hex 小写、timingSafeEqual 比较。 */
+function verifySignature(rawBody, headers) {
   const encryptKey = getEncryptKey();
-  if (!encryptKey) return true; // 未配置 Encrypt Key 时依赖 token + timestamp（文档化降级）
-  const signature = headers['x-lark-signature'] || headers['X-Lark-Signature'];
-  if (!signature) return false;
-  const timestamp = extractSignatureTimestamp(body);
-  const nonce = (body && body.nonce) || (body && body.header && body.header.nonce) || '';
-  if (timestamp == null) return false;
-  const source = `${timestamp}${nonce}${encryptKey}`;
-  const expected = crypto
-    .createHmac('sha256', encryptKey)
-    .update(source)
-    .digest('base64');
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signature);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!encryptKey) return false; // fail-closed 由调用方先行拦截，双保险
+  const signature = headers['x-lark-signature'];
+  if (!signature || typeof signature !== 'string') return false;
+  const timestamp = headers['x-lark-request-timestamp'];
+  const nonce = headers['x-lark-request-nonce'];
+  if (timestamp == null || nonce == null || rawBody == null) return false;
+  const source = `${timestamp}${nonce}${encryptKey}${rawBody}`;
+  const expected = crypto.createHash('sha256').update(source, 'utf8').digest('hex');
+  return safeEqualStr(expected, String(signature).trim().toLowerCase());
 }
 
 /**
@@ -171,22 +185,29 @@ function verifySignature(body, headers) {
  * 任何修改业务状态的请求必须通过本校验。
  */
 function verifyWebhookRequest(req) {
-  const body = req.body || {};
-  const headers = req.headers || {};
+  const body = (req && req.body) || {};
+  const headers = (req && req.headers) || {};
   const now = nowMs();
 
-  // 1. token 校验（Verification Token）
+  // 1. token 校验（Verification Token，FS-003：常量时间比较）
   const expectedToken = getVerificationToken();
   if (!expectedToken) {
     return { ok: false, code: 'WEBHOOK_TOKEN_NOT_CONFIGURED', error: 'FEISHU_VERIFICATION_TOKEN 未配置，拒绝所有写操作 webhook' };
   }
   const headerToken = (body.header && body.header.token) || body.token;
-  if (!headerToken || headerToken !== expectedToken) {
+  if (!headerToken || !safeEqualStr(headerToken, expectedToken)) {
     return { ok: false, code: 'WEBHOOK_INVALID_TOKEN', error: 'invalid verification token' };
   }
 
-  // 2. timestamp 窗口校验
-  const ts = extractTimestamp(body);
+  // 2. Encrypt Key fail-closed（FS-002：未配置即拒绝，不再降级放行）
+  const encryptKey = getEncryptKey();
+  if (!encryptKey) {
+    console.error('[security] FEISHU_ENCRYPT_KEY 未配置：按 fail-closed 拒绝 webhook（FS-002），请配置后重试');
+    return { ok: false, code: 'WEBHOOK_ENCRYPT_KEY_NOT_CONFIGURED', error: 'FEISHU_ENCRYPT_KEY not configured (fail-closed)' };
+  }
+
+  // 3. timestamp 窗口校验（请求头 X-Lark-Request-Timestamp 优先）
+  const ts = extractRequestTimestampMs(body, headers);
   if (ts == null) {
     return { ok: false, code: 'WEBHOOK_MISSING_TIMESTAMP', error: 'missing timestamp' };
   }
@@ -195,12 +216,12 @@ function verifyWebhookRequest(req) {
     return { ok: false, code: 'WEBHOOK_EXPIRED', error: 'timestamp outside tolerance window' };
   }
 
-  // 3. 签名校验（Encrypt Key 已配置时）
-  if (!verifySignature(body, headers)) {
+  // 4. 签名校验（FS-001：sha256(ts + nonce + key + rawBody)，raw body 参与）
+  if (!verifySignature(req && req.rawBody, headers)) {
     return { ok: false, code: 'WEBHOOK_INVALID_SIGNATURE', error: 'invalid signature' };
   }
 
-  // 4. 重放保护（只检查不标记：标记延迟到业务成功后，避免失败重试被 401 拦截）
+  // 5. 重放保护（只检查不标记：标记延迟到业务成功后，避免失败重试被 401 拦截）
   const eventId = extractEventId(body);
   if (eventId && isReplay(eventId)) {
     return { ok: false, code: 'WEBHOOK_REPLAY', error: 'replayed request' };
@@ -209,7 +230,9 @@ function verifyWebhookRequest(req) {
   return { ok: true, eventId };
 }
 
-/** 记录一次 webhook 验证结果到审计表（失败也记录，便于溯源）。 */
+/** 记录一次 webhook 验证结果到审计表（失败也记录，便于溯源）。
+ * FS-013：客户端 IP 取 req.ip（需在 Express 配置 trust proxy 后由框架
+ * 解析 X-Forwarded-For；不再直接读取可伪造的原始 header）。 */
 function auditWebhook(db, req, result, action, eventId) {
   try {
     dbm.insertAudit(db, {
@@ -217,7 +240,7 @@ function auditWebhook(db, req, result, action, eventId) {
       actor_id: 'feishu-webhook',
       target_type: 'webhook',
       target_id: eventId || null,
-      detail: { ok: result.ok, code: result.code || null, ip: (req.headers && req.headers['x-forwarded-for']) || null },
+      detail: { ok: result.ok, code: result.code || null, ip: (req && req.ip) || null },
     });
   } catch (e) {
     console.error('[security] auditWebhook 失败:', e.message);
@@ -228,10 +251,11 @@ module.exports = {
   verifyWebhookRequest,
   auditWebhook,
   extractTimestamp,
-  extractSignatureTimestamp,
+  extractRequestTimestampMs,
   extractEventId,
   isReplay,
   markReplayHandled,
   getVerificationToken,
   getEncryptKey,
+  safeEqualStr,
 };

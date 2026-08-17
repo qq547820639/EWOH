@@ -520,6 +520,10 @@ export function WorkbenchListSection({
       setLoaded(items);
     } else if (dataPage === prevPageRef.current + 1) {
       setLoaded((current) => [...current, ...items]);
+    } else {
+      // CLI-207：跳页（非顺序下一页，如深链直达 page>1）→ 清空并以
+      // 当前页为基准重建（原实现不更新 loaded，列表停留在旧数据）。
+      setLoaded(items);
     }
     prevPageRef.current = dataPage;
   }, [listQuery.data, list, state.page]);

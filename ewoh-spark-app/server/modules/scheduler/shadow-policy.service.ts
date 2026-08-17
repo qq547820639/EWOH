@@ -1,9 +1,16 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { ewohSchedulingPolicy, ewohSchedulePlan } from '@server/database/schema';
 import type {
   PlanCompareResult,
@@ -45,31 +52,45 @@ export class ShadowPolicyService {
     @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
   ) {}
 
-  /** 将策略置为 SHADOW（DRAFT → SHADOW；ACTIVE 不可直接进 SHADOW——需先 DRAFT）。 */
+  /**
+   * 将策略置为 SHADOW（DRAFT → SHADOW；ACTIVE 不可直接进 SHADOW——需先 DRAFT）。
+   * NEST-115（2026-08-17）：策略读取/更新带 org 条件（跨租户 configVersion 404；
+   * configVersion 按 org 作用域递增，仅凭版本号会命中他租户行）。
+   */
   async setStatus(
     configVersion: number,
     status: SchedulingPolicyStatus,
     operator?: string,
+    ctx?: OrgContext,
   ): Promise<void> {
+    const orgScope = this.policyOrgScope(ctx);
     const [row] = await this.db
       .select()
       .from(ewohSchedulingPolicy)
-      .where(eq(ewohSchedulingPolicy.configVersion, configVersion))
+      .where(
+        orgScope
+          ? and(eq(ewohSchedulingPolicy.configVersion, configVersion), orgScope)
+          : eq(ewohSchedulingPolicy.configVersion, configVersion),
+      )
       .limit(1);
-    if (!row) throw new Error(`policy v${configVersion} not found`);
+    if (!row) throw new NotFoundException(`policy v${configVersion} not found`);
 
     if (row.active && status === 'SHADOW') {
-      throw new Error(
+      throw new ConflictException(
         `policy v${configVersion} is ACTIVE; cannot enter SHADOW directly (must DRAFT → SHADOW)`,
       );
     }
     if (status === 'ACTIVE') {
-      throw new Error('use PolicyActivationService.activate (gate + human approval) to activate');
+      throw new ConflictException('use PolicyActivationService.activate (gate + human approval) to activate');
     }
     await this.db
       .update(ewohSchedulingPolicy)
       .set({ status, updatedBy: operator ?? null, updatedAt: new Date() })
-      .where(eq(ewohSchedulingPolicy.configVersion, configVersion));
+      .where(
+        orgScope
+          ? and(eq(ewohSchedulingPolicy.configVersion, configVersion), orgScope)
+          : eq(ewohSchedulingPolicy.configVersion, configVersion),
+      );
     void operator;
   }
 
@@ -85,14 +106,23 @@ export class ShadowPolicyService {
     shadowPlan: SchedulingPlanV2;
     compare: PlanCompareResult | null;
   }> {
+    // NEST-115：策略读取带 org 条件（跨租户 shadow 版本 404）。
+    const orgScope = this.policyOrgScope(ctx);
     const [policyRow] = await this.db
       .select()
       .from(ewohSchedulingPolicy)
-      .where(eq(ewohSchedulingPolicy.configVersion, shadowPolicyVersion))
+      .where(
+        orgScope
+          ? and(
+              eq(ewohSchedulingPolicy.configVersion, shadowPolicyVersion),
+              orgScope,
+            )
+          : eq(ewohSchedulingPolicy.configVersion, shadowPolicyVersion),
+      )
       .limit(1);
-    if (!policyRow) throw new Error(`shadow policy v${shadowPolicyVersion} not found`);
+    if (!policyRow) throw new NotFoundException(`shadow policy v${shadowPolicyVersion} not found`);
     if (policyRow.status !== 'SHADOW') {
-      throw new Error(
+      throw new ConflictException(
         `policy v${shadowPolicyVersion} is not SHADOW (status=${policyRow.status}); shadow plan requires SHADOW policy`,
       );
     }
@@ -153,18 +183,46 @@ export class ShadowPolicyService {
     return { shadowPlan: shadow, compare };
   }
 
-  /** Shadow Plan 服务端 hard guard（供 plan.service 调用）：is_shadow plan 拒绝业务动作。 */
-  async guardShadowPlan(planId: string, action: 'approve' | 'dispatch' | 'reserve'): Promise<void> {
+  /**
+   * Shadow Plan 服务端 hard guard（供 plan.service 调用）：is_shadow plan 拒绝业务动作。
+   * NEST-115（2026-08-17）：plan 读取带 org 条件（orgId 提供时）。
+   */
+  async guardShadowPlan(
+    planId: string,
+    action: 'approve' | 'dispatch' | 'reserve',
+    orgId?: string | null,
+  ): Promise<void> {
     const [planRow] = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
+      .where(
+        orgId
+          ? and(
+              eq(ewohSchedulePlan.planId, planId),
+              or(
+                isNull(ewohSchedulePlan.orgId),
+                eq(ewohSchedulePlan.orgId, orgId),
+              ),
+            )
+          : eq(ewohSchedulePlan.planId, planId),
+      )
       .limit(1);
     if (planRow && planRow.isShadow) {
-      throw new Error(
+      throw new ConflictException(
         `SHADOW_PLAN_GUARD: shadow plan ${planId} cannot be ${action} (shadow plans are not dispatchable/reservable)`,
       );
     }
+  }
+
+  /** NEST-115：策略表 org 作用域条件（本 org + NULL 全局行；缺省 undefined）。 */
+  private policyOrgScope(ctx?: OrgContext) {
+    const orgId = ctx?.primaryOrgId?.trim();
+    return orgId
+      ? or(
+          eq(ewohSchedulingPolicy.orgId, orgId),
+          isNull(ewohSchedulingPolicy.orgId),
+        )
+      : undefined;
   }
 
   /**

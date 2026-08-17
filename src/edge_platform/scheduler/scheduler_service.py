@@ -23,6 +23,7 @@ from .models import (
     PLAN_PENDING_REVIEW,
     PLAN_SHADOW,
     TASK_DISPATCHED,
+    TASK_EXECUTING,
     Assignment,
     CandidateAssignment,
     ScheduleFeedback,
@@ -171,6 +172,11 @@ class SchedulerService:
           assignments/reservations）与持久化的 Edge 本地调度记录——云端 NestJS
           是唯一事实来源，本地状态一律失效，防止陈旧建议被继续使用；
         - 非 advisory（simulation）模式：仅清空内存（模拟数据无需保留）。
+
+        EDGE-115（2026-08-17 审计整改说明）：本方法删除持久化 plan 属 reconcile
+        语义的**显式例外**——它不是"正式写路径"（confirm/execute/replan），而是
+        云重连后对本地建议缓存的失效清理（P0-SCHED-OWNERSHIP 的核心动作），
+        因此不经过 _assert_writable；此处文档化该例外，防止被误读为绕过守卫。
         """
         self._requests.clear()
         self._plans.clear()
@@ -447,28 +453,41 @@ class SchedulerService:
         # 重新校验世界状态
         self._validate_world_state(plan, world_state_version)
         # 为每个 assignment 做预约（person/device 均在时间窗内唯一）
+        # EDGE-109：逐条预约中途冲突时反向释放已建预约（内存 + 持久化），
+        # 消除"部分预约残留导致资源被永久占用"的半提交状态。
         reservations = []
-        for assignment in plan.assignments:
-            end = assignment.planned_end or ""
-            for resource_id in (assignment.person_id, assignment.device_id):
-                if not resource_id:
-                    continue
-                if self.reservation_service.check_conflict(
-                    resource_id, assignment.planned_start, end
-                ):
-                    raise ReservationConflictError(
-                        f"资源 {resource_id} 在 {assignment.planned_start}~{end} 已被预约"
+        try:
+            for assignment in plan.assignments:
+                end = assignment.planned_end or ""
+                for resource_id in (assignment.person_id, assignment.device_id):
+                    if not resource_id:
+                        continue
+                    if self.reservation_service.check_conflict(
+                        resource_id, assignment.planned_start, end
+                    ):
+                        raise ReservationConflictError(
+                            f"资源 {resource_id} 在 {assignment.planned_start}~{end} 已被预约"
+                        )
+                    res = self.reservation_service.reserve(
+                        resource_id,
+                        getattr(assignment, "task_id", ""),
+                        plan_id,
+                        assignment.planned_start,
+                        end,
+                        end,
                     )
-                res = self.reservation_service.reserve(
-                    resource_id,
-                    getattr(assignment, "task_id", ""),
-                    plan_id,
-                    assignment.planned_start,
-                    end,
-                    end,
-                )
-                reservations.append(res)
-                self._persist_reservation(res)
+                    reservations.append(res)
+                    self._persist_reservation(res)
+        except Exception:
+            for res in reservations:
+                try:
+                    released = self.reservation_service.release(res.reservation_id)
+                    self._persist_reservation(released)  # 反向释放同步落库（status=released）
+                except Exception as e:  # noqa: BLE001 - 释放失败留痕不掩盖原始冲突
+                    logger.warning(
+                        "confirm 回滚释放预约 %s 失败: %s", res.reservation_id, e
+                    )
+            raise
         before = plan.to_dict()
         plan.status = PLAN_APPROVED
         plan.confirmed_at = now_iso()
@@ -545,6 +564,9 @@ class SchedulerService:
             raise IllegalStateError(
                 f"未经确认不得执行（当前状态：{plan.status}）"
             )
+        # EDGE-110：先做状态机校验再创建/持久化 assignments——
+        # 原实现先生成派工落库后校验，验证失败时派工已泄露到存储。
+        validate_plan_transition(plan.status, PLAN_DISPATCHED)
         assignments = []
         for ca in plan.assignments:
             assignment = Assignment(
@@ -570,7 +592,6 @@ class SchedulerService:
             )
             assignments.append(assignment)
         before = plan.to_dict()
-        validate_plan_transition(plan.status, PLAN_DISPATCHED)
         plan.status = PLAN_DISPATCHED
         plan.executed_at = now_iso()
         self._persist_plan(plan)
@@ -619,9 +640,11 @@ class SchedulerService:
         """
         self._assert_writable()
         plan = self._get_plan(plan_id)
+        # EDGE-117：Task 状态机（task.yaml canonical）无 executing_locked/locked
+        # 状态——冻结集合只取契约内的 executing（派工中不可移动的既成事实）。
         frozen = [
             a for a in self._assignments.values()
-            if getattr(a, "status", "") in ("executing", "executing_locked", "locked")
+            if getattr(a, "status", "") == TASK_EXECUTING
         ]
         tasks = [_serialize_task(t) for t in getattr(plan, "_all_tasks", [])]
         policy = {"request_id": plan.request_id, "policy_id": ""}

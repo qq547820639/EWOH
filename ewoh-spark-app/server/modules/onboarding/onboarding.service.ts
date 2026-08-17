@@ -73,8 +73,8 @@ interface GoldenResult {
 // 目标：可重复 init + 安全 clear，且绝不污染真实生产数据。
 //  - 所有样例数据都放在明确标记的「演示」工厂名（前缀）下；
 //  - init/clear 都必须在请求体携带 guard token，且 token 必须与
-//    EWOH_SAMPLE_FACTORY_TOKEN 环境变量匹配（未配置时在非生产环境允许
-//    内置开发 token，生产环境直接 BLOCKED）；
+//    EWOH_SAMPLE_FACTORY_TOKEN 环境变量匹配（NEST-636：未配置一律
+//    BLOCKED，无内置开发 token 后门）；
 //  - 真实数据库不可用时返回明确的 BLOCKED，绝不假装成功。
 
 /** 演示工厂名前缀，所有样例数据都以此为标识，便于安全、可重入地清理。 */
@@ -83,9 +83,12 @@ export const SAMPLE_FACTORY_PREFIX = '【演示】';
 /** guard token 环境变量名。 */
 export const SAMPLE_FACTORY_TOKEN_ENV = 'EWOH_SAMPLE_FACTORY_TOKEN';
 
-/** 非生产环境下的内置开发 token（生产环境必须显式配置，否则 BLOCKED）。 */
-export const SAMPLE_FACTORY_DEV_TOKEN = 'ewoh-demo-2026';
-
+/**
+ * NEST-636（2026-08-17 审计整改）：删除硬编码内置开发 token
+ * （ewoh-demo-2026，原先 NODE_ENV≠production 即可用——环境变量漏配时
+ * 任何人可 init/clear 样例工厂）。样例工厂操作必须显式配置
+ * EWOH_SAMPLE_FACTORY_TOKEN，未配置一律 BLOCKED（fail-closed）。
+ */
 export type SampleFactoryGuardReason =
   | 'GUARD_TOKEN_NOT_CONFIGURED'
   | 'GUARD_TOKEN_MISMATCH';
@@ -94,13 +97,11 @@ export type SampleFactoryBlockedReason =
   | SampleFactoryGuardReason
   | 'DATABASE_UNAVAILABLE';
 
-/** 解析应生效的 guard token。未配置且处于生产环境时返回 null（BLOCKED）。 */
+/** 解析应生效的 guard token。未显式配置时返回 null（BLOCKED）。 */
 export function resolveSampleFactoryGuardToken(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
-  const configured = env[SAMPLE_FACTORY_TOKEN_ENV]?.trim();
-  if (configured) return configured;
-  return env.NODE_ENV === 'production' ? null : SAMPLE_FACTORY_DEV_TOKEN;
+  return env[SAMPLE_FACTORY_TOKEN_ENV]?.trim() || null;
 }
 
 /** 校验 guard token（纯函数，便于单测）。 */

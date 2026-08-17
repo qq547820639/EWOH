@@ -8,18 +8,25 @@
 'use strict';
 
 import { createRequire } from 'module';
-const requireFromWs = createRequire('/Users/panhao/.workbuddy/binaries/node/workspace/package.json');
-const EmbeddedPostgres = requireFromWs('embedded-postgres').default || requireFromWs('embedded-postgres');
-
 import { execSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const ROOT = '/Volumes/Extra/CodeProj/EWOH';
-const PG_PORT = 15432;
+// SCR-003/025: 路径与 schema 参数化。
+// - ROOT 从脚本位置推导（不再硬编码开发者机器绝对路径）。
+// - embedded-postgres 依赖目录：优先 EWOH_EMBEDDED_PG_DIR，缺省回退 ~/.workbuddy（仓内未安装该依赖）。
+// - SCHEMA：优先 EWOH_SCHEMA env，缺省 public。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const EMBEDDED_PG_DIR = process.env.EWOH_EMBEDDED_PG_DIR || path.join(os.homedir(), '.workbuddy/binaries/node/workspace');
+const requireFromWs = createRequire(path.join(EMBEDDED_PG_DIR, 'package.json'));
+const EmbeddedPostgres = requireFromWs('embedded-postgres').default || requireFromWs('embedded-postgres');
+
+const PG_PORT = Number(process.env.EWOH_E2E_PG_PORT || 15432);
 const PG_DIR = '/tmp/ewoh-pg-verify';
 const DB_NAME = 'ewoh_verify';
-const SCHEMA = 'workspace_aadknm4yzbyds';
+const SCHEMA = process.env.EWOH_SCHEMA || 'public';
 const RUNNER = path.join(ROOT, 'db/runner/run_migrations.js');
 
 function run(cmd, env = {}) {
@@ -66,7 +73,7 @@ async function main() {
   );
   console.log('service_role ready');
 
-  const NODE = '/Users/panhao/.workbuddy/binaries/node/versions/22.22.2/bin/node';
+  const NODE = process.execPath;
 
   console.log('\n=== 2. apply 前置链（001 schema / 003 role / 004 domain / 005 / 006 scheduling / 009 / 010 / 011）===');
   run(`${NODE} ${RUNNER} --apply-standalone`);

@@ -209,11 +209,22 @@ export interface ImportPreview {
   error?: string;
 }
 
+/** CLI-539：导入文本大小上限（2MB，对单站点映射清单足够宽裕）。 */
+export const MAX_IMPORT_TEXT_LENGTH = 2 * 1024 * 1024;
+
 /** 解析一段待导入文本（JSON 对象或数组）。 */
 export function parseImportText(text: string): {
   records: Record<string, unknown>[];
   error?: string;
 } {
+  // CLI-539：限制导入文本长度——超大字符串的 JSON.parse 会长时间阻塞主线程
+  // （潜在 DoS 面），超过上限直接拒绝并提示。
+  if (text.length > MAX_IMPORT_TEXT_LENGTH) {
+    return {
+      records: [],
+      error: `导入文本超过大小上限（${Math.floor(MAX_IMPORT_TEXT_LENGTH / 1024 / 1024)}MB）`,
+    };
+  }
   try {
     const parsed: unknown = JSON.parse(text);
     if (Array.isArray(parsed)) {

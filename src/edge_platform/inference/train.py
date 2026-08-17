@@ -7,7 +7,8 @@
 按 manifest 人员分组取 train/val/test，断言三组人员无交集（人员泄漏直接报错退出）。
 流程：训练 → val 选 unknown 阈值 → test 评测（Macro-F1/每类 P-R-F1/混淆矩阵/
 unknown 率/2000 次 predict 延迟基准）→ 输出 model.json、metrics.json、
-eval_report.md、model_card.md；--register 写入 ModelRegistry 并 activate。
+eval_report.md、model_card.md；--register 写入 ModelRegistry（仅登记候选，
+不自动激活——EDGE-103：激活须人工执行 registry.activate）。
 版本号自 v0.1.0 起按 minor 自动递增。
 """
 
@@ -312,6 +313,9 @@ def run(argv=None):
     write_model_card(os.path.join(out_dir, "model_card.md"), ctx)
 
     if args.register:
+        # EDGE-103（2026-08-17 审计整改）：--register 仅登记候选版本，
+        # 不再自动 activate——激活（生效）必须人工显式执行（registry.activate
+        # 或 governance.ModelRegistry 审批链），训练 CLI 不得绕过生命周期。
         reg = ModelRegistry(args.out)
         reg.register(
             version,
@@ -322,7 +326,6 @@ def run(argv=None):
                 "dataset_version": model.dataset_version,
             },
         )
-        reg.activate(version)
 
     print(
         "模型 {} v{}：test Macro-F1={:.4f}（目标≥{:.2f}），unknown率={:.4f}，"
@@ -336,7 +339,7 @@ def run(argv=None):
             best_th,
             (f"{val_f1:.4f}") if val_f1 is not None else "N/A",
             out_dir,
-            "，已注册并激活" if args.register else "",
+            "，已注册（候选，未激活——激活须人工执行）" if args.register else "",
         )
     )
     return 0

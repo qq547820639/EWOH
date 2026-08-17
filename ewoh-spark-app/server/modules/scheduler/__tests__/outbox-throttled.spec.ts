@@ -19,14 +19,20 @@ interface Row {
   orgId?: string | null;
 }
 
-/** fake db：where 按注入的过滤函数模拟（真实 DB 的 eventType/entityId/status/createdAt 条件）。 */
+/**
+ * fake db：where 按注入的过滤函数模拟（真实 DB 的 eventType/entityId/status/createdAt 条件）。
+ * NESP-008（2026-08-17）：update 路径同样应用 whereFilter（此前恒返回 rows[0]，
+ * 无命中时 Object.assign(undefined) 崩溃且与真实 UPDATE ... WHERE 语义漂移）；
+ * select/update 共用同一过滤，模拟真实 WHERE 四条件。
+ */
 function makeOutbox(rows: Row[], whereFilter?: (r: Row) => boolean) {
   let seq = rows.length;
+  const applyFilter = () => rows.filter(whereFilter ?? (() => false));
   const db: any = {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () => rows.filter(whereFilter ?? (() => false)).slice(0, 1),
+          limit: async () => applyFilter().slice(0, 1),
         }),
       }),
     }),
@@ -34,9 +40,9 @@ function makeOutbox(rows: Row[], whereFilter?: (r: Row) => boolean) {
       set: (patch: any) => ({
         where: () => ({
           returning: async () => {
-            const row = rows[0];
-            Object.assign(row, patch);
-            return [row];
+            const matched = applyFilter();
+            for (const row of matched) Object.assign(row, patch);
+            return matched;
           },
         }),
       }),
@@ -59,7 +65,6 @@ function makeOutbox(rows: Row[], whereFilter?: (r: Row) => boolean) {
     }),
   };
   const svc = new OutboxService(db as never);
-  (svc as any).randomSuffix = () => 'x';
   return { svc, rows };
 }
 

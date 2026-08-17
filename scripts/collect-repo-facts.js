@@ -196,7 +196,9 @@ function workGraph() {
       gates: s.gateCount || 0,
       conflicts: (s.conflicts || []).length,
     };
-  } catch {
+  } catch (error) {
+    // SCR-042: 实时计算失败回退 state.json 旧值时必须显式告警（可能过期）。
+    console.warn(`workGraph: 实时计算失败，回退 state.json（数据可能过期）: ${error && error.message}`);
     const state = readJsonSafe('.codex/artifacts/state.json');
     const summary = state && state.work_graph_summary;
     return {
@@ -228,7 +230,11 @@ function openapiFacts() {
 }
 
 function databaseFacts() {
-  const manifest = readYamlSafe('release/ewoh-0.6.0-rc4/docs/delivery/release-manifest.yaml');
+  // SCR-013: release 目录按 version.json 动态解析，不再硬编码 ewoh-0.6.0-rc4。
+  const version = truth.readVersion();
+  const manifest = version
+    ? readYamlSafe(`release/ewoh-${version}/docs/delivery/release-manifest.yaml`)
+    : null;
   const db = manifest && manifest.contracts && manifest.contracts.database;
   return {
     managedTables: db && db.managed_tables ? db.managed_tables : 0,
@@ -248,7 +254,8 @@ function collect(opts) {
   const evidence = evidenceStats();
   const reportCounts = readReportTestCounts();
   const openapi = openapiFacts();
-  const liveOpenapi = `${openapi.controller}/${openapi.controller}`;
+  // SCR-012: 形如 "controller/spec"（控制器操作数/规格操作数），第二项此前误拼为 controller。
+  const liveOpenapi = `${openapi.controller}/${openapi.spec}`;
 
   // 报告缺失时以字符串哨兵 "not-run" 表示"尚未测量"，而非 JSON null：
   // schema 要求 testCounts.* 为 string，且哨兵如实反映"报告未生成"状态，

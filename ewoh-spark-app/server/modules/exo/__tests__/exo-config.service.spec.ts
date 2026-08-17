@@ -122,7 +122,14 @@ function createConfigDb(rows: Array<Record<string, unknown>> = []) {
         }),
       })),
     })),
-  };
+  } as Record<string, jest.Mock>;
+  // NEST-431：record/activateProfile 主事实与事件同事务——fake 直接同步执行回调。
+  db.transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+    cb({
+      insert: db.insert,
+      update: db.update,
+    }),
+  );
   const service = new ExoConfigService(db as never);
   return { rows: state.rows, events, service };
 }

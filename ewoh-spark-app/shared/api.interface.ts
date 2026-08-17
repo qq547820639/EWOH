@@ -740,8 +740,8 @@ export interface AllocationEvaluation {
   overall: 'red' | 'yellow' | 'green';
   /** 负荷均衡度 0-1 */
   loadBalance: number;
-  /** 技能匹配度 0-1 */
-  skillMatch: number;
+  /** 技能匹配度 0-1；无技能数据时 null（NEST-352：显式 unknown，不伪造 0.8） */
+  skillMatch: number | null;
   /** 电量续航评估 0-1 */
   batteryEndurance: number;
   /** 冲突列表 */
@@ -1035,8 +1035,9 @@ export interface TimelineEvent {
   timestamp: string;
   /** 执行者（用户 id/姓名 或 system）。 */
   actor: string;
-  /** 来源（workflow / alert / device / system / user / edge / evidence）。 */
-  source: TimelineSource | string;
+  /** 来源（workflow / alert / device / system / user / edge / evidence）。
+   * SH-010：封闭枚举，不再保留 | string 逃生舱。 */
+  source: TimelineSource;
   /** 对象类型（alert / workflow / task / device / schedule / approval ...）。 */
   objectType: string;
   /** 对象 ID。 */
@@ -1055,16 +1056,17 @@ export interface TimelineEvent {
   evidence: TimelineEvidenceRef[];
   /** 可信度摘要（结构对齐 credibility.ts CredibilityInfo）。 */
   credibility: TimelineCredibility;
-  /** 权限可见性。 */
-  permissionVisibility: PermissionVisibility | string;
+  /** 权限可见性。SH-010：封闭枚举，不再保留 | string 逃生舱。 */
+  permissionVisibility: PermissionVisibility;
   /** 展示用严重度（可选）。 */
   severity?: string;
   /** 展示用标题（可选）。 */
   title?: string;
   /** 展示用状态（可选）。 */
   status?: string;
-  /** 风险等级（low / medium / high，可选）。 */
-  riskLevel?: 'low' | 'medium' | 'high' | string;
+  /** 风险等级（low / medium / high / critical，可选）。
+   * SH-016：对齐 risk 契约 RISK_SEVERITY_LADDER（含 critical），封闭枚举。 */
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
   /** 扩展元数据（可选）。 */
   meta?: Record<string, unknown>;
 }
@@ -1179,6 +1181,11 @@ export interface OutboxEvent {
   entityType?: string;
   /** 该实体在触发时的版本（来自 world-state entityVersions），用于新鲜度/缺口判定。 */
   entityVersion?: number;
+  /**
+   * 租户归属（NEST-113/114，2026-08-17）：null = 全局事件（全部订阅者可见）；
+   * 非 null = 仅该 org 订阅者可见。outbox 行 org_id 的直读透传。
+   */
+  orgId?: string | null;
 }
 
 /** 调度实时事件（V2 SSE/流）。 */

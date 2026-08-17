@@ -16,7 +16,9 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { currentRequestContext } from '../../common/request-context';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -359,7 +361,15 @@ export class SchedulerPlanApplicationService {
           actor,
         );
       } catch (err) {
-        this.logger.warn(`execution record creation failed: ${(err as Error)?.message ?? err}`);
+        // NEST-156 修复（2026-08-17）：Execution 建档失败不再只有日志——响应
+        // 显式携带 executionSync 警告字段（dispatch 成功但无 Execution 跟踪
+        // 是可观测的降级状态，调用方需知情）。
+        const message = (err as Error)?.message ?? String(err);
+        this.logger.warn(`execution record creation failed: ${message}`);
+        (plan as SchedulingPlanV2 & { executionSync?: { ok: boolean; error: string } }).executionSync = {
+          ok: false,
+          error: message,
+        };
       }
     }
     return plan;
@@ -368,8 +378,10 @@ export class SchedulerPlanApplicationService {
   async comparePlansV2(
     planId: string,
     otherPlanId: string,
+    actor?: OrgContext,
   ): Promise<Record<string, unknown>> {
-    return this.planService.comparePlans(planId, otherPlanId);
+    // NEST-030：读取透传 actor（两个方案都经 ADR-071 租户守卫）。
+    return this.planService.comparePlans(planId, otherPlanId, actor);
   }
 
   /**
@@ -506,10 +518,24 @@ export class SchedulerPlanApplicationService {
       snapshotVersion: plan.snapshotVersion ?? '',
     });
 
-    // 3. 落库约束 + 审计（复用 ewoh_scheduling_constraint / ewoh_schedule_audit / appendAuditLog 模式）。
+    // NEST-157 修复（2026-08-17）：HTTP 路径强制 actor——空 primaryOrgId 的
+    // 覆盖约束会以 orgId=null 落库（被 RLS/policy 当全局约束放行给全部租户）。
+    if (!ctx.primaryOrgId && currentRequestContext()) {
+      throw new UnauthorizedException(
+        'org context required for plan overrides（NEST-157）',
+      );
+    }
+
+    const before = await this.planService.getPlan(planId, ctx);
+    let after: SchedulingPlanV2;
+    // NEST-128 修复（2026-08-17）：约束落库 + 审计 + replan 收进**同一事务**——
+    // 此前约束独立事务先提交，replan 失败时约束已落库（脏状态：方案未变但
+    // 约束已生效，下次任意 replan 会应用孤儿约束）。RequestDatabaseContext
+    // 嵌套复用同一事务（replan 内部事务加入外层）。
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
+        // 3. 落库约束 + 审计（复用 ewoh_scheduling_constraint / ewoh_schedule_audit / appendAuditLog 模式）。
         if (constraints.length > 0) {
           await this.db.insert(ewohSchedulingConstraint).values(
             constraints.map((c) => ({
@@ -533,6 +559,7 @@ export class SchedulerPlanApplicationService {
               active: true,
               createdBy: ctx.userId,
               // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
+              // NEST-157：HTTP 路径 ctx.primaryOrgId 必非空（上方守卫）。
               orgId: ctx.primaryOrgId || null,
             })),
           );
@@ -547,6 +574,13 @@ export class SchedulerPlanApplicationService {
           // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
           orgId: ctx.primaryOrgId || null,
         });
+
+        // 4. 触发重排（复用既有 V2 求解通道，不新建求解路径；同事务）。
+        after = await this.planService.replan(
+          planId,
+          { lockedConstraints: constraints, operator, reason: body.reason },
+          ctx,
+        );
       },
     );
 
@@ -561,23 +595,15 @@ export class SchedulerPlanApplicationService {
       reason: body.reason,
     });
 
-    // 4. 触发重排（复用既有 V2 求解通道，不新建求解路径）。
-    const before = await this.planService.getPlan(planId);
-    const after = await this.planService.replan(
-      planId,
-      { lockedConstraints: constraints, operator, reason: body.reason },
-      ctx,
-    );
-
     // 5. 返回 before/after 差异摘要。
     return {
-      planId: after.planId,
+      planId: after!.planId,
       operator,
       reason: body.reason,
       appliedConstraints: constraints,
       before,
-      after,
-      diff: this.buildPlanDiff(before, after),
+      after: after!,
+      diff: this.buildPlanDiff(before, after!),
       // T04 / P1-8：可选 preview 引用（纯计算预览 id；本流程无预览候选时置 null）。
       preview: null,
     };

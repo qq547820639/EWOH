@@ -52,7 +52,7 @@ auth_dml AS (
   FROM information_schema.role_table_grants g
   JOIN expected e ON e.name = g.table_name
   WHERE g.table_schema = 'public'
-    AND g.grantee IN ('authenticated', 'authenticated')
+    AND g.grantee IN ('authenticated')
     AND g.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
 ),
 anon_grants AS (

@@ -300,7 +300,7 @@ class RecordingServer(socketserver.ThreadingTCPServer):
 def _parse_args(argv):
     p = argparse.ArgumentParser(description="NXP1 v1.0 原始帧录制工具：监听 TCP 端口，按帧拆分保存真实设备字节流。")
     p.add_argument("--port", type=int, default=9001, help="监听 TCP 端口（默认 9001）")
-    p.add_argument("--host", default="0.0.0.0", help="监听地址（默认 0.0.0.0）")  # nosec B104 - configurable CLI default
+    p.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，EDGE-217：默认不暴露局域网）")  # nosec B104 - configurable CLI default
     p.add_argument("--output-dir", default="recordings", help="录制根目录（默认 recordings/）")
     p.add_argument("--session-id", default=None, help="会话 ID（默认用启动时间戳生成）")
     p.add_argument("--max-frames", type=int, default=0, help="最大录制帧数，0=无限（默认 0）")

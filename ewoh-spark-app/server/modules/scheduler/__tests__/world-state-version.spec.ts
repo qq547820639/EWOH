@@ -58,11 +58,11 @@ interface FakeDb {
 function makeDb(): FakeDb {
   const select = jest.fn(() => ({
     from: jest.fn((table: unknown) => {
-      // reservation / binding 带 where 过滤；其余表直接返回空数组。
-      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
-        return { where: () => Promise.resolve([]) };
-      }
-      return Promise.resolve([]);
+      // NEST-101（2026-08-17）：带 org ctx 的 collectState 对全部 5 张主表
+      // 追加 where（org 过滤）；reservation / binding 原有 where 保留——
+      // 统一提供 where 链（返回空集，本 spec 只测版本分配）。
+      void table;
+      return { where: () => Promise.resolve([]) };
     }),
   }));
   const execute = jest.fn().mockResolvedValue([{ last_seq: 1 }]);

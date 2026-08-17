@@ -45,8 +45,13 @@ describe('appContext 上下文读写', () => {
     expect(readAppContext(storage)).toEqual(DEFAULT_APP_CONTEXT);
   });
 
-  it('版本号与默认组织/环境符合约定', () => {
-    expect(APP_VERSION).toBe('0.6.0-rc4');
+  it('版本号与默认组织/环境符合约定（CLI-727：对齐 package.json，不再硬编码）', () => {
+    // CLI-727：断言与 package.json 的 version 一致（升级版本不再红），
+    // 并保持 semver 形状校验。
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pkgVersion = require('../../../package.json').version as string;
+    expect(APP_VERSION).toBe(pkgVersion);
+    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)?$/);
     expect(DEFAULT_APP_CONTEXT.orgId).toBe('default-factory');
     expect(DEFAULT_APP_CONTEXT.env).toBe('production');
   });

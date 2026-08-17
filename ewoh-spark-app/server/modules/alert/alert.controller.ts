@@ -7,13 +7,18 @@ export class AlertController {
   constructor(private readonly alertService: AlertService) {}
 
   @Get()
-  list() {
-    return this.alertService.listAlerts();
+  list(@Req() request: { userContext?: OrgContext }) {
+    // NEST-433：org 过滤。
+    return this.alertService.listAlerts(request.userContext);
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.alertService.getAlert(id);
+  get(
+    @Param('id') id: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    // NEST-433：org 守卫。
+    return this.alertService.getAlert(id, request.userContext);
   }
 
   @Post(':id/state')

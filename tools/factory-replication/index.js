@@ -53,9 +53,17 @@ function evaluateReport(report) {
       detail: `${notSatisfiedCount} not-satisfied`,
     },
     {
+      // TOOL-005: differencesResolvedRate 缺省即失败——复制报告必须显式声明
+      // 差异解决率，不再以 ?? 1 缺省通过。
       name: 'difference-resolution',
-      passed: (report.differencesResolvedRate ?? 1) >= 0.8,
-      detail: String(report.differencesResolvedRate ?? 1),
+      passed:
+        typeof report.differencesResolvedRate === 'number' &&
+        Number.isFinite(report.differencesResolvedRate) &&
+        report.differencesResolvedRate >= 0.8,
+      detail:
+        typeof report.differencesResolvedRate === 'number'
+          ? String(report.differencesResolvedRate)
+          : 'missing (must be declared explicitly)',
     },
   ];
   return {

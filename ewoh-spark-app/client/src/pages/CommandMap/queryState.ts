@@ -21,7 +21,9 @@ export function isStaleSince(
 }
 
 export function retryAll(queries: QueryStateSnapshot[]): void {
-  for (const query of queries) {
+  // CLI-729：仅重试失败查询——「全部重试」入口的语义是恢复错误项，
+  // 对健康查询发起 refetch 会浪费请求并打断其 loading 态。
+  for (const query of collectQueryErrors(queries)) {
     query.refetch();
   }
 }

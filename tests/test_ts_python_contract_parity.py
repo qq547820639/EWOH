@@ -136,3 +136,54 @@ def test_solver_status_values_match_contract():
     assert len(GOLDEN["solverStatusValues"]) == len(set(GOLDEN["solverStatusValues"]))
     # golden 样例的 response.solverStatus 必须落在契约集合内。
     assert GOLDEN["response"]["solverStatus"] in SOLVER_STATUSES
+
+
+# ---------------------------------------------------------------------------
+# EDGE-211（2026-08-17 审计整改）：parity 覆盖从 cpsat 扩展到核心领域契约。
+# 以下用例驱动 Python 校验器消费 contracts/*/test-vectors.json（跨语言共享
+# 向量，语义权威源为同名 schema.json）——TS 侧消费同一向量由共享契约层任务
+# （W6）接线；两侧对同一向量集全绿即构成 TS↔Python parity。
+# ---------------------------------------------------------------------------
+from edge_platform.contracts import maintenance as maintenance_contract  # noqa: E402
+from edge_platform.contracts import quality as quality_contract  # noqa: E402
+from edge_platform.contracts import reasoning_trace as reasoning_trace_contract  # noqa: E402
+from edge_platform.contracts import world as world_contract  # noqa: E402
+
+_CONTRACTS_ROOT = Path(__file__).parent.parent / "contracts"
+
+
+def _load_vectors(relative: str, collection: str) -> list[tuple[str, dict, object]]:
+    path = _CONTRACTS_ROOT / relative
+    with path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return [(v["name"], v["record"], v.get("expectError")) for v in data[collection]]
+
+
+def _run_vectors(vectors, validator, label):
+    """逐向量断言：expectError=None → 校验通过；否则返回错误列表。"""
+    for name, record, expect_error in vectors:
+        errors = validator(record)
+        if expect_error is None:
+            assert errors == [], f"{label}/{name}: 应通过，得到 {errors}"
+        else:
+            assert errors, f"{label}/{name}: 应拒绝（期望 {expect_error}），但通过了"
+
+
+def test_parity_world_state_vectors():
+    vectors = _load_vectors("world/test-vectors.json", "stateRecords")
+    _run_vectors(vectors, world_contract.validate_state_record, "world")
+
+
+def test_parity_maintenance_condition_vectors():
+    vectors = _load_vectors("maintenance/test-vectors.json", "conditions")
+    _run_vectors(vectors, maintenance_contract.validate_condition, "maintenance")
+
+
+def test_parity_quality_finding_vectors():
+    vectors = _load_vectors("quality/test-vectors.json", "findings")
+    _run_vectors(vectors, quality_contract.validate_finding, "quality")
+
+
+def test_parity_reasoning_trace_vectors():
+    vectors = _load_vectors("reasoning/reasoning-trace.test-vectors.json", "records")
+    _run_vectors(vectors, reasoning_trace_contract.validate_reasoning_trace, "reasoning_trace")

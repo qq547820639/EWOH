@@ -79,7 +79,13 @@ def main(argv=None):
         if not os.path.isfile(args.backup):
             print(f"[error] 备份文件不存在: {args.backup}", file=sys.stderr)
             return 3
-        path = mgr.restore(args.backup, args.db)
+        # EDGE-205：恢复目标限定在 --db 所在目录内（防任意路径覆写删除）
+        mgr = BackupManager(allowed_restore_root=os.path.dirname(os.path.realpath(args.db)))
+        try:
+            path = mgr.restore(args.backup, args.db)
+        except ValueError as exc:
+            print(f"[error] {exc}", file=sys.stderr)
+            return 2
         ok, msg = mgr.verify(path)
         print(f"[ok] 恢复完成: {path}")
         print(f"[verify] {'PASS' if ok else 'FAIL'} -> {msg}")

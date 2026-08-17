@@ -20,8 +20,38 @@ const KPIS = {
   solver: { heuristicFallbackRate: 0.12 },
 };
 
-function createLearningDb(rows: Array<Record<string, unknown>> = []) {
+/**
+ * NEST-333（2026-08-17 审计整改）：fake DB 的 where 子句必须被尊重——
+ * 聚合表（ewoh_ai_suggestion / ewoh_event / ewoh_scheduling_feedback）
+ * 按种子行的 orgId 过滤后聚合（原先恒返回硬编码行，org 过滤从未被测到）。
+ */
+function createLearningDb(
+  rows: Array<Record<string, unknown>> = [],
+  seeds: {
+    aiSuggestions?: Array<Record<string, unknown>>;
+    events?: Array<Record<string, unknown>>;
+    feedback?: Array<Record<string, unknown>>;
+  } = {},
+) {
   const state = { rows: [...rows] };
+  const aiSuggestions = seeds.aiSuggestions ?? [
+    { orgId: 'org-a', planContent: 'x' },
+    { orgId: 'org-a', planContent: null },
+    { orgId: 'org-a', planContent: 'y' },
+    { orgId: 'org-a', planContent: null },
+  ];
+  const eventRows = seeds.events ?? [
+    { orgId: 'org-a', severity: 'critical', status: 'handled' },
+    { orgId: 'org-a', severity: 'high', status: 'open' },
+    { orgId: 'org-a', severity: 'critical', status: 'handled' },
+    { orgId: 'org-a', severity: 'high', status: 'handled' },
+    { orgId: 'org-a', severity: 'critical', status: 'handled' },
+  ];
+  const feedbackRows = seeds.feedback ?? [
+    { orgId: 'org-a', overrideCount: 1 },
+    { orgId: 'org-a', overrideCount: 1 },
+    ...Array.from({ length: 8 }, () => ({ orgId: 'org-a', overrideCount: 0 })),
+  ];
   const events: Array<Record<string, unknown>> = [];
   let nextInsertError: unknown = null;
   function sqlText(query: unknown): string {
@@ -51,11 +81,20 @@ function createLearningDb(rows: Array<Record<string, unknown>> = []) {
       else collectOrgs(value, set, seen);
     }
   }
-  function matchesOrg(cond: unknown, row: Record<string, unknown>): boolean {
+  function orgsOf(cond: unknown): Set<string> {
     const set = new Set<string>();
     collectOrgs(cond, set, new WeakSet());
-    if (set.size === 0) return true;
-    return set.has(String(row.orgId));
+    return set;
+  }
+  function filterByOrg<T extends Record<string, unknown>>(cond: unknown, rows: T[]): T[] {
+    const orgs = orgsOf(cond);
+    if (orgs.size === 0) return rows;
+    return rows.filter((r) => orgs.has(String(r.orgId)));
+  }
+  function matchesOrg(cond: unknown, row: Record<string, unknown>): boolean {
+    const orgs = orgsOf(cond);
+    if (orgs.size === 0) return true;
+    return orgs.has(String(row.orgId));
   }
   function thenable(data: unknown[]): unknown {
     return {
@@ -64,6 +103,24 @@ function createLearningDb(rows: Array<Record<string, unknown>> = []) {
       limit: jest.fn(() => thenable(data.slice(0, 100))),
     };
   }
+  const aggregateFor = (table: unknown, cond: unknown): Record<string, number>[] => {
+    if (table === ewohAiSuggestion) {
+      const scoped = filterByOrg(cond, aiSuggestions);
+      const accepted = scoped.filter((r) => r.planContent != null).length;
+      return [{ total: scoped.length, accepted }];
+    }
+    if (table === ewohEvent) {
+      const scoped = filterByOrg(cond, eventRows);
+      const closed = scoped.filter((r) => String(r.status) !== 'open').length;
+      return [{ total: scoped.length, closed }];
+    }
+    if (table === ewohSchedulingFeedback) {
+      const scoped = filterByOrg(cond, feedbackRows);
+      const overrides = scoped.reduce((sum, r) => sum + Number(r.overrideCount ?? 0), 0);
+      return [{ total: scoped.length, overrides }];
+    }
+    return [];
+  };
   const db = {
     execute: jest.fn(async (query: unknown) => {
       const text = sqlText(query);
@@ -74,25 +131,20 @@ function createLearningDb(rows: Array<Record<string, unknown>> = []) {
     }),
     select: jest.fn(() => ({
       from: jest.fn((table: unknown) => {
-        // ADR-078：聚合面 drizzle 链式假库（学习三聚合返回聚合行形状）。
-        const aggregateRows: unknown[] =
-          table === ewohAiSuggestion
-            ? [{ total: 4, accepted: 3 }]
-            : table === ewohEvent
-              ? [{ total: 5, closed: 4 }]
-              : table === ewohSchedulingFeedback
-                ? [{ total: 10, overrides: 2 }]
-                : state.rows;
-        const q: any = Promise.resolve(aggregateRows);
+        const q: any = Promise.resolve(
+          table === ewohLearningEvaluation ? state.rows : aggregateFor(table, undefined),
+        );
         q.where = (cond: unknown) =>
           thenable(
             table === ewohLearningEvaluation
               ? state.rows.filter((r) => matchesOrg(cond, r))
-              : aggregateRows,
+              : aggregateFor(table, cond),
           );
         return q;
       }),
     })),
+    // NEST-345：事务透传（回调直接拿 db 句柄执行）。
+    transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(db)),
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: Record<string, unknown>) => {
         if (nextInsertError) {
@@ -143,7 +195,8 @@ describe('LearningService（NO-09a 持续学习回路）', () => {
     const record = result.record as Record<string, unknown>;
     expect(result.created).toBe(true);
     const metrics = record.metrics as Record<string, unknown>;
-    expect(metrics.recommendationAcceptanceRate).toBeCloseTo(0.75);
+    // 种子数据（NEST-333 fake）：4 建议 2 接受 = 0.5。
+    expect(metrics.recommendationAcceptanceRate).toBeCloseTo(0.5);
     expect(metrics.riskOutcomeRate).toBeCloseTo(0.8);
     expect(metrics.humanOverrideRate).toBeCloseTo(0.2);
     expect(metrics.planSuccessRate).toBeCloseTo(0.9);
@@ -163,7 +216,7 @@ describe('LearningService（NO-09a 持续学习回路）', () => {
     const metrics = (result.record as Record<string, unknown>).metrics as Record<string, unknown>;
     expect(metrics.planSuccessRate).toBeNull();
     expect(metrics.schedulerQualityRate).toBeNull();
-    expect(metrics.recommendationAcceptanceRate).toBeCloseTo(0.75);
+    expect(metrics.recommendationAcceptanceRate).toBeCloseTo(0.5);
   });
 
   it('幂等重评估：唯一键冲突回读既有行且不重发事件', async () => {
@@ -206,5 +259,39 @@ describe('LearningService（NO-09a 持续学习回路）', () => {
     expect(latest?.evalId).toBe('le:a');
     const list = await service.listEvaluations(ORG_A);
     expect(list.map((r) => r.evalId)).toEqual(['le:a']);
+  });
+
+  it('NEST-333: 聚合 where 尊重 orgId——他租户行不进入本租户指标', async () => {
+    const { service } = createLearningDb(
+      [],
+      {
+        // org-a：4 建议 2 接受、3 事件 2 结案、2 override/10 行；
+        // org-b：2 建议 2 接受、1 事件 1 结案、5 override/5 行（若泄漏将拉偏 org-a 指标）。
+        aiSuggestions: [
+          { orgId: ORG_A, planContent: 'x' },
+          { orgId: ORG_A, planContent: null },
+          { orgId: ORG_A, planContent: 'y' },
+          { orgId: ORG_A, planContent: null },
+          { orgId: ORG_B, planContent: 'z' },
+          { orgId: ORG_B, planContent: 'w' },
+        ],
+        events: [
+          { orgId: ORG_A, severity: 'critical', status: 'handled' },
+          { orgId: ORG_A, severity: 'high', status: 'open' },
+          { orgId: ORG_A, severity: 'critical', status: 'handled' },
+          { orgId: ORG_B, severity: 'critical', status: 'handled' },
+        ],
+        feedback: [
+          { orgId: ORG_A, overrideCount: 1 },
+          { orgId: ORG_A, overrideCount: 1 },
+          { orgId: ORG_B, overrideCount: 5 },
+        ],
+      },
+    );
+    const result = await service.evaluate({}, ORG_A);
+    const metrics = result.record.metrics as Record<string, unknown>;
+    expect(metrics.recommendationAcceptanceRate).toBeCloseTo(0.5); // 2/4，不含 org-b
+    expect(metrics.riskOutcomeRate).toBeCloseTo(2 / 3); // 不含 org-b 事件
+    expect(metrics.humanOverrideRate).toBeCloseTo(1); // 2/2，不含 org-b 的 5
   });
 });

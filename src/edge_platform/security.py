@@ -74,18 +74,36 @@ class _RateLimiter:
 
     每个 IP 维护一个时间戳队列，每次 ``check`` 清理窗口外过期样本后判断是否
     超限；未超限则记录本次请求时间戳。
+    EDGE-016（2026-08-17 审计整改）：非活跃 IP 的空/全过期桶周期性淘汰
+    （超过 ``_MAX_BUCKETS`` 个桶时清扫），字典不再按 IP 无界增长。
     """
+
+    # 桶数量软上限：超过后触发一次清扫（淘汰空桶与全过期桶）
+    _MAX_BUCKETS = 4096
 
     def __init__(self, max_per_minute: int = 60, window_sec: float = 60.0):
         self.max = int(max_per_minute)
         self.window_sec = float(window_sec)
         self._buckets: dict[str, deque] = {}
 
+    def _sweep(self, now: float) -> None:
+        """淘汰空桶与窗口外全过期桶（调用方需已持有桶字典操作权）。"""
+        cutoff = now - self.window_sec
+        stale = [
+            ip
+            for ip, bucket in self._buckets.items()
+            if not bucket or bucket[-1] < cutoff
+        ]
+        for ip in stale:
+            self._buckets.pop(ip, None)
+
     def check(self, ip: str) -> bool:
         """返回 True 表示允许通过，False 表示已达上限。"""
         if not ip:
             ip = "unknown"
         now = time.monotonic()
+        if len(self._buckets) > self._MAX_BUCKETS:
+            self._sweep(now)
         bucket = self._buckets.get(ip)
         if bucket is None:
             bucket = deque()

@@ -25,7 +25,9 @@ import {
 export type SearchTriggerProps = {
   size?: ComboboxSize;
   placeholder?: string;
-  maxTagCount?: number | 'responsive';
+  /** CLI-323：仅支持数字上限（超出部分折叠为 +N 徽标）。原先声明的
+   * 'responsive'（按容器宽度自适应）从未实现，已从类型中移除。 */
+  maxTagCount?: number;
   maxTagTextLength?: number;
   tagClosable?: boolean;
   classNames?: ClassNamesConfig;
@@ -82,7 +84,6 @@ export const SearchTrigger = ({
       return selectedArray.slice(0, maxTagCount);
     }
 
-    // TODO: responsive 模式需要根据容器宽度计算
     return selectedArray;
   };
 

@@ -10,7 +10,8 @@ import {
   ewohSchedulePlan,
   ewohScheduleAudit,
 } from '@server/database/schema';
-import { eq, desc, and, sql, gte, inArray, or, isNull } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, inArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type {
   PlayerRole,
   PlayerRoleInfo,
@@ -49,9 +50,32 @@ export class GamificationService {
 
   // ===== G3.1 玩家角色系统 =====
 
-  getRole(): PlayerRoleInfo {
-    const role = (process.env.EWOH_PLAYER_ROLE ?? 'shift_leader') as PlayerRole;
-    const playerName = process.env.EWOH_PLAYER_NAME ?? '当前用户';
+  /**
+   * NEST-351（2026-08-17 审计整改）：玩家角色从认证上下文推导（原先读
+   * EWOH_PLAYER_ROLE 环境变量，全实例单角色——所有用户看到同一角色）。
+   * RBAC 角色 → 指挥地图玩家角色映射：global_admin→厂长、
+   * dispatcher/workshop_lead/safety_admin→车间主任、其余→班组长。
+   */
+  getRole(actor?: OrgContext): PlayerRoleInfo {
+    const rbacRole =
+      Array.isArray(actor?.roles) && actor!.roles!.length > 0
+        ? actor!.roles![0]!
+        : actor?.role ?? '';
+    const playerName =
+      actor?.userId ?? process.env.EWOH_PLAYER_NAME ?? '当前用户';
+
+    let role: PlayerRole;
+    if (rbacRole === 'global_admin') {
+      role = 'factory_manager';
+    } else if (
+      rbacRole === 'dispatcher' ||
+      rbacRole === 'workshop_lead' ||
+      rbacRole === 'safety_admin'
+    ) {
+      role = 'workshop_director';
+    } else {
+      role = 'shift_leader';
+    }
 
     const roleMap: Record<PlayerRole, { roleName: string; visibleLevels: string[]; permissions: string[] }> = {
       shift_leader: {
@@ -89,7 +113,7 @@ export class GamificationService {
       },
     };
 
-    const info = roleMap[role] ?? roleMap.shift_leader;
+    const info = roleMap[role];
     return {
       role,
       roleName: info.roleName,
@@ -97,6 +121,21 @@ export class GamificationService {
       permissions: info.permissions,
       playerName,
     };
+  }
+
+  /**
+   * NEST-330（2026-08-17 审计整改）：写路径强制租户上下文（原先
+   * orgId ?? null 回退——NULL 行被所有租户可见）。global_admin 用其
+   * primaryOrgId 归属（不再写 NULL 全局行）。
+   */
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: gamification write operations require tenant context',
+      );
+    }
+    return orgId;
   }
 
   // ===== G3.2 资源分配 =====
@@ -109,6 +148,7 @@ export class GamificationService {
       if (!req.allocations || req.allocations.length === 0) {
         throw new BadRequestException('allocations is required');
       }
+      const orgId = this.requireOrgId(actor);
 
       const operator = req.operator ?? 'supervisor';
       const planId = `ALLOC-${Date.now()}-${this.randomSuffix(4)}`;
@@ -120,11 +160,17 @@ export class GamificationService {
       const allocatedEntityIds = req.allocations.map((a) => a.entityId);
 
       // 1. 冲突检测：人员离线（ewoh_device.device_id = entityId 且 online=false）
+      // NEST-310：设备与实体查询带 org 谓词（防跨租户实体被改绑）。
       const deviceRows = allocatedEntityIds.length
         ? await this.db
             .select()
             .from(ewohDevice)
-            .where(inArray(ewohDevice.deviceId, allocatedEntityIds))
+            .where(
+              and(
+                inArray(ewohDevice.deviceId, allocatedEntityIds),
+                eq(ewohDevice.orgId, orgId),
+              ),
+            )
         : [];
 
       const offlineSet = new Set(deviceRows.filter((d) => d.online === false).map((d) => d.deviceId));
@@ -132,7 +178,7 @@ export class GamificationService {
         deviceRows.map((d) => [d.deviceId, d.batteryPct ?? 100]),
       );
 
-      // 2. 加载已分配人员最近 1h 的平均负荷（按 deviceId 聚合）
+      // 2. 加载已分配人员最近 1h 的平均负荷（按 deviceId 聚合；org 过滤）
       const loadRows = allocatedEntityIds.length
         ? await this.db
             .select({
@@ -143,6 +189,7 @@ export class GamificationService {
             .where(
               and(
                 inArray(ewohTelemetry.deviceId, allocatedEntityIds),
+                eq(ewohTelemetry.orgId, orgId),
                 gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
               ),
             )
@@ -150,7 +197,8 @@ export class GamificationService {
         : [];
       const loadByDevice = new Map<string, number>(loadRows.map((r) => [r.deviceId, r.avgLoad ?? 0]));
 
-      // 3. 逐条执行分配（更新 ewoh_spatial_entity.parent_id = targetId）
+      // 3. 逐条执行分配（更新 ewoh_spatial_entity.parent_id = targetId；
+      //    NEST-310：update where 带 org 谓词，跨租户实体 0 行命中=失败留痕）。
       for (const alloc of req.allocations) {
         if (offlineSet.has(alloc.entityId)) {
           conflicts.push(`实体 ${alloc.entityId} 关联设备离线，无法分配`);
@@ -163,10 +211,19 @@ export class GamificationService {
           continue;
         }
         try {
-          await this.db
+          const updated = await this.db
             .update(ewohSpatialEntity)
             .set({ parentId: alloc.targetId })
-            .where(eq(ewohSpatialEntity.entityId, alloc.entityId));
+            .where(
+              and(
+                eq(ewohSpatialEntity.entityId, alloc.entityId),
+                eq(ewohSpatialEntity.orgId, orgId),
+              ),
+            )
+            .returning({ entityId: ewohSpatialEntity.entityId });
+          if (!updated || updated.length === 0) {
+            throw new Error('实体不存在或非本租户');
+          }
           allocationResults.push({
             entityId: alloc.entityId,
             targetId: alloc.targetId,
@@ -188,7 +245,8 @@ export class GamificationService {
         .map((a) => loadByDevice.get(a.entityId))
         .filter((v): v is number => typeof v === 'number');
       const loadBalance = this.computeStdDevNormalized(loadScores); // 0-1，越高越均衡
-      const skillMatch = 0.8; // 暂无技能数据，默认 0.8
+      // NEST-352：无技能数据 → null（显式 unknown，不伪造 0.8）。
+      const skillMatch: number | null = null;
 
       const batteryValues = req.allocations
         .map((a) => batteryByDevice.get(a.entityId))
@@ -244,9 +302,8 @@ export class GamificationService {
           conflicts,
         } as Record<string, unknown>,
         reason: req.reason ?? `资源分配 ${req.allocations.length} 项，综合评估 ${overall}`,
-        // ADR-071（NO-13v）：方案行租户归属（写 org 行由请求级 GUC 满足 RLS WITH CHECK；
-        // 无上下文退 NULL 与 persistPlan 语义一致）。
-        orgId: actor?.primaryOrgId ?? null,
+        // NEST-330：方案行显式租户归属（不再回退 NULL 全局可见行）。
+        orgId,
         createdAt: now,
       });
 
@@ -260,9 +317,8 @@ export class GamificationService {
           operator,
           reason: req.reason ?? `资源分配 ${req.allocations.length} 项`,
           createdAt: now,
-          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
-orgId: actor?.primaryOrgId ?? null,
-
+          // NEST-330：audit 行显式归属（不再回退 NULL）。
+          orgId,
         })
         .returning();
 
@@ -296,6 +352,8 @@ orgId: actor?.primaryOrgId ?? null,
       const operator = req.operator ?? 'supervisor';
       const planId = `ORCH-${Date.now()}-${this.randomSuffix(4)}`;
       const now = new Date();
+      // NEST-330：编排写路径强制租户上下文。
+      const orgId = this.requireOrgId(actor);
 
       // 1. 查询已分配工位最近 1h 平均占用，作为节拍推算依据（数据驱动，而非随机）
       const workstationIds = req.nodes
@@ -423,8 +481,8 @@ orgId: actor?.primaryOrgId ?? null,
           assignedEntities,
         } as Record<string, unknown>,
         reason: `工单 ${req.orderId} 编排 ${nodes.length} 道工序，瓶颈节拍 ${bottleneckTakt.toFixed(1)}s，预计完成 ${estimatedCompletionSec}s`,
-        // ADR-071（NO-13v）：方案行租户归属（与 allocateResources 同语义）。
-        orgId: actor?.primaryOrgId ?? null,
+        // NEST-330：方案行显式租户归属。
+        orgId,
         createdAt: now,
       });
 
@@ -437,9 +495,8 @@ orgId: actor?.primaryOrgId ?? null,
           action: 'orchestrate',
           operator,
           reason: `工单 ${req.orderId} 任务编排`,
-          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
-orgId: actor?.primaryOrgId ?? null,
-
+          // NEST-330：audit 行显式归属。
+          orgId,
           createdAt: now,
         })
         .returning();
@@ -493,10 +550,18 @@ orgId: actor?.primaryOrgId ?? null,
 
       let conflicts: string[] = [];
       if (entityIds.length > 0) {
+        // NEST-309 配套：冲突检测设备查询带 org 过滤（跨租户设备不进冲突判定）。
+        const dispatchOrgCond = actor?.isGlobalAdmin
+          ? undefined
+          : eq(ewohDevice.orgId, this.requireOrgId(actor));
         const deviceRows = await this.db
           .select({ deviceId: ewohDevice.deviceId, online: ewohDevice.online, workerName: ewohDevice.workerName })
           .from(ewohDevice)
-          .where(inArray(ewohDevice.deviceId, entityIds));
+          .where(
+            dispatchOrgCond
+              ? and(inArray(ewohDevice.deviceId, entityIds), dispatchOrgCond)
+              : inArray(ewohDevice.deviceId, entityIds),
+          );
         conflicts = deviceRows
           .filter((d) => d.online === false)
           .map((d) => `设备 ${d.workerName ?? d.deviceId} 离线，无法下发`);
@@ -515,9 +580,8 @@ orgId: actor?.primaryOrgId ?? null,
               ? `下发冲突：${conflicts.join('; ')}`
               : req.executionNote ?? `方案下发执行`,
           createdAt: now,
-          // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
-orgId: actor?.primaryOrgId ?? null,
-
+          // NEST-330：audit 行显式归属（actor org，缺省取方案行 org，不回退 NULL）。
+          orgId: actor?.primaryOrgId ?? existing.orgId ?? null,
         })
         .returning();
 
@@ -557,13 +621,19 @@ orgId: actor?.primaryOrgId ?? null,
 
   // ===== G3.6 外骨骼反馈 =====
 
-  async sendExoFeedback(deviceId: string, req: ExoFeedbackRequest): Promise<ExoFeedbackResult> {
+  async sendExoFeedback(
+    deviceId: string,
+    req: ExoFeedbackRequest,
+    actor?: OrgContext,
+  ): Promise<ExoFeedbackResult> {
     try {
-      // 1. 校验设备存在
+      // NEST-311：设备按 (orgId, deviceId) 定位——跨租户设备不可注入反馈。
+      const orgId = this.requireOrgId(actor);
+      // 1. 校验设备存在（本租户）
       const [device] = await this.db
         .select()
         .from(ewohDevice)
-        .where(eq(ewohDevice.deviceId, deviceId))
+        .where(and(eq(ewohDevice.deviceId, deviceId), eq(ewohDevice.orgId, orgId)))
         .limit(1);
 
       if (!device) {
@@ -585,7 +655,7 @@ orgId: actor?.primaryOrgId ?? null,
         };
       }
 
-      // 3. 写入事件 ewoh_event
+      // 3. 写入事件 ewoh_event（NEST-311：显式 orgId）
       const priority = req.priority ?? 'normal';
       const severityMap: Record<string, string> = {
         critical: 'L3',
@@ -607,6 +677,7 @@ orgId: actor?.primaryOrgId ?? null,
         status: 'open',
         createdAt: now,
         sourceType: 'simulated',
+        orgId,
         evidenceJson: {
           type: req.type,
           tactilePattern: req.tactilePattern ?? null,
@@ -632,11 +703,17 @@ orgId: actor?.primaryOrgId ?? null,
 
   // ===== G3.7 大脑推理建议 =====
 
-  /** LLM 增强结果的进程内缓存：先返回规则建议，LLM 异步增强后回写覆盖。 */
-  private brainCache: BrainSuggestion[] | null = null;
-  private brainCacheAt = 0;
-  /** 标记当前是否有后台 LLM 增强正在执行（供前端展示「增强中」状态）。 */
-  private brainEnhancing = false;
+  /**
+   * LLM 增强结果的进程内缓存：先返回规则建议，LLM 异步增强后回写覆盖。
+   * NEST-308（2026-08-17 审计整改）：缓存按 org 分桶（原先单实例变量——
+   * A 租户的 LLM 增强结果会被 B 租户读到，跨租户建议泄漏）。
+   */
+  private readonly brainCacheByOrg = new Map<
+    string,
+    { suggestions: BrainSuggestion[]; cachedAt: number }
+  >();
+  /** 各 org 是否有后台 LLM 增强正在执行（供前端展示「增强中」状态）。 */
+  private readonly brainEnhancingOrgs = new Set<string>();
 
   /**
    * 大脑建议（G3.7）。
@@ -646,24 +723,26 @@ orgId: actor?.primaryOrgId ?? null,
    */
   async getBrainSuggestions(actor?: OrgContext): Promise<BrainSuggestion[]> {
     try {
-      // 1. 先构造规则建议（毫秒级，不依赖 LLM）
-      const suggestions = await this.buildRuleSuggestions();
+      const orgId = this.requireOrgId(actor);
+      // 1. 先构造规则建议（毫秒级，不依赖 LLM；NEST-309：聚合带 org 过滤）
+      const suggestions = await this.buildRuleSuggestions(actor);
 
-      // 2. 若已有较新的 LLM 增强缓存，直接返回增强结果
+      // 2. 若已有较新的 LLM 增强缓存（本 org 桶），直接返回增强结果
       const cacheTtlMs = 10 * 60 * 1000;
-      if (this.brainCache && Date.now() - this.brainCacheAt < cacheTtlMs) {
+      const cached = this.brainCacheByOrg.get(orgId);
+      if (cached && Date.now() - cached.cachedAt < cacheTtlMs) {
         this.logger.log(
-          `getBrainSuggestions serving ${this.brainCache.length} cached (LLM) suggestions`,
+          `getBrainSuggestions serving ${cached.suggestions.length} cached (LLM) suggestions (org=${orgId})`,
         );
-        return this.attachPlanIds(this.brainCache, actor);
+        return this.attachPlanIds(cached.suggestions, actor);
       }
 
-      // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存
-      void this.enrichBrainSuggestionsWithLlmAsync(suggestions);
+      // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存（本 org 桶）
+      void this.enrichBrainSuggestionsWithLlmAsync(orgId, suggestions);
 
       this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
       return this.attachPlanIds(
-        suggestions.map((s) => ({ ...s, enhancing: this.brainEnhancing })),
+        suggestions.map((s) => ({ ...s, enhancing: this.brainEnhancingOrgs.has(orgId) })),
         actor,
       );
     } catch (error) {
@@ -692,11 +771,10 @@ orgId: actor?.primaryOrgId ?? null,
         inArray(ewohSchedulePlan.strategy, strategies),
         inArray(ewohSchedulePlan.status, ['proposed', 'confirmed']),
       ];
-      // ADR-071（NO-13v）：建议关联方案只读本租户（org 匹配或 NULL 存量行）。
-      if (actor) {
-        conditions.push(
-          or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, actor.primaryOrgId)),
-        );
+      // NEST-330：建议关联方案只读本租户（global_admin 放行；不再
+      // or(isNull(orgId)) 放行 NULL 存量行——NULL 行对所有租户可见）。
+      if (!actor?.isGlobalAdmin) {
+        conditions.push(eq(ewohSchedulePlan.orgId, this.requireOrgId(actor)));
       }
       const rows = await this.db
         .select({
@@ -771,16 +849,17 @@ orgId: actor?.primaryOrgId ?? null,
       operator,
       reason: `采纳大脑建议：${body.title}`,
       createdAt: new Date(),
-      // ADR-075：audit 行归属注入（001 ewoh_org_visible RLS 对齐）。
-      orgId: actor?.primaryOrgId ?? null,
+      // NEST-330：audit 行显式归属（不回退 NULL）。
+      orgId: this.requireOrgId(actor),
     });
 
     this.logger.log(`applyBrainSuggestion planId=${planId} strategy=${strategy} operator=${operator}`);
     return { planId, planName, strategy, status: plan.status };
   }
 
-  /** 基于实时数据构造规则建议（不调用 LLM）。 */
-  private async buildRuleSuggestions(): Promise<BrainSuggestion[]> {
+  /** 基于实时数据构造规则建议（不调用 LLM）。NEST-309：聚合查询带 org 过滤。 */
+  private async buildRuleSuggestions(actor?: OrgContext): Promise<BrainSuggestion[]> {
+    const orgId = this.requireOrgId(actor);
     // 1. 查询最近 1h 遥测：按 deviceId 分组的平均负荷
     const telemetryRows = await this.db
       .select({
@@ -789,20 +868,25 @@ orgId: actor?.primaryOrgId ?? null,
         avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
       })
       .from(ewohTelemetry)
-      .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+      .where(
+        and(
+          eq(ewohTelemetry.orgId, orgId),
+          gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+        ),
+      )
       .groupBy(ewohTelemetry.deviceId);
 
     // 2. 查询未结事件
     const openEvents = await this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.status, 'open'));
+      .where(and(eq(ewohEvent.status, 'open'), eq(ewohEvent.orgId, orgId)));
 
     // 3. 查询低电量设备
     const lowBatteryDevices = await this.db
       .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
       .from(ewohDevice)
-      .where(sql`${ewohDevice.batteryPct} < 20`);
+      .where(and(sql`${ewohDevice.batteryPct} < 20`, eq(ewohDevice.orgId, orgId)));
 
     const suggestions: BrainSuggestion[] = [];
 
@@ -882,16 +966,18 @@ orgId: actor?.primaryOrgId ?? null,
     }));
   }
 
-  /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议）。 */
+  /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议；
+   * NEST-308/309：按 org 分桶 + 聚合查询带 org 过滤）。 */
   private async enrichBrainSuggestionsWithLlmAsync(
+    orgId: string,
     fallback: BrainSuggestion[],
   ): Promise<void> {
-    // 竞态守卫：已有增强在执行时直接跳过，避免前端每次轮询重复触发
-    if (this.brainEnhancing) {
-      this.logger.log('getBrainSuggestions 增强进行中，跳过本次触发');
+    // 竞态守卫：该 org 已有增强在执行时直接跳过，避免前端每次轮询重复触发
+    if (this.brainEnhancingOrgs.has(orgId)) {
+      this.logger.log(`getBrainSuggestions 增强进行中，跳过本次触发 (org=${orgId})`);
       return;
     }
-    this.brainEnhancing = true;
+    this.brainEnhancingOrgs.add(orgId);
     try {
       const telemetryRows = await this.db
         .select({
@@ -900,30 +986,34 @@ orgId: actor?.primaryOrgId ?? null,
           avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
         })
         .from(ewohTelemetry)
-        .where(gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+        .where(
+          and(
+            eq(ewohTelemetry.orgId, orgId),
+            gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+          ),
+        )
         .groupBy(ewohTelemetry.deviceId);
       const openEvents = await this.db
         .select()
         .from(ewohEvent)
-        .where(eq(ewohEvent.status, 'open'));
+        .where(and(eq(ewohEvent.status, 'open'), eq(ewohEvent.orgId, orgId)));
       const lowBatteryDevices = await this.db
         .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
         .from(ewohDevice)
-        .where(sql`${ewohDevice.batteryPct} < 20`);
+        .where(and(sql`${ewohDevice.batteryPct} < 20`, eq(ewohDevice.orgId, orgId)));
 
       const enriched = await this.enrichBrainSuggestionsWithLlm(
         fallback,
         { telemetryRows, openEvents, lowBatteryDevices },
       );
       if (enriched && enriched.length > 0) {
-        this.brainCache = enriched;
-        this.brainCacheAt = Date.now();
-        this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions`);
+        this.brainCacheByOrg.set(orgId, { suggestions: enriched, cachedAt: Date.now() });
+        this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions (org=${orgId})`);
       }
     } catch (error) {
       this.logger.warn(`getBrainSuggestions 异步增强失败：${String(error)}`);
     } finally {
-      this.brainEnhancing = false;
+      this.brainEnhancingOrgs.delete(orgId);
     }
   }
 
@@ -1017,9 +1107,7 @@ orgId: actor?.primaryOrgId ?? null,
   }
 
   private randomSuffix(len: number): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let s = '';
-    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return s;
+    // NEST-353：ID 后缀密码学化（Math.random 同秒碰撞可预测）。
+    return randomUUID().replace(/-/g, '').slice(0, len);
   }
 }

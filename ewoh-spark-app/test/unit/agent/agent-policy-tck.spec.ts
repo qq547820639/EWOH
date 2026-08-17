@@ -129,7 +129,14 @@ type Expected =
   | { kind: 'throw'; match: RegExp }
   | { kind: 'delegated' };
 
-const TABLE: Array<{ name: string; manifest: Record<string, unknown>; command: string; expect: Expected }> = [
+const TABLE: Array<{
+  name: string;
+  manifest: Record<string, unknown>;
+  command: string;
+  expect: Expected;
+  /** NEST-329：budget 检查改为服务端累计计数——先执行 N 次耗尽预算再断言。 */
+  primeExecutions?: number;
+}> = [
   {
     name: 'L1 建议型：propose_plan 一律人审',
     manifest: makeManifest(),
@@ -193,13 +200,16 @@ const TABLE: Array<{ name: string; manifest: Record<string, unknown>; command: s
     expect: { kind: 'throw', match: /command_not_allowed:dispatch_task/ },
   },
   {
-    name: 'budget 超步数 fail-closed 拒绝',
+    name: 'budget 超步数 fail-closed 拒绝（NEST-329 服务端累计计数）',
     manifest: makeManifest({
       role: 'Logistics',
       approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: [] },
+      budget: { maxSteps: 1, maxTokens: 1000, maxDurationSec: 60 },
     }),
     command: 'record_evidence',
     expect: { kind: 'throw', match: /budget_exceeded/ },
+    // maxSteps=1：先成功执行 1 次耗尽预算，下一次拒绝。
+    primeExecutions: 1,
   },
   {
     name: 'fallback=delegateHuman：命令执行失败 → delegated（不静默）',
@@ -217,11 +227,19 @@ describe('Agent Policy TCK（NO-06c 决策表）', () => {
   for (const row of TABLE) {
     it(row.name, async () => {
       const { service } = build(row.manifest);
+      // NEST-329：预算按服务端累计计数——payload.stepsUsed 不再可信，
+      // 需先真实执行 primeExecutions 次耗尽预算。
+      for (let i = 0; i < (row.primeExecutions ?? 0); i += 1) {
+        await service.executeCommand('ORG-TCK', AGENT_ID, {
+          command: row.command,
+          payload: {},
+        });
+      }
       if (row.expect.kind === 'throw') {
         await expect(
           service.executeCommand('ORG-TCK', AGENT_ID, {
             command: row.command,
-            payload: row.command === 'record_evidence' ? { stepsUsed: 9 } : {},
+            payload: {},
           }),
         ).rejects.toThrow(row.expect.match);
         return;
@@ -250,14 +268,14 @@ describe('Agent Policy TCK（NO-06c 决策表）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const approved = await service.resolveApproval(proposed.approvalId!, true);
+    const approved = await service.resolveApproval('ORG-TCK', proposed.approvalId!, true);
     expect(approved.executed).toBe(true);
 
     const proposed2 = await service.executeCommand('ORG-TCK', AGENT_ID, {
       command: 'propose_plan',
       payload: {},
     });
-    const rejected = await service.resolveApproval(proposed2.approvalId!, false);
+    const rejected = await service.resolveApproval('ORG-TCK', proposed2.approvalId!, false);
     expect(rejected.outcome).toBe('rejected');
   });
 });

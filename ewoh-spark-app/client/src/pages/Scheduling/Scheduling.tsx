@@ -294,18 +294,18 @@ const Scheduling = (): React.ReactElement => {
     }
   };
 
+  // CLI-222：聚合全部在途 mutation 错误（原仅取首个，并发失败时丢失其余错误）。
+  const mutationErrors = [
+    generateMutation.error,
+    approveMutation.error,
+    rejectMutation.error,
+    dispatchMutation.error,
+    replanMutation.error,
+  ]
+    .filter((error): error is Error => error instanceof Error)
+    .map((error) => error.message);
   const mutationError =
-    generateMutation.error instanceof Error
-      ? generateMutation.error.message
-      : approveMutation.error instanceof Error
-        ? approveMutation.error.message
-        : rejectMutation.error instanceof Error
-          ? rejectMutation.error.message
-          : dispatchMutation.error instanceof Error
-            ? dispatchMutation.error.message
-            : replanMutation.error instanceof Error
-              ? replanMutation.error.message
-              : null;
+    mutationErrors.length > 0 ? mutationErrors.join('；') : null;
 
   return (
     <SchedulerRealtimeProvider>

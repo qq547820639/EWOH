@@ -40,23 +40,69 @@ function loadHumanDecisions(artifactsDir) {
   }
 }
 
-function calculate(gates, humanDecisions, artifactsDir) {
+/**
+ * calculate(gates, humanDecisions, options)
+ * TOOL-011: 移除未使用的 artifactsDir 死参数。
+ * TOOL-003: 人工 approved/conditional 决策必须携带有效 approver——非空，
+ * 且当提供 options.actors（work graph 的 agent-registry 演员）时，
+ * approver 必须是其中注册的 human/team 演员（与上游 RBAC 一致）；
+ * 无效 approver 的正向决策不予采纳，回退常规状态判定并标记原因。
+ * TOOL-012: 需审批判定改用显式 /^G(\d+)$/ 编号匹配 + 标题关键词，
+ * 不再对 gateId 做“剔除非数字取整”的宽松解析。
+ */
+function calculate(gates, humanDecisions, options = {}) {
   const decisions = new Map(
     humanDecisions.map((entry) => [entry.gateId, entry]),
   );
+  const humanActors = new Set(
+    (options.actors || [])
+      .filter((actor) => actor && /^(human|team)$/i.test(String(actor.kind || '')))
+      .map((actor) => String(actor.actorId || actor.name || '').trim())
+      .filter(Boolean),
+  );
+  const validApprover = (human) => {
+    const approver = String(human?.approver || '').trim();
+    if (!approver) return false;
+    if (humanActors.size > 0 && !humanActors.has(approver)) return false;
+    return true;
+  };
   return gates.map((gate) => {
     const human = decisions.get(gate.gateId) || null;
     const base = gate.calculatedStatus || 'pending';
     let finalStatus = base;
+    let humanDecisionInvalid = null;
+    const gateNo = gate.gateId.match(/^G(\d+)$/);
     if (human?.decision === 'approved') {
-      finalStatus = 'approved';
+      if (validApprover(human)) {
+        finalStatus = 'approved';
+      } else {
+        humanDecisionInvalid = 'approved decision lacks a valid approver (non-empty human/team actor)';
+        if (
+          base === 'passed' &&
+          ((gateNo && Number(gateNo[1]) >= 10) ||
+            /production|acceptance|closeout/i.test(gate.title))
+        ) {
+          finalStatus = 'requires_approval';
+        }
+      }
     } else if (human?.decision === 'rejected') {
       finalStatus = 'rejected';
     } else if (human?.decision === 'conditional') {
-      finalStatus = 'conditional';
+      if (validApprover(human)) {
+        finalStatus = 'conditional';
+      } else {
+        humanDecisionInvalid = 'conditional decision lacks a valid approver (non-empty human/team actor)';
+        if (
+          base === 'passed' &&
+          ((gateNo && Number(gateNo[1]) >= 10) ||
+            /production|acceptance|closeout/i.test(gate.title))
+        ) {
+          finalStatus = 'requires_approval';
+        }
+      }
     } else if (
       base === 'passed' &&
-      (Number(gate.gateId.replace(/[^0-9]/g, '')) >= 10 ||
+      ((gateNo && Number(gateNo[1]) >= 10) ||
         /production|acceptance|closeout/i.test(gate.title))
     ) {
       finalStatus = 'requires_approval';
@@ -67,6 +113,7 @@ function calculate(gates, humanDecisions, artifactsDir) {
       calculatedStatus: finalStatus,
       baseStatus: base,
       humanDecision: human?.decision ?? null,
+      humanDecisionInvalid,
       approver: human?.approver ?? null,
       decidedAt: human?.decidedAt ?? null,
       conditions: gate.conditions || [],
@@ -82,7 +129,7 @@ function main() {
     ? JSON.parse(fs.readFileSync(path.resolve(options.graph), 'utf8'))
     : workIndexer.indexWorkGraph(artifactsDir, { root: options.root });
   const humanDecisions = loadHumanDecisions(artifactsDir);
-  const gates = calculate(graph.gates || [], humanDecisions, artifactsDir);
+  const gates = calculate(graph.gates || [], humanDecisions, { actors: graph.actors });
   const pending = gates.filter((gate) => gate.calculatedStatus === 'requires_approval');
   const result = {
     generatedAt: new Date().toISOString(),
@@ -112,7 +159,7 @@ function main() {
   }
 }
 
-module.exports = { calculate };
+module.exports = { calculate, loadHumanDecisions };
 
 if (require.main === module) {
   try {

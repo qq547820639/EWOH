@@ -1,4 +1,12 @@
 // P0-SEC-001/002/003：Feishu Webhook 安全测试（node:test，无第三方依赖）
+// FS-001/002/003 后对齐飞书事件订阅签名协议：
+//   X-Lark-Signature = hex( sha256( X-Lark-Request-Timestamp + X-Lark-Request-Nonce
+//                                   + encrypt_key + rawBody ) )
+//   - rawBody（原始请求体字符串）参与签名，篡改 body 必须被拒
+//   - 未配置 FEISHU_ENCRYPT_KEY → fail-closed 拒绝（不再放行）
+//   - verification token 常量时间比较
+// FS-018：simulatorEnabled / resolveCorsOrigins 直接测 server/middleware.js
+// 真实实现（此前测试用局部变量重演 env 判断，测不到生产函数）。
 // 运行：node --test test/security.test.js
 
 'use strict';
@@ -8,13 +16,17 @@ const assert = require('node:assert');
 const crypto = require('crypto');
 
 const security = require('../server/security');
+const middleware = require('../server/middleware');
+
+const TOKEN = 'test-verification-token';
+const ENCRYPT_KEY = 'test-encrypt-key';
 
 function makeValidBody(overrides = {}) {
   return {
     header: {
       event_id: `evt-${crypto.randomUUID()}`,
       event_type: 'card.action.trigger',
-      token: 'test-verification-token',
+      token: TOKEN,
       create_time: new Date().toISOString(),
     },
     open_id: 'ou_test',
@@ -25,70 +37,212 @@ function makeValidBody(overrides = {}) {
   };
 }
 
-function makeReq(body, headers = {}) {
-  return { body, headers: { 'x-lark-signature': '', ...headers } };
+// 按飞书事件订阅协议构造签名（FS-001）
+function sign(rawBody, timestamp, nonce, key = ENCRYPT_KEY) {
+  return crypto
+    .createHash('sha256')
+    .update(`${timestamp}${nonce}${key}${rawBody}`, 'utf8')
+    .digest('hex');
 }
 
-// 注入测试 token
-process.env.FEISHU_VERIFICATION_TOKEN = 'test-verification-token';
+function signedReq(body, { timestamp, nonce, signature, headers } = {}) {
+  const rawBody = JSON.stringify(body);
+  const ts = timestamp != null ? String(timestamp) : String(Date.now());
+  const n = nonce != null ? String(nonce) : 'nonce-test';
+  const sig = signature != null ? signature : sign(rawBody, ts, n);
+  return {
+    body,
+    rawBody,
+    headers: {
+      'x-lark-request-timestamp': ts,
+      'x-lark-request-nonce': n,
+      'x-lark-signature': sig,
+      ...(headers || {}),
+    },
+  };
+}
 
-test('valid request with token is accepted', () => {
-  const result = security.verifyWebhookRequest(makeReq(makeValidBody()));
-  assert.strictEqual(result.ok, true);
+// 保存并恢复环境变量
+function withEnv(env, fn) {
+  const saved = {};
+  for (const k of Object.keys(env)) saved[k] = process.env[k];
+  try {
+    for (const [k, v] of Object.entries(env)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+// 注入测试 token / encrypt key
+process.env.FEISHU_VERIFICATION_TOKEN = TOKEN;
+process.env.FEISHU_ENCRYPT_KEY = ENCRYPT_KEY;
+
+test('valid request with token + protocol signature is accepted', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const result = security.verifyWebhookRequest(signedReq(makeValidBody()));
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.eventId, '应返回 header.event_id 作为重放键');
+  });
 });
 
-test('missing signature-config request with valid token+timestamp accepted (documented downgrade)', () => {
-  // 未配置 FEISHU_ENCRYPT_KEY 时依赖 token + timestamp（文档化降级）
-  delete process.env.FEISHU_ENCRYPT_KEY;
-  const result = security.verifyWebhookRequest(makeReq(makeValidBody()));
-  assert.strictEqual(result.ok, true);
+test('FS-002: 未配置 FEISHU_ENCRYPT_KEY → fail-closed 拒绝（不再降级放行）', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: undefined }, () => {
+    const result = security.verifyWebhookRequest(signedReq(makeValidBody()));
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_ENCRYPT_KEY_NOT_CONFIGURED');
+  });
 });
 
-test('invalid token rejected', () => {
-  const body = makeValidBody();
-  body.header.token = 'wrong-token';
-  const result = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(result.ok, false);
-  assert.strictEqual(result.code, 'WEBHOOK_INVALID_TOKEN');
+test('FS-003: invalid token rejected', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    body.header.token = 'wrong-token';
+    const result = security.verifyWebhookRequest(signedReq(body));
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_INVALID_TOKEN');
+  });
 });
 
 test('missing token rejected', () => {
-  const body = makeValidBody();
-  delete body.header.token;
-  const result = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(result.ok, false);
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    delete body.header.token;
+    const result = security.verifyWebhookRequest(signedReq(body));
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_INVALID_TOKEN');
+  });
 });
 
-test('expired timestamp rejected', () => {
-  const body = makeValidBody();
-  body.header.create_time = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 分钟前
-  const result = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(result.ok, false);
-  assert.strictEqual(result.code, 'WEBHOOK_EXPIRED');
+test('FEISHU_VERIFICATION_TOKEN 未配置 → 拒绝', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: undefined, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const result = security.verifyWebhookRequest(signedReq(makeValidBody()));
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_TOKEN_NOT_CONFIGURED');
+  });
 });
 
-test('missing timestamp rejected', () => {
-  const body = makeValidBody();
-  delete body.header.create_time;
-  const result = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(result.ok, false);
-  assert.strictEqual(result.code, 'WEBHOOK_MISSING_TIMESTAMP');
+test('FS-001: 缺签名头 rejected', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const req = signedReq(makeValidBody());
+    delete req.headers['x-lark-signature'];
+    const result = security.verifyWebhookRequest(req);
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_INVALID_SIGNATURE');
+  });
+});
+
+test('FS-001: 签名必须覆盖 raw body（body 被篡改 → 拒绝）', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    const req = signedReq(body);
+    // 签名基于原始 body，但实际请求体被篡改（action 改为 resolve）
+    const tampered = JSON.stringify({ ...body, action: { value: { action_type: 'resolve', event_id: 'EVT-1' } } });
+    req.rawBody = tampered;
+    const result = security.verifyWebhookRequest(req);
+    assert.strictEqual(result.ok, false, '篡改 body 后旧签名必须失效');
+    assert.strictEqual(result.code, 'WEBHOOK_INVALID_SIGNATURE');
+  });
+});
+
+test('FS-001: 旧算法（HMAC(ts+nonce+key)，不含 body）签名 → 拒绝', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    const ts = String(Date.now());
+    const nonce = 'nonce-test';
+    const oldHmac = crypto
+      .createHmac('sha256', ENCRYPT_KEY)
+      .update(`${ts}${nonce}${ENCRYPT_KEY}`)
+      .digest('base64');
+    const result = security.verifyWebhookRequest(
+      signedReq(body, { timestamp: ts, nonce, signature: oldHmac })
+    );
+    assert.strictEqual(result.ok, false, '不含 body 的旧 HMAC 签名不得通过');
+    assert.strictEqual(result.code, 'WEBHOOK_INVALID_SIGNATURE');
+  });
+});
+
+test('FS-001: sha256(ts+nonce+key)（漏拼 body）签名 → 拒绝', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    const ts = String(Date.now());
+    const nonce = 'nonce-test';
+    const noBodySig = crypto
+      .createHash('sha256')
+      .update(`${ts}${nonce}${ENCRYPT_KEY}`, 'utf8')
+      .digest('hex');
+    const result = security.verifyWebhookRequest(
+      signedReq(body, { timestamp: ts, nonce, signature: noBodySig })
+    );
+    assert.strictEqual(result.ok, false, '漏拼 body 的签名不得通过');
+  });
+});
+
+test('缺 X-Lark-Request-Nonce / rawBody → 拒绝', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    const ts = String(Date.now());
+    // 无 nonce 头
+    const r1 = security.verifyWebhookRequest({
+      body,
+      rawBody: JSON.stringify(body),
+      headers: { 'x-lark-request-timestamp': ts, 'x-lark-signature': '0'.repeat(64) },
+    });
+    assert.strictEqual(r1.code, 'WEBHOOK_INVALID_SIGNATURE');
+    // 无 rawBody（中间件未挂 raw body 时 fail-closed）
+    const r2 = security.verifyWebhookRequest({
+      body,
+      headers: { 'x-lark-request-timestamp': ts, 'x-lark-request-nonce': 'n', 'x-lark-signature': '0'.repeat(64) },
+    });
+    assert.strictEqual(r2.code, 'WEBHOOK_INVALID_SIGNATURE');
+  });
+});
+
+test('expired timestamp rejected（header 时间戳过期）', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    const result = security.verifyWebhookRequest(
+      signedReq(body, { timestamp: Math.floor((Date.now() - 10 * 60 * 1000) / 1000) })
+    );
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_EXPIRED');
+  });
+});
+
+test('missing timestamp rejected（无 header ts / create_time / body.timestamp）', () => {
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    delete body.header.create_time;
+    const req = signedReq(body);
+    delete req.headers['x-lark-request-timestamp'];
+    const result = security.verifyWebhookRequest(req);
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_MISSING_TIMESTAMP');
+  });
 });
 
 test('replayed request rejected after markReplayHandled', () => {
-  const body = makeValidBody();
-  // v1.1.1 新语义：验证通过不自动标记；业务成功后显式 markReplayHandled
-  const first = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(first.ok, true);
-  // 未标记前：重复请求仍可通过（合法重试不被 401 拦截）
-  const retry = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(retry.ok, true, '业务成功前允许重试');
+  withEnv({ FEISHU_VERIFICATION_TOKEN: TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY }, () => {
+    const body = makeValidBody();
+    // v1.1.1 新语义：验证通过不自动标记；业务成功后显式 markReplayHandled
+    const first = security.verifyWebhookRequest(signedReq(body));
+    assert.strictEqual(first.ok, true);
+    // 未标记前：重复请求仍可通过（合法重试不被 401 拦截）
+    const retry = security.verifyWebhookRequest(signedReq(body));
+    assert.strictEqual(retry.ok, true, '业务成功前允许重试');
 
-  // 业务成功后标记 → 同 event_id 再次请求被拒
-  security.markReplayHandled(first.eventId);
-  const result = security.verifyWebhookRequest(makeReq(body));
-  assert.strictEqual(result.ok, false);
-  assert.strictEqual(result.code, 'WEBHOOK_REPLAY');
+    // 业务成功后标记 → 同 event_id 再次请求被拒
+    security.markReplayHandled(first.eventId);
+    const result = security.verifyWebhookRequest(signedReq(body));
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'WEBHOOK_REPLAY');
+  });
 });
 
 test('markReplayHandled 无 eventId 安全', () => {
@@ -97,124 +251,56 @@ test('markReplayHandled 无 eventId 安全', () => {
   assert.strictEqual(security.isReplay(null), false);
 });
 
-test('invalid signature rejected when encrypt key configured', () => {
-  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
-  const body = makeValidBody();
-  const result = security.verifyWebhookRequest(
-    makeReq(body, { 'x-lark-signature': 'aW52YWxpZA==' })
-  );
-  assert.strictEqual(result.ok, false);
-  assert.strictEqual(result.code, 'WEBHOOK_INVALID_SIGNATURE');
-  delete process.env.FEISHU_ENCRYPT_KEY;
+test('safeEqualStr: 常量时间比较正确区分相等/不等', () => {
+  assert.strictEqual(security.safeEqualStr('abc', 'abc'), true);
+  assert.strictEqual(security.safeEqualStr('abc', 'abd'), false);
+  assert.strictEqual(security.safeEqualStr('a', 'ab'), false);
+  assert.strictEqual(security.safeEqualStr('', ''), true);
 });
 
-test('valid signature accepted when encrypt key configured', () => {
-  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
-  const body = makeValidBody();
-  // v1.1.0 D4：签名使用秒级时间戳（extractSignatureTimestamp）
-  const timestamp = security.extractSignatureTimestamp(body);
-  const nonce = '';
-  const expected = crypto
-    .createHmac('sha256', 'test-encrypt-key')
-    .update(`${timestamp}${nonce}test-encrypt-key`)
-    .digest('base64');
-  const result = security.verifyWebhookRequest(
-    makeReq(body, { 'x-lark-signature': expected })
-  );
-  assert.strictEqual(result.ok, true);
-  delete process.env.FEISHU_ENCRYPT_KEY;
-});
+// ---------- FS-018：直接测 server/middleware.js 真实实现 ----------
 
-// v1.1.0 D4：签名时间戳必须为秒级字符串（飞书 HMAC 协议），毫秒参与会签名不匹配
-test('D4: signature uses seconds-level timestamp (Feishu HMAC protocol)', () => {
-  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
-  const body = makeValidBody();
-
-  // extractSignatureTimestamp 应从 ISO create_time 得到秒级字符串
-  const tsSec = security.extractSignatureTimestamp(body);
-  assert.strictEqual(typeof tsSec, 'string');
-  assert.ok(/^\d{10}$/.test(tsSec), `秒级时间戳应为 10 位数字，实际: ${tsSec}`);
-  // 与毫秒的 floor 关系
-  const ms = Date.parse(body.header.create_time);
-  assert.strictEqual(Number(tsSec), Math.floor(ms / 1000), '应为毫秒时间戳的秒级截断');
-
-  // 用秒级时间戳构造签名 → 校验通过
-  const source = `${tsSec}${''}test-encrypt-key`;
-  const expected = crypto.createHmac('sha256', 'test-encrypt-key').update(source).digest('base64');
-  const result = security.verifyWebhookRequest(
-    makeReq(body, { 'x-lark-signature': expected })
-  );
-  assert.strictEqual(result.ok, true, '秒级时间戳签名应通过');
-
-  // 若用毫秒时间戳构造签名 → 校验失败（旧 bug 复现验证）
-  const wrongSource = `${ms}${''}test-encrypt-key`;
-  const wrongSig = crypto.createHmac('sha256', 'test-encrypt-key').update(wrongSource).digest('base64');
-  const result2 = security.verifyWebhookRequest(
-    makeReq(body, { 'x-lark-signature': wrongSig })
-  );
-  assert.strictEqual(result2.ok, false, '毫秒时间戳签名应被拒绝（协议不兼容）');
-  delete process.env.FEISHU_ENCRYPT_KEY;
-});
-
-test('D4: body.timestamp 秒字符串直接用于签名（不再 ×1000）', () => {
-  process.env.FEISHU_ENCRYPT_KEY = 'test-encrypt-key';
-  const body = makeValidBody({ header: { event_id: `evt-${crypto.randomUUID()}`, token: 'test-verification-token' } });
-  body.timestamp = String(Math.floor(Date.now() / 1000)); // 秒字符串（飞书事件订阅标准字段）
-  delete body.header.create_time;
-
-  const tsSec = security.extractSignatureTimestamp(body);
-  assert.strictEqual(tsSec, body.timestamp, '秒字符串应原样使用，不得 ×1000');
-
-  const source = `${tsSec}${''}test-encrypt-key`;
-  const expected = crypto.createHmac('sha256', 'test-encrypt-key').update(source).digest('base64');
-  const result = security.verifyWebhookRequest(
-    makeReq(body, { 'x-lark-signature': expected })
-  );
-  assert.strictEqual(result.ok, true);
-  delete process.env.FEISHU_ENCRYPT_KEY;
-});
-
-// P0-SEC-002：simulator 开关（复用 index.js 逻辑，通过模块级函数验证）
-test('simulator disabled by default', () => {
-  const saved = process.env.FEISHU_SIMULATOR_ENABLED;
-  delete process.env.FEISHU_SIMULATOR_ENABLED;
-  delete process.env.NODE_ENV;
-  // 直接验证 index.js 的 simulatorEnabled 行为——通过 require 重载
-  // 此处验证 env 判断的核心逻辑（避免启动整个 app）
-  const enabled = (process.env.FEISHU_SIMULATOR_ENABLED || '').trim().toLowerCase() === 'true';
-  assert.strictEqual(enabled, false);
-  if (saved !== undefined) process.env.FEISHU_SIMULATOR_ENABLED = saved;
-});
-
-test('simulator blocked in production unless explicit allow', () => {
-  process.env.FEISHU_SIMULATOR_ENABLED = 'true';
-  process.env.NODE_ENV = 'production';
-  delete process.env.ALLOW_SIMULATOR_IN_PRODUCTION;
-  const isProd = process.env.NODE_ENV === 'production';
-  const allow = (process.env.ALLOW_SIMULATOR_IN_PRODUCTION || '').trim().toLowerCase();
-  const starts = isProd && allow !== 'true' && allow !== '1' ? false : true;
-  assert.strictEqual(starts, false, 'production 无显式允许时模拟器不得启动');
-
-  process.env.ALLOW_SIMULATOR_IN_PRODUCTION = 'true';
-  const allow2 = (process.env.ALLOW_SIMULATOR_IN_PRODUCTION || '').trim().toLowerCase();
-  const starts2 = allow2 === 'true' || allow2 === '1';
-  assert.strictEqual(starts2, true, '显式允许后模拟器可启动');
-
-  delete process.env.FEISHU_SIMULATOR_ENABLED;
-  delete process.env.NODE_ENV;
-  delete process.env.ALLOW_SIMULATOR_IN_PRODUCTION;
-});
-
-// P0-SEC-003：CORS 校验逻辑
-test('cors wildcard rejected', () => {
-  assert.throws(() => {
-    const raw = ['*'];
-    if (raw.includes('*')) throw new Error('FEISHU_CORS_ORIGINS 不得包含 *');
+test('FS-018: simulatorEnabled 默认关闭（真实函数）', () => {
+  withEnv({ FEISHU_SIMULATOR_ENABLED: undefined, NODE_ENV: undefined, ALLOW_SIMULATOR_IN_PRODUCTION: undefined }, () => {
+    assert.strictEqual(middleware.simulatorEnabled(), false);
   });
 });
 
-test('cors explicit allowlist accepted', () => {
-  const raw = ['http://localhost:3000', 'http://localhost:5173'];
-  const origins = raw.length > 0 ? raw : ['http://localhost:3000'];
-  assert.deepStrictEqual(origins, ['http://localhost:3000', 'http://localhost:5173']);
+test('FS-018: simulatorEnabled 显式开启（非 production）→ true', () => {
+  withEnv({ FEISHU_SIMULATOR_ENABLED: 'true', NODE_ENV: 'development' }, () => {
+    assert.strictEqual(middleware.simulatorEnabled(), true);
+  });
+});
+
+test('FS-018: production 无显式允许时模拟器不得启动（真实函数）', () => {
+  withEnv({ FEISHU_SIMULATOR_ENABLED: 'true', NODE_ENV: 'production', ALLOW_SIMULATOR_IN_PRODUCTION: undefined }, () => {
+    assert.strictEqual(middleware.simulatorEnabled(), false, 'production 无显式允许时必须拒绝');
+  });
+});
+
+test('FS-018: production 显式允许后模拟器可启动（真实函数）', () => {
+  withEnv({ FEISHU_SIMULATOR_ENABLED: 'true', NODE_ENV: 'production', ALLOW_SIMULATOR_IN_PRODUCTION: 'true' }, () => {
+    assert.strictEqual(middleware.simulatorEnabled(), true);
+  });
+});
+
+test('FS-018: resolveCorsOrigins 拒绝 *（与 credentials 冲突，真实函数）', () => {
+  withEnv({ FEISHU_CORS_ORIGINS: 'http://a.example,*,http://b.example' }, () => {
+    assert.throws(() => middleware.resolveCorsOrigins(), /不得包含 \*/);
+  });
+});
+
+test('FS-018: resolveCorsOrigins 显式 allowlist 透传（真实函数）', () => {
+  withEnv({ FEISHU_CORS_ORIGINS: 'http://localhost:3000,http://localhost:5173' }, () => {
+    assert.deepStrictEqual(middleware.resolveCorsOrigins(), ['http://localhost:3000', 'http://localhost:5173']);
+  });
+});
+
+test('FS-018: resolveCorsOrigins 未配置时回退本地默认源（真实函数）', () => {
+  withEnv({ FEISHU_CORS_ORIGINS: undefined }, () => {
+    assert.deepStrictEqual(middleware.resolveCorsOrigins(), [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+    ]);
+  });
 });

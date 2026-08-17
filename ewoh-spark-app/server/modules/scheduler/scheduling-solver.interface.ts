@@ -28,6 +28,11 @@ export interface SolveOptions {
    */
   orgId?: string | null;
   /**
+   * NEST-035（2026-08-17）：确定性 replay 种子（policy replay 持久化链路透传，
+   * 相同 snapshot+policy+seed = 相同结果）；缺省 undefined = 非确定性请求。
+   */
+  seed?: number;
+  /**
    * P0 大规模性能：可行候选 top-K 上限（默认 12；可经 SchedulingPolicyConfig
    * 的扩展字段 candidateTopK 配置）。只影响决策轨迹的候选明细（保持 top-K），
    * 绝不改变贪心 argmin 选择（稳定 top-K 与原全量排序逐位一致）。

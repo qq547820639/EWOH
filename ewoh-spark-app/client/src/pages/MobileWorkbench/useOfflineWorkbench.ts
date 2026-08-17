@@ -9,7 +9,7 @@ import {
   setLastSyncAt,
   createId,
   exportOfflineData,
-  generateIdempotencyKey,
+  generateTraceKey,
   type AuditLogEntry,
   type OfflineAttachment,
   type OfflineDatabase,
@@ -356,7 +356,7 @@ export function useOfflineWorkbench(
         };
       }
       const now = new Date().toISOString();
-      const idempotencyKey = generateIdempotencyKey(
+      const idempotencyKey = generateTraceKey(
         opts.orderId,
         opts.stepId,
         opts.action,
@@ -404,7 +404,7 @@ export function useOfflineWorkbench(
         throw new Error('离线存储不可用');
       }
       const now = new Date().toISOString();
-      const idempotencyKey = generateIdempotencyKey(opts.orderId, opts.stepId, 'inspection');
+      const idempotencyKey = generateTraceKey(opts.orderId, opts.stepId, 'inspection');
       const key = createId();
       await db.pendingActions.put({
         key,
@@ -447,6 +447,14 @@ export function useOfflineWorkbench(
       await setLastSyncAt(db.syncState);
       setSyncing(false);
       await refreshPending();
+      // CLI-217：统一判 result.authRequired——retryPending/batchRetry 走本路径，
+      // 401 时同样暂停队列并引导重新登录（与自动 flush 行为一致）。
+      if (result.authRequired) {
+        setAuthPaused(true);
+        toast.error('登录已失效，离线操作已暂停', {
+          description: '请重新登录后继续同步，未同步的操作会安全保留。',
+        });
+      }
       return result;
     },
     [refreshPending],
@@ -467,6 +475,10 @@ export function useOfflineWorkbench(
         return;
       }
       const result = await flushSelected([id], true);
+      // CLI-217：authRequired 已由 flushSelected 提示重新登录，避免误导性失败 toast。
+      if (result?.authRequired) {
+        return;
+      }
       if (result?.synced.length) {
         toast.success(`已重试同步：${item.stepId}`);
         optionsRef.current?.onSynced?.();
@@ -490,6 +502,10 @@ export function useOfflineWorkbench(
         return;
       }
       const result = await flushSelected(ids, true);
+      if (result?.authRequired) {
+        // CLI-217：同上，重新登录提示已由 flushSelected 给出。
+        return;
+      }
       if (result) {
         if (result.synced.length > 0) {
           toast.success(`已重试同步 ${result.synced.length} 项离线操作`);
@@ -545,7 +561,10 @@ export function useOfflineWorkbench(
       const item = (await db.pendingActions.getAll()).find((c) => c.id === id);
       if (choice === 'local' || choice === 'server') {
         if (!isOnline) {
+          // CLI-202：离线时不可解析（后端状态机权威），保留冲突项供恢复网络后重试，
+          // 不再继续走下方删除（避免本地/服务端状态分歧且无法重试）。
           toast.error('当前处于离线状态，无法提交冲突解析，请恢复网络后重试');
+          return;
         } else if (item?.orderId && item?.stepId) {
           try {
             const result = await forceResolveMobileStep(
@@ -564,9 +583,11 @@ export function useOfflineWorkbench(
               });
             }
           } catch (error) {
+            // CLI-202：API 失败时保留冲突项（可重试），不删除。
             toast.error('冲突解析失败，请重试', {
               description: error instanceof Error ? error.message : undefined,
             });
+            return;
           }
         }
       }

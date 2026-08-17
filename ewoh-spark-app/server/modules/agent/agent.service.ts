@@ -298,13 +298,17 @@ export class AgentService {
       };
     }
 
-    const stepsUsed = (input.payload?.stepsUsed as number | undefined) ?? 0;
+    // NEST-329：步数预算服务端累计计数（原先 payload.stepsUsed 客户端可控，
+    // 传 0 即绕过 maxSteps）。计数键 = (org, agent)；进程内累计，重启清零
+    // （预算是防风暴护栏而非硬配额，重启放宽可接受且诚实）。
+    const stepsUsed = this.serverStepsUsed(orgId, agentId);
     if (stepsUsed >= maxSteps) {
       throw new BadRequestException(`budget_exceeded:maxSteps=${maxSteps}`);
     }
 
     const run = async (): Promise<ExecuteAgentCommandResult> => {
       const result = await this.dispatchCommand(orgId, full, input);
+      this.bumpServerStepsUsed(orgId, agentId);
       this.agentMetrics?.recordCommand('executed', String(full.role ?? ''), input.command);
       await this.recordDecisionEvent(orgId, full, input, 'executed', result);
       return { executed: true, needsApproval: false, outcome: 'executed' };
@@ -433,7 +437,10 @@ export class AgentService {
         externalRef: approvalId,
       });
     } catch (error) {
-      // 通知旁路：失败显式留痕不阻断审批主流程（审批实例本身是事实源）
+      // 通知旁路：失败显式留痕不阻断审批主流程（审批实例本身是事实源）。
+      // NEST-341（裁决文档化）：通知是旁路证据，非事实链——审批台账行
+      // （ewoh_agent_approval）才是权威事实；重试/outbox 属通知可靠性域
+      // （channel-dispatcher 已有失败留痕 + 人审重放），不在审批主流程补重试。
       this.logger.warn(`agent approval 通知写入失败 ${approvalId}: ${String(error)}`);
     }
   }
@@ -442,15 +449,22 @@ export class AgentService {
   //    跨重启持久化，闭环无静默） ────────────────────────────────────────────
 
   async resolveApproval(
+    orgId: string,
     approvalId: string,
     approved: boolean,
     actor?: { userId: string },
   ): Promise<ExecuteAgentCommandResult> {
     // 待批事实 = ewoh_agent_approval 台账行（进程重启后仍可解析，ADR-039）。
+    // NEST-305：按 (orgId, approvalId) 定位——他租户审批不可被解析（404 语义）。
+    if (!orgId?.trim()) {
+      throw new BadRequestException('org 上下文缺失：审批解析必须带租户上下文');
+    }
     const [row] = await this.db
       .select()
       .from(ewohAgentApproval)
-      .where(eq(ewohAgentApproval.approvalId, approvalId))
+      .where(
+        and(eq(ewohAgentApproval.orgId, orgId), eq(ewohAgentApproval.approvalId, approvalId)),
+      )
       .limit(1);
     if (!row) {
       throw new BadRequestException('approval_not_found_for_agent_command');
@@ -458,7 +472,6 @@ export class AgentService {
     if (row.status !== 'pending') {
       throw new BadRequestException(`approval_already_resolved:${row.status}`);
     }
-    const orgId = row.orgId;
     const agentId = row.agentId;
     const command = row.command;
     const payload = (row.payloadJson ?? {}) as Record<string, unknown>;
@@ -583,14 +596,24 @@ export class AgentService {
     const full = manifest.manifest as Record<string, unknown>;
     const budget = full.budget as Record<string, unknown>;
     const maxSteps = budget.maxSteps as number;
+    const timeoutSec = full.timeoutSec as number;
     const fallback = full.fallback as Record<string, unknown>;
     const onFailure = fallback.onFailure as string;
-    const stepsUsed = (input.payload?.stepsUsed as number | undefined) ?? 0;
+    // NEST-329：服务端步数计数（同 executeCommand 直发路径）。
+    const stepsUsed = this.serverStepsUsed(orgId, agentId);
     if (stepsUsed >= maxSteps) {
       throw new BadRequestException(`budget_exceeded:maxSteps=${maxSteps}`);
     }
     try {
-      await this.dispatchCommand(orgId, full, input);
+      // NEST-327：审批后执行同样受 timeoutSec 强制（原先仅直发路径包
+      // withTimeout，审批后命令可无限期挂起）。
+      await this.withTimeout(
+        (async () => {
+          await this.dispatchCommand(orgId, full, input);
+        })(),
+        timeoutSec,
+      );
+      this.bumpServerStepsUsed(orgId, agentId);
       this.agentMetrics?.recordCommand('executed', String(full.role ?? ''), input.command);
       await this.recordDecisionEvent(orgId, full, input, 'executed', { approved: true });
       await this.auditAppend(orgId, 'agent.command.executed', agentId, actor);
@@ -680,15 +703,54 @@ export class AgentService {
     return { suggestion, result };
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutSec: number): Promise<T> {
+  /**
+   * NEST-329：服务端步数累计（进程内，键 = org:agent）。
+   * payload.stepsUsed 不再被信任（客户端可控）。
+   */
+  private readonly stepCounters = new Map<string, number>();
+
+  private serverStepsUsed(orgId: string, agentId: string): number {
+    return this.stepCounters.get(`${orgId}:${agentId}`) ?? 0;
+  }
+
+  private bumpServerStepsUsed(orgId: string, agentId: string): void {
+    const key = `${orgId}:${agentId}`;
+    this.stepCounters.set(key, (this.stepCounters.get(key) ?? 0) + 1);
+  }
+
+  /**
+   * NEST-328（2026-08-17 审计整改）：超时竞争 + 可选外部 AbortSignal。
+   * 超时后底层 promise 可能仍会落定——Promise.race 已为其挂接 handler，
+   * 不会产生 unhandled rejection；调用方如需真正取消底层工作（如中断
+   * DB 事务/HTTP 请求）应传入 AbortSignal，信号触发立即按超时语义拒绝。
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutSec: number,
+    signal?: AbortSignal,
+  ): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
+    let rejectAbort: () => void = () => undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`agent_timeout:${timeoutSec}s`)), timeoutSec * 1000);
     });
+    const onAbort = () => {
+      if (timer) clearTimeout(timer);
+      rejectAbort();
+    };
+    const externalAbort = signal
+      ? new Promise<never>((_resolve, reject) => {
+          rejectAbort = () => reject(new Error(`agent_aborted:${timeoutSec}s`));
+          signal.addEventListener('abort', onAbort, { once: true });
+        })
+      : null;
     try {
-      return await Promise.race([promise, timeout]);
+      return externalAbort
+        ? await Promise.race([promise, timeout, externalAbort])
+        : await Promise.race([promise, timeout]);
     } finally {
       if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
     }
   }
 

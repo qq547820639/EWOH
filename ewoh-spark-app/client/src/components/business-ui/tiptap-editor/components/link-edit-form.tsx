@@ -1,12 +1,22 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 
 import { useTiptapEditor } from '@/components/business-ui/tiptap-editor/hooks/use-tiptap-editor';
 import { cn } from '@/lib/utils';
+import { sanitizeUrl } from '@/lib/urlSafety';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+/**
+ * CLI-302：链接 href 白名单校验。仅 http/https/mailto/tel（相对路径放行）
+ * 可写入 link mark；javascript:/data: 等危险协议返回 null（拒绝应用）。
+ */
+export function sanitizeLinkHref(href: string): string | null {
+  return sanitizeUrl(href);
+}
 
 export interface LinkEditFormProps extends React.ComponentProps<'div'> {
   open: boolean;
@@ -67,6 +77,13 @@ export function LinkEditForm({
   const applyLink = () => {
     if (!canSubmit) return;
 
+    // CLI-302：危险 scheme（javascript:/data: 等）拒绝写入编辑器 link mark。
+    const safeHref = sanitizeLinkHref(hrefTrimmed);
+    if (!safeHref) {
+      toast.error('链接协议不被允许，仅支持 http/https/mailto/tel');
+      return;
+    }
+
     if (textTrimmed.length > 0) {
       if (isInLink && editor.state.selection.empty) {
         editor.chain().focus().extendMarkRange('link').run();
@@ -77,12 +94,12 @@ export function LinkEditForm({
       editor.commands.insertContent({
         type: 'text',
         text: textTrimmed,
-        marks: [{ type: 'link', attrs: { href: hrefTrimmed } }],
+        marks: [{ type: 'link', attrs: { href: safeHref } }],
       });
     } else {
       const chain = editor.chain().focus();
       if (isInLink) chain.extendMarkRange('link');
-      chain.setLink({ href: hrefTrimmed }).run();
+      chain.setLink({ href: safeHref }).run();
     }
 
     onDone?.();

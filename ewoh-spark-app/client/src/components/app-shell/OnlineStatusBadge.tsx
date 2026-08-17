@@ -13,7 +13,7 @@ import { formatLastSync, type OfflineStatusSnapshot } from '@/lib/offlineStatus'
 const OnlineStatusBadge = ({ snapshot }: { snapshot: OfflineStatusSnapshot | null }) => {
   if (!snapshot) {
     return (
-      <Badge variant="outline" className="border-[hsl(220_14%_89%)] text-[hsl(218_10%_42%)]">
+      <Badge variant="outline" className="border-border text-muted-foreground">
         连接中…
       </Badge>
     );
@@ -26,14 +26,14 @@ const OnlineStatusBadge = ({ snapshot }: { snapshot: OfflineStatusSnapshot | nul
         <Badge
           variant="outline"
           className={cn(
-            'gap-1.5 border-[hsl(220_14%_89%)] bg-white text-[hsl(220_14%_14%)]',
-            (offline || pending) && 'border-red-200 bg-red-50 text-red-700',
+            'gap-1.5 border-border bg-white text-foreground',
+            (offline || pending) && 'border-destructive/30 bg-destructive/10 text-destructive',
           )}
         >
           <span
             className={cn(
               'h-1.5 w-1.5 rounded-full',
-              offline ? 'bg-red-500' : 'bg-green-500',
+              offline ? 'bg-destructive' : 'bg-success',
             )}
             aria-hidden
           />

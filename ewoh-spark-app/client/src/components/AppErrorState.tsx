@@ -99,6 +99,10 @@ function kindIcon(kind: ParsedError['kind']): LucideIcon {
   return TriangleAlert;
 }
 
+/**
+ * 仅使用 Clipboard API 复制文本；不可用或失败时返回 false（CLI-310：移除已
+ * 废弃的 document.execCommand('copy') 回退路径，由调用方提示手动复制）。
+ */
 async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -106,21 +110,9 @@ async function copyText(text: string): Promise<boolean> {
       return true;
     }
   } catch {
-    // 继续走回退方案
+    // 忽略并交由调用方提示手动复制
   }
-  try {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(textarea);
-    return ok;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 const AppErrorState = ({
@@ -202,38 +194,38 @@ const AppErrorState = ({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm"
+      className="flex flex-col gap-3 rounded-lg border border-risk-blocked-border bg-risk-blocked-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-5 shrink-0 text-red-600" />
+        <Icon className="mt-0.5 size-5 shrink-0 text-risk-blocked" />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">{title}</p>
-          <p className="mt-0.5 text-[hsl(220_14%_14%)]">{phenomenonText}</p>
+          <p className="font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-foreground">{phenomenonText}</p>
         </div>
       </div>
 
-      <dl className="grid gap-1 rounded bg-white/60 p-2 text-xs text-[hsl(218_10%_42%)] sm:grid-cols-2">
+      <dl className="grid gap-1 rounded bg-white/60 p-2 text-xs text-muted-foreground sm:grid-cols-2">
         <div className="min-w-0">
-          <dt className="font-medium text-[hsl(220_14%_14%)]">现象</dt>
+          <dt className="font-medium text-foreground">现象</dt>
           <dd className="break-words">{phenomenonText}</dd>
         </div>
         {impactText && (
           <div className="min-w-0">
-            <dt className="font-medium text-[hsl(220_14%_14%)]">可能影响</dt>
+            <dt className="font-medium text-foreground">可能影响</dt>
             <dd className="break-words">{impactText}</dd>
           </div>
         )}
         <div className="min-w-0">
-          <dt className="font-medium text-[hsl(220_14%_14%)]">数据是否已保存</dt>
+          <dt className="font-medium text-foreground">数据是否已保存</dt>
           <dd>{savedLabel(saved)}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="font-medium text-[hsl(220_14%_14%)]">后续操作</dt>
+          <dt className="font-medium text-foreground">后续操作</dt>
           <dd className="break-words">{nextStepText}</dd>
         </div>
         {requestId && (
           <div className="min-w-0 sm:col-span-2">
-            <dt className="font-medium text-[hsl(220_14%_14%)]">请求ID（可复制）</dt>
+            <dt className="font-medium text-foreground">请求ID（可复制）</dt>
             <dd className="break-all font-mono">{requestId}</dd>
           </div>
         )}

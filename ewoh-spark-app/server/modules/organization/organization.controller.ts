@@ -45,8 +45,19 @@ export class PersonnelController {
     @Query('keyword') keyword?: string,
     @Query('orgId') orgId?: string,
     @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
   ) {
-    return this.organizationService.listPersonnel({ keyword, orgId, status });
+    // NEST-637：分页参数（非法值回退默认）。
+    const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : undefined;
+    return this.organizationService.listPersonnel({
+      keyword,
+      orgId,
+      status,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      offset: Number.isFinite(parsedOffset) ? parsedOffset : undefined,
+    });
   }
 
   @Get(':id')

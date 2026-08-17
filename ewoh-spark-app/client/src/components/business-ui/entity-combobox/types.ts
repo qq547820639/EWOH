@@ -85,7 +85,8 @@ export type EntityComboboxContextValue<
   // 数据
   data: T[];
   isFetching: boolean;
-  isPending: boolean;
+  // CLI-331 连带：isPending 在上下文中从未提供也从未被消费（旧 any
+  // context 掩盖了缺口），从类型中移除，使声明与实际契约一致。
   isError: boolean;
   refetch: () => void;
 
@@ -170,7 +171,7 @@ export type BaseComboboxProps<
 
   // 标签（多选）
   tagClosable?: boolean;
-  maxTagCount?: number | 'responsive';
+  maxTagCount?: number; // CLI-323: 'responsive' 从未实现，已移除
   maxTagTextLength?: number;
 
   // Popover 配置
@@ -205,7 +206,7 @@ export type PopoverWrapperProps<
   triggerType?: TriggerType;
   renderTrigger?: (props: TriggerRenderProps<TRaw>) => ReactNode;
   placeholder?: string;
-  maxTagCount?: number | 'responsive';
+  maxTagCount?: number; // CLI-323: 'responsive' 从未实现，已移除
   maxTagTextLength?: number;
   tagClosable?: boolean;
   className?: string;

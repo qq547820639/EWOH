@@ -15,10 +15,11 @@ import {
   ewohScheduleTaskStep,
   ewohResourceBinding,
 } from '@server/database/schema';
-import { eq, desc, and, gte, lte, sql, or, asc, inArray } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, sql, or, asc, inArray, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { CurrentWorldState, EventChainNode, ReplaySnapshot } from '@shared/api.interface';
 import { AuditService } from '../shared/audit.service';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 type SpatialEntityRow = typeof ewohSpatialEntity.$inferSelect;
 type WorldStateRow = typeof ewohWorldState.$inferSelect;
@@ -44,15 +45,70 @@ export class WorldService {
   ) {}
 
   /**
+   * NEST-605/606/607/640（2026-08-17 审计整改）：world 查询/写入全部带 org
+   * 谓词；global_admin 显式放行（与 RLS 例外路径一致）。
+   */
+  private orgCondition(
+    column:
+      | typeof ewohSpatialEntity.orgId
+      | typeof ewohWorldState.orgId
+      | typeof ewohEvent.orgId
+      | typeof ewohScheduleTask.orgId
+      | typeof ewohScheduleTaskStep.orgId
+      | typeof ewohResourceBinding.orgId,
+    actor?: OrgContext,
+  ): SQL | undefined {
+    if (actor?.isGlobalAdmin) {
+      return undefined;
+    }
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org context missing: world operations require tenant context',
+      );
+    }
+    return eq(column, orgId) as SQL;
+  }
+
+  /**
    * 聚合当前世界状态快照：人员 / 设备 / 工位 / 最近事件
    */
-  async getCurrentState(): Promise<CurrentWorldState> {
+  async getCurrentState(actor?: OrgContext): Promise<CurrentWorldState> {
     try {
+      const entityOrg = this.orgCondition(ewohSpatialEntity.orgId, actor);
+      const eventOrg = this.orgCondition(ewohEvent.orgId, actor);
+      // NEST-640：recentEvents 带 org 过滤（原先跨租户可见）。
       const [personEntities, deviceEntities, workstationEntities, recentEvents] = await Promise.all([
-        this.db.select().from(ewohSpatialEntity).where(eq(ewohSpatialEntity.entityType, 'person')),
-        this.db.select().from(ewohSpatialEntity).where(eq(ewohSpatialEntity.entityType, 'device')),
-        this.db.select().from(ewohSpatialEntity).where(eq(ewohSpatialEntity.entityType, 'workstation')),
-        this.db.select().from(ewohEvent).orderBy(desc(ewohEvent.createdAt)).limit(20),
+        this.db
+          .select()
+          .from(ewohSpatialEntity)
+          .where(
+            entityOrg
+              ? and(eq(ewohSpatialEntity.entityType, 'person'), entityOrg)
+              : eq(ewohSpatialEntity.entityType, 'person'),
+          ),
+        this.db
+          .select()
+          .from(ewohSpatialEntity)
+          .where(
+            entityOrg
+              ? and(eq(ewohSpatialEntity.entityType, 'device'), entityOrg)
+              : eq(ewohSpatialEntity.entityType, 'device'),
+          ),
+        this.db
+          .select()
+          .from(ewohSpatialEntity)
+          .where(
+            entityOrg
+              ? and(eq(ewohSpatialEntity.entityType, 'workstation'), entityOrg)
+              : eq(ewohSpatialEntity.entityType, 'workstation'),
+          ),
+        this.db
+          .select()
+          .from(ewohEvent)
+          .where(eventOrg)
+          .orderBy(desc(ewohEvent.createdAt))
+          .limit(20),
       ]);
 
       const allEntityIds = [
@@ -66,10 +122,15 @@ export class WorldService {
       // PostgreSQL 支持 DISTINCT ON(entity_id) + ORDER BY entity_id, ts DESC。
       const latestStatesMap = new Map<string, WorldStateRow>();
       if (allEntityIds.length > 0) {
+        const stateOrg = this.orgCondition(ewohWorldState.orgId, actor);
         const states = await this.db
           .selectDistinctOn([ewohWorldState.entityId])
           .from(ewohWorldState)
-          .where(inArray(ewohWorldState.entityId, allEntityIds))
+          .where(
+            stateOrg
+              ? and(inArray(ewohWorldState.entityId, allEntityIds), stateOrg)
+              : inArray(ewohWorldState.entityId, allEntityIds),
+          )
           .orderBy(ewohWorldState.entityId, desc(ewohWorldState.ts));
         for (const s of states) {
           latestStatesMap.set(s.entityId, s);
@@ -182,7 +243,12 @@ export class WorldService {
   /**
    * 时间轴回放：合并世界状态、事件、任务、工序与物料变化的统一时间轴
    */
-  async getReplay(from?: string, to?: string, limit = 100): Promise<ReplaySnapshot[]> {
+  async getReplay(
+    from?: string,
+    to?: string,
+    limit = 100,
+    actor?: OrgContext,
+  ): Promise<ReplaySnapshot[]> {
     try {
       const now = new Date();
       const toTime = to ? new Date(to) : now;
@@ -197,27 +263,48 @@ export class WorldService {
         return [];
       }
 
+      // NEST-606：五张表查询全部带 org 过滤（原先跨租户）。
+      const stateOrg = this.orgCondition(ewohWorldState.orgId, actor);
+      const eventOrg = this.orgCondition(ewohEvent.orgId, actor);
+      const taskOrg = this.orgCondition(ewohScheduleTask.orgId, actor);
+      const stepOrg = this.orgCondition(ewohScheduleTaskStep.orgId, actor);
+      const materialOrg = this.orgCondition(ewohResourceBinding.orgId, actor);
+
       const states = await this.db
         .select()
         .from(ewohWorldState)
-        .where(and(gte(ewohWorldState.ts, fromTime), lte(ewohWorldState.ts, toTime)))
+        .where(
+          stateOrg
+            ? and(gte(ewohWorldState.ts, fromTime), lte(ewohWorldState.ts, toTime), stateOrg)
+            : and(gte(ewohWorldState.ts, fromTime), lte(ewohWorldState.ts, toTime)),
+        )
         .orderBy(desc(ewohWorldState.ts))
         .limit(safeLimit * 10);
 
       const events = await this.db
         .select()
         .from(ewohEvent)
-        .where(and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime)))
+        .where(
+          eventOrg
+            ? and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime), eventOrg)
+            : and(gte(ewohEvent.createdAt, fromTime), lte(ewohEvent.createdAt, toTime)),
+        )
         .orderBy(desc(ewohEvent.createdAt));
 
       const tasks = await this.db
         .select()
         .from(ewohScheduleTask)
         .where(
-          and(
-            gte(ewohScheduleTask.updatedAt, fromTime),
-            lte(ewohScheduleTask.updatedAt, toTime),
-          ),
+          taskOrg
+            ? and(
+                gte(ewohScheduleTask.updatedAt, fromTime),
+                lte(ewohScheduleTask.updatedAt, toTime),
+                taskOrg,
+              )
+            : and(
+                gte(ewohScheduleTask.updatedAt, fromTime),
+                lte(ewohScheduleTask.updatedAt, toTime),
+              ),
         )
         .limit(2000);
 
@@ -225,10 +312,16 @@ export class WorldService {
         .select()
         .from(ewohScheduleTaskStep)
         .where(
-          and(
-            gte(ewohScheduleTaskStep.updatedAt, fromTime),
-            lte(ewohScheduleTaskStep.updatedAt, toTime),
-          ),
+          stepOrg
+            ? and(
+                gte(ewohScheduleTaskStep.updatedAt, fromTime),
+                lte(ewohScheduleTaskStep.updatedAt, toTime),
+                stepOrg,
+              )
+            : and(
+                gte(ewohScheduleTaskStep.updatedAt, fromTime),
+                lte(ewohScheduleTaskStep.updatedAt, toTime),
+              ),
         )
         .limit(4000);
 
@@ -236,10 +329,16 @@ export class WorldService {
         .select()
         .from(ewohResourceBinding)
         .where(
-          and(
-            gte(ewohResourceBinding.startTime, fromTime),
-            lte(ewohResourceBinding.startTime, toTime),
-          ),
+          materialOrg
+            ? and(
+                gte(ewohResourceBinding.startTime, fromTime),
+                lte(ewohResourceBinding.startTime, toTime),
+                materialOrg,
+              )
+            : and(
+                gte(ewohResourceBinding.startTime, fromTime),
+                lte(ewohResourceBinding.startTime, toTime),
+              ),
         )
         .limit(2000);
 
@@ -363,11 +462,12 @@ export class WorldService {
     }
   }
 
-  async getEventContext(eventId: string, windowMinutes = 10) {
+  async getEventContext(eventId: string, windowMinutes = 10, actor?: OrgContext) {
+    const orgCond = this.orgCondition(ewohEvent.orgId, actor);
     const [source] = await this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventId, eventId));
+      .where(orgCond ? and(eq(ewohEvent.eventId, eventId), orgCond) : eq(ewohEvent.eventId, eventId));
     if (!source) {
       throw new NotFoundException(`Event ${eventId} not found`);
     }
@@ -381,6 +481,7 @@ export class WorldService {
       fromTime.toISOString(),
       toTime.toISOString(),
       200,
+      actor,
     );
     const chronological = [...snapshots].sort(
       (a, b) => Date.parse(a.ts) - Date.parse(b.ts),
@@ -423,13 +524,20 @@ export class WorldService {
     if (!['issue', 'task', 'evidence'].includes(body.kind)) {
       throw new BadRequestException('kind must be issue, task, or evidence');
     }
+    // NEST-607：源事件按 (orgId, eventId) 定位 + 新事件显式 orgId。
+    const orgCond = this.orgCondition(ewohEvent.orgId, actor);
     const [source] = await this.db
       .select()
       .from(ewohEvent)
-      .where(eq(ewohEvent.eventId, body.eventId));
+      .where(
+        orgCond
+          ? and(eq(ewohEvent.eventId, body.eventId), orgCond)
+          : eq(ewohEvent.eventId, body.eventId),
+      );
     if (!source) {
       throw new NotFoundException(`Event ${body.eventId} not found`);
     }
+    const orgId = actor?.primaryOrgId ?? source.orgId ?? null;
     const newEventId = `RPL-${randomUUID().slice(0, 8)}`;
     const createdAt = new Date();
     await this.db.insert(ewohEvent).values({
@@ -442,6 +550,7 @@ export class WorldService {
       status: 'open',
       createdAt,
       sourceType: 'replayed',
+      orgId,
       evidenceJson: {
         sourceEventId: body.eventId,
         sourceTitle: source.title ?? null,
@@ -456,10 +565,11 @@ export class WorldService {
       causalType: 'derived_from_replay',
       description: `${body.kind} created from replay context`,
       createdAt,
+      orgId,
     });
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
-      orgId: actor?.primaryOrgId ?? '',
+      orgId: orgId ?? '',
       action: 'world.replay.item.create',
       entityType: 'event',
       entityId: newEventId,

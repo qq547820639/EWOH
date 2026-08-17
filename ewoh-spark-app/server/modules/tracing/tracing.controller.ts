@@ -1,6 +1,7 @@
-import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Req } from '@nestjs/common';
 import { TracingService } from './tracing.service';
 import { Roles } from '../shared/roles.decorator';
+import type { OrgContext } from '../shared/org-context.interceptor';
 
 @Controller('api/observability/traces')
 @Roles('global_admin', 'safety_admin')
@@ -17,10 +18,13 @@ export class TracingController {
    * audit（request_id））——§19「从一次用户操作追踪到…」查询面。
    */
   @Get(':traceId')
-  async getTrace(@Param('traceId') traceId: string) {
+  async getTrace(
+    @Param('traceId') traceId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
     if (!traceId?.trim()) {
       throw new BadRequestException('traceId 必填（HTTP traceId = §19 correlation id）');
     }
-    return this.tracingService.getTrace(traceId);
+    return this.tracingService.getTrace(traceId, request.userContext);
   }
 }

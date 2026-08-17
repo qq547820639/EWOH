@@ -75,6 +75,7 @@
     "@nestjs/core": "^10.4.20",
     "@nestjs/platform-express": "^10.4.20",
     "@nestjs/swagger": "^7.4.2",
+    "@radix-ui/react-use-controllable-state": "1.2.6",
     "@tanstack/react-form": "^1.27.6",
     "@tanstack/react-query": "^5.90.12",
     "ajv": "^8.20.0",

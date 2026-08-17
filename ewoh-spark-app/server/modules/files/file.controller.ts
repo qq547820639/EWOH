@@ -8,6 +8,7 @@ import {
   Post,
   Req,
   Res,
+  StreamableFile,
   UnsupportedMediaTypeException,
   UploadedFile,
   UseInterceptors,
@@ -48,6 +49,15 @@ export function maxUploadBytes(): number {
     : DEFAULT_MAX_UPLOAD_BYTES;
 }
 
+/**
+ * NEST-357（2026-08-17 审计整改）：上传限制统一为启动时求值一次——
+ * FileInterceptor 的 limits 只在装饰器求值时读取一次 env（运行时改
+ * MAX_UPLOAD_BYTES 原本就无效），allowedMimeTypes 原先却每请求读 env，
+ * 两端口径不一致。现两者同为模块加载时快照；运行时调整需重启生效。
+ */
+const UPLOAD_FILE_SIZE_LIMIT = maxUploadBytes();
+const UPLOAD_ALLOWED_MIME_TYPES = allowedMimeTypes();
+
 function allowedMimeTypes(): Set<string> {
   const configured = process.env.UPLOAD_ALLOWED_MIME_TYPES?.split(',')
     .map((value) => value.trim().toLowerCase())
@@ -64,13 +74,13 @@ export class FileController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: maxUploadBytes(),
+        fileSize: UPLOAD_FILE_SIZE_LIMIT,
         files: 1,
         fields: 4,
         fieldSize: 4096,
       },
       fileFilter: (_request, file, callback) => {
-        if (!allowedMimeTypes().has(file.mimetype.toLowerCase())) {
+        if (!UPLOAD_ALLOWED_MIME_TYPES.has(file.mimetype.toLowerCase())) {
           callback(
             new UnsupportedMediaTypeException(`Unsupported file type: ${file.mimetype}`),
             false,
@@ -116,9 +126,17 @@ export class FileController {
     @Req() request: AuthenticatedFileRequest,
     @Res() res: Response,
   ) {
-    const { record, buffer } = await this.fileService.download(id, this.access(request));
+    // NEST-338：流式下载——驱动支持 openReadStream 时走 StreamableFile
+    // （不再 20MB×并发全内存 res.send(buffer)）；否则回退缓冲路径。
+    const { record, stream } = await this.fileService.downloadStream(id, this.access(request));
     res.setHeader('Content-Type', record.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(record.filename)}"`);
+    if (stream) {
+      const file = new StreamableFile(stream as import('node:stream').Readable);
+      file.getStream().pipe(res);
+      return;
+    }
+    const { buffer } = await this.fileService.download(id, this.access(request));
     res.send(buffer);
   }
 

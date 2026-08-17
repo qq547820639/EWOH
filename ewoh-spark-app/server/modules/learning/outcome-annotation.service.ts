@@ -79,8 +79,29 @@ export class OutcomeAnnotationService {
       comment: input.comment ?? null,
       recordJson: record,
     };
-    const inserted = (await this.db.insert(ewohOutcomeAnnotation).values(row).returning())[0];
-    await this.recordEvent(inserted, orgId);
+    // NEST-332：并发幂等——select 后 insert 的窗口内另一并发同 ID 提交会
+    // 以 23505 唯一键冲突落败，此处捕获后回读既有行（不重复发事件），
+    // 不再把并发幂等误报为 500。
+    let inserted;
+    try {
+      const result = await this.db.insert(ewohOutcomeAnnotation).values(row).returning();
+      inserted = result[0];
+      await this.recordEvent(inserted, orgId);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== '23505') throw err;
+      const existing = await this.db
+        .select()
+        .from(ewohOutcomeAnnotation)
+        .where(and(
+          eq(ewohOutcomeAnnotation.orgId, orgId),
+          eq(ewohOutcomeAnnotation.annotationId, annotationId),
+        ))
+        .limit(1);
+      if (existing.length === 0) throw err;
+      this.logger.debug(`结果标注并发幂等命中: ${annotationId}`);
+      return { annotation: this.toAnnotation(existing[0]), created: false };
+    }
     return { annotation: this.toAnnotation(inserted), created: true };
   }
 

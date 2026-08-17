@@ -75,6 +75,9 @@ describe('alert state machine', () => {
       .transitionAlert('EVT-1', 'close', {
         userId: 'user-1',
         primaryOrgId: 'org-1',
+        // SH-004 联动：alert 状态机 role fail-closed，处置必须携带角色
+        // （NEST-409/410：AccessTokenGuard 注入 roles 数组）。
+        roles: ['device_ops'],
       })
       .catch((caught) => caught);
 
@@ -97,6 +100,9 @@ describe('alert state machine', () => {
     const result = await service.transitionAlert('EVT-1', 'close', {
       userId: 'user-1',
       primaryOrgId: 'org-1',
+      // SH-004 联动：alert 状态机 role fail-closed，处置必须携带角色
+      // （NEST-409/410：AccessTokenGuard 注入 roles 数组）。
+      roles: ['device_ops'],
     });
 
     expect(result.status).toBe('closed');

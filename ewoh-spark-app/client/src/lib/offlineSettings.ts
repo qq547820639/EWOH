@@ -19,7 +19,14 @@ export interface WorkbenchSettings {
 
 export const SETTINGS_PREFIX = 'ewoh.mobile.settings';
 
-/** Stable device id persisted once per browser/device. */
+/**
+ * Stable device id persisted once per browser/device.
+ *
+ * CLI-545（裁决）：清缓存后 localStorage 中的 deviceId 一并清空、重新生成，
+ * 旧设置键因此孤立——按设计可接受：deviceId 本就是设备级本地标识而非账号
+ * 数据，清理站点数据后视作「新设备」符合用户预期；孤立键由浏览器存储
+ * 配额自然淘汰，不做迁移。
+ */
 export function getDeviceId(storage: StorageLike = defaultStorage()): string {
   const KEY = `${SETTINGS_PREFIX}.device-id`;
   if (!storage) {

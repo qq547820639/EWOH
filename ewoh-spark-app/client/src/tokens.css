@@ -82,6 +82,18 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* 三点五、反色表面（surface-inverse）                                  */
+/*     —— 告警浮层（AlertToast）等常驻深色面板使用，替代组件内硬编码    */
+/*        HSL 值（CLI-340/341 设计令牌收敛）。danger 变体保留告警卡的  */
+/*        红调深色语义（L3 危险事件）。                                  */
+/* ------------------------------------------------------------------ */
+:root {
+  --surface-inverse: hsl(220 14% 12%);
+  --surface-inverse-raised: hsl(220 14% 14%);
+  --surface-danger-inverse: hsl(0 60% 12%);
+}
+
+/* ------------------------------------------------------------------ */
 /* 四、@theme inline 映射：暴露为 Tailwind 工具类                      */
 /*     bg-risk-normal / text-risk-degraded / z-modal …                */
 /* ------------------------------------------------------------------ */
@@ -131,6 +143,10 @@
   --z-overlay: var(--z-overlay);
   --z-modal: var(--z-modal);
   --z-toast: var(--z-toast);
+
+  --color-surface-inverse: var(--surface-inverse);
+  --color-surface-inverse-raised: var(--surface-inverse-raised);
+  --color-surface-danger-inverse: var(--surface-danger-inverse);
 }
 
 /* ------------------------------------------------------------------ */

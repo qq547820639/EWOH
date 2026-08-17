@@ -74,6 +74,17 @@ const reportPath = path.join(root, 'output', 'rc-upgrade-report.json');
 const GATE_ID = 'postgres-migration-rc-upgrade';
 const MANIFEST = path.join(root, 'db', 'contracts', 'schema-manifest.yaml');
 
+// SCR-030: G4 结构断言期望值集中定义（与 standalone_030/031 契约一致，
+// 列数由列名清单派生，避免散落的 2/2/2/2、4/1/4/1 魔法数字）。
+const SOLVER_NULLABLE_COLUMNS = ['solver_status', 'fallback_reason'];
+const EXPECT_SOLVER_NULLABLE_PER_TABLE = SOLVER_NULLABLE_COLUMNS.length; // 每表 nullable 列数
+const EXPECT_SOLVER_NO_DEFAULT_PER_TABLE = SOLVER_NULLABLE_COLUMNS.length; // 每表无默认列数
+const COUNTER_COLUMNS = ['day', 'last_seq', 'created_at', '_updated_at'];
+const EXPECT_COUNTER_COLS = COUNTER_COLUMNS.length; // 计数器表业务列数
+const EXPECT_COUNTER_PK = 1; // day 单列 PRIMARY KEY
+const EXPECT_COUNTER_SVC_GRANTS = 4; // service_role：SELECT/INSERT/UPDATE/DELETE
+const EXPECT_COUNTER_SEQ_DEFAULT = 1; // last_seq NOT NULL DEFAULT 0
+
 let postgres;
 try {
   postgres = (await import('../ewoh-spark-app/node_modules/postgres/src/index.js')).default;
@@ -448,13 +459,16 @@ async function main() {
     // ---- G4: 向后兼容语义（030 列 nullable / 031 计数器表）----
     {
       const solver = await solverNullableSemantics();
-      const okSolver = Number(solver.plan_nullable) === 2 && Number(solver.plan_no_default) === 2
-        && Number(solver.run_nullable) === 2 && Number(solver.run_no_default) === 2;
+      const okSolver = Number(solver.plan_nullable) === EXPECT_SOLVER_NULLABLE_PER_TABLE
+        && Number(solver.plan_no_default) === EXPECT_SOLVER_NO_DEFAULT_PER_TABLE
+        && Number(solver.run_nullable) === EXPECT_SOLVER_NULLABLE_PER_TABLE
+        && Number(solver.run_no_default) === EXPECT_SOLVER_NO_DEFAULT_PER_TABLE;
       if (!okSolver) throw new Error(`030 solver 列语义不符: ${JSON.stringify(solver)}`);
 
       const counter = await counterFacts();
-      const okCounter = Number(counter.cols) === 4 && Number(counter.pk) === 1
-        && Number(counter.svc_grants) === 4 && Number(counter.seq_default) === 1;
+      const okCounter = Number(counter.cols) === EXPECT_COUNTER_COLS && Number(counter.pk) === EXPECT_COUNTER_PK
+        && Number(counter.svc_grants) === EXPECT_COUNTER_SVC_GRANTS
+        && Number(counter.seq_default) === EXPECT_COUNTER_SEQ_DEFAULT;
       if (!okCounter) throw new Error(`031 计数器表结构不符: ${JSON.stringify(counter)}`);
 
       results.push({

@@ -24,7 +24,13 @@ from edge_platform.spatial import distance, now_iso
 
 @dataclass
 class ScoringWeights:
-    """多目标权重。默认值对应 spec 目标函数各项系数（正为收益，负为成本）。"""
+    """多目标权重。默认值对应 spec 目标函数各项系数（正为收益，负为成本）。
+
+    EDGE-101（2026-08-17 审计整改）：``from_dict`` 增加共享 TS 契约字段名
+    （w1_output/w5_move_distance 等）别名映射——输入侧同时接受 TS 契约名与
+    Python 侧历史名，消除跨端字段名漂移导致的静默丢权重；``to_dict`` 输出
+    保持 Python 侧字段名（序列化消费方兼容），跨端字段对齐由映射层承担。
+    """
 
     w1_production: float = 1.0
     w2_on_time: float = 1.0
@@ -32,6 +38,16 @@ class ScoringWeights:
     w4_body_load: float = 1.0
     w5_travel_distance: float = 0.05
     w6_changeover_cost: float = 0.5
+
+    # EDGE-101：TS 契约字段名 → Python 字段名映射（shared/scheduler 权重契约）
+    TS_FIELD_ALIASES = {
+        "w1_output": "w1_production",
+        "w2_on_time_rate": "w2_on_time",
+        "w3_safety_risk": "w3_safety_risk",
+        "w4_body_load": "w4_body_load",
+        "w5_move_distance": "w5_travel_distance",
+        "w6_changeover_cost": "w6_changeover_cost",
+    }
 
     def to_dict(self):
         return asdict(self)
@@ -46,7 +62,11 @@ class ScoringWeights:
             "w5_travel_distance",
             "w6_changeover_cost",
         )
-        return cls(**{k: d[k] for k in keys if k in d})
+        merged = dict(d or {})
+        for ts_name, py_name in cls.TS_FIELD_ALIASES.items():
+            if ts_name in merged and py_name not in merged:
+                merged[py_name] = merged[ts_name]
+        return cls(**{k: merged[k] for k in keys if k in merged})
 
 
 @dataclass

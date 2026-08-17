@@ -308,6 +308,12 @@ class VisionSsidfGuardTest(unittest.TestCase):
             self.assertTrue(ok, f"{url} 应被允许，reason={reason}")
 
     def test_vision_endpoint_rejects_internal_base_url_override(self):
+        """EDGE-002 整改后：请求体 base_url/api_key 被完全忽略（仅用 Settings 配置）。
+
+        携带内网 base_url + 伪 api_key 的请求不再触达出站校验——直接以
+        "未配置 EWOH_ARK_API_KEY" 拒绝（本 fixture 未配置密钥），证明请求级
+        覆盖已失效（比"校验后拒绝"更强：客户端无法再影响出站地址/凭据）。
+        """
         fx = _Fixture()
         try:
             req = urllib.request.Request(
@@ -325,11 +331,13 @@ class VisionSsidfGuardTest(unittest.TestCase):
             )
             try:
                 urllib.request.urlopen(req, timeout=5)
-                self.fail("内网 base_url 应被拒绝")
+                self.fail("未配置密钥的视觉理解请求应失败")
             except urllib.error.HTTPError as e:
                 self.assertEqual(e.code, 502)
                 body = json.loads(e.read())
-                self.assertIn("base_url 不安全", body.get("error", ""))
+                # body 里的 api_key/base_url 均被忽略 → 走 Settings（未配置）路径
+                self.assertIn("EWOH_ARK_API_KEY", body.get("error", ""))
+                self.assertNotIn("base_url 不安全", body.get("error", ""))
         finally:
             fx.close()
 

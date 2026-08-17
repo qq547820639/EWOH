@@ -75,8 +75,12 @@ export async function unbindDevice(deviceId: string): Promise<void> {
   });
 }
 
+/** CLI-714：事件列表单次拉取上限——防止调用方传超大 limit 拖垮后端。 */
+const MAX_EVENTS_LIMIT = 500;
+
 export async function getEvents(limit = 50, status?: string): Promise<EventInfo[]> {
-  const params: Record<string, string> = { limit: String(limit) };
+  const bounded = Math.min(Math.max(1, limit), MAX_EVENTS_LIMIT);
+  const params: Record<string, string> = { limit: String(bounded) };
   if (status) params.status = status;
   const res = await axiosForBackend({ url: '/api/dashboard/events', method: 'GET', params });
   return res.data;

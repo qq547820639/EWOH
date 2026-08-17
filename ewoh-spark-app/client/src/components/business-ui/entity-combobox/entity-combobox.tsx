@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useControllableState } from 'radix-ui/internal';
+// CLI-319：使用官方独立包而非 radix-ui/internal 私有路径（跨版本稳定）。
+import { useControllableState } from '@radix-ui/react-use-controllable-state';
 
 import { EntityComboboxProvider } from '@client/src/components/business-ui/entity-combobox/context';
 import { useDebounce } from '@client/src/components/business-ui/entity-combobox/hooks';

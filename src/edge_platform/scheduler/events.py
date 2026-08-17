@@ -53,7 +53,7 @@ class EventBus:
             "event_id": new_id("EV"),
             "event_type": event_type,
             "entity_id": entity_id,
-            "version": int(version or 1),
+            "version": int(version) if version else 1,  # EDGE-122：version=0 不再被折叠为 1
             "source_ts": source_ts or now_iso(),
             "server_ts": now_iso(),
             "payload": payload or {},

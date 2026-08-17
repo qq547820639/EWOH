@@ -41,7 +41,7 @@ const QueryState = ({
   if (isLoading) {
     return (
       <div
-        className="flex items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-6 text-sm text-[hsl(218_10%_42%)]"
+        className="flex items-center gap-2 rounded-lg border border-border bg-white p-6 text-sm text-muted-foreground"
         role="status"
         aria-live="polite"
         aria-busy="true"
@@ -71,7 +71,7 @@ const QueryState = ({
     <>
       {showStatus && (
         <div
-          className="flex flex-wrap items-center gap-2 text-xs text-[hsl(218_10%_42%)]"
+          className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
           role="status"
           aria-live="polite"
         >
@@ -79,7 +79,7 @@ const QueryState = ({
             {isFetching ? (
               <Loader2 className="size-3 animate-spin" />
             ) : isStale ? (
-              <TriangleAlert className="size-3 text-amber-500" />
+              <TriangleAlert className="size-3 text-warning" />
             ) : (
               <RefreshCw className="size-3" />
             )}
@@ -88,8 +88,10 @@ const QueryState = ({
           {updatedAt ? (
             <span>
               更新于{' '}
+              {/* CLI-328：全站展示统一 Asia/Shanghai 时区。 */}
               {new Date(updatedAt).toLocaleTimeString('zh-CN', {
                 hour12: false,
+                timeZone: 'Asia/Shanghai',
               })}
             </span>
           ) : null}
@@ -111,7 +113,7 @@ const QueryState = ({
 
       {isEmpty ? (
         <div
-          className="flex items-center gap-2 rounded-lg border border-dashed border-[hsl(220_14%_89%)] bg-white p-8 text-sm text-[hsl(218_10%_42%)]"
+          className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-white p-8 text-sm text-muted-foreground"
           role="status"
           aria-live="polite"
         >

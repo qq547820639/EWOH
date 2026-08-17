@@ -5,13 +5,13 @@ import { X } from 'lucide-react';
 import {
   tagCloseIconVariants,
   type ComboboxSize,
-} from '@client/src/components/business-ui/entity-combobox/size-variants';
+} from '@/components/business-ui/entity-combobox/size-variants';
 import type {
   AccountType,
   UserSelectItemValue,
-} from '@client/src/components/business-ui/user-select/types';
-import { UserPill } from '@client/src/components/business-ui/user-select/user-pill';
-import { Skeleton } from '@client/src/components/ui/skeleton';
+} from '@/components/business-ui/user-select/types';
+import { UserPill } from '@/components/business-ui/user-select/user-pill';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export const UserSelectTag = ({
   userValue,

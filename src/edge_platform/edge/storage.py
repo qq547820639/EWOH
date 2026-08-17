@@ -3,13 +3,23 @@
 Storage 是平台唯一完整的 SQLite 持久化实现（遥测/推理/事件/人员/设备/调度/治理
 表的 CRUD，线程安全 WAL + busy_timeout）。本模块为生产命名空间；
 ``edge_platform.stubs`` 保留同名引用仅为测试/演示向后兼容。
+
+2026-08-17 审计整改（EDGE-003/004/005/021/026）：
+- exo_binding 全系方法补 self._lock；(exo_id, status='active') 加 partial 唯一索引；
+- query_telemetry/query_inference 改 SQL WHERE + BETWEEN + LIMIT（走 device_ts 索引）；
+- list_events limit 服务层硬上限 1000；
+- SQLite 文件权限收紧 0600。
 """
 
 import json
+import os
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
+
+# EDGE-021：list_events 服务层硬上限（路由层另有同值钳制）
+MAX_LIST_EVENTS_LIMIT = 1000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS person (
@@ -257,6 +267,17 @@ def _in_window(ts, start_ms, end_ms):
     return t is not None and start_ms <= t <= end_ms
 
 
+def _ms_to_iso(ms):
+    """Unix 毫秒 → 本地时区 ISO 字符串（与 _now()/services.iso 同构，
+    供 SQL 端 ts 文本窗口比较使用）。"""
+    return datetime.fromtimestamp(ms / 1000.0).astimezone().isoformat(timespec="milliseconds")
+
+
+def _ms_to_iso_utc(ms):
+    """Unix 毫秒 → UTC 偏移 ISO 字符串（混合偏移格式的第二比较族）。"""
+    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).isoformat(timespec="milliseconds")
+
+
 class Storage:
     """契约：edge/storage.py class Storage(db_path) 的 stub 实现（SQLite 持久化）。"""
 
@@ -268,12 +289,31 @@ class Storage:
         # WAL 模式 + busy_timeout 解决模拟器线程与 HTTP 请求线程并发写导致的 "database is locked"
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA busy_timeout=30000")
+        # EDGE-026：库文件含遥测/审计/绑定等敏感数据，显式收紧为 0600
+        # （默认 umask 022 会产生 world-readable 文件；:memory: 等无文件场景忽略）。
+        try:
+            os.chmod(self.db_path, 0o600)
+        except OSError:
+            pass
         self.init_db()
 
     def init_db(self):
         with self._lock, self._db:
             self._db.executescript(SCHEMA)
             self._ensure_assignment_columns()
+            # EDGE-003：(exo_id, status='active') 唯一约束（partial unique index）。
+            # 旧库若已存在重复活跃绑定则创建失败——保留旧行为并告警（并发新写入
+            # 已由 self._lock 串行化 + 路由层先检后写收敛）。
+            try:
+                self._db.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_exo_binding_one_active "
+                    "ON exo_binding(exo_id) WHERE status='active'"
+                )
+            except sqlite3.IntegrityError:
+                print(
+                    "[EWOH] exo_binding 存在重复活跃绑定，唯一索引未创建（EDGE-003）："
+                    "请人工核对 exo_binding 表后重启"
+                )
 
     def _ensure_assignment_columns(self):
         """为旧库的 assignment 表补齐调度扩展列（幂等，ALTER 不存在的列会报错故先查）。"""
@@ -337,14 +377,37 @@ class Storage:
         except Exception:
             return {}
 
+    def _query_window_rows(self, table, ts_col, device_id, start_ms, end_ms, limit):
+        """EDGE-004/005：SQL 端时间窗预过滤（走 device+ts 索引，不再全表扫描）。
+
+        ts 为 ISO 文本，文本序仅在**同偏移族**内等于时间序——对本地偏移与
+        UTC 偏移两族分别发一条 BETWEEN 范围查询（均走索引），合并去重后由
+        调用方做精确 instant 过滤（_in_window）与排序，保证跨 UTC/本地偏移
+        的窗口语义与旧实现一致（TimestampWindowQueryTest 契约）。
+        """
+        pk = "record_id" if table == "telemetry" else "inference_id"
+        rows_by_pk: dict = {}
+        with self._lock:
+            for lo, hi in (
+                (_ms_to_iso(start_ms), _ms_to_iso(end_ms)),
+                (_ms_to_iso_utc(start_ms), _ms_to_iso_utc(end_ms)),
+            ):
+                rows = self._db.execute(
+                    f"SELECT * FROM {table} WHERE device_id=? AND {ts_col} BETWEEN ? AND ? "  # nosec B608 - fixed internal table/column
+                    f"ORDER BY {ts_col} LIMIT ?",
+                    (device_id, lo, hi, int(limit)),
+                ).fetchall()
+                for r in rows:
+                    rows_by_pk[r[pk]] = r
+        return list(rows_by_pk.values())
+
     def query_telemetry(self, device_id, start, end, limit):
+        """按设备 + 时间窗查询遥测（EDGE-004：SQL WHERE + BETWEEN + LIMIT 走
+        idx_telemetry_device_ts 索引，不再全表拉取后 Python 过滤）。"""
         start_ms, end_ms = _ts_ms(start), _ts_ms(end)
         if start_ms is None or end_ms is None:
             return []
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM telemetry WHERE device_id=?", (device_id,)
-            ).fetchall()
+        rows = self._query_window_rows("telemetry", "ts", device_id, start_ms, end_ms, limit)
         matched = [r for r in rows if _in_window(r["ts"], start_ms, end_ms)]
         matched.sort(key=lambda r: _ts_ms(r["ts"]))
         return [self._tele_row(r) for r in matched[: int(limit)]]
@@ -400,12 +463,17 @@ class Storage:
             )
 
     def start_binding(self, binding_id, exo_id, person_id, started_at):
-        """ADR-033：开始外骨骼绑定（同外骨骼活跃绑定唯一，服务层冲突显式）。"""
-        self._db.execute(
-            "INSERT INTO exo_binding (binding_id, exo_id, person_id, status, started_at) "
-            "VALUES (?, ?, ?, 'active', ?)",
-            (binding_id, exo_id, person_id, started_at),
-        )
+        """ADR-033：开始外骨骼绑定（同外骨骼活跃绑定唯一，服务层冲突显式）。
+
+        EDGE-003：写入纳入 self._lock 串行化 + 事务边界；并发重复 bind 由
+        idx_exo_binding_one_active 唯一索引兜底（IntegrityError 由调用方转 409）。
+        """
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO exo_binding (binding_id, exo_id, person_id, status, started_at) "
+                "VALUES (?, ?, ?, 'active', ?)",
+                (binding_id, exo_id, person_id, started_at),
+            )
         return {
             "binding_id": binding_id, "exo_id": exo_id, "person_id": person_id,
             "status": "active", "started_at": started_at, "ended_at": None,
@@ -414,19 +482,21 @@ class Storage:
 
     def end_binding(self, binding_id, ended_at, ended_by, reason=""):
         """ADR-033：结束绑定（状态机 active→ended；无行返回 None 显式）。"""
-        cur = self._db.execute(
-            "UPDATE exo_binding SET status='ended', ended_at=?, ended_by=?, reason=? "
-            "WHERE binding_id=? AND status='active'",
-            (ended_at, ended_by, reason, binding_id),
-        )
-        return cur.rowcount > 0
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "UPDATE exo_binding SET status='ended', ended_at=?, ended_by=?, reason=? "
+                "WHERE binding_id=? AND status='active'",
+                (ended_at, ended_by, reason, binding_id),
+            )
+            return cur.rowcount > 0
 
     def get_binding(self, binding_id):
-        row = self._db.execute(
-            "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
-            "ended_by, reason FROM exo_binding WHERE binding_id=?",
-            (binding_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                "ended_by, reason FROM exo_binding WHERE binding_id=?",
+                (binding_id,),
+            ).fetchone()
         if not row:
             return None
         return {
@@ -436,12 +506,13 @@ class Storage:
         }
 
     def list_active_binding_for_exo(self, exo_id):
-        row = self._db.execute(
-            "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
-            "ended_by, reason FROM exo_binding WHERE exo_id=? AND status='active' "
-            "ORDER BY started_at DESC LIMIT 1",
-            (exo_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                "ended_by, reason FROM exo_binding WHERE exo_id=? AND status='active' "
+                "ORDER BY started_at DESC LIMIT 1",
+                (exo_id,),
+            ).fetchone()
         if not row:
             return None
         return {
@@ -451,17 +522,18 @@ class Storage:
         }
 
     def list_bindings(self, status=None):
-        if status:
-            rows = self._db.execute(
-                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
-                "ended_by, reason FROM exo_binding WHERE status=? ORDER BY started_at DESC",
-                (status,),
-            ).fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
-                "ended_by, reason FROM exo_binding ORDER BY started_at DESC",
-            ).fetchall()
+        with self._lock:
+            if status:
+                rows = self._db.execute(
+                    "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                    "ended_by, reason FROM exo_binding WHERE status=? ORDER BY started_at DESC",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT binding_id, exo_id, person_id, status, started_at, ended_at, "
+                    "ended_by, reason FROM exo_binding ORDER BY started_at DESC",
+                ).fetchall()
         return [
             {
                 "binding_id": r[0], "exo_id": r[1], "person_id": r[2],
@@ -505,13 +577,12 @@ class Storage:
             )
 
     def query_inference(self, device_id, start, end, limit):
+        """按设备 + 时间窗查询推理（EDGE-005：SQL WHERE + BETWEEN + LIMIT 走
+        idx_inference_device_ts 索引）。"""
         start_ms, end_ms = _ts_ms(start), _ts_ms(end)
         if start_ms is None or end_ms is None:
             return []
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM inference WHERE device_id=?", (device_id,)
-            ).fetchall()
+        rows = self._query_window_rows("inference", "ts_end", device_id, start_ms, end_ms, limit)
         matched = [r for r in rows if _in_window(r["ts_end"], start_ms, end_ms)]
         matched.sort(key=lambda r: _ts_ms(r["ts_end"]))
         out = []
@@ -545,9 +616,12 @@ class Storage:
             )
 
     def list_events(self, limit):
+        """按 start_time 倒序列事件。EDGE-021：limit 服务层硬上限 1000，
+        防用户传入超大值造成无界查询。"""
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM risk_event ORDER BY start_time DESC LIMIT ?", (int(limit),)
+                "SELECT * FROM risk_event ORDER BY start_time DESC LIMIT ?",
+                (min(int(limit), MAX_LIST_EVENTS_LIMIT),),
             ).fetchall()
             return [self._evt_row(r) for r in rows]
 
@@ -1172,6 +1246,14 @@ class Storage:
                     "SELECT * FROM resource_reservation WHERE status=? ORDER BY id DESC", (status,)
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_reservation(self, reservation_id):
+        """按 ID 取单条预约（EDGE-116：替代 list_reservations 全表线性扫描）。"""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM resource_reservation WHERE reservation_id=?", (reservation_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def insert_schedule_decision(self, decision_id, plan_id, version, action, actor_id, reason, before, after):
         with self._lock, self._db:

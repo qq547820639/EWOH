@@ -13,6 +13,7 @@ import {
   type WorkbenchView,
 } from '../../api/operations';
 import { getAuthUser } from '../../lib/auth';
+import { isDownloadUrl } from '../../lib/urlSafety';
 import { ONBOARDING_VERSION, shouldShowOnboarding } from '../../lib/onboardingState';
 import { OnboardingQuickStart } from '../../components/OnboardingQuickStart';
 import { queryKeys } from '../../hooks/queryKeys';
@@ -76,9 +77,10 @@ export default function RoleWorkbench(): React.ReactElement {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const searchParamsRef = useRef(searchParams);
+  // CLI-221：补依赖数组（原每次渲染都执行 ref 写入）。
   useEffect(() => {
     searchParamsRef.current = searchParams;
-  });
+  }, [searchParams]);
 
   // TR-9.2: 默认角色来自当前认证用户，普通用户绝不默认 manager。
   // 角色以 URL 为准，刷新/前进后退/复制链接均可恢复。
@@ -164,6 +166,12 @@ export default function RoleWorkbench(): React.ReactElement {
     [savedViews, role],
   );
 
+  // CLI-206：合并重复请求——原「refreshViews effect + view 应用 effect」在
+  // role 切换时各调一次 listWorkbenchViews（双发）。现应用效果直接消费
+  // savedViews state（refreshViews 的结果），网络请求只发一次；
+  // 以 appliedViewRoleRef 保证每个 role 仅应用一次（保存新视图后的
+  // savedViews 刷新不重放 URL 参数填充）。
+
   const saveListView = useCallback(
     async (listKey: string) => {
       const st = listStates[listKey];
@@ -220,37 +228,32 @@ export default function RoleWorkbench(): React.ReactElement {
   }, []);
 
   // 加载该角色已保存的视图到 URL（仅填充 URL 中未显式给出的列表参数）。
+  // CLI-206：消费 savedViews state（refreshViews 单次请求的结果），
+  // 不再重复调用 listWorkbenchViews。
+  const appliedViewRoleRef = useRef<RoleWorkbenchRole | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    listWorkbenchViews()
-      .then((views) => {
-        if (cancelled) return;
-        const next = new URLSearchParams(searchParamsRef.current);
-        let changed = false;
-        for (const view of views) {
-          if (view.role !== role) continue;
-          if (!next.has(`${view.listKey}.filter`) && view.filter) {
-            next.set(`${view.listKey}.filter`, view.filter);
-            changed = true;
-          }
-          if (!next.has(`${view.listKey}.sort`) && view.sortKey) {
-            next.set(`${view.listKey}.sort`, view.sortKey);
-            changed = true;
-          }
-          if (!next.has(`${view.listKey}.dir`) && view.sortDir) {
-            next.set(`${view.listKey}.dir`, view.sortDir);
-            changed = true;
-          }
-        }
-        if (changed) setSearchParams(next, { replace: true });
-      })
-      .catch(() => {
-        // 静默。
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [role, setSearchParams]);
+    if (savedViews.length === 0) return;
+    if (appliedViewRoleRef.current === role) return;
+    appliedViewRoleRef.current = role;
+    const next = new URLSearchParams(searchParamsRef.current);
+    let changed = false;
+    for (const view of savedViews) {
+      if (view.role !== role) continue;
+      if (!next.has(`${view.listKey}.filter`) && view.filter) {
+        next.set(`${view.listKey}.filter`, view.filter);
+        changed = true;
+      }
+      if (!next.has(`${view.listKey}.sort`) && view.sortKey) {
+        next.set(`${view.listKey}.sort`, view.sortKey);
+        changed = true;
+      }
+      if (!next.has(`${view.listKey}.dir`) && view.sortDir) {
+        next.set(`${view.listKey}.dir`, view.sortDir);
+        changed = true;
+      }
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [savedViews, role, setSearchParams]);
 
   // 导出状态：每个列表一个，用导出状态机管理迁移，避免散落 setState。
   const [exportStates, dispatchExport] = useReducer(
@@ -271,6 +274,9 @@ export default function RoleWorkbench(): React.ReactElement {
 
   const maybeDownload = useCallback((url?: string) => {
     if (!url) return;
+    // CLI-205：downloadUrl 来自服务端任务响应，仅 http/https/blob/相对路径
+    // 允许进入 href sink，阻断 javascript: 等危险协议。
+    if (!isDownloadUrl(url)) return;
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.rel = 'noopener';

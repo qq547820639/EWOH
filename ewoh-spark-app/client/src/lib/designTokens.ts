@@ -4,6 +4,11 @@
  * 与 client/src/tokens.css 中的 CSS 变量一一对应，供 TS/TSX 组件在需要
  * 引用具体 token 值时使用（例如图表填充色、内联 style、非 Tailwind 场景）。
  * 运行时仅作常量导出，不产生副作用。
+ *
+ * CLI-527（裁决）：TS 常量与 CSS 变量的单一来源由 designTokens.test.ts
+ * 锁定——测试逐项断言 semanticTokens/riskTokens 的每个色值与 tokens.css
+ * 中同名 `--*` 变量的定义字符串一致，CSS 侧改动即红，防止两份来源漂移；
+ * 不引入代码生成（构建期生成会破坏两端的独立可读性与 tree-shaking）。
  */
 
 /* ------------------------------------------------------------------ */
@@ -57,7 +62,8 @@ export type RiskStateName = (typeof riskStates)[number];
 /**
  * 获取某个风险状态的完整 token 对象。
  * 非法/未知状态回退到 unknown，保证渲染永不崩溃。
+ * CLI-543：简化为单次索引，不再重复求值三元表达式。
  */
 export function riskToken(state: RiskStateName | undefined): (typeof riskTokens)[RiskStateName] {
-  return riskTokens[(state ?? 'unknown') in riskTokens ? ((state ?? 'unknown') as RiskStateName) : 'unknown'];
+  return riskTokens[state ?? 'unknown'] ?? riskTokens.unknown;
 }

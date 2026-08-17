@@ -8,7 +8,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, ne, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -162,6 +164,26 @@ export class ScaleService {
     @Optional() private readonly tracingService?: TracingService,
   ) {}
 
+  /**
+   * NEST-202/203/218：scale 全部读写路径的 org 作用域谓词。
+   * - org 上下文缺失 → 401（绝不静默全租户读写）；
+   * - global_admin → undefined（跨租户放行，与 RLS 例外路径一致）。
+   */
+  private orgWhere(column: PgColumn, actor?: OrgContext): SQL | undefined {
+    if (actor?.isGlobalAdmin) return undefined;
+    return eq(column, this.requireOrgId(actor));
+  }
+
+  private requireOrgId(actor?: OrgContext): string {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：scale 读写必须带租户上下文',
+      );
+    }
+    return orgId;
+  }
+
   async registerTemplate(
     body: {
       templateId?: string;
@@ -193,6 +215,8 @@ export class ScaleService {
         configJson: body.config ?? {},
         manifestJson: body.manifest ?? {},
         compatibleCore: body.compatibleCore ?? null,
+        // NEST-202：写入显式携带 orgId（不依赖 GUC 默认）。
+        orgId: this.requireOrgId(actor),
       })
       .returning();
     await this.auditService.appendAuditLog({
@@ -207,18 +231,25 @@ export class ScaleService {
     return row;
   }
 
-  async listTemplates() {
+  async listTemplates(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohFactoryTemplate)
+      // NEST-202：org 过滤（global_admin 放行）。
+      .where(this.orgWhere(ewohFactoryTemplate.orgId, actor))
       .orderBy(desc(ewohFactoryTemplate.createdAt));
   }
 
-  async getTemplate(templateId: string) {
+  async getTemplate(templateId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohFactoryTemplate)
-      .where(eq(ewohFactoryTemplate.templateId, templateId));
+      .where(
+        and(
+          eq(ewohFactoryTemplate.templateId, templateId),
+          this.orgWhere(ewohFactoryTemplate.orgId, actor),
+        ),
+      );
     if (!row) {
       throw new NotFoundException(`Template ${templateId} not found`);
     }
@@ -230,7 +261,7 @@ export class ScaleService {
     action: string,
     actor?: OrgContext,
   ) {
-    const template = await this.getTemplate(templateId);
+    const template = await this.getTemplate(templateId, actor);
     const status = nextTemplateStatus(template.lifecycleStatus ?? 'draft', action);
     if (!status) {
       throw new BadRequestException(
@@ -271,7 +302,7 @@ export class ScaleService {
     body: { factoryName: string; config?: Record<string, unknown> },
     actor?: OrgContext,
   ) {
-    const template = await this.getTemplate(templateId);
+    const template = await this.getTemplate(templateId, actor);
     if (template.lifecycleStatus !== 'published') {
       throw new BadRequestException(
         `Template must be published before install (current: ${template.lifecycleStatus})`,
@@ -290,6 +321,8 @@ export class ScaleService {
         configJson: body.config ?? {},
         status: 'installed',
         installedAt: new Date(),
+        // NEST-202：写入显式携带 orgId。
+        orgId: this.requireOrgId(actor),
       })
       .returning();
     await this.auditService.appendAuditLog({
@@ -307,8 +340,9 @@ export class ScaleService {
   async diffPreview(
     templateId: string,
     body: { config?: Record<string, unknown> },
+    actor?: OrgContext,
   ) {
-    const template = await this.getTemplate(templateId);
+    const template = await this.getTemplate(templateId, actor);
     const templateConfig =
       (template.configJson as Record<string, unknown> | null) ?? {};
     const requestedConfig = body.config ?? {};
@@ -331,18 +365,25 @@ export class ScaleService {
     };
   }
 
-  async listProfiles() {
+  async listProfiles(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohFactoryProfile)
+      // NEST-202：org 过滤（global_admin 放行）。
+      .where(this.orgWhere(ewohFactoryProfile.orgId, actor))
       .orderBy(desc(ewohFactoryProfile.createdAt));
   }
 
-  async getProfile(profileId: string) {
+  async getProfile(profileId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohFactoryProfile)
-      .where(eq(ewohFactoryProfile.profileId, profileId));
+      .where(
+        and(
+          eq(ewohFactoryProfile.profileId, profileId),
+          this.orgWhere(ewohFactoryProfile.orgId, actor),
+        ),
+      );
     if (!row) {
       throw new NotFoundException(`Factory profile ${profileId} not found`);
     }
@@ -350,8 +391,8 @@ export class ScaleService {
   }
 
   async replayProfile(profileId: string, actor?: OrgContext) {
-    const profile = await this.getProfile(profileId);
-    const template = await this.getTemplate(profile.templateId);
+    const profile = await this.getProfile(profileId, actor);
+    const template = await this.getTemplate(profile.templateId, actor);
     const templateConfig =
       (template.configJson as Record<string, unknown> | null) ?? {};
     const profileConfig =
@@ -409,6 +450,8 @@ export class ScaleService {
         version: body.version.trim(),
         manifestJson: body.manifest ?? {},
         status: 'draft',
+        // NEST-202：写入显式携带 orgId。
+        orgId: this.requireOrgId(actor),
       })
       .returning();
     await this.auditService.appendAuditLog({
@@ -459,11 +502,16 @@ export class ScaleService {
     );
   }
 
-  async listConnectors() {
+  async listConnectors(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageType, 'connector'))
+      .where(
+        and(
+          eq(ewohAssetPackage.packageType, 'connector'),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
@@ -496,11 +544,16 @@ export class ScaleService {
     );
   }
 
-  async listScenarioPacks() {
+  async listScenarioPacks(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageType, 'scenario'))
+      .where(
+        and(
+          eq(ewohAssetPackage.packageType, 'scenario'),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
@@ -560,16 +613,21 @@ export class ScaleService {
     );
   }
 
-  async listMappings() {
+  async listMappings(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageType, 'mapping'))
+      .where(
+        and(
+          eq(ewohAssetPackage.packageType, 'mapping'),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      )
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
-  async getMapping(packageId: string) {
-    const row = await this.getAssetPackage(packageId);
+  async getMapping(packageId: string, actor?: OrgContext) {
+    const row = await this.getAssetPackage(packageId, actor);
     if (row.packageType !== 'mapping') {
       throw new BadRequestException('packageType must be mapping');
     }
@@ -581,7 +639,7 @@ export class ScaleService {
     sample: Record<string, unknown>,
     actor?: OrgContext,
   ) {
-    const mapping = await this.getMapping(packageId);
+    const mapping = await this.getMapping(packageId, actor);
     const manifest = (mapping.manifestJson as Record<string, unknown> | null) ?? {};
     const rules =
       (manifest.rules as Array<{
@@ -653,10 +711,10 @@ export class ScaleService {
     };
   }
 
-  async compatibilityCatalog() {
+  async compatibilityCatalog(actor?: OrgContext) {
     const coreVersion =
       process.env.EWOH_RELEASE_VERSION?.trim() || '0.6.0-rc4';
-    const assets = await this.listAssetPackages();
+    const assets = await this.listAssetPackages(actor);
     const rows = assets.map((asset) => {
       const manifest = (asset.manifestJson as Record<string, unknown> | null) ?? {};
       const compatibility = manifest.compatibility as
@@ -696,12 +754,12 @@ export class ScaleService {
     };
   }
 
-  async scaleMetrics() {
+  async scaleMetrics(actor?: OrgContext) {
     const [assets, profiles, templates, compatibility] = await Promise.all([
-      this.listAssetPackages(),
-      this.listProfiles(),
-      this.listTemplates(),
-      this.compatibilityCatalog(),
+      this.listAssetPackages(actor),
+      this.listProfiles(actor),
+      this.listTemplates(actor),
+      this.compatibilityCatalog(actor),
     ]);
     const readyStatuses = new Set(['published', 'installed']);
     const published = assets.filter((asset) =>
@@ -783,6 +841,8 @@ export class ScaleService {
         configKey,
         configValue,
         updatedBy: actor.userId.trim(),
+        // NEST-202：写入显式携带 orgId（不依赖 GUC 默认）。
+        orgId: this.requireOrgId(actor),
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -804,12 +864,19 @@ export class ScaleService {
     return this.parseDifference(row);
   }
 
-  async listFactoryDifferences() {
+  async listFactoryDifferences(actor?: OrgContext) {
+    // NEST-218：org 过滤 + LIMIT（原 like('diff.%') 全表前缀扫描跨租户暴露）。
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, 'diff.%'))
-      .orderBy(desc(ewohSchedulerConfig.updatedAt));
+      .where(
+        and(
+          like(ewohSchedulerConfig.configKey, 'diff.%'),
+          this.orgWhere(ewohSchedulerConfig.orgId, actor),
+        ),
+      )
+      .orderBy(desc(ewohSchedulerConfig.updatedAt))
+      .limit(200);
     return rows.map((row) => this.parseDifference(row));
   }
 
@@ -817,10 +884,16 @@ export class ScaleService {
     if (!actor?.userId?.trim()) {
       throw new UnauthorizedException('Authenticated user context is required');
     }
+    // NEST-203：按 (orgId, configKey) 查询（global_admin 放行跨租户）。
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(eq(ewohSchedulerConfig.configKey, configKey));
+      .where(
+        and(
+          eq(ewohSchedulerConfig.configKey, configKey),
+          this.orgWhere(ewohSchedulerConfig.orgId, actor),
+        ),
+      );
     if (!row) {
       throw new NotFoundException(`Factory difference ${configKey} not found`);
     }
@@ -833,11 +906,21 @@ export class ScaleService {
       ...previousValue,
       status: 'resolved',
     };
+    // NEST-203：update 同样带 org 谓词，且用 status 非终态 CAS 防并发重复 resolve。
     const [updated] = await this.db
       .update(ewohSchedulerConfig)
       .set({ configValue, updatedBy: actor.userId.trim() })
-      .where(eq(ewohSchedulerConfig.configKey, configKey))
+      .where(
+        and(
+          eq(ewohSchedulerConfig.configKey, configKey),
+          this.orgWhere(ewohSchedulerConfig.orgId, actor),
+          sql`(${ewohSchedulerConfig.configValue}->>'status')::text is distinct from 'resolved'`,
+        ),
+      )
       .returning();
+    if (!updated) {
+      throw new ConflictException('STATE_CONFLICT');
+    }
     await this.auditService.appendAuditLog({
       actorId: actor.userId,
       orgId: actor.primaryOrgId ?? '',
@@ -850,18 +933,25 @@ export class ScaleService {
     return this.parseDifference(updated);
   }
 
-  async listAssetPackages() {
+  async listAssetPackages(actor?: OrgContext) {
     return this.db
       .select()
       .from(ewohAssetPackage)
+      // NEST-202：org 过滤（global_admin 放行）。
+      .where(this.orgWhere(ewohAssetPackage.orgId, actor))
       .orderBy(desc(ewohAssetPackage.createdAt));
   }
 
-  async getAssetPackage(packageId: string) {
+  async getAssetPackage(packageId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageId, packageId));
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      );
     if (!row) {
       throw new NotFoundException(`Asset package ${packageId} not found`);
     }
@@ -869,7 +959,7 @@ export class ScaleService {
   }
 
   async runConformance(packageId: string, actor?: OrgContext) {
-    const asset = await this.getAssetPackage(packageId);
+    const asset = await this.getAssetPackage(packageId, actor);
     const manifest = (asset.manifestJson as Record<string, unknown> | null) ?? {};
     const checks: Array<{ check: string; passed: boolean; detail?: string }> = [];
     const push = (check: string, condition: boolean, detail?: string) =>
@@ -944,7 +1034,7 @@ export class ScaleService {
   }
 
   async installScenarioPack(packageId: string, actor?: OrgContext) {
-    const asset = await this.getAssetPackage(packageId);
+    const asset = await this.getAssetPackage(packageId, actor);
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
     }
@@ -978,7 +1068,7 @@ export class ScaleService {
   }
 
   async uninstallScenarioPack(packageId: string, actor?: OrgContext) {
-    const asset = await this.getAssetPackage(packageId);
+    const asset = await this.getAssetPackage(packageId, actor);
     if (asset.packageType !== 'scenario') {
       throw new BadRequestException('packageType must be scenario');
     }
@@ -1019,20 +1109,27 @@ export class ScaleService {
     const ring = requestedRing
       ? this.normalizeRing(requestedRing)
       : null;
-    const profiles = await this.listProfiles();
+    const profiles = await this.listProfiles(actor);
     const targets = ring
       ? profiles.filter((profile) => this.profileRing(profile) === ring)
       : profiles;
+    // NEST-217：批量 UPDATE（单条语句，替代逐条 UPDATE 循环——N+1 写与长事务锁）。
+    const targetIds = targets
+      .filter((profile) => profile.status !== 'upgraded')
+      .map((profile) => profile.profileId);
     let updated = 0;
-    for (const profile of targets) {
-      if (profile.status === 'upgraded') {
-        continue;
-      }
-      await this.db
+    if (targetIds.length > 0) {
+      const updatedRows = await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'upgraded', installedAt: new Date() })
-        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
-      updated += 1;
+        .where(
+          and(
+            inArray(ewohFactoryProfile.profileId, targetIds),
+            ne(ewohFactoryProfile.status, 'upgraded'),
+          ),
+        )
+        .returning({ profileId: ewohFactoryProfile.profileId });
+      updated = updatedRows.length;
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
@@ -1059,20 +1156,27 @@ export class ScaleService {
     const ring = requestedRing
       ? this.normalizeRing(requestedRing)
       : null;
-    const profiles = await this.listProfiles();
+    const profiles = await this.listProfiles(actor);
     const targets = ring
       ? profiles.filter((profile) => this.profileRing(profile) === ring)
       : profiles;
+    // NEST-217：批量 UPDATE（单条语句，替代逐条 UPDATE 循环）。
+    const targetIds = targets
+      .filter((profile) => profile.status !== 'rolled_back')
+      .map((profile) => profile.profileId);
     let updated = 0;
-    for (const profile of targets) {
-      if (profile.status === 'rolled_back') {
-        continue;
-      }
-      await this.db
+    if (targetIds.length > 0) {
+      const updatedRows = await this.db
         .update(ewohFactoryProfile)
         .set({ status: 'rolled_back', installedAt: new Date() })
-        .where(eq(ewohFactoryProfile.profileId, profile.profileId));
-      updated += 1;
+        .where(
+          and(
+            inArray(ewohFactoryProfile.profileId, targetIds),
+            ne(ewohFactoryProfile.status, 'rolled_back'),
+          ),
+        )
+        .returning({ profileId: ewohFactoryProfile.profileId });
+      updated = updatedRows.length;
     }
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
@@ -1190,11 +1294,11 @@ export class ScaleService {
     return value;
   }
 
-  async fleetStatus() {
+  async fleetStatus(actor?: OrgContext) {
     const [profiles, templates, assets] = await Promise.all([
-      this.listProfiles(),
-      this.listTemplates(),
-      this.listAssetPackages(),
+      this.listProfiles(actor),
+      this.listTemplates(actor),
+      this.listAssetPackages(actor),
     ]);
     const statusCounts: Record<string, number> = {};
     const ringCounts: Record<string, number> = {};
@@ -1217,7 +1321,10 @@ export class ScaleService {
   }
 
   async generateSupportBundle(actor?: OrgContext) {
-    const status = await this.fleetStatus();
+    const status = await this.fleetStatus(actor);
+    // NEST-219：traces 单次 list 复用（两次调用间 traces 变化会导致
+    // traceCount 与 traces 数组不一致）。
+    const traces = this.tracingService?.list(20) ?? [];
     const bundle = {
       bundleId: `SB-${randomUUID().slice(0, 8)}`,
       generatedAt: status.generatedAt,
@@ -1231,8 +1338,8 @@ export class ScaleService {
       profiles: this.redact(status.profiles),
       templates: this.redact(status.templates),
       assetPackages: this.redact(status.assetPackages),
-      traces: this.redact(this.tracingService?.list(20) ?? []),
-      traceCount: this.tracingService?.list(20).length ?? 0,
+      traces: this.redact(traces),
+      traceCount: traces.length,
       includesSecrets: false,
     };
     await this.auditService.appendAuditLog({
@@ -1360,27 +1467,42 @@ export class ScaleService {
     return load(readFileSync(file, 'utf8')) as GoldenFactorySpec;
   }
 
-  private async findTemplateByTemplateId(templateId: string) {
+  private async findTemplateByTemplateId(templateId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohFactoryTemplate)
-      .where(eq(ewohFactoryTemplate.templateId, templateId));
+      .where(
+        and(
+          eq(ewohFactoryTemplate.templateId, templateId),
+          this.orgWhere(ewohFactoryTemplate.orgId, actor),
+        ),
+      );
     return row;
   }
 
-  private async findAssetByPackageId(packageId: string) {
+  private async findAssetByPackageId(packageId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohAssetPackage)
-      .where(eq(ewohAssetPackage.packageId, packageId));
+      .where(
+        and(
+          eq(ewohAssetPackage.packageId, packageId),
+          this.orgWhere(ewohAssetPackage.orgId, actor),
+        ),
+      );
     return row;
   }
 
-  private async findProfileByFactoryName(factoryName: string) {
+  private async findProfileByFactoryName(factoryName: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohFactoryProfile)
-      .where(eq(ewohFactoryProfile.factoryName, factoryName));
+      .where(
+        and(
+          eq(ewohFactoryProfile.factoryName, factoryName),
+          this.orgWhere(ewohFactoryProfile.orgId, actor),
+        ),
+      );
     return row;
   }
 
@@ -1423,7 +1545,7 @@ export class ScaleService {
       compatibleCore: spec.spec.compatibleCore,
     };
 
-    let template = await this.findTemplateByTemplateId(templateId);
+    let template = await this.findTemplateByTemplateId(templateId, actor);
     if (!template) {
       template = await this.registerTemplate(
         {
@@ -1453,7 +1575,7 @@ export class ScaleService {
         connector.id,
         connector.version,
       ]);
-      const existing = await this.findAssetByPackageId(packageId);
+      const existing = await this.findAssetByPackageId(packageId, actor);
       if (!existing) {
         await this.registerConnector(
           {
@@ -1477,7 +1599,7 @@ export class ScaleService {
         pack.id,
         pack.version,
       ]);
-      const existing = await this.findAssetByPackageId(packageId);
+      const existing = await this.findAssetByPackageId(packageId, actor);
       if (!existing) {
         await this.registerScenarioPack(
           {
@@ -1498,6 +1620,7 @@ export class ScaleService {
 
     const existingProfile = await this.findProfileByFactoryName(
       body.factoryName.trim(),
+      actor,
     );
     const profile = existingProfile
       ? existingProfile
@@ -1540,10 +1663,14 @@ export class ScaleService {
   /**
    * 探测真实数据库是否可用。样例工厂（sample factory）在数据库不可用时必须
    * 返回明确的 BLOCKED，而不是假装成功。探测方式是执行一次轻量查询。
+   * （NEST-202：listProfiles 已带 org 强制，此处改为无租户语义的裸探测。）
    */
   async isDatabaseAvailable(): Promise<boolean> {
     try {
-      await this.listProfiles();
+      await this.db
+        .select({ probe: sql<number>`1` })
+        .from(ewohFactoryProfile)
+        .limit(1);
       return true;
     } catch {
       return false;

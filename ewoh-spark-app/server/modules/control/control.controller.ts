@@ -36,8 +36,16 @@ export class ControlController {
   receipt(
     @Param('id') id: string,
     @Body() body: { commandKey: string; result: 'executed' | 'failed'; receipt?: Record<string, unknown> },
+    @Req() request: { userContext?: OrgContext },
   ) {
-    return this.controlService.receiveReceipt(id, body.commandKey, body.result, body.receipt);
+    // NEST-423：回执路径同样带租户上下文（应用层 org 守卫，跨租户 404）。
+    return this.controlService.receiveReceipt(
+      id,
+      body.commandKey,
+      body.result,
+      body.receipt,
+      request.userContext,
+    );
   }
 
   @Post(':id/revoke')
@@ -47,7 +55,7 @@ export class ControlController {
     @Req() request: { userContext?: OrgContext },
   ) {
     if (action !== 'revoke') {
-      return this.controlService.getRequest(id);
+      return this.controlService.getRequest(id, request.userContext);
     }
     return this.controlService.revoke(id, request.userContext);
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Loader2, QrCode, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -6,18 +6,13 @@ import {
   getMobileOrder,
   getWorkbench,
   inspectMobileStep,
-  scanWorkbench,
   transitionMobileStep,
 } from '../../api/mobile';
-import { uploadFile } from '../../api/files';
 import { getAuthUser } from '../../lib/auth';
 import { useOfflineWorkbench } from './useOfflineWorkbench';
-import {
-  createScannerListener,
-  detectBarcodeFromFile,
-  playScanFeedback,
-  supportsCameraCapture,
-} from '../../lib/scanner';
+// CLI-110 拆分：扫码交互与异常/质检表单分别提取为同目录 hooks（机械提取）。
+import { useMobileScanner } from './useMobileScanner';
+import { useMobileException } from './useMobileException';
 import { queryKeys } from '../../hooks/queryKeys';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -33,30 +28,27 @@ import {
   AlertDialogTitle,
 } from '@client/src/components/ui/alert-dialog';
 import QueryState from '../../components/QueryState';
-import { buildExceptionBody } from './exceptionPayload';
 import { StepCard } from './StepCard';
 import { PendingQueuePanel } from './PendingQueuePanel';
 import { OfflineStatusBar } from './OfflineStatusBar';
 import { useNetworkState } from './useNetworkState';
 import { useOfflineSettings } from './useOfflineSettings';
-import { orderStatusLabel, scanTypeLabel, stepStatusLabel } from './labels';
+import { orderStatusLabel, stepStatusLabel } from './labels';
+
+/** CLI-105：按 stepId 缓存的失败记录（kind + variables + 错误对象本体）。 */
+interface FailedMutationRecord {
+  kind: 'transition' | 'inspection';
+  variables: unknown;
+  error: Error | null;
+}
 
 const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const personId = getAuthUser()?.userId ?? '';
-  const [scanInput, setScanInput] = useState('');
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [exceptionOpen, setExceptionOpen] = useState<Record<string, boolean>>({});
-  const [exceptionNote, setExceptionNote] = useState<Record<string, string>>({});
-  const [exceptionFile, setExceptionFile] = useState<Record<string, File | null>>({});
-  const [qcOpen, setQcOpen] = useState<Record<string, boolean>>({});
-  const [qcResult, setQcResult] = useState<
-    Record<string, 'pass' | 'fail' | 'rework' | undefined>
-  >({});
-  const [qcNote, setQcNote] = useState<Record<string, string>>({});
   const [failedMutation, setFailedMutation] = useState<
-    Record<string, { kind: 'transition' | 'inspection'; variables: unknown } | undefined>
+    Record<string, FailedMutationRecord | undefined>
   >({});
 
   const onSynced = useCallback(() => {
@@ -108,30 +100,6 @@ const MobileWorkbench = (): React.ReactElement => {
     enabled: Boolean(activeOrderId),
   });
 
-  const scanMutation = useMutation({
-    mutationFn: (value: string) => scanWorkbench(value),
-    onSuccess: (result) => {
-      if ('scanType' in result && result.scanType === 'step') {
-        setActiveOrderId(result.step.scheduleTaskId);
-        toast.success(`已识别工序：${result.step.stepId}`);
-      } else if ('scanType' in result) {
-        toast.info(`${scanTypeLabel(result.scanType)} ${result.reference} 已识别`);
-      } else {
-        setActiveOrderId(result.workOrder.scheduleTaskId);
-        toast.success(`已扫码：${result.workOrder.title}`);
-      }
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.mobileWorkbench(personId),
-      });
-    },
-    onError: (err) => {
-      playScanFeedback('fail');
-      toast.error('扫码失败', {
-        description: err instanceof Error ? err.message : undefined,
-      });
-    },
-  });
-
   const transitionMutation = useMutation({
     mutationFn: ({
       orderId,
@@ -148,8 +116,7 @@ const MobileWorkbench = (): React.ReactElement => {
       toast.success(`工序 ${step.stepId} 已${stepStatusLabel(step.status)}`);
       setFailedMutation((current) => ({ ...current, [step.stepId]: undefined }));
       if (variables.action === 'pause') {
-        setExceptionNote((current) => ({ ...current, [step.stepId]: '' }));
-        setExceptionOpen((current) => ({ ...current, [step.stepId]: false }));
+        exception.clearExceptionAfterPause(step.stepId);
       }
       queryClient.invalidateQueries({
         queryKey: queryKeys.mobileOrder(activeOrderId ?? ''),
@@ -159,9 +126,15 @@ const MobileWorkbench = (): React.ReactElement => {
       });
     },
     onError: (err, variables) => {
+      // CLI-105：错误对象随 stepId 缓存（不再共享全局 mutation.error，
+      // 避免 A 卡片显示 B 的错误）。
       setFailedMutation((current) => ({
         ...current,
-        [variables.stepId]: { kind: 'transition', variables },
+        [variables.stepId]: {
+          kind: 'transition',
+          variables,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
       }));
       toast.error('操作失败', {
         description: err instanceof Error ? err.message : undefined,
@@ -190,13 +163,18 @@ const MobileWorkbench = (): React.ReactElement => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.mobileWorkbench(personId),
       });
-      setQcOpen((current) => ({ ...current, [stepId]: false }));
-      setQcNote((current) => ({ ...current, [stepId]: '' }));
+      exception.setQcOpen((current) => ({ ...current, [stepId]: false }));
+      exception.setQcNote((current) => ({ ...current, [stepId]: '' }));
     },
     onError: (err, variables) => {
+      // CLI-105：同上，错误对象按 stepId 缓存。
       setFailedMutation((current) => ({
         ...current,
-        [variables.stepId]: { kind: 'inspection', variables },
+        [variables.stepId]: {
+          kind: 'inspection',
+          variables,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
       }));
       toast.error('质检提交失败', {
         description: err instanceof Error ? err.message : undefined,
@@ -210,208 +188,50 @@ const MobileWorkbench = (): React.ReactElement => {
     [activeOrder],
   );
 
-  // ---- Draft auto-save (steps 5) ----
-  const saveDraft = useCallback(
-    (stepId: string, field: string, value: unknown) => {
-      const orderId = activeOrder?.workOrder.scheduleTaskId;
-      if (!orderId || !drafts) {
+  const submitTransition = useCallback(
+    (orderId: string, stepId: string, action: string, body?: Record<string, unknown>) => {
+      if (isOnline) {
+        transitionMutation.mutate({ orderId, stepId, action, body });
         return;
       }
-      void drafts.save({ orderId, stepId, field }, value);
+      void queueTransition({ orderId, stepId, action, body });
+      toast.info('已加入待同步队列，联网后自动提交');
     },
-    [activeOrder, drafts],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isOnline, queueTransition, transitionMutation],
   );
 
-  const restoredStepsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!drafts || !activeOrder) {
-      return undefined;
-    }
-    const orderId = activeOrder.workOrder.scheduleTaskId;
-    let cancelled = false;
-    const restore = async () => {
-      for (const step of activeOrder.steps) {
-        if (restoredStepsRef.current.has(step.stepId)) {
-          continue;
-        }
-        const [note, noteVal, resultVal] = await Promise.all([
-          drafts.get({ orderId, stepId: step.stepId, field: 'exceptionNote' }),
-          drafts.get({ orderId, stepId: step.stepId, field: 'qcNote' }),
-          drafts.get({ orderId, stepId: step.stepId, field: 'qcResult' }),
-        ]);
-        if (cancelled) {
-          return;
-        }
-        restoredStepsRef.current.add(step.stepId);
-        if (typeof note === 'string' && note) {
-          setExceptionNote((current) => ({ ...current, [step.stepId]: note }));
-        }
-        if (typeof noteVal === 'string' && noteVal) {
-          setQcNote((current) => ({ ...current, [step.stepId]: noteVal }));
-        }
-        if (resultVal === 'pass' || resultVal === 'fail' || resultVal === 'rework') {
-          setQcResult((current) => ({ ...current, [step.stepId]: resultVal }));
-        }
-      }
-    };
-    void restore();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOrder, drafts]);
-
-  // ---- Scanner (steps 7) ----
-  const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
-  const handleScan = useCallback(
-    (raw?: string) => {
-      const value = (raw ?? scanInput).trim();
-      if (!value) {
-        toast.error('请输入或扫码工单号');
+  const submitInspection = useCallback(
+    (
+      orderId: string,
+      stepId: string,
+      result: 'pass' | 'fail' | 'rework',
+      note?: string,
+    ) => {
+      if (isOnline) {
+        inspectMutation.mutate({ orderId, stepId, result, note });
         return;
       }
-      const now = Date.now();
-      const kind =
-        lastScanRef.current.value === value && now - lastScanRef.current.at < 1500
-          ? 'duplicate'
-          : 'success';
-      lastScanRef.current = { value, at: now };
-      playScanFeedback(kind);
-      setScanInput(value);
-      scanMutation.mutate(value);
+      void queueInspection({ orderId, stepId, result, note });
+      toast.info('质检已加入待同步队列');
     },
-    [scanInput, scanMutation],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isOnline, queueInspection, inspectMutation],
   );
 
-  const handleScanRef = useRef<(value: string) => void>(() => {});
-  handleScanRef.current = handleScan;
+  const exception = useMobileException({
+    activeOrder,
+    drafts,
+    isOnline,
+    queueTransition,
+    submitTransition,
+    submitInspection,
+  });
 
-  useEffect(() => {
-    const listener = createScannerListener({
-      onScan: (value) => handleScanRef.current(value),
-      onError: (message) => toast.error(message),
-    });
-    const onKeyDown = (event: KeyboardEvent) => listener.handleKeyDown(event);
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const handleCameraCapture = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-    try {
-      const value = await detectBarcodeFromFile(file);
-      if (value) {
-        playScanFeedback('success');
-        handleScan(value);
-      } else {
-        playScanFeedback('fail');
-        toast.error('未识别到条码，请尝试手动输入或使用扫码枪');
-      }
-    } catch (error) {
-      playScanFeedback('fail');
-      toast.error('条码识别不可用', {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    }
-  };
-
-  const submitTransition = (
-    orderId: string,
-    stepId: string,
-    action: string,
-    body?: Record<string, unknown>,
-  ) => {
-    if (isOnline) {
-      transitionMutation.mutate({ orderId, stepId, action, body });
-      return;
-    }
-    void queueTransition({ orderId, stepId, action, body });
-    toast.info('已加入待同步队列，联网后自动提交');
-  };
-
-  const submitInspection = (
-    orderId: string,
-    stepId: string,
-    result: 'pass' | 'fail' | 'rework',
-    note?: string,
-  ) => {
-    if (isOnline) {
-      inspectMutation.mutate({ orderId, stepId, result, note });
-      return;
-    }
-    void queueInspection({ orderId, stepId, result, note });
-    toast.info('质检已加入待同步队列');
-  };
-
-  const handleException = async (stepId: string) => {
-    const note = exceptionNote[stepId]?.trim();
-    if (!note) {
-      toast.error('请填写异常说明');
-      return;
-    }
-    const file = exceptionFile[stepId] ?? null;
-    const orderId = activeOrder!.workOrder.scheduleTaskId;
-    if (!isOnline) {
-      try {
-        await queueTransition({
-          orderId,
-          stepId,
-          action: 'pause',
-          body: buildExceptionBody(note),
-          ...(file
-            ? {
-                attachment: {
-                  name: file.name,
-                  contentType: file.type || 'image/jpeg',
-                  data: file,
-                },
-              }
-            : {}),
-        });
-        toast.info(file ? '异常及照片已加入待同步队列' : '异常已加入待同步队列');
-      } catch (error) {
-        toast.error('离线照片处理失败', {
-          description: error instanceof Error ? error.message : undefined,
-        });
-      }
-      return;
-    }
-    let body = buildExceptionBody(note);
-    if (file) {
-      try {
-        const record = await uploadFile(file, `exception-${stepId}`);
-        body = buildExceptionBody(note, {
-          id: record.id,
-          filename: record.filename,
-          contentType: record.contentType,
-        });
-      } catch (error) {
-        toast.error('照片上传失败', {
-          description: error instanceof Error ? error.message : undefined,
-        });
-        return;
-      }
-    }
-    submitTransition(orderId, stepId, 'pause', body);
-  };
-
-  const handleInspect = (stepId: string) => {
-    const result = qcResult[stepId];
-    if (!result) {
-      toast.error('请选择质检结果');
-      return;
-    }
-    submitInspection(
-      activeOrder!.workOrder.scheduleTaskId,
-      stepId,
-      result,
-      qcNote[stepId]?.trim() || undefined,
-    );
-  };
+  const scanner = useMobileScanner({
+    personId,
+    onOrderRecognized: setActiveOrderId,
+  });
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
@@ -577,10 +397,10 @@ const MobileWorkbench = (): React.ReactElement => {
         <div className="relative flex-1">
           <QrCode className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[hsl(218_10%_42%)]" />
           <Input
-            value={scanInput}
-            onChange={(event) => setScanInput(event.target.value)}
+            value={scanner.scanInput}
+            onChange={(event) => scanner.setScanInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') handleScan();
+              if (event.key === 'Enter') scanner.handleScan();
             }}
             placeholder="扫码或输入工单号"
             className="min-h-12 pl-9"
@@ -588,22 +408,22 @@ const MobileWorkbench = (): React.ReactElement => {
           />
         </div>
         <Button
-          onClick={() => handleScan()}
-          disabled={scanMutation.isPending}
+          onClick={() => scanner.handleScan()}
+          disabled={scanner.scanMutation.isPending}
           className="min-h-12 sm:w-28"
         >
-          {scanMutation.isPending ? (
+          {scanner.scanMutation.isPending ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <QrCode className="size-4" />
           )}
           扫码
         </Button>
-        {supportsCameraCapture() && (
+        {scanner.supportsCamera && (
           <>
             <Button
               variant="outline"
-              onClick={() => cameraInputRef.current?.click()}
+              onClick={() => scanner.cameraInputRef.current?.click()}
               className="min-h-12 sm:w-28"
               aria-label="相机扫码"
             >
@@ -611,12 +431,12 @@ const MobileWorkbench = (): React.ReactElement => {
               相机
             </Button>
             <input
-              ref={cameraInputRef}
+              ref={scanner.cameraInputRef}
               type="file"
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={handleCameraCapture}
+              onChange={scanner.handleCameraCapture}
               aria-label="相机扫码上传"
             />
           </>
@@ -693,46 +513,56 @@ const MobileWorkbench = (): React.ReactElement => {
             <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
               {actionableSteps.map((step) => {
                 const failed = failedMutation[step.stepId];
-                const stepError = failed
-                  ? failed.kind === 'transition'
-                    ? (transitionMutation.error ?? null)
-                    : (inspectMutation.error ?? null)
-                  : null;
+                // CLI-105：错误对象按 stepId 隔离（failed.error），不再读全局
+                // mutation.error（多 step 失败时 A 卡片会显示 B 的错误）。
+                const stepError = failed?.error ?? null;
                 return (
                   <StepCard
                     key={step.stepId}
                     step={step}
                     pending={transitionMutation.isPending || inspectMutation.isPending}
                     error={stepError}
-                    exceptionOpen={Boolean(exceptionOpen[step.stepId])}
-                    exceptionNote={exceptionNote[step.stepId] ?? ''}
-                    exceptionFile={exceptionFile[step.stepId] ?? null}
-                    qcOpen={Boolean(qcOpen[step.stepId])}
-                    qcResult={qcResult[step.stepId]}
-                    qcNote={qcNote[step.stepId] ?? ''}
+                    exceptionOpen={Boolean(exception.exceptionOpen[step.stepId])}
+                    exceptionNote={exception.exceptionNote[step.stepId] ?? ''}
+                    exceptionFile={exception.exceptionFile[step.stepId] ?? null}
+                    qcOpen={Boolean(exception.qcOpen[step.stepId])}
+                    qcResult={exception.qcResult[step.stepId]}
+                    qcNote={exception.qcNote[step.stepId] ?? ''}
                     onExceptionNoteChange={(value) => {
-                      setExceptionNote((current) => ({ ...current, [step.stepId]: value }));
-                      saveDraft(step.stepId, 'exceptionNote', value);
+                      exception.setExceptionNote((current) => ({
+                        ...current,
+                        [step.stepId]: value,
+                      }));
+                      exception.saveDraft(step.stepId, 'exceptionNote', value);
                     }}
                     onExceptionFileChange={(file) =>
-                      setExceptionFile((current) => ({ ...current, [step.stepId]: file }))
+                      exception.setExceptionFile((current) => ({
+                        ...current,
+                        [step.stepId]: file,
+                      }))
                     }
                     onExceptionOpenChange={(open) =>
-                      setExceptionOpen((current) => ({ ...current, [step.stepId]: open }))
+                      exception.setExceptionOpen((current) => ({
+                        ...current,
+                        [step.stepId]: open,
+                      }))
                     }
                     onQcOpenChange={(open) =>
-                      setQcOpen((current) => ({ ...current, [step.stepId]: open }))
+                      exception.setQcOpen((current) => ({ ...current, [step.stepId]: open }))
                     }
                     onQcResultChange={(value) => {
-                      setQcResult((current) => ({ ...current, [step.stepId]: value }));
-                      saveDraft(step.stepId, 'qcResult', value);
+                      exception.setQcResult((current) => ({
+                        ...current,
+                        [step.stepId]: value,
+                      }));
+                      exception.saveDraft(step.stepId, 'qcResult', value);
                     }}
                     onQcNoteChange={(value) => {
-                      setQcNote((current) => ({ ...current, [step.stepId]: value }));
-                      saveDraft(step.stepId, 'qcNote', value);
+                      exception.setQcNote((current) => ({ ...current, [step.stepId]: value }));
+                      exception.saveDraft(step.stepId, 'qcNote', value);
                     }}
-                    onSubmitException={() => handleException(step.stepId)}
-                    onSubmitInspection={() => handleInspect(step.stepId)}
+                    onSubmitException={() => void exception.handleException(step.stepId)}
+                    onSubmitInspection={() => exception.handleInspect(step.stepId)}
                     onRetry={() => {
                       const target = failedMutation[step.stepId];
                       if (!target) {

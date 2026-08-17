@@ -261,10 +261,20 @@ class LearningLoop:
 
     @staticmethod
     def _find_candidate(req, plan_id):
+        """按确认 ID 查找被采纳的候选。
+
+        EDGE-113（2026-08-17 审计整改）：orchestrator.confirm 传入的 plan_id
+        即候选 ID（candidates[i].candidate_id，见 test_learning_loop 既有契约）；
+        为兼容外部以 plan_id 语义传入的调用，同时匹配 candidate_id 与 plan_id
+        属性，统一"确认 ID → 候选"的查找口径。
+        """
         if not plan_id:
             return None
         for cand in req.candidates or []:
-            if getattr(cand, "candidate_id", None) == plan_id:
+            if (
+                getattr(cand, "candidate_id", None) == plan_id
+                or getattr(cand, "plan_id", None) == plan_id
+            ):
                 return cand
         return None
 

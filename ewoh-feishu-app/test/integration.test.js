@@ -3,9 +3,13 @@
 //   - /api 写操作无 token → 401（fail-closed）
 //   - /api 写操作带正确 token → 200
 //   - /api 读操作默认放行
-//   - /webhook/card 验签失败 → 401
+//   - /webhook/card 验签失败 → 401；未配置 encrypt_key → 401（FS-002 fail-closed）
 //   - /webhook/card 验签通过 + 处置成功；重复投递 → duplicated=true 且状态不变
+//   - event not found → dedup 回滚可重试（FS-004）
 //   - closed 事件重复处置 → 409 + dedup 回滚可重试
+// FS-009：webhook handler 与中间件装配直接复用 server 实现
+//（middleware.configureApp + webhook.createWebhookCardHandler），
+// 不再维护测试内联副本（原副本缺 createApproval/markReplayHandled/updateCard）。
 // 运行：node --test test/integration.test.js
 
 'use strict';
@@ -18,87 +22,24 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 
+const express = require('express');
 const dbm = require('../server/db');
 const events = require('../server/events');
+const middleware = require('../server/middleware');
+const { createApiRouter } = require('../server/api');
+const { apiAuth } = require('../server/auth');
+const { createWebhookCardHandler } = require('../server/webhook');
 
-// 构造最小 Express app（复用 index.js 的路由装配逻辑，但不启动模拟器/定时器）
+const VERIFY_TOKEN = 'test-verification-token';
+const ENCRYPT_KEY = 'it-encrypt-key';
+
+// 构建与生产 index.js 同构的 Express app（共用 middleware/webhook/api 装配）
 function buildApp(db) {
-  const express = require('express');
-  const cors = require('cors');
-  const { createApiRouter } = require('../server/api');
-  const { apiAuth } = require('../server/auth');
-  const feishu = require('../server/feishu');
-  const sync = require('../server/sync');
-  const security = require('../server/security');
-
   const app = express();
-  app.use(cors({ origin: ['http://localhost:3000'], methods: ['GET', 'POST', 'OPTIONS'], credentials: true }));
-  app.use(express.json({ limit: '1mb' }));
+  middleware.configureApp(app); // 安全头 + CORS + rawBody 捕获（FS-007/014/001）
   app.use('/api', apiAuth, createApiRouter(db));
-
-  // webhook 卡片回调（与 index.js 相同的处理逻辑，含 D3 业务幂等）
-  app.post('/webhook/card', (req, res) => {
-    const body = req.body || {};
-    const value = (body.action && body.action.value) || {};
-    const actionType = value.action_type;
-    const eventId = value.event_id || (body.header && body.header.event_id);
-
-    const result = security.verifyWebhookRequest(req);
-    if (!result.ok) {
-      security.auditWebhook(db, req, result, actionType, eventId);
-      return res.status(401).json({ ok: false, error: result.error, code: result.code });
-    }
-    security.auditWebhook(db, req, { ok: true }, actionType, eventId);
-
-    try {
-      if (!actionType || !eventId) {
-        return res.json({ ok: false, error: 'missing action_type or event_id' });
-      }
-      const dedup = dbm.tryAcquireWebhookDedup(db, {
-        event_id: eventId,
-        action_type: actionType,
-        actor_id: body.open_id || (body.operator && body.operator.open_id) || 'unknown',
-        result: { status: 'processing' },
-      });
-      if (dedup.error) return res.json({ ok: false, error: dedup.error });
-      if (dedup.duplicated) {
-        return res.json({ ok: true, duplicated: true, event_id: eventId, action: actionType });
-      }
-
-      const event = events.getEvent(db, eventId);
-      if (!event) return res.json({ ok: false, error: `event not found: ${eventId}` });
-      const dev = dbm.getDevice(db, event.device_id);
-      if (dev) event.worker_name = dev.worker_name;
-
-      const openId = body.open_id || (body.operator && body.operator.open_id) || 'unknown';
-      let label;
-      try {
-        if (actionType === 'acknowledge') {
-          events.handleEvent(db, eventId, { handler_id: openId, action: 'acknowledge' });
-          label = '已确认';
-        } else if (actionType === 'resolve') {
-          events.handleEvent(db, eventId, { handler_id: openId, action: 'resolve' });
-          label = '已解决';
-        } else if (actionType === 'escalate') {
-          events.handleEvent(db, eventId, { handler_id: openId, action: 'escalate' });
-          label = '已上报（审批中）';
-        } else {
-          dbm.deleteWebhookDedup(db, eventId, actionType);
-          return res.status(400).json({ ok: false, error: `unknown action_type: ${actionType}` });
-        }
-      } catch (e) {
-        dbm.deleteWebhookDedup(db, eventId, actionType);
-        const isClosedViolation = String(e.message || '').includes('already closed');
-        return res.status(isClosedViolation ? 409 : 400).json({ ok: false, error: e.message });
-      }
-      dbm.updateWebhookDedupResult(db, eventId, actionType, { status: 'done', label, at: new Date().toISOString() });
-      res.json({ ok: true });
-    } catch (e) {
-      console.error('[webhook] /webhook/card 处理异常:', e.message);
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
+  app.post('/webhook/card', createWebhookCardHandler(db)); // FS-009：复用生产 handler
+  app.use(middleware.errorHandler);
   return app;
 }
 
@@ -112,16 +53,41 @@ async function startServer(app, t) {
 }
 
 // JSON 请求封装
-async function httpJson(baseUrl, method, urlPath, { headers = {}, body } = {}) {
+async function httpJson(baseUrl, method, urlPath, { headers = {}, body, rawBody } = {}) {
+  const payload = rawBody !== undefined ? rawBody : body !== undefined ? JSON.stringify(body) : undefined;
   const res = await fetch(`${baseUrl}${urlPath}`, {
     method,
     headers: { 'content-type': 'application/json', ...headers },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: payload,
   });
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch (_) { json = text; }
-  return { status: res.status, body: json };
+  return { status: res.status, body: json, headers: res.headers };
+}
+
+// FS-001：按飞书事件订阅协议签名 hex(sha256(ts + nonce + key + rawBody))
+function sign(rawBody, timestamp, nonce) {
+  return crypto
+    .createHash('sha256')
+    .update(`${timestamp}${nonce}${ENCRYPT_KEY}${rawBody}`, 'utf8')
+    .digest('hex');
+}
+
+// 发送带协议签名的 webhook 请求（rawBody 与签名基串严格一致）
+async function postWebhookRaw(baseUrl, body, opts = {}) {
+  const raw = JSON.stringify(body);
+  const ts = opts.timestamp != null ? String(opts.timestamp) : String(Date.now());
+  const n = opts.nonce != null ? String(opts.nonce) : 'it-nonce';
+  const sig = opts.signature != null ? opts.signature : sign(raw, ts, n);
+  return httpJson(baseUrl, 'POST', '/webhook/card', {
+    headers: {
+      'x-lark-request-timestamp': ts,
+      'x-lark-request-nonce': n,
+      'x-lark-signature': sig,
+    },
+    rawBody: raw,
+  });
 }
 
 // 保存并恢复环境变量（async 版：确保整个回调执行期间环境保持，完成后恢复）
@@ -156,7 +122,7 @@ function makeCardBody(overrides = {}) {
     header: {
       event_id: `evt-${crypto.randomUUID()}`,
       event_type: 'card.action.trigger',
-      token: 'test-verification-token',
+      token: VERIFY_TOKEN,
       create_time: now,
     },
     open_id: 'ou_test',
@@ -211,16 +177,66 @@ test('集成：/api 读操作默认放行（未配置 token）', async (t) => {
   });
 });
 
+test('集成：FS-007 安全头 + x-powered-by 禁用', async (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+  const app = buildApp(db);
+  app.get('/__it', (req, res) => res.json({ ok: 1 }));
+  const { baseUrl } = await startServer(app, t);
+  const res = await httpJson(baseUrl, 'GET', '/__it');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.strictEqual(res.headers.get('x-frame-options'), 'DENY');
+  assert.ok(res.headers.get('content-security-policy'), '应设置 CSP');
+  assert.strictEqual(res.headers.get('x-powered-by'), null, 'x-powered-by 必须禁用');
+});
+
+test('集成：FS-014 CORS 预检 allowedHeaders 含 Authorization/X-API-Key', async (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+  const app = buildApp(db);
+  const { baseUrl } = await startServer(app, t);
+  await withEnv({ FEISHU_CORS_ORIGINS: 'http://localhost:3000' }, async () => {
+    const res = await fetch(`${baseUrl}/api/status`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'http://localhost:3000',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization, x-api-key, content-type',
+      },
+    });
+    assert.strictEqual(res.status, 204);
+    const allowed = String(res.headers.get('access-control-allow-headers') || '');
+    assert.match(allowed, /authorization/i, 'allowedHeaders 应含 Authorization');
+    assert.match(allowed, /x-api-key/i, 'allowedHeaders 应含 X-API-Key');
+    assert.strictEqual(res.headers.get('access-control-allow-origin'), 'http://localhost:3000');
+  });
+});
+
 test('集成：/webhook/card 验签失败 → 401', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
   const app = buildApp(db);
   const { baseUrl } = await startServer(app, t);
-  await withEnv({ FEISHU_VERIFICATION_TOKEN: 'test-verification-token' }, async () => {
-    const res = await httpJson(baseUrl, 'POST', '/webhook/card', {
-      body: makeCardBody({ header: { ...makeCardBody().header, token: 'wrong-token' } }),
-    });
+  await withEnv(
+    { FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY },
+    async () => {
+      const res = await postWebhookRaw(baseUrl, makeCardBody(), { signature: '0'.repeat(64) });
+      assert.strictEqual(res.status, 401);
+      assert.strictEqual(res.body.code, 'WEBHOOK_INVALID_SIGNATURE');
+    }
+  );
+});
+
+test('集成：FS-002 /webhook/card 未配置 encrypt_key → 401（fail-closed）', async (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+  const app = buildApp(db);
+  const { baseUrl } = await startServer(app, t);
+  await withEnv({ FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: undefined }, async () => {
+    const res = await postWebhookRaw(baseUrl, makeCardBody());
     assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.code, 'WEBHOOK_ENCRYPT_KEY_NOT_CONFIGURED');
   });
 });
 
@@ -236,26 +252,53 @@ test('集成：/webhook/card 处置成功 + 重复投递幂等命中', async (t)
   });
   const evId = db.prepare("SELECT event_id FROM events WHERE event_code = 'IT_EVENT' ORDER BY id DESC LIMIT 1").get().event_id;
 
-  await withEnv({ FEISHU_VERIFICATION_TOKEN: 'test-verification-token' }, async () => {
-    // 第一次：处置成功（acknowledge → handled）
-    const cardBody = makeCardBody();
-    cardBody.action.value.event_id = evId;
-    const res1 = await httpJson(baseUrl, 'POST', '/webhook/card', { body: cardBody });
-    assert.strictEqual(res1.status, 200);
-    assert.strictEqual(res1.body.ok, true);
-    assert.strictEqual(res1.body.duplicated, undefined);
-    assert.strictEqual(events.getEvent(db, evId).status, 'handled');
+  await withEnv(
+    { FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY },
+    async () => {
+      // 第一次：处置成功（acknowledge → handled）
+      const cardBody = makeCardBody();
+      cardBody.action.value.event_id = evId;
+      const res1 = await postWebhookRaw(baseUrl, cardBody);
+      assert.strictEqual(res1.status, 200);
+      assert.strictEqual(res1.body.ok, true);
+      assert.strictEqual(res1.body.duplicated, undefined);
+      assert.strictEqual(events.getEvent(db, evId).status, 'handled');
 
-    // 第二次：同一事件同一动作重复投递（新 event_id 信封）→ 幂等命中，状态不变
-    const dupBody = makeCardBody();
-    dupBody.action.value.event_id = evId;
-    const res2 = await httpJson(baseUrl, 'POST', '/webhook/card', { body: dupBody });
-    assert.strictEqual(res2.status, 200);
-    assert.strictEqual(res2.body.ok, true);
-    assert.strictEqual(res2.body.duplicated, true, '重复投递应幂等命中');
-    assert.strictEqual(events.getEvent(db, evId).status, 'handled', '状态不应被重复修改');
-    assert.strictEqual(dbm.hasWebhookProcessed(db, evId, 'acknowledge'), true);
-  });
+      // 第二次：同一事件同一动作重复投递（新 event_id 信封）→ 幂等命中，状态不变
+      const dupBody = makeCardBody();
+      dupBody.action.value.event_id = evId;
+      const res2 = await postWebhookRaw(baseUrl, dupBody);
+      assert.strictEqual(res2.status, 200);
+      assert.strictEqual(res2.body.ok, true);
+      assert.strictEqual(res2.body.duplicated, true, '重复投递应幂等命中');
+      assert.strictEqual(events.getEvent(db, evId).status, 'handled', '状态不应被重复修改');
+      assert.strictEqual(dbm.hasWebhookProcessed(db, evId, 'acknowledge'), true);
+    }
+  );
+});
+
+test('集成：FS-004 event not found → dedup 回滚可重试', async (t) => {
+  const dir = tmpDir(t);
+  const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
+  const app = buildApp(db);
+  const { baseUrl } = await startServer(app, t);
+
+  await withEnv(
+    { FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY },
+    async () => {
+      const cardBody = makeCardBody();
+      cardBody.action.value.event_id = 'EVT-NOT-EXIST';
+      const res = await postWebhookRaw(baseUrl, cardBody);
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.ok, false);
+      assert.match(String(res.body.error), /not found/);
+      assert.strictEqual(
+        dbm.hasWebhookProcessed(db, 'EVT-NOT-EXIST', 'acknowledge'),
+        false,
+        'not-found 分支必须回滚 dedup 记录（否则合法重试被误判 duplicated）'
+      );
+    }
+  );
 });
 
 test('集成：closed 事件重复处置 → 409 + dedup 回滚可重试', async (t) => {
@@ -270,15 +313,18 @@ test('集成：closed 事件重复处置 → 409 + dedup 回滚可重试', async
   });
   events.handleEvent(db, ev.event_id, { handler_id: 'u1', action: 'resolve' }); // → closed
 
-  await withEnv({ FEISHU_VERIFICATION_TOKEN: 'test-verification-token' }, async () => {
-    const cardBody = makeCardBody();
-    cardBody.action.value.event_id = ev.event_id;
-    cardBody.action.value.action_type = 'resolve';
-    const res = await httpJson(baseUrl, 'POST', '/webhook/card', { body: cardBody });
-    assert.strictEqual(res.status, 409, 'closed 事件处置应 409');
-    assert.ok(String(res.body.error).includes('already closed'));
-    assert.strictEqual(dbm.hasWebhookProcessed(db, ev.event_id, 'resolve'), false, 'dedup 应回滚可重试');
-  });
+  await withEnv(
+    { FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY },
+    async () => {
+      const cardBody = makeCardBody();
+      cardBody.action.value.event_id = ev.event_id;
+      cardBody.action.value.action_type = 'resolve';
+      const res = await postWebhookRaw(baseUrl, cardBody);
+      assert.strictEqual(res.status, 409, 'closed 事件处置应 409');
+      assert.ok(String(res.body.error).includes('already closed'));
+      assert.strictEqual(dbm.hasWebhookProcessed(db, ev.event_id, 'resolve'), false, 'dedup 应回滚可重试');
+    }
+  );
 });
 
 test('集成：未知 action_type → 400 + dedup 回滚', async (t) => {
@@ -290,13 +336,16 @@ test('集成：未知 action_type → 400 + dedup 回滚', async (t) => {
     device_id: 'EXO-001', event_code: 'IT_EVENT3', event_type: 'L1', severity: 'high',
     title: '未知动作', description: '', trigger_data: {}, evidence: {},
   });
-  await withEnv({ FEISHU_VERIFICATION_TOKEN: 'test-verification-token' }, async () => {
-    const cardBody = makeCardBody();
-    cardBody.action.value.event_id = ev.event_id;
-    cardBody.action.value.action_type = 'bogus';
-    const res = await httpJson(baseUrl, 'POST', '/webhook/card', { body: cardBody });
-    assert.strictEqual(res.status, 400);
-    assert.ok(String(res.body.error).includes('unknown action_type'));
-    assert.strictEqual(dbm.hasWebhookProcessed(db, ev.event_id, 'bogus'), false);
-  });
+  await withEnv(
+    { FEISHU_VERIFICATION_TOKEN: VERIFY_TOKEN, FEISHU_ENCRYPT_KEY: ENCRYPT_KEY },
+    async () => {
+      const cardBody = makeCardBody();
+      cardBody.action.value.event_id = ev.event_id;
+      cardBody.action.value.action_type = 'bogus';
+      const res = await postWebhookRaw(baseUrl, cardBody);
+      assert.strictEqual(res.status, 400);
+      assert.ok(String(res.body.error).includes('unknown action_type'));
+      assert.strictEqual(dbm.hasWebhookProcessed(db, ev.event_id, 'bogus'), false);
+    }
+  );
 });

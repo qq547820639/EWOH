@@ -131,6 +131,14 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
             for (const f of state.feedback) Object.assign(f, patch);
             return { returning: () => Promise.resolve([...state.feedback]) };
           }
+          if (table === ewohSchedulingConstraint) {
+            // NEST-028：deactivate 软删除（active=false）——按 patch.active 判定
+            // 命中行并返回（UPDATE ... RETURNING 行数校验依赖非空返回）。
+            for (const c of state.constraints) Object.assign(c, patch);
+            return {
+              returning: () => Promise.resolve([...state.constraints]),
+            };
+          }
           return { returning: () => Promise.resolve([]) };
         },
       }),

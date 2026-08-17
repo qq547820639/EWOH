@@ -43,7 +43,15 @@ function makeFakeDb(seed: {
     const ids = [...values].filter((v) => v.startsWith('m-'));
     // ADR-075：org 值过滤器排除列元数据串（org_id/…_org_id_unique 等含 '_' 的标识符），只匹配真实 org 值。
     const orgs = [...values].filter((v) => typeof v === 'string' && v.startsWith('org') && !v.includes('_'));
-    if (modelIds.length > 0 && !modelIds.includes(String(row.modelId))) return false;
+    // hydrateFromRegistry 用 like(`${orgModelId}%`) 前缀列举——以 % 结尾的值按前缀匹配。
+    if (modelIds.length > 0) {
+      const hit = modelIds.some((v) =>
+        v.endsWith('%')
+          ? String(row.modelId).startsWith(v.slice(0, -1))
+          : String(row.modelId) === v,
+      );
+      if (!hit) return false;
+    }
     if (ids.length > 0 && !ids.includes(String(row.id))) return false;
     if (orgs.length > 0 && !orgs.includes(String(row.orgId))) return false;
     return true;

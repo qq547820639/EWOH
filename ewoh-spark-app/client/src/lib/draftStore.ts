@@ -49,10 +49,18 @@ export function createDraftStore(store: SimpleStore<Draft>): DraftStore {
     },
     async clearStep(stepId) {
       const drafts = await store.getAll();
-      for (const draft of drafts) {
-        if (draft.stepId === stepId) {
-          await store.delete(draft.key);
-        }
+      const keys = drafts
+        .filter((draft) => draft.stepId === stepId)
+        .map((draft) => draft.key);
+      if (keys.length === 0) return;
+      // CLI-519：优先走 IDB 实现提供的单事务批量删除（原子，中途崩溃不
+      // 留部分草稿）；内存 fake 无此方法时退回逐条删除。
+      if (typeof store.deleteMany === 'function') {
+        await store.deleteMany(keys);
+        return;
+      }
+      for (const key of keys) {
+        await store.delete(key);
       }
     },
     async getAll() {

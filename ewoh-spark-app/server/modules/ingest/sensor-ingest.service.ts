@@ -77,10 +77,24 @@ export class SensorIngestService {
 
   // ===== 摄像头结构化检测接入 =====
 
-  async ingestCamera(frame: CameraFrameDto): Promise<IngestResponse> {
+  /**
+   * NEST-204：写入显式携带 orgId（org 缺失 → 显式失败，不静默写
+   * NULL=legacy 全可见行）。
+   */
+  async ingestCamera(frame: CameraFrameDto, orgId?: string | null): Promise<IngestResponse> {
     const sourceType: DataSourceType = frame.source_type ?? 'real';
     const recordId = frame.record_id ?? randomUUID();
     const now = new Date();
+    if (!orgId?.trim()) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: '租户上下文缺失，拒绝写入（不静默写全局）',
+      };
+    }
     try {
       // 写入 ewoh_world_state（每个检测目标一条状态快照）
       const rows = frame.detections.map((det) => ({
@@ -97,6 +111,8 @@ export class SensorIngestService {
           source_type: sourceType,
         } as Record<string, unknown>,
         ts: new Date(frame.event_time),
+        // NEST-204：行归属注入。
+        orgId,
       }));
       if (rows.length > 0) {
         await this.db.insert(ewohWorldState).values(rows);
@@ -123,12 +139,24 @@ export class SensorIngestService {
 
   // ===== 场景直接建模接入（多源融合） =====
 
-  /** 空间扫描产物接入（3DGS/LiDAR/视觉SLAM）→ upsert ewoh_spatial_entity */
+  /** 空间扫描产物接入（3DGS/LiDAR/视觉SLAM）→ upsert ewoh_spatial_entity
+   *（NEST-204：写入显式携带 orgId，org 缺失显式失败）。 */
   async ingestSpatialScan(
     scan: SpatialScanDto,
+    orgId?: string | null,
   ): Promise<IngestResponse> {
     const recordId = randomUUID();
     const now = new Date();
+    if (!orgId?.trim()) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: '租户上下文缺失，拒绝写入（不静默写全局）',
+      };
+    }
     // ADR-007：空间类型必须在 Canonical Location 契约注册表内；未知类型拒绝
     // （fail-closed，不把脏类型写进 ewoh_spatial_entity）。
     const entityType = scan.entity_type ?? 'workstation';
@@ -167,6 +195,8 @@ export class SensorIngestService {
           confidence: scan.confidence ?? 1.0,
           version: 1,
           extra,
+          // NEST-204：行归属注入。
+          orgId,
         })
         .onConflictDoUpdate({
           target: ewohSpatialEntity.entityId,
@@ -197,10 +227,21 @@ export class SensorIngestService {
     }
   }
 
-  /** 定位坐标流接入（UWB/Wi-Fi/视觉融合）→ ewoh_world_state */
-  async ingestLocation(loc: LocationFrameDto): Promise<IngestResponse> {
+  /** 定位坐标流接入（UWB/Wi-Fi/视觉融合）→ ewoh_world_state
+   *（NEST-204：写入显式携带 orgId，org 缺失显式失败）。 */
+  async ingestLocation(loc: LocationFrameDto, orgId?: string | null): Promise<IngestResponse> {
     const sourceType: DataSourceType = loc.source_type ?? 'real';
     const recordId = loc.record_id ?? randomUUID();
+    if (!orgId?.trim()) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: '租户上下文缺失，拒绝写入（不静默写全局）',
+      };
+    }
     try {
       await this.db.insert(ewohWorldState).values({
         entityId: loc.entity_id,
@@ -213,6 +254,8 @@ export class SensorIngestService {
           source_type: sourceType,
         } as Record<string, unknown>,
         ts: new Date(loc.ts),
+        // NEST-204：行归属注入。
+        orgId,
       });
       return {
         accepted: true,

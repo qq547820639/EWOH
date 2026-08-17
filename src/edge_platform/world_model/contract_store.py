@@ -52,6 +52,9 @@ class ContractWorldStore:
         self._declarations: dict[str, dict] = {}
         self._events = EventGraph()
         self._predictor = Predictor()
+        # EDGE-203：snapshotVersion 单调递增计数器（每次快照 +1，
+        # 替代原随机 new_id("WS")——版本标识无单调性无法检测快照新旧）。
+        self._snapshot_seq = 0
 
     # ── 实体声明（ADR-015 / NO-03b：Entity Model 运行时接线）────────────────
 
@@ -170,33 +173,37 @@ class ContractWorldStore:
         return self._store.at_time(entity_id, state_type, ts)
 
     def snapshot(self) -> dict[str, Any]:
-        """契约形状快照（输出前整体自检 validate_snapshot）。"""
+        """契约形状快照（输出前整体自检 validate_snapshot）。
+
+        EDGE-203：snapshotVersion 为单调递增整数（str 化）；
+        EDGE-228：经 StateStore.iter_history 公共迭代器遍历（不触内部 _history）。
+        """
         ts = now_iso()
         states: list[dict] = []
         max_version = 0
-        for group in self._store._history.values():
-            for s in group:
-                states.append(
-                    {
-                        "stateId": s.state_id,
-                        "entityId": s.entity_id,
-                        "entityType": s.state_type,
-                        "stateJson": s.state_json,
-                        "validFrom": s.valid_from,
-                        "validTo": s.valid_to,
-                        "sourceType": s.source_type,
-                        "confidence": s.confidence,
-                        "version": s.version,
-                    }
-                )
-                if s.version > max_version:
-                    max_version = s.version
+        for s in self._store.iter_history():
+            states.append(
+                {
+                    "stateId": s.state_id,
+                    "entityId": s.entity_id,
+                    "entityType": s.state_type,
+                    "stateJson": s.state_json,
+                    "validFrom": s.valid_from,
+                    "validTo": s.valid_to,
+                    "sourceType": s.source_type,
+                    "confidence": s.confidence,
+                    "version": s.version,
+                }
+            )
+            if s.version > max_version:
+                max_version = s.version
         entity_versions: dict[str, int] = {}
         for s in states:
             entity_versions[s["entityId"]] = s["version"]
+        self._snapshot_seq += 1
         snapshot = {
             "snapshotId": new_id("WS"),
-            "snapshotVersion": new_id("WS"),
+            "snapshotVersion": str(self._snapshot_seq),
             "ts": ts,
             "worldVersion": max_version,
             "entityVersions": entity_versions,

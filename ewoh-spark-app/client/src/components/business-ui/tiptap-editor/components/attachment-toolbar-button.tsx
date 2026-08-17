@@ -29,17 +29,25 @@ export function AttachmentToolbarButton({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const ok = editor
-      .chain()
-      .focus()
-      .insertAttachments(Array.from(files))
-      .run();
-    if (!ok) {
-      toast.error('插入附件失败（请确认 attachment 扩展已启用且提供 upload）');
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    // CLI-318：上传链路（uploadFile）与编辑器命令均可能抛错，统一捕获并
+    // toast 提示，避免未处理的 Promise rejection。
+    try {
+      const ok = editor
+        .chain()
+        .focus()
+        .insertAttachments(Array.from(files))
+        .run();
+      if (!ok) {
+        toast.error('插入附件失败（请确认 attachment 扩展已启用且提供 upload）');
+      }
+    } catch (error) {
+      toast.error(
+        `插入附件失败：${error instanceof Error ? error.message : '未知错误'}`,
+      );
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 

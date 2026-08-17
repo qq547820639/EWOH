@@ -39,7 +39,10 @@ export class ConstraintLoaderService {
     ctx: OrgContext,
     nowMs = Date.now(),
   ): Promise<SchedulingConstraint[]> {
-    const orgId = ctx?.primaryOrgId ?? null;
+    // NEST-004 修复（2026-08-17）：空字符串 orgId（SYSTEM_CTX/toOrgContext 兜底）
+    // 与 null/undefined 同样视为"无租户上下文"——走系统语义（GUC/RLS 兜底），
+    // 不再因 falsy 差异落入不同分支；约束加载的租户路径要求非空 primaryOrgId。
+    const orgId = ctx?.primaryOrgId?.trim() ? ctx.primaryOrgId : null;
     const rows = await this.db
       .select()
       .from(ewohSchedulingConstraint)
@@ -70,7 +73,8 @@ export class ConstraintLoaderService {
     requestConstraints: SchedulingConstraint[],
     ctx: OrgContext,
   ): Promise<SchedulingConstraint[]> {
-    const orgId = ctx?.primaryOrgId ?? null;
+    // NEST-004：同 loadGlobalActive——空串 orgId 显式等同无租户上下文。
+    const orgId = ctx?.primaryOrgId?.trim() ? ctx.primaryOrgId : null;
     const rows = await this.db
       .select()
       .from(ewohSchedulingConstraint)

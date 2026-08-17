@@ -7,7 +7,7 @@
 // 前端不重算资格/硬约束（VM 只映射服务端字段）；ACTIONS 复用 CommandMap 既有行为
 // （Compare→方案对比 / Override→人工覆盖 / Locate→定位 / Undo→清除上下文）。
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -41,6 +41,16 @@ import type {
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Badge } from '@client/src/components/ui/badge';
+import { Button } from '@client/src/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@client/src/components/ui/dialog';
+import { Textarea } from '@client/src/components/ui/textarea';
 
 export interface DecisionCockpitProps {
   /** 服务端权威方案 diff（PlanCompareResult；来自对比/冲突预览，可选）。 */
@@ -239,15 +249,21 @@ export function DecisionCockpit({
     [taskId, activePlan, trace, conflictView, candidates, replanImpact, planDiff, taskDiff, diffCounts.unchanged, availableActions],
   );
 
+  // CLI-024：确认处置收集用户 reason（与冲突中心一致：必填、写入审计），
+  // 不再硬编码「决策驾驶舱确认处置」。
+  const [acceptReasonOpen, setAcceptReasonOpen] = useState(false);
+  const [acceptReason, setAcceptReason] = useState('');
+
   const acceptMutation = useMutation({
-    mutationFn: (c: { conflictId: string }) =>
+    mutationFn: (c: { conflictId: string; reason: string }) =>
       acknowledgeConflict(c.conflictId, {
         operator: getCurrentOperator(),
-        reason: '决策驾驶舱确认处置',
+        reason: c.reason,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.schedulerConflicts() });
       toast.success('冲突已确认处置');
+      setAcceptReason('');
     },
     onError: (e) => {
       toast.error(`确认处置失败：${e instanceof Error ? e.message : '未知错误'}`);
@@ -262,7 +278,8 @@ export function DecisionCockpit({
   const handleAction = (action: DecisionActionId): void => {
     switch (action) {
       case 'accept':
-        if (conflict) acceptMutation.mutate(conflict);
+        // CLI-024：先弹出 reason 收集对话框（必填），确认后才提交。
+        if (conflict) setAcceptReasonOpen(true);
         break;
       case 'compare':
         onCompare?.();
@@ -431,6 +448,55 @@ export function DecisionCockpit({
           )}
         </div>
       )}
+
+      {/* CLI-024：确认处置 reason 收集对话框（与冲突中心一致，必填写入审计） */}
+      <Dialog
+        open={acceptReasonOpen}
+        onOpenChange={(open) => {
+          if (!open) setAcceptReasonOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认处置冲突</DialogTitle>
+            <DialogDescription>
+              {conflict ? `${conflict.conflictId} — 操作原因必填（写入审计）。` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground" htmlFor="cockpit-accept-reason">
+              操作原因（必填）
+            </label>
+            <Textarea
+              id="cockpit-accept-reason"
+              value={acceptReason}
+              onChange={(e) => setAcceptReason(e.target.value)}
+              placeholder="请输入确认处置原因..."
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAcceptReasonOpen(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              disabled={acceptMutation.isPending || !acceptReason.trim()}
+              onClick={() => {
+                if (conflict) {
+                  acceptMutation.mutate({
+                    conflictId: conflict.conflictId,
+                    reason: acceptReason.trim(),
+                  });
+                  setAcceptReasonOpen(false);
+                }
+              }}
+            >
+              {acceptMutation.isPending ? '提交中...' : '确认'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Link2, Copy, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import type { TimelineEvent } from '../lib/timelineModel';
 import { cn } from '../lib/utils';
+import { sanitizeUrl } from '../lib/urlSafety';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
@@ -24,35 +26,36 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const SOURCE_STYLES: Record<string, string> = {
-  workflow: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
-  alert: 'bg-red-500/15 text-red-300 border-red-500/30',
-  device: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-  system: 'bg-gray-500/15 text-gray-300 border-gray-500/30',
-  user: 'bg-green-500/15 text-green-300 border-green-500/30',
-  edge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  evidence: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  workflow: 'bg-risk-conflict-soft text-risk-conflict-foreground border-risk-conflict-border',
+  alert: 'bg-risk-blocked-soft text-risk-blocked-foreground border-risk-blocked-border',
+  device: 'bg-risk-offline-soft text-risk-offline-foreground border-risk-offline-border',
+  system: 'bg-risk-unknown-soft text-risk-unknown-foreground border-risk-unknown-border',
+  user: 'bg-risk-normal-soft text-risk-normal-foreground border-risk-normal-border',
+  edge: 'bg-risk-degraded-soft text-risk-degraded-foreground border-risk-degraded-border',
+  evidence: 'bg-info/10 text-primary border-info/30',
 };
 
 // ADR-027 规范词表：critical=红 / high=橙 / medium=黄 / low=绿 / unknown=灰。
 function severityClass(severity?: string): string {
   switch (severity) {
     case 'critical':
-      return 'bg-red-500';
+      return 'bg-destructive';
     case 'high':
-      return 'bg-orange-500';
+      return 'bg-warning';
     case 'medium':
-      return 'bg-yellow-500';
+      return 'bg-warning/60';
     case 'low':
-      return 'bg-green-500';
+      return 'bg-success';
     default:
-      return 'bg-gray-500';
+      return 'bg-muted-foreground';
   }
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('zh-CN', { hour12: false });
+  // CLI-329：全站展示统一 Asia/Shanghai 时区，不随浏览器本地时区漂移。
+  return d.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 }
 
 /** 序列化统一时间线事件为行对象（用于 CSV/JSON 导出）。 */
@@ -158,27 +161,25 @@ export default function Timeline({
     });
   };
 
-  const copyId = (id: string) => {
+  const copyId = async (id: string) => {
+    // CLI-308：主路径与回退路径统一写入 tl:${id}，消除行为分裂。
     const text = `tl:${id}`;
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(id);
-    } else {
-      // 兼容非安全上下文
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand('copy');
-      } finally {
-        document.body.removeChild(ta);
+    // CLI-309：仅保留 Clipboard API，不可用/失败时提示手动复制，
+    // 不再回退到已废弃的 document.execCommand('copy')。
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
       }
+    } catch {
+      // 落入下方失败提示
     }
+    toast.error('复制失败，请手动复制');
   };
 
   if (events.length === 0) {
     return (
-      <div className={cn('text-sm text-[hsl(218_10%_42%)] py-8 text-center', className)}>
+      <div className={cn('text-sm text-muted-foreground py-8 text-center', className)}>
         暂无时间线事件
       </div>
     );
@@ -187,7 +188,7 @@ export default function Timeline({
   return (
     <div className={cn('space-y-3', className)}>
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-[hsl(220_14%_14%)]">
+        <div className="text-sm font-medium text-foreground">
           对象时间线（{events.length}）
         </div>
         <div className="flex gap-2">
@@ -214,7 +215,7 @@ export default function Timeline({
         </div>
       </div>
 
-      <ol className="relative space-y-2 border-l border-[hsl(220_14%_89%)] pl-4">
+      <ol className="relative space-y-2 border-l border-border pl-4">
         {events.map((ev) => (
           <li key={ev.id} id={`tl-${ev.id}`} className="relative">
             <span
@@ -223,14 +224,14 @@ export default function Timeline({
                 severityClass(ev.severity),
               )}
             />
-            <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3">
+            <div className="rounded-lg border border-border bg-white p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <a
                       href={`#tl-${ev.id}`}
                       aria-label={`锚定到事件 ${ev.id}`}
-                      className="inline-flex items-center text-xs font-mono text-[hsl(221_83%_53%)] hover:underline"
+                      className="inline-flex items-center text-xs font-mono text-primary hover:underline"
                     >
                       <Link2 className="w-3 h-3 mr-1" />
                       {ev.id}
@@ -239,25 +240,25 @@ export default function Timeline({
                       {SOURCE_LABELS[ev.source] ?? ev.source}
                     </Badge>
                     {ev.severity && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-[hsl(218_10%_42%)]">
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
                         {ev.severity}
                       </Badge>
                     )}
                     {ev.status && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-[hsl(218_10%_42%)]">
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
                         {ev.status}
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-1 text-sm font-medium text-[hsl(220_14%_14%)]">
+                  <div className="mt-1 text-sm font-medium text-foreground">
                     {ev.title ?? `${ev.objectType} · ${ev.action}`}
                   </div>
-                  <div className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+                  <div className="mt-0.5 text-xs text-muted-foreground">
                     {formatTime(ev.timestamp)} · {ev.objectType} · {ev.objectId} · 执行者 {ev.actor}
                     {ev.riskLevel ? ` · 风险 ${ev.riskLevel}` : ''}
                   </div>
                   {ev.action && (
-                    <div className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       动作：{ev.action}
                       {ev.previousState != null && ev.currentState != null
                         ? `（${ev.previousState} → ${ev.currentState}）`
@@ -269,7 +270,7 @@ export default function Timeline({
                     </div>
                   )}
                   {ev.correlationId && (
-                    <div className="mt-0.5 text-[10px] text-[hsl(218_10%_42%)]">
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">
                       关联：{ev.correlationId}
                     </div>
                   )}
@@ -279,7 +280,7 @@ export default function Timeline({
                     type="button"
                     onClick={() => copyId(ev.id)}
                     aria-label={`复制事件 ID ${ev.id}`}
-                    className="rounded p-1.5 text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]"
+                    className="rounded p-1.5 text-muted-foreground hover:bg-muted"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
@@ -289,7 +290,7 @@ export default function Timeline({
                       onClick={() => toggle(ev.id)}
                       aria-expanded={isExpanded(ev.id)}
                       aria-label={`切换证据预览（${ev.evidence.length} 条）`}
-                      className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium text-[hsl(221_83%_53%)] hover:bg-[hsl(220_14%_96%)]"
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-medium text-primary hover:bg-muted"
                     >
                       {isExpanded(ev.id) ? (
                         <ChevronDown className="w-3 h-3" />
@@ -303,26 +304,39 @@ export default function Timeline({
               </div>
 
               {ev.evidence.length > 0 && isExpanded(ev.id) && (
-                <div className="mt-2 rounded bg-[hsl(220_14%_96%)] p-2 text-xs">
-                  {ev.evidence.map((e) => (
+                <div className="mt-2 rounded bg-muted p-2 text-xs">
+                  {ev.evidence.map((e) => {
+                    // CLI-301：evidence.url 来自后端/离线数据，仅白名单协议
+                    // （http/https/mailto/tel，相对路径放行）才渲染为链接，
+                    // 危险 scheme（javascript:/data: 等）降级为纯文本。
+                    const safeUrl = sanitizeUrl(e.url);
+                    return (
                     <div key={e.id} className="flex items-center gap-2 py-0.5">
-                      <span className="font-mono text-[hsl(218_10%_42%)]">{e.id}</span>
-                      {e.type && <span className="text-[hsl(218_10%_42%)]">[{e.type}]</span>}
-                      {e.label && <span className="text-[hsl(220_14%_14%)]">{e.label}</span>}
-                      {e.url ? (
+                      <span className="font-mono text-muted-foreground">{e.id}</span>
+                      {e.type && <span className="text-muted-foreground">[{e.type}]</span>}
+                      {e.label && <span className="text-foreground">{e.label}</span>}
+                      {safeUrl ? (
                         <a
-                          href={e.url}
+                          href={safeUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="ml-auto text-[hsl(221_83%_53%)] hover:underline"
+                          className="ml-auto text-primary hover:underline"
                         >
                           查看
                         </a>
+                      ) : e.url ? (
+                        <span
+                          className="ml-auto max-w-40 truncate font-mono text-muted-foreground"
+                          title={e.url}
+                        >
+                          {e.url}
+                        </span>
                       ) : e.ref ? (
-                        <span className="ml-auto font-mono text-[hsl(218_10%_42%)]">{e.ref}</span>
+                        <span className="ml-auto font-mono text-muted-foreground">{e.ref}</span>
                       ) : null}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

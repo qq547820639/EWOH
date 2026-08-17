@@ -17,18 +17,18 @@ export class ParametersController {
   }
 
   @Get()
-  list() {
-    return this.parametersService.list();
+  list(@Req() request: { userContext?: OrgContext }) {
+    return this.parametersService.list(request.userContext);
   }
 
   @Get('summary')
-  summary() {
-    return this.parametersService.summary();
+  summary(@Req() request: { userContext?: OrgContext }) {
+    return this.parametersService.summary(request.userContext);
   }
 
   @Get(':key')
-  get(@Param('key') key: string) {
-    return this.parametersService.get(key);
+  get(@Param('key') key: string, @Req() request: { userContext?: OrgContext }) {
+    return this.parametersService.get(key, request.userContext);
   }
 
   @Put(':key')

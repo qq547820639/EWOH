@@ -7,12 +7,15 @@ dictionaries into ``_enqueue_raw``.
 
 from __future__ import annotations
 
+import logging
 import queue
 from dataclasses import dataclass
 from typing import Any
 
 from edge_platform.edge.adapters.base import BaseAdapter
 from edge_platform.spatial import now_iso
+
+_LOGGER = logging.getLogger("ewoh.connectors.modbus")
 
 SUPPORTED_FUNCTIONS = {1, 2, 3, 4}
 
@@ -125,6 +128,7 @@ class ModbusAdapter(BaseAdapter):
         self._inbox: queue.Queue = queue.Queue(maxsize=1024)
         self._last_msg: dict[str, Any] | None = None
         self._last_seen: str | None = None
+        self._dropped_points = 0  # EDGE-219：队列满丢弃计数（可观测）
 
     def start(self) -> None:
         self._running = True
@@ -171,9 +175,16 @@ class ModbusAdapter(BaseAdapter):
         return msg
 
     def _enqueue_raw(self, raw: dict[str, Any]) -> None:
-        """Normalize and enqueue one Modbus register read (driver callback)."""
+        """Normalize and enqueue one Modbus register read (driver callback).
+
+        EDGE-219：队列满不再静默丢弃——warning 留痕 + dropped 计数（可观测）。
+        """
         msg = normalize_modbus_datapoint(raw, default_source_type=self.source_type)
         try:
             self._inbox.put_nowait(msg)
         except queue.Full:
-            pass
+            self._dropped_points += 1
+            if self._dropped_points % 100 == 1:  # 避免日志刷屏，周期性留痕
+                _LOGGER.warning(
+                    "modbus connector %s 收件箱满，累计丢弃 %d 点", self.device_id, self._dropped_points
+                )

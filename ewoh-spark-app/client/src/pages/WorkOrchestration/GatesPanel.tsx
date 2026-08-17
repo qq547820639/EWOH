@@ -141,6 +141,12 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
       queryClient.invalidateQueries({ queryKey: queryKeys.workOverview });
       toast.success(`已记录 ${variables.gateId} 的决定`);
     },
+    // CLI-214：决定记录失败显式反馈（§33 失败不静默）。
+    onError: (err) => {
+      toast.error('门禁决定记录失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const batchDecisionMutation = useMutation({
     mutationFn: (gateIds: string[]) =>
@@ -149,6 +155,12 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
       queryClient.invalidateQueries({ queryKey: queryKeys.workGates });
       queryClient.invalidateQueries({ queryKey: queryKeys.workOverview });
       toast.success('批量决定已记录');
+    },
+    // CLI-214：批量决定失败显式反馈。
+    onError: (err) => {
+      toast.error('批量决定记录失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
   const revokeMutation = useMutation({
@@ -163,6 +175,11 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
           ? `已撤销 ${data.gateId} 并回滚为「${data.restored.decision}」`
           : `已撤销 ${data.gateId} 的决定`,
       );
+    },
+    onError: (err) => {
+      toast.error('撤销决定失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
   const historyQuery = useQuery({

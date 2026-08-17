@@ -22,26 +22,26 @@ const HEALTH_PRESENTATION: Record<
   partial: {
     icon: Database,
     label: '部分数据缺失',
-    containerClass: 'border-amber-200 bg-amber-50',
-    iconClass: 'text-amber-600',
+    containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
+    iconClass: 'text-risk-degraded',
   },
   stale: {
     icon: TriangleAlert,
     label: '数据已过期',
-    containerClass: 'border-amber-200 bg-amber-50',
-    iconClass: 'text-amber-600',
+    containerClass: 'border-warning/40 bg-warning/10',
+    iconClass: 'text-warning',
   },
   degraded: {
     icon: CloudOff,
     label: '服务降级',
-    containerClass: 'border-orange-200 bg-orange-50',
-    iconClass: 'text-orange-600',
+    containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
+    iconClass: 'text-risk-degraded',
   },
   offline: {
     icon: WifiOff,
     label: '离线',
-    containerClass: 'border-sky-200 bg-sky-50',
-    iconClass: 'text-sky-600',
+    containerClass: 'border-risk-offline-border bg-risk-offline-soft',
+    iconClass: 'text-risk-offline',
   },
 };
 
@@ -76,9 +76,9 @@ const DataStates = ({
       <div className="flex items-start gap-2">
         <Icon className={`mt-0.5 size-5 shrink-0 ${presentation.iconClass}`} />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">{presentation.label}</p>
-          <p className="mt-0.5 text-[hsl(220_14%_14%)]">{text}</p>
-          {detailText && <p className="mt-1 text-[hsl(218_10%_42%)]">{detailText}</p>}
+          <p className="font-semibold text-foreground">{presentation.label}</p>
+          <p className="mt-0.5 text-foreground">{text}</p>
+          {detailText && <p className="mt-1 text-muted-foreground">{detailText}</p>}
         </div>
       </div>
       {onRetry && (

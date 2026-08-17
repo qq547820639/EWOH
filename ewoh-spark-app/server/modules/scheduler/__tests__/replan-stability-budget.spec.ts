@@ -222,7 +222,11 @@ describe('ReplanStabilityBudget minimumObjectiveImprovement（Task 5）', () => 
     const r = await svc.handleTrigger('ROUTE_BLOCKED', 'E-1', CTX);
 
     expect(r.suppressed).toBe(true);
-    expect(r.run).toBeNull();
+    // NEST-130（2026-08-17）：抑制路径返回 run 真实状态视图（DB 已闭合为
+    // succeeded/planIds=[]，此前返回 null 与 DB 状态矛盾）。
+    expect(r.run).toEqual(
+      expect.objectContaining({ status: 'succeeded', planIds: [] }),
+    );
     expect(r.plans).toEqual([]);
     expect(planService.persistPlan).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(

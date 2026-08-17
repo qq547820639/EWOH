@@ -50,8 +50,11 @@ export async function uploadFile(file: File, note?: string): Promise<UploadFileR
 }
 
 /**
- * Batch upload entry that also enforces the per-request file-count limit. First
- * failing file aborts the batch; all remain local (no partial server writes).
+ * Batch upload entry that also enforces the per-request file-count limit.
+ * CLI-713：串行上传——某文件失败即中止批次，但失败之前已上传的文件会
+ * 保留在服务端（客户端无批量回滚），调用方提示用户处理；串行也避免
+ * 并发上传抢占连接。注释原先声称「no partial server writes」与实际
+ * 行为不符，已更正。
  */
 export async function uploadFiles(
   files: File[],

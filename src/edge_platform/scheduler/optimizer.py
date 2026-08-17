@@ -257,11 +257,14 @@ class GreedyOptimizer(Optimizer):
 
         objective = sum(a.score for a in assignments)
         breakdown = self._aggregate_breakdown(assignments)
+        # EDGE-112：request_id 解析——对象型 policy 用 getattr 优先，dict 型用
+        # .get 兜底（原三元表达式对非 dict 一律丢 request_id）。
+        request_id = getattr(policy, "request_id", None)
+        if request_id is None and isinstance(policy, dict):
+            request_id = policy.get("request_id")
         return SchedulePlan(
             plan_id="",
-            request_id=getattr(policy, "request_id", "") or (policy or {}).get("request_id", "")
-            if isinstance(policy, dict)
-            else "",
+            request_id=request_id or "",
             version=1,
             assignments=assignments,
             objective_score=objective,

@@ -7,8 +7,10 @@
 //
 // 端点：
 //   - GET /health/live  → 恒 200 {status:'live'}（进程存活探针）
-//   - GET /health/ready → 本地健康且飞书可用 → 200 {status:'ready', ...}；
-//                         否则 503 {status:'not_ready', ..., reason}。
+//   - GET /health/ready → 本地健康且飞书可用 → 200 {status:'ready', feishu:'healthy'}；
+//                         否则 503 {status:'not_ready', feishu:'unavailable'}。
+//                         FS-012：HTTP 响应仅状态位，内部错误串不经探针暴露
+//                         （完整诊断信息见进程内 readyStatus()）。
 
 const feishu = require('./feishu');
 
@@ -62,6 +64,8 @@ function liveStatus() {
 }
 
 // GET /health/ready：本地健康 + 飞书可用 → 200；否则 503
+// 完整 detail（含 lastSyncError / lastFeishuError / reason 等内部诊断信息）
+// 仅供进程内诊断与测试断言（readyStatus()），不经 HTTP 暴露。
 function readyStatus() {
   const breaker = feishu.getFeishuStatus();
   const detail = {
@@ -84,9 +88,12 @@ function registerHealthRoutes(app) {
   app.get('/health/live', (req, res) => {
     res.json(liveStatus());
   });
+  // FS-012：探针 HTTP 响应仅返回状态位（status + feishu 健康），
+  // 不回传内部错误串（lastSyncError / lastFeishuError / reason），
+  // 避免未认证调用方借探针枚举内部异常细节。
   app.get('/health/ready', (req, res) => {
     const s = readyStatus();
-    res.status(s.status === 'ready' ? 200 : 503).json(s);
+    res.status(s.status === 'ready' ? 200 : 503).json({ status: s.status, feishu: s.feishu });
   });
 }
 

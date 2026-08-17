@@ -76,10 +76,9 @@ export class FileService {
   }
 
   async list(access: FileAccessContext): Promise<FileRecord[]> {
-    const records = await this.driver.list();
-    return access.isGlobalAdmin
-      ? records
-      : records.filter((record) => record.orgId === access.orgId);
+    // NEST-306：驱动层 orgId 过滤（global admin 传 undefined 读全量）——
+    // 不再把全部租户的 meta 加载进内存后再过滤。
+    return this.driver.list(access.isGlobalAdmin ? undefined : access.orgId);
   }
 
   async get(id: string, access: FileAccessContext): Promise<FileRecord> {
@@ -99,6 +98,20 @@ export class FileService {
     return { record, buffer };
   }
 
+  /** NEST-338：流式下载面——驱动支持 openReadStream 时返回流（避免大文件
+   *  全量进内存），否则回退缓冲路径。扫描门与 org 边界与 download 一致。 */
+  async downloadStream(
+    id: string,
+    access: FileAccessContext,
+  ): Promise<{ record: FileRecord; stream?: NodeJS.ReadableStream }> {
+    const record = await this.get(id, access);
+    if (this.driver.openReadStream) {
+      const stream = await this.driver.openReadStream(id);
+      return { record, stream };
+    }
+    return { record };
+  }
+
   async remove(id: string, access: FileAccessContext): Promise<void> {
     await this.get(id, access);
     await this.driver.remove(id);
@@ -116,7 +129,13 @@ export class FileService {
       throw new NotFoundException(`File ${record.id} not found`);
     }
     const updated: FileRecord = { ...record, scanStatus: status };
-    await this.driver.save(id, await this.driver.readContent(id), updated);
+    // NEST-337：驱动支持 meta 独立更新时只写 meta（原先为改一个字段
+    // 读 20MB 写 20MB 整对象重写）；不支持时回退旧路径。
+    if (this.driver.updateMeta) {
+      await this.driver.updateMeta(id, updated);
+    } else {
+      await this.driver.save(id, await this.driver.readContent(id), updated);
+    }
     return updated;
   }
 
@@ -148,14 +167,16 @@ export class FileService {
   }
 
   /** Files in quarantine (pending scan) or flagged infected must not be
-   *  readable by business users. */
+   *  readable by business users.
+   *  NEST-334：scanStatus 未定义（旧记录/缺省）按 pending 处理（fail-closed，
+   *  原先 undefined 直接放行）。非 global_admin 一律要求显式 'clean'。 */
   private assertScanned(record: FileRecord, access: FileAccessContext): void {
     if (access.isGlobalAdmin) return;
-    if (record.scanStatus === 'pending') {
+    if (record.scanStatus !== 'clean') {
+      if (record.scanStatus === 'infected') {
+        throw new ForbiddenException('File failed malware scan and is quarantined');
+      }
       throw new ForbiddenException('File is awaiting malware scan and cannot be read');
-    }
-    if (record.scanStatus === 'infected') {
-      throw new ForbiddenException('File failed malware scan and is quarantined');
     }
   }
 }

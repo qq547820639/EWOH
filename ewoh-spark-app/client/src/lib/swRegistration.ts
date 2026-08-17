@@ -10,6 +10,7 @@
  */
 import { shouldServeContract, API_CONTRACT_VERSION } from './swCache';
 import { recordMetric } from './observability';
+import { logger } from './logger';
 import {
   createSwUpdateStateMachine,
   type SwUpdateStateMachine,
@@ -17,6 +18,9 @@ import {
 
 export const SW_URL = '/sw.js';
 export const SW_MESSAGE_UPDATE_AVAILABLE = 'EWOH_SW_UPDATE_AVAILABLE';
+
+/** safeUpdate 等待新 worker 接管（controllerchange）的超时（CLI-514）。 */
+export const SW_ACTIVATE_TIMEOUT_MS = 15_000;
 
 /** Lifecycle messages the service worker posts back to the page for metrics. */
 export const SW_MESSAGE_INSTALLED = 'EWOH_SW_INSTALLED';
@@ -162,6 +166,24 @@ export function registerServiceWorker(
       }
       machine.dispatch('ACTIVATING');
       waiting.postMessage({ type: 'SKIP_WAITING' });
+      // CLI-514：postMessage(SKIP_WAITING) 只是请求，新 worker 未必真的
+      // 接管。等待 controllerchange（带超时）后再报告 applied，避免 UI 在
+      // 激活失败时误报「已更新」。
+      const activated = await new Promise<boolean>((resolve) => {
+        const finish = (ok: boolean) => {
+          clearTimeout(timeout);
+          navigator.serviceWorker.removeEventListener?.('controllerchange', onChange);
+          resolve(ok);
+        };
+        const timeout = setTimeout(() => finish(false), SW_ACTIVATE_TIMEOUT_MS);
+        const onChange = () => finish(true);
+        navigator.serviceWorker.addEventListener('controllerchange', onChange);
+      });
+      if (!activated) {
+        machine.dispatch({ type: 'FAIL', reason: 'activate-timeout' });
+        reportSwMetric('update.failed', 1, { reason: 'activate-timeout' });
+        return { applied: false, reason: '新版本激活超时，将在下次启动时自动生效。' };
+      }
       return { applied: true, reason: '' };
     },
     deferUpdate() {
@@ -198,8 +220,14 @@ export function registerServiceWorker(
         });
       });
     },
-    () => {
-      // Registration failure is non-fatal; the app still works online.
+    (error: unknown) => {
+      // CLI-533：注册失败不打断应用（在线功能仍可用），但必须留痕：
+      // 上报 sw.register.failed 指标并记录日志（不打印错误原文，避免向
+      // 控制台暴露内部环境信息），供观测端定位安装环境问题。
+      reportSwMetric('register.failed', 1, {
+        reason: error instanceof Error ? error.name : 'unknown',
+      });
+      logger.warn('[swRegistration] service worker 注册失败');
     },
   );
 

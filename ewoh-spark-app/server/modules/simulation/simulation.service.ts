@@ -64,6 +64,8 @@ export class SimulationService {
       throw new BadRequestException(`仿真运行违反契约: ${errors.join(', ')}`);
     }
     // 幂等：同 org+runId 重复提交 → 回读既有运行（运行是一等资产，不重复评估）。
+    // NEST-633：select-then-insert 存在 TOCTOU——并发同 runId 双提交原先第二
+    // 个以 23505 裸抛；现 onConflictDoNothing + 空返回即回读（数据库裁决）。
     const existing = await this.db
       .select()
       .from(ewohSimulationRun)
@@ -87,7 +89,37 @@ export class SimulationService {
       engineVersion,
       recordJson: record,
     };
-    const inserted = (await this.db.insert(ewohSimulationRun).values(row).returning())[0];
+    let inserted;
+    try {
+      const result = await this.db
+        .insert(ewohSimulationRun)
+        .values(row)
+        .onConflictDoNothing({ target: [ewohSimulationRun.orgId, ewohSimulationRun.runId] })
+        .returning();
+      if (result.length === 0) {
+        // 并发同 (orgId, runId) 已入库 → 回读（不重复评估、不裸抛 23505）。
+        const concurrent = await this.db
+          .select()
+          .from(ewohSimulationRun)
+          .where(and(eq(ewohSimulationRun.orgId, orgId), eq(ewohSimulationRun.runId, runId)))
+          .limit(1);
+        if (concurrent.length === 0) throw new Error('simulation_run_insert_failed');
+        this.logger.debug(`仿真并发幂等命中: ${runId}`);
+        return { run: this.toRun(concurrent[0]), created: false };
+      }
+      inserted = result[0];
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== '23505') throw err;
+      const concurrent = await this.db
+        .select()
+        .from(ewohSimulationRun)
+        .where(and(eq(ewohSimulationRun.orgId, orgId), eq(ewohSimulationRun.runId, runId)))
+        .limit(1);
+      if (concurrent.length === 0) throw err;
+      this.logger.debug(`仿真并发幂等命中（23505）: ${runId}`);
+      return { run: this.toRun(concurrent[0]), created: false };
+    }
     await this.recordEvent(inserted, orgId, 'SimulationRunCreated', 'created');
 
     // 确定性评估（fail-closed：评估器抛错 → failed 终态，失败理由显式留痕）。

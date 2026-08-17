@@ -196,21 +196,22 @@ def route_scenario_evaluate(ctx, h, req_meta):
 def api_vision_understand(ctx, h, payload):
     """POST /api/vision/understand — 视觉理解（演示模式默认后端：Ark）。
 
-    body: {image_url?, question?, api_key?, base_url?, model?}。
+    body: {image_url?, question?, model?}。
     image_url 缺省时使用演示模式默认图，question 缺省为"你看见了什么？"。
-    api_key/base_url/model 为可选的请求级覆盖（优先级高于环境变量），
-    用于前端设置里管理员填写/替换演示用的方舟密钥。未配置 API Key 时返回明确错误。
+
+    EDGE-002（2026-08-17 审计整改，SSRF）：请求体不再接受 api_key/base_url
+    覆盖——凭据与出站地址仅来自 Settings（EWOH_ARK_API_KEY/EWOH_ARK_BASE_URL，
+    管理员经环境变量配置），客户端无法令服务端向任意 URL 出站或替换凭据。
+    未配置 API Key 时返回明确错误。
     """
     from edge_platform.perception.ark_vision import describe_image
 
     image_url = (payload.get("image_url") or "").strip()
     question = (payload.get("question") or "").strip()
-    api_key = (payload.get("api_key") or "").strip()
-    base_url = (payload.get("base_url") or "").strip()
     model = (payload.get("model") or "").strip()
     h._audit_target_type = "vision"
     h._audit_target_id = (image_url or "demo_default")[:120]
-    result = describe_image(image_url, question, api_key=api_key, base_url=base_url, model=model)
+    result = describe_image(image_url, question, api_key="", base_url="", model=model)
     if not result.get("ok"):
         return h.send_json(
             {

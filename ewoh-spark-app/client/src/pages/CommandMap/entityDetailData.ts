@@ -91,7 +91,9 @@ export function resolveEntityDetailData(
     const deviceKey = deviceRecord?.deviceId ?? entity.name;
     const related = relatedEvents(
       events,
-      (event) => event.deviceId === deviceKey || event.title.includes(deviceKey),
+      // CLI-015：精确匹配（event.deviceId === 设备记录 deviceId）；
+      // 移除 title.includes(deviceKey) 子串匹配（EXO-1/EXO-10 误关联）。
+      (event) => event.deviceId === deviceKey,
     );
     return {
       person: null,

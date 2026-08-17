@@ -23,6 +23,26 @@ export function applySecurityHeaders(res: {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-XSS-Protection', '0');
+  // NEST-514 修复（2026-08-17）：补齐 helmet 级安全头（项目未依赖 helmet 包，
+  // 按等价语义手工设置，CSP 白名单与各入口脚本/样式来源对齐）。
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; '),
+  );
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Download-Options', 'noopen');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
 }
 
 export function trustProxySetting(value = process.env.TRUST_PROXY): number | boolean | string[] {
@@ -60,6 +80,9 @@ export async function bootstrapStandalone(): Promise<void> {
     // freshnessMs 类装配错误被静默、服务半初始化仍监听端口）。开发模式保留容错。
     abortOnError: process.env.NODE_ENV !== 'development',
   });
+
+  // NEST-522 修复（2026-08-17）：不暴露 X-Powered-By（框架指纹）。
+  app.disable('x-powered-by');
 
   app.enableCors({
     origin: corsOrigins(),

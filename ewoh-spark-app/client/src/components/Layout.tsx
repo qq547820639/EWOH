@@ -47,21 +47,27 @@ const Layout = () => {
   }, [sidebarOpen]);
 
   const handleLogout = async () => {
-    await revokeSession();
+    // CLI-324：revokeSession 失败（网络断开/后端不可用）时仍完成本地登出，
+    // 避免 token 过期用户被卡在已登录界面。
+    try {
+      await revokeSession();
+    } catch {
+      // 服务端会话由过期机制兜底；本地凭证清理见 revokeSession 内部实现。
+    }
     navigate('/login', { replace: true });
   };
 
   return (
-    <div className="flex w-screen h-screen bg-[hsl(220_14%_96%)]">
+    <div className="flex w-screen h-screen bg-muted">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[hsl(221_83%_53%)] focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
       >
         {UI_ARIA_LABELS.skipToContent}
       </a>
       {/* 侧边导航栏 */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col bg-white border-r border-[hsl(220_14%_89%)] transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col bg-white border-r border-border transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0 ${
           sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
         aria-label="侧边导航"
@@ -69,19 +75,19 @@ const Layout = () => {
           if (event.key === 'Escape') setSidebarOpen(false);
         }}
       >
-        <div className="flex items-center gap-2 px-5 h-16 border-b border-[hsl(220_14%_89%)]">
-          <div className="w-8 h-8 rounded-lg bg-[hsl(221_83%_53%)] flex items-center justify-center text-white font-bold text-sm">
+        <div className="flex items-center gap-2 px-5 h-16 border-b border-border">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-sm">
             E
           </div>
           <div>
-            <div className="text-sm font-semibold text-[hsl(220_14%_14%)]">EWOH</div>
-            <div className="text-xs text-[hsl(218_10%_42%)]">具身工厂操作系统</div>
+            <div className="text-sm font-semibold text-foreground">EWOH</div>
+            <div className="text-xs text-muted-foreground">具身工厂操作系统</div>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] lg:hidden"
+            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted lg:hidden"
             aria-label={UI_ARIA_LABELS.closeNavigation}
           >
             <X className="h-4 w-4" />
@@ -91,7 +97,7 @@ const Layout = () => {
           <div className="space-y-4">
             {navGroups.map((group) => (
               <div key={group.label}>
-                <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[hsl(218_10%_42%)]">
+                <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {group.label}
                 </p>
                 <div className="space-y-1">
@@ -115,10 +121,10 @@ const Layout = () => {
                           <span
                             className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                               isMap
-                                ? 'bg-gradient-to-r from-[hsl(221_83%_53%)] to-[hsl(250_73%_55%)] text-white hover:opacity-90'
+                                ? 'bg-gradient-to-r from-primary to-risk-conflict text-white hover:opacity-90'
                                 : isActive
-                                  ? 'bg-[hsl(221_83%_53%)] text-white'
-                                  : 'text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                                  ? 'bg-primary text-white'
+                                  : 'text-foreground hover:bg-muted'
                             }`}
                           >
                             <Icon className="h-4 w-4 shrink-0" />
@@ -131,7 +137,7 @@ const Layout = () => {
                                     : isActive
                                     // 蓝底(hsl(221 83% 53%))上 text-white/75 对比度仅 3.61:1，不达 WCAG AA(4.5:1)
                                     ? 'text-white'
-                                    : 'text-[hsl(218_10%_42%)]'
+                                    : 'text-muted-foreground'
                                 }`}
                               >
                                 {roleText}
@@ -148,13 +154,13 @@ const Layout = () => {
             ))}
           </div>
         </nav>
-        <div className="px-5 py-4 border-t border-[hsl(220_14%_89%)]">
+        <div className="px-5 py-4 border-t border-border">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-xs font-medium text-[hsl(220_14%_14%)]">
+              <p className="truncate text-xs font-medium text-foreground">
                 {user?.username ?? '未登录'}
               </p>
-              <p className="mt-0.5 truncate text-[11px] text-[hsl(218_10%_42%)]">
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                 外骨骼作业健康监测
               </p>
             </div>
@@ -164,7 +170,7 @@ const Layout = () => {
               type="button"
               onClick={handleLogout}
               title="退出登录"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] hover:text-[hsl(220_14%_14%)]"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label={UI_ARIA_LABELS.logout}
             >
               <LogOut className="h-4 w-4" />
@@ -187,21 +193,21 @@ const Layout = () => {
         tabIndex={-1}
         className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
       >
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[hsl(220_14%_89%)] bg-white px-4">
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-white px-4">
           <button
             ref={menuButtonRef}
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)] lg:hidden"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-muted lg:hidden"
             aria-label={UI_ARIA_LABELS.openNavigation}
           >
             <Menu className="h-4 w-4" />
           </button>
           <div className="flex items-center gap-2 lg:hidden">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[hsl(221_83%_53%)] text-[10px] font-bold text-white">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-[10px] font-bold text-white">
               E
             </div>
-            <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">EWOH</span>
+            <span className="text-sm font-semibold text-foreground">EWOH</span>
           </div>
           <AppBreadcrumb pathname={location.pathname} />
           <div className="ml-auto flex items-center gap-1.5">

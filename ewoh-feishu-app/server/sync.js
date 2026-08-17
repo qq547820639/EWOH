@@ -268,7 +268,9 @@ async function pollFeishuEventStatusChangesInner(db) {
     let records = [];
     let offset = 0;
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const r = await feishu.larkCli([
+      // FS-021：与其他同步路径统一使用 larkCliRetry（有界重试 + 指数退避），
+      // 原先单次 larkCli 调用遇瞬时失败（超时/网络）会整页中止本轮轮询。
+      const r = await feishu.larkCliRetry([
         'base', '+record-search',
         '--base-token', baseToken,
         '--table-id', tableId,
@@ -370,7 +372,24 @@ function stopEventStatusPolling() {
 // - 遥测：最近 100 条走批量 batch-create（复用 baseRecordBatchCreate，一次 API 调用）
 // v1.1.0 加固（D6）：v1.0 对设备/事件逐条 baseRecordCreate 会无限追加重复记录，
 // 且遥测逐条 create 高频调用。现全部收敛为 upsert/批量语义，降低 API 频率与数据漂移。
+// FS-008：运行中互斥标志 —— 50 条事件串行 search+update 单轮可能超过 30s 定时
+// 间隔，setInterval 不等待上一轮完成，重叠运行会放大 lark-cli 并发与重复 upsert；
+// 上一轮仍在途时本轮直接跳过（skipped，不计入健康状态，避免误报同步失败）。
+let syncAllInFlight = false;
 async function syncAllToFeishu(db) {
+  if (syncAllInFlight) {
+    console.warn('[sync] 上一轮全量同步仍在进行，跳过本轮（FS-008 互斥）');
+    return { ok: false, error: 'sync already in progress', skipped: true, synced: {} };
+  }
+  syncAllInFlight = true;
+  try {
+    return await syncAllToFeishuInner(db);
+  } finally {
+    syncAllInFlight = false;
+  }
+}
+
+async function syncAllToFeishuInner(db) {
   const synced = { devices: 0, events: 0, telemetry: 0 };
   const failures = [];
   const cfg = feishu.getConfig();

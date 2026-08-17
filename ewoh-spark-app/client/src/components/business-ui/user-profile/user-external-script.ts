@@ -7,6 +7,12 @@ export interface UseExternalScriptOptions {
   attributes?: Record<string, string>;
   nonce?: string;
   onloadCallback?: () => void;
+  /**
+   * CLI-404：允许加载的脚本 origin 白名单（https 绝对 origin）。
+   * 传入 src 不在白名单时拒绝注入并进入 error 状态，防止把
+   * 不可信地址直接挂到 script.src。
+   */
+  allowedOrigins?: string[];
 }
 
 /**
@@ -24,10 +30,28 @@ export function useExternalScript(
   useEffect(() => {
     if (!src) return;
 
-    // 如果已经存在同 src 的脚本，直接认为已就绪
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${src}"]`,
-    );
+    // CLI-404：校验 src 必须是白名单 origin 的 https 地址。
+    let allowed = false;
+    try {
+      const parsed = new URL(src, globalThis.location?.href);
+      allowed =
+        parsed.protocol === 'https:' &&
+        (options.allowedOrigins ?? []).includes(parsed.origin);
+    } catch {
+      allowed = false;
+    }
+    if (!allowed) {
+      queueMicrotask(() => {
+        setStatus('error');
+      });
+      return;
+    }
+
+    // CLI-409：选择器模板串插值可被注入，改为枚举 script 节点后
+    // 对 src 属性做精确比对。
+    const existing = Array.from(
+      document.querySelectorAll<HTMLScriptElement>('script[src]'),
+    ).find((el) => el.getAttribute('src') === src);
     if (existing) {
       queueMicrotask(() => {
         setStatus('ready');

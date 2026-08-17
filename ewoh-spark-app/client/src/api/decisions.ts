@@ -25,10 +25,17 @@ export interface DecisionHistoryQuery {
 export async function fetchDecisionHistory(
   params: DecisionHistoryQuery = {},
 ): Promise<DecisionHistoryResponse> {
+  // CLI-719：显式字段映射构造查询参数（替代整体 as 断言），undefined 字段
+  // 不会被序列化进 query。
+  const query: Record<string, string> = {};
+  if (params.kind !== undefined) query.kind = String(params.kind);
+  if (params.status !== undefined) query.status = String(params.status);
+  if (params.limit !== undefined) query.limit = String(params.limit);
+  if (params.offset !== undefined) query.offset = String(params.offset);
   const res = await axiosForBackend({
     url: '/api/scheduler/decision-history',
     method: 'GET',
-    params: { ...params } as Record<string, unknown>,
+    params: query,
   });
   return res.data;
 }

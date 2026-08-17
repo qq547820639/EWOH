@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -153,9 +154,14 @@ export class WorkOrchestrationController {
 
   @Post('resources/recover-expired')
   recoverExpired(@Req() request: { userContext?: OrgContext }) {
-    return this.workService.recoverExpiredLocks(
-      request.userContext?.primaryOrgId ?? 'default',
-    );
+    // NEST-222：无 org 上下文 400（原回退 'default' 会跨租户误回收锁）。
+    const orgId = request.userContext?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new BadRequestException(
+        'org 上下文缺失：过期锁回收必须带租户上下文',
+      );
+    }
+    return this.workService.recoverExpiredLocks(orgId);
   }
 
   @Post('handoffs')

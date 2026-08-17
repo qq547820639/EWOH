@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohAgentTask, ewohEvent } from '@server/database/schema';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { validateAgentTask, agentTaskTransitionAllowed } from '@shared/agent-task';
 import { isCatalogEventType } from '@shared/event-catalog';
@@ -9,6 +9,19 @@ import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope'
 import { AuditService } from '../shared/audit.service';
 
 export type AgentTaskInput = Record<string, unknown>;
+
+/** 任务转移调用方（roles 来自认证上下文 userContext.roles）。 */
+export type AgentTaskActor = { userId: string; roles?: string[] };
+
+/** SH-005：从 actor.roles 派生状态机执行主体角色（agent-task.yaml 转移表约束）。
+ * roles 含 'agent'（Agent runtime 上报）→ agent；其余认证角色 → orchestrator
+ * （平台/人侧调度）。roles 缺省（系统内部调用）→ undefined（契约向后兼容，
+ * 不校验 role——但调用点必须显式传派生结果，禁止凭空省略）。 */
+function deriveActorRole(actor?: AgentTaskActor): string | undefined {
+  const roles = actor?.roles;
+  if (!Array.isArray(roles) || roles.length === 0) return undefined;
+  return roles.includes('agent') ? 'agent' : 'orchestrator';
+}
 
 /** 每 (org, assignedRole) 活跃任务并发预算（防多 Agent 风暴）。 */
 export const AGENT_ROLE_CONCURRENCY_LIMIT = 10;
@@ -41,7 +54,7 @@ export class AgentOrchestratorService {
   async createTask(
     orgId: string,
     task: AgentTaskInput,
-    actor?: { userId: string },
+    actor?: AgentTaskActor,
   ): Promise<AgentTaskInput> {
     if (!orgId?.trim()) {
       throw new BadRequestException('org 上下文缺失，任务创建显式失败');
@@ -65,64 +78,72 @@ export class AgentOrchestratorService {
         return existing[0]?.taskJson as AgentTaskInput; // 幂等重创建
       }
     }
-    // 依赖环检测（跨任务 BFS：新任务不得出现在任一依赖的传递闭包中）
+    // 依赖环检测（跨任务 BFS：新任务不得出现在任一依赖的传递闭包中）。
+    // NEST-325：按层批量 inArray 查询（原先逐节点一查，大图 N+1）。
     const dependencies = (task.dependencies ?? []) as string[];
     if (dependencies.length > 0) {
       const seen = new Set<string>();
-      const queue = [...dependencies];
-      while (queue.length > 0) {
-        const current = queue.shift() as string;
-        if (current === taskId) {
-          throw new BadRequestException('task_graph_cycle');
+      let frontier = [...dependencies];
+      while (frontier.length > 0) {
+        for (const current of frontier) {
+          if (current === taskId) {
+            throw new BadRequestException('task_graph_cycle');
+          }
+          seen.add(current);
         }
-        if (seen.has(current)) continue;
-        seen.add(current);
         const rows = await this.db
-          .select({ dependencies: ewohAgentTask.dependencies })
+          .select({ taskId: ewohAgentTask.taskId, dependencies: ewohAgentTask.dependencies })
           .from(ewohAgentTask)
-          .where(and(eq(ewohAgentTask.orgId, orgId), eq(ewohAgentTask.taskId, current)));
+          .where(and(eq(ewohAgentTask.orgId, orgId), inArray(ewohAgentTask.taskId, frontier)));
+        const next = new Set<string>();
         for (const row of rows) {
-          const nextDeps = (row.dependencies ?? []) as string[];
-          for (const dep of nextDeps) queue.push(dep);
+          for (const dep of (row.dependencies ?? []) as string[]) {
+            if (!seen.has(dep)) next.add(dep);
+          }
         }
+        frontier = [...next];
       }
     }
-    // 并发预算：每 (org, role) 活跃任务数上限
+    // 并发预算 + 落库（NEST-324：advisory xact lock 串行化「检查-插入」——
+    // 原先 check-then-insert 窗口内两并发 createTask 同时过预算检查超限）。
     const assignedRole = task.assignedRole as string;
-    const activeRows = await this.db
-      .select({ taskId: ewohAgentTask.taskId })
-      .from(ewohAgentTask)
-      .where(
-        and(
-          eq(ewohAgentTask.orgId, orgId),
-          eq(ewohAgentTask.assignedRole, assignedRole),
-          inArray(ewohAgentTask.status, ['created', 'dispatched', 'in_progress']),
-        ),
-      );
-    if (activeRows.length >= AGENT_ROLE_CONCURRENCY_LIMIT) {
-      throw new BadRequestException(
-        `concurrency_limit_exceeded:${assignedRole}=${AGENT_ROLE_CONCURRENCY_LIMIT}`,
-      );
-    }
-
     const dueTimeRaw = task.dueTime as string | undefined;
-    await this.db.insert(ewohAgentTask).values({
-      orgId,
-      taskId,
-      name: task.name as string,
-      version: task.version as number,
-      kind: task.kind as string,
-      assignedRole,
-      assigneeAgentId: (task.assigneeAgentId as string | undefined) ?? null,
-      dependencies: task.dependencies as string[],
-      priority: task.priority as string,
-      status: 'created',
-      dueTime: dueTimeRaw ? new Date(dueTimeRaw) : null,
-      budget: task.budget as Record<string, unknown>,
-      correlationId: (task.correlationId as string | undefined) ?? null,
-      inputContract: task.inputContract as Record<string, unknown>,
-      outputContract: task.outputContract as Record<string, unknown>,
-      taskJson: task,
+    const lockKey = `${orgId}:role:${assignedRole}`;
+    await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+      const activeRows = await tx
+        .select({ taskId: ewohAgentTask.taskId })
+        .from(ewohAgentTask)
+        .where(
+          and(
+            eq(ewohAgentTask.orgId, orgId),
+            eq(ewohAgentTask.assignedRole, assignedRole),
+            inArray(ewohAgentTask.status, ['created', 'dispatched', 'in_progress']),
+          ),
+        );
+      if (activeRows.length >= AGENT_ROLE_CONCURRENCY_LIMIT) {
+        throw new BadRequestException(
+          `concurrency_limit_exceeded:${assignedRole}=${AGENT_ROLE_CONCURRENCY_LIMIT}`,
+        );
+      }
+      await tx.insert(ewohAgentTask).values({
+        orgId,
+        taskId,
+        name: task.name as string,
+        version: task.version as number,
+        kind: task.kind as string,
+        assignedRole,
+        assigneeAgentId: (task.assigneeAgentId as string | undefined) ?? null,
+        dependencies: task.dependencies as string[],
+        priority: task.priority as string,
+        status: 'created',
+        dueTime: dueTimeRaw ? new Date(dueTimeRaw) : null,
+        budget: task.budget as Record<string, unknown>,
+        correlationId: (task.correlationId as string | undefined) ?? null,
+        inputContract: task.inputContract as Record<string, unknown>,
+        outputContract: task.outputContract as Record<string, unknown>,
+        taskJson: task,
+      });
     });
     await this.recordTaskEvent(orgId, task, 'AgentTaskCreated', {});
     await this.auditAppend(orgId, 'agent.task.created', taskId, actor);
@@ -136,7 +157,7 @@ export class AgentOrchestratorService {
     taskId: string,
     target: string,
     allowedFrom: string[],
-    actor?: { userId: string },
+    actor?: AgentTaskActor,
   ): Promise<Record<string, unknown>> {
     const rows = await this.db
       .select()
@@ -149,6 +170,14 @@ export class AgentOrchestratorService {
     if (!allowedFrom.includes(row.status)) {
       throw new BadRequestException(
         `invalid_transition:${row.status}->${target}`,
+      );
+    }
+    // SH-005：转移表 role 约束（orchestrator/agent）——调用方强制从
+    // actor.roles 派生 actorRole 传入，不再依赖契约层缺省放行。
+    const actorRole = deriveActorRole(actor);
+    if (!agentTaskTransitionAllowed(row.status, target, actorRole)) {
+      throw new BadRequestException(
+        `actor_role_forbidden:${row.status}->${target}:${actorRole ?? 'unspecified'}`,
       );
     }
     if (target === 'dispatched') {
@@ -183,22 +212,26 @@ export class AgentOrchestratorService {
       throw new BadRequestException('task_state_changed_concurrently');
     }
     if (TERMINAL_STATUSES.has(target)) {
-      await this.recordTaskEvent(
-        orgId,
-        (row.taskJson ?? { taskId }) as AgentTaskInput,
-        'AgentTaskCompleted',
-        { status: target },
-      );
+      // NEST-362：终态事件 subject 以台账行事实优先（taskJson 缺失的存量行
+      // 回退最小 {taskId}——创建路径必写 taskJson，此兜底仅覆盖历史行）。
+      const taskInput = ((row.taskJson ?? null) as AgentTaskInput | null) ?? {
+        taskId,
+        name: row.name,
+        assignedRole: row.assignedRole,
+      };
+      await this.recordTaskEvent(orgId, taskInput, 'AgentTaskCompleted', {
+        status: target,
+      });
     }
     await this.auditAppend(orgId, `agent.task.${target}`, taskId, actor);
     return { taskId, status: target };
   }
 
-  async dispatchTask(orgId: string, taskId: string, actor?: { userId: string }) {
+  async dispatchTask(orgId: string, taskId: string, actor?: AgentTaskActor) {
     return this.transition(orgId, taskId, 'dispatched', ['created'], actor);
   }
 
-  async startTask(orgId: string, taskId: string, actor?: { userId: string }) {
+  async startTask(orgId: string, taskId: string, actor?: AgentTaskActor) {
     return this.transition(orgId, taskId, 'in_progress', ['dispatched'], actor);
   }
 
@@ -206,7 +239,7 @@ export class AgentOrchestratorService {
     orgId: string,
     taskId: string,
     outcome: { status: 'completed' | 'failed'; outcomeJson?: Record<string, unknown> },
-    actor?: { userId: string },
+    actor?: AgentTaskActor,
   ) {
     if (outcome.status !== 'completed' && outcome.status !== 'failed') {
       throw new BadRequestException('completeTask status 必须为 completed|failed');
@@ -227,7 +260,7 @@ export class AgentOrchestratorService {
     return result;
   }
 
-  async cancelTask(orgId: string, taskId: string, actor?: { userId: string }) {
+  async cancelTask(orgId: string, taskId: string, actor?: AgentTaskActor) {
     return this.transition(
       orgId,
       taskId,
@@ -237,12 +270,23 @@ export class AgentOrchestratorService {
     );
   }
 
-  async listTasks(orgId: string): Promise<Record<string, unknown>[]> {
+  /**
+   * NEST-326（2026-08-17 审计整改）：列表分页（原先无界全表）。
+   * limit 缺省 100、上限 500；offset 缺省 0。
+   */
+  async listTasks(
+    orgId: string,
+    pagination?: { limit?: number; offset?: number },
+  ): Promise<Record<string, unknown>[]> {
+    const limit = Math.min(Math.max(1, Math.trunc(pagination?.limit ?? 100)), 500);
+    const offset = Math.max(0, Math.trunc(pagination?.offset ?? 0));
     const rows = await this.db
       .select()
       .from(ewohAgentTask)
       .where(eq(ewohAgentTask.orgId, orgId))
-      .orderBy(desc(ewohAgentTask.createdAt));
+      .orderBy(desc(ewohAgentTask.createdAt))
+      .limit(limit)
+      .offset(offset);
     return rows.map((r) => ({
       taskId: r.taskId,
       name: r.name,
@@ -320,7 +364,7 @@ export class AgentOrchestratorService {
     orgId: string,
     action: string,
     taskId: string,
-    actor?: { userId: string },
+    actor?: AgentTaskActor,
   ): Promise<void> {
     try {
       await this.auditService.appendAuditLog({

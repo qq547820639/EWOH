@@ -20,9 +20,21 @@ scripts/audit-domain-contracts.js reasoning_trace 域门禁强制。
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .identity import is_canonical_identity
+
+
+def _safe_conclusion_value(raw: Any) -> str:
+    """EDGE-227：把 trace_id 清洗为 conclusionId value 合法字符集。
+
+    conclusionId 须满足规范身份 value 语法（无空白、无 ':'/'/'/'%'），原始
+    trace_id 不保证满足——清洗掉非法字符（而非直接拼接产出违约 ID）。
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "", str(raw))
+    return cleaned[:100] or "unknown"
+
 
 RULE_IDS: tuple[str, ...] = (
     "rule:worker-overload", "rule:exo-low-battery", "rule:machine-vibration-risk",
@@ -160,7 +172,9 @@ def evaluate_rules(
                 minutes=_fmt(values.get("unacknowledgedMinutes")),
             )
             conclusions.append({
-                "conclusionId": f"decision:{trace_id}-{rule_id.split(':')[1]}",
+                # EDGE-227：trace_id 先经 _safe_conclusion_value 清洗，
+                # 保证 conclusionId 恒满足规范身份 value 语法。
+                "conclusionId": f"decision:{_safe_conclusion_value(trace_id)}-{rule_id.split(':')[1]}",
                 "ruleId": rule_id,
                 "subjectId": fact["subjectId"],
                 "severity": _SEVERITY_OF[rule_id],

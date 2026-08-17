@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -70,14 +71,23 @@ export class ExecutionService {
   ): Promise<SchedulingExecution[]> {
     const created: SchedulingExecution[] = [];
     for (const a of assignments) {
-      const existing = await this.db
-        .select()
-        .from(ewohSchedulingExecution)
-        .where(eq(ewohSchedulingExecution.assignmentId, a.assignmentId))
-        .limit(1);
-      if (existing[0]) continue;
-      const executionId = `EXEC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const [row] = await this.db
+      // NEST-010 修复（2026-08-17）：SELECT-then-INSERT 竞态（并发 dispatch 同
+      // assignment 双插入）→ 原子 ON CONFLICT DO NOTHING（target=(org_id,
+      // assignment_id)，standalone_057 复合唯一 uq_ewoh_scheduling_execution_
+      // org_assignment）。冲突行返回空 → 幂等跳过（与原 existing[0] continue
+      // 语义一致）。orgId 为 NULL 的系统路径不可作 conflict target（PG 中
+      // NULL != NULL 不命中唯一索引），保留前置存在性检查兜底。
+      if (orgId == null) {
+        const existing = await this.db
+          .select()
+          .from(ewohSchedulingExecution)
+          .where(eq(ewohSchedulingExecution.assignmentId, a.assignmentId))
+          .limit(1);
+        if (existing[0]) continue;
+      }
+      // NEST-047：Date.now()+Math.random → randomUUID（密码学随机）。
+      const executionId = `EXEC-${randomUUID()}`;
+      const inserted = await this.db
         .insert(ewohSchedulingExecution)
         .values({
           executionId,
@@ -99,8 +109,16 @@ export class ExecutionService {
           solverVersion: plan.solverVersion ?? null,
           source: 'dispatch',
         })
+        .onConflictDoNothing({
+          target: [
+            ewohSchedulingExecution.orgId,
+            ewohSchedulingExecution.assignmentId,
+          ],
+        })
         .returning();
-      created.push(this.toExecution(row));
+      if (inserted[0]) {
+        created.push(this.toExecution(inserted[0]));
+      }
       void ctx;
     }
     return created;
@@ -112,10 +130,21 @@ export class ExecutionService {
     body: ExecutionUpdateRequest,
     orgId: string | null,
   ): Promise<SchedulingExecution> {
+    // NEST-011 修复（2026-08-17）：读/写均加 org 条件——orgId 提供时仅匹配
+    // 本 org 行（org 匹配或 NULL 存量，与 RLS 等价），任意 assignmentId 不可
+    // 跨租户改执行状态/偏差；缺省 = 系统路径（GUC/RLS 兜底）。
+    const ownership = orgId
+      ? or(
+          isNull(ewohSchedulingExecution.orgId),
+          eq(ewohSchedulingExecution.orgId, orgId),
+        )
+      : undefined;
     const [row] = await this.db
       .select()
       .from(ewohSchedulingExecution)
-      .where(eq(ewohSchedulingExecution.assignmentId, assignmentId))
+      .where(
+        and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership),
+      )
       .limit(1);
     if (!row) throw new NotFoundException(`Execution for assignment ${assignmentId} not found`);
 
@@ -142,7 +171,9 @@ export class ExecutionService {
     const [updated] = await this.db
       .update(ewohSchedulingExecution)
       .set(values)
-      .where(eq(ewohSchedulingExecution.assignmentId, assignmentId))
+      .where(
+        and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership),
+      )
       .returning();
     const execution = this.toExecution(updated);
 
@@ -153,7 +184,12 @@ export class ExecutionService {
         await this.db
           .update(ewohSchedulingExecution)
           .set({ deviationType: derived.type, deviationReason: derived.reason })
-          .where(eq(ewohSchedulingExecution.assignmentId, assignmentId));
+          .where(
+            and(
+              eq(ewohSchedulingExecution.assignmentId, assignmentId),
+              ownership,
+            ),
+          );
         execution.deviationType = derived.type;
         execution.deviationReason = derived.reason;
       }
@@ -205,12 +241,25 @@ export class ExecutionService {
     return { executions: rows.map((r) => this.toExecution(r)), total: rows.length };
   }
 
-  /** 按 assignmentId 查。 */
-  async getByAssignment(assignmentId: string): Promise<SchedulingExecution | null> {
+  /** 按 assignmentId 查。NEST-012（2026-08-17）：orgId 提供时按 org 过滤。 */
+  async getByAssignment(
+    assignmentId: string,
+    orgId?: string | null,
+  ): Promise<SchedulingExecution | null> {
     const [row] = await this.db
       .select()
       .from(ewohSchedulingExecution)
-      .where(eq(ewohSchedulingExecution.assignmentId, assignmentId))
+      .where(
+        and(
+          eq(ewohSchedulingExecution.assignmentId, assignmentId),
+          orgId
+            ? or(
+                isNull(ewohSchedulingExecution.orgId),
+                eq(ewohSchedulingExecution.orgId, orgId),
+              )
+            : undefined,
+        ),
+      )
       .limit(1);
     return row ? this.toExecution(row) : null;
   }

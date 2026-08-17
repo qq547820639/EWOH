@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
 import type { AuditLogEntry, AuditLogSink } from './audit.service';
 
@@ -7,7 +7,9 @@ import type { AuditLogEntry, AuditLogSink } from './audit.service';
 export class DatabaseAuditSink implements AuditLogSink {
   private readonly logger = new Logger(DatabaseAuditSink.name);
 
-  constructor(@Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any) {}
+  // NEST-525 修复（2026-08-17）：db 类型 any → PostgresJsDatabase（保留
+  // @Optional 以兼容无数据库装配的测试环境）。
+  constructor(@Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: PostgresJsDatabase) {}
 
   async append(entry: AuditLogEntry): Promise<void> {
     if (!this.db) {

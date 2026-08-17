@@ -86,12 +86,25 @@ export function validateAgentTask(record: unknown): string[] {
   return [];
 }
 
-/** 状态转移判定（与 contracts/state-machines/agent-task.yaml 一致）。 */
-export function agentTaskTransitionAllowed(current: string, target: string): boolean {
-  const allowed: Record<string, ReadonlySet<string>> = {
-    created: new Set(['dispatched', 'cancelled']),
-    dispatched: new Set(['in_progress', 'cancelled']),
-    in_progress: new Set(['completed', 'failed', 'cancelled']),
-  };
-  return Boolean(allowed[current]?.has(target));
+/** 状态转移表（与 contracts/state-machines/agent-task.yaml 逐条一致，含 role 约束）。
+ *
+ * SH-005：agent-task.yaml 每条 transition 声明 role（orchestrator/agent），
+ * actorRole 传入时强制校验（不满足返回 false）；缺省 undefined 时不校验
+ * role（向后兼容，由调用方负责强制传值——契约冻结层边界 3）。
+ */
+const AGENT_TASK_TRANSITIONS: ReadonlyArray<{ from: string; to: string; role: string }> = [
+  { from: 'created', to: 'dispatched', role: 'orchestrator' },
+  { from: 'dispatched', to: 'in_progress', role: 'agent' },
+  { from: 'in_progress', to: 'completed', role: 'agent' },
+  { from: 'in_progress', to: 'failed', role: 'agent' },
+  { from: 'created', to: 'cancelled', role: 'orchestrator' },
+  { from: 'dispatched', to: 'cancelled', role: 'orchestrator' },
+  { from: 'in_progress', to: 'cancelled', role: 'orchestrator' },
+];
+
+export function agentTaskTransitionAllowed(current: string, target: string, actorRole?: string): boolean {
+  const match = AGENT_TASK_TRANSITIONS.find((t) => t.from === current && t.to === target);
+  if (!match) return false;
+  if (actorRole === undefined) return true;
+  return match.role === actorRole;
 }

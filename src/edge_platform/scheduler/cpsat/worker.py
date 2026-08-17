@@ -510,7 +510,10 @@ def _drain_executor(cap_ms: int = 5000) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="EWOH CP-SAT 求解 HTTP Worker")
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument(
+        "--host",
+        default="127.0.0.1",  # EDGE-114：默认仅绑回环，暴露到网络须显式指定
+    )
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
 

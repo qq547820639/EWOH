@@ -230,8 +230,12 @@ function PlanDelta({ plan }: { plan: SchedulingPlanV2 }) {
 function ExecutionDeviation({ assignment }: { assignment: SchedulingAssignment }) {
   // 方案分配可能携带实际执行字段（若后端下发后回填）。前端仅透传展示。
   const rec = assignment as unknown as AssignmentRecord;
-  const actualStart = rec.actualStart ?? rec.actualStartMs != null ? String(rec.actualStartMs) : null;
-  const actualEnd = rec.actualEnd ?? rec.actualEndMs != null ? String(rec.actualEndMs) : null;
+  // CLI-020：加括号修复优先级——原式解析为 (rec.actualStart ?? (rec.actualStartMs != null))
+  // ? String(...) : null，actualStart 值被丢弃且可能渲染 "undefined"。
+  const actualStart =
+    rec.actualStart ?? (rec.actualStartMs != null ? String(rec.actualStartMs) : null);
+  const actualEnd =
+    rec.actualEnd ?? (rec.actualEndMs != null ? String(rec.actualEndMs) : null);
   const hasActual = actualStart != null || actualEnd != null;
   if (!hasActual) return null;
   return (
@@ -302,8 +306,8 @@ function CandidateRow({ item }: { item: CandidateExplainItem }) {
       </div>
       {item.reasons.length > 0 && (
         <div className="mt-0.5 text-[9px] text-white/45">
-          {item.reasons.map((r, j) => (
-            <div key={j}>· {r}</div>
+          {Array.from(new Set(item.reasons)).map((r) => (
+            <div key={`reason-${r}`}>· {r}</div>
           ))}
         </div>
       )}

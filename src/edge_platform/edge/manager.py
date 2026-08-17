@@ -22,6 +22,9 @@ from edge_platform.runtime.protocols import STREAM_TELEMETRY, EventBusProtocol, 
 
 logger = logging.getLogger("ewoh.edge.manager")
 
+# EDGE-042：read_message 连续失败达到该阈值后，日志升级为 ERROR 级 degraded 信号
+_READ_FAILURE_DEGRADED_THRESHOLD = 10
+
 
 class AdapterManager:
     """设备适配器生命周期管理（生产实现）。
@@ -303,25 +306,53 @@ class AdapterManager:
 
     # ---- 内部：后台读取循环 ----
     def _read_loop(self, adapter: BaseAdapter) -> None:
+        """适配器读取循环。
+
+        EDGE-042（2026-08-17 审计整改）：read_message 连续异常不再固定 1s 无限
+        重试——按连续失败次数指数退避（1s→60s 封顶），达到阈值后升级为 ERROR
+        级 degraded 日志（supervisor health 层面仍可见线程存活状态）。
+        EDGE-043：帧持久化失败做一次有界重试，最终失败 ERROR 留痕（不静默丢帧）。
+        """
+        consecutive_failures = 0
         while not self._stop_event.is_set():
             try:
                 msg = adapter.read_message(timeout=1.0)
             except Exception:
-                logger.exception(
-                    "adapter %s read_message failed", getattr(adapter, "device_id", "?")
-                )
-                time.sleep(1.0)
+                consecutive_failures += 1
+                device_id = getattr(adapter, "device_id", "?")
+                if consecutive_failures >= _READ_FAILURE_DEGRADED_THRESHOLD:
+                    logger.error(
+                        "adapter %s read_message 连续失败 %d 次（degraded，退避 %.0fs）",
+                        device_id,
+                        consecutive_failures,
+                        min(60.0, 1.0 * (2 ** min(consecutive_failures, 6))),
+                    )
+                else:
+                    logger.exception("adapter %s read_message failed", device_id)
+                time.sleep(min(60.0, 1.0 * (2 ** min(consecutive_failures, 6))))
                 continue
+            consecutive_failures = 0
             if msg is None:
                 continue
+            row = unified_to_telemetry_row(msg) if is_grouped_frame(msg) else msg
+            # EDGE-043：持久化失败有界重试（共 2 次尝试），最终失败显式 ERROR。
+            for attempt in (1, 2):
+                try:
+                    self.storage.insert_telemetry(row)
+                    break
+                except Exception:
+                    if attempt == 2:
+                        logger.error(
+                            "adapter %s frame persistence failed（重试后仍失败，帧丢失留痕）: %s",
+                            getattr(adapter, "device_id", "?"),
+                            row.get("record_id"),
+                        )
+                    else:
+                        time.sleep(0.05)
             try:
-                # Batch 8.4（H2 修复）：统一语义帧（分组格式）→ 存储扁平格式。
-                # 兼容双格式：分组帧转换后写入，扁平帧（旧连接器产出）直接透传。
-                row = unified_to_telemetry_row(msg) if is_grouped_frame(msg) else msg
-                self.storage.insert_telemetry(row)
                 self.bus.publish(STREAM_TELEMETRY, row)
             except Exception:
-                logger.exception("adapter %s frame persistence failed", getattr(adapter, "device_id", "?"))
+                logger.exception("adapter %s frame publish failed", getattr(adapter, "device_id", "?"))
 
 
 __all__ = ["AdapterManager"]

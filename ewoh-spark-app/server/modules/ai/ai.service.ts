@@ -11,6 +11,8 @@ import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
 import { sql, eq, and } from 'drizzle-orm';
 import { ArkService } from './ark.service';
 import { InferenceResultService } from '../inference/inference.service';
+import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
 
 export interface AiSuggestion {
   id: string;
@@ -230,8 +232,12 @@ export class AiService {
     }
   }
 
-  /** Manual A3 trigger only. */
-  async createPlan(suggestionId: string, content: Record<string, unknown>): Promise<AiPlan> {
+  /** Manual A3 trigger only.（NEST-422：建议归属 org 校验。） */
+  async createPlan(
+    suggestionId: string,
+    content: Record<string, unknown>,
+    actor?: OrgContext,
+  ): Promise<AiPlan> {
     if (!this.db) {
       if (!this.suggestions.has(suggestionId)) {
         throw new NotFoundException(`Suggestion ${suggestionId} not found`);
@@ -249,12 +255,18 @@ export class AiService {
     }
 
     const [suggestionRow] = await this.db
-      .select({ content: ewohAiSuggestion.content })
+      .select({ content: ewohAiSuggestion.content, orgId: ewohAiSuggestion.orgId })
       .from(ewohAiSuggestion)
       .where(eq(ewohAiSuggestion.suggestionId, suggestionId));
     if (!suggestionRow) {
       throw new NotFoundException(`Suggestion ${suggestionId} not found`);
     }
+    // NEST-422：建议归属 org 守卫（跨租户 404）。
+    assertTenantVisible(
+      (suggestionRow as { orgId?: string | null }).orgId,
+      actor,
+      `Suggestion ${suggestionId}`,
+    );
     const suggestionText =
       String((suggestionRow as Record<string, unknown>).content ?? '') || suggestionId;
     // 真实调用 Ark 生成方案要点；失败时保留原 content。
@@ -313,7 +325,8 @@ export class AiService {
     }
   }
 
-  async getSuggestion(id: string): Promise<AiSuggestion> {
+  /** NEST-422：单条读 org 守卫（跨租户 404）。 */
+  async getSuggestion(id: string, actor?: OrgContext): Promise<AiSuggestion> {
     if (!this.db) {
       const suggestion = this.suggestions.get(id);
       if (!suggestion) {
@@ -322,16 +335,22 @@ export class AiService {
       return suggestion;
     }
     const [row] = await this.db
-      .select({ content: ewohAiSuggestion.content })
+      .select({ content: ewohAiSuggestion.content, orgId: ewohAiSuggestion.orgId })
       .from(ewohAiSuggestion)
       .where(eq(ewohAiSuggestion.suggestionId, id));
     if (!row) {
       throw new NotFoundException(`Suggestion ${id} not found`);
     }
+    assertTenantVisible(
+      (row as { orgId?: string | null }).orgId,
+      actor,
+      `Suggestion ${id}`,
+    );
     return JSON.parse(String((row as Record<string, unknown>).content)) as AiSuggestion;
   }
 
-  async getPlan(id: string): Promise<AiPlan> {
+  /** NEST-422：单条读 org 守卫（跨租户 404）。 */
+  async getPlan(id: string, actor?: OrgContext): Promise<AiPlan> {
     if (!this.db) {
       const plan = this.plans.get(id);
       if (!plan) {
@@ -340,13 +359,19 @@ export class AiService {
       return plan;
     }
     const [row] = await this.db
-      .select({ planContent: ewohAiSuggestion.planContent })
+      .select({ planContent: ewohAiSuggestion.planContent, orgId: ewohAiSuggestion.orgId })
       .from(ewohAiSuggestion)
       .where(sql`plan_content->>'id' = ${id}`);
     if (!row) {
       throw new NotFoundException(`Plan ${id} not found`);
     }
-    return (row as Record<string, unknown>).plan_content as unknown as AiPlan;
+    assertTenantVisible(
+      (row as { orgId?: string | null }).orgId,
+      actor,
+      `Plan ${id}`,
+    );
+    // NEST-449：读 camelCase planContent（旧 snake_case 读取恒 undefined）。
+    return (row as Record<string, unknown>).planContent as unknown as AiPlan;
   }
 
   /** 自然语言问答：采集系统实时上下文并调用 Ark 回答。 */
@@ -407,8 +432,11 @@ export class AiService {
           );
         }
       }
-    } catch {
-      // 忽略遥测采集失败
+    } catch (error) {
+      // NEST-442：采集失败留痕（不再静默吞）。
+      this.logger.warn(
+        `collectSystemContext: 遥测采集失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     try {
       const events: Array<{ severity: string | null; status: string | null; cnt: number }> = await this.db
@@ -428,8 +456,11 @@ export class AiService {
           lines.push(`  严重度=${e.severity ?? 'N/A'}, 状态=${e.status ?? 'N/A'}: ${e.cnt} 条`);
         }
       }
-    } catch {
-      // 忽略事件采集失败
+    } catch (error) {
+      // NEST-442：采集失败留痕（不再静默吞）。
+      this.logger.warn(
+        `collectSystemContext: 事件采集失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     try {
       const tasks: Array<{ status: string | null; cnt: number }> = await this.db
@@ -447,8 +478,11 @@ export class AiService {
           lines.push(`  ${t.status ?? 'N/A'}: ${t.cnt} 个`);
         }
       }
-    } catch {
-      // 忽略任务采集失败
+    } catch (error) {
+      // NEST-442：采集失败留痕（不再静默吞）。
+      this.logger.warn(
+        `collectSystemContext: 任务采集失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     return lines.length ? lines.join('\n') : '（暂无实时数据）';
   }

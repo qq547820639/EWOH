@@ -5,6 +5,43 @@ import { Streamdown as StreamdownPrimitive } from 'streamdown';
 
 import { cn } from '@/lib/utils';
 import { omit } from 'es-toolkit';
+import { sanitizeUrl } from '@/lib/urlSafety';
+
+/**
+ * CLI-401：markdown 链接 href 白名单渲染器。流式未完成链接的内部标记
+ * （streamdown:incomplete-link）保留原语义；其余 href 经 sanitizeUrl 校验，
+ * 危险 scheme（javascript:/data:/vbscript: 等）降级为不可点击的纯文本。
+ */
+export function MarkdownAnchor({
+  className,
+  href,
+  ...props
+}: React.ComponentProps<'a'> & { node?: unknown }) {
+  const isIncomplete = href === 'streamdown:incomplete-link';
+  const safeHref = isIncomplete ? href : sanitizeUrl(href);
+
+  if (!safeHref) {
+    return (
+      <span
+        className={cn(className)}
+        data-streamdown="link-blocked"
+        {...omit(props, ['node', 'rel', 'target'])}
+      />
+    );
+  }
+
+  return (
+    <a
+      className={cn(className)}
+      data-incomplete={isIncomplete}
+      data-streamdown="link"
+      href={safeHref}
+      rel={props.rel ?? 'noreferrer'}
+      target={props.target ?? '_blank'}
+      {...omit(props, ['node'])}
+    />
+  );
+}
 
 const defaultComponents: NonNullable<
   React.ComponentProps<typeof StreamdownPrimitive>['components']
@@ -44,21 +81,7 @@ const defaultComponents: NonNullable<
       {...omit(props, ['node'])}
     />
   ),
-  a: ({ className, href, ...props }) => {
-    const isIncomplete = href === 'streamdown:incomplete-link';
-
-    return (
-      <a
-        className={cn(className)}
-        data-incomplete={isIncomplete}
-        data-streamdown="link"
-        href={href}
-        rel={props.rel ?? 'noreferrer'}
-        target={props.target ?? '_blank'}
-        {...omit(props, ['node'])}
-      />
-    );
-  },
+  a: MarkdownAnchor,
   h1: ({ className, ...props }) => (
     <h1
       className={cn(className)}

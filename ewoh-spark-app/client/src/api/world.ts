@@ -12,7 +12,7 @@ export async function getWorldState(signal?: AbortSignal): Promise<CurrentWorldS
 
 export async function getEventChain(eventId: string): Promise<EventChainNode[]> {
   const res = await axiosForBackend({
-    url: `/api/world/events/chain/${eventId}`,
+    url: `/api/world/events/chain/${encodeURIComponent(eventId)}`,
     method: 'GET',
   });
   return res.data;

@@ -117,7 +117,8 @@ describe('SystemService feature flags', () => {
       })),
     };
     const service = new SystemService(db as never);
-    const flags = await service.listFeatureFlags();
+    // org 隔离（W4）：feature flag 读写显式租户上下文。
+    const flags = await service.listFeatureFlags({ primaryOrgId: 'org-1' });
     expect(flags).toHaveLength(1);
     expect(flags[0].enabled).toBe(true);
   });
@@ -132,7 +133,7 @@ describe('SystemService feature flags', () => {
     };
     const service = new SystemService(db as never);
     await expect(
-      service.getFeatureFlag('feature.missing'),
+      service.getFeatureFlag('feature.missing', { primaryOrgId: 'org-1' }),
     ).rejects.toThrow('not found');
   });
 
@@ -193,6 +194,7 @@ describe('SystemService feature flags', () => {
     const result = await service.evaluateFeatureFlags(
       ['feature.scale.canary', 'feature.scale.safe', 'feature.missing'],
       context,
+      { primaryOrgId: 'org-a' },
     );
     expect(result).toEqual([
       expect.objectContaining({
@@ -218,6 +220,7 @@ describe('SystemService feature flags', () => {
     const ringMiss = await service.evaluateFeatureFlags(
       ['feature.scale.canary', 'feature.scale.fallback'],
       { ...context, upgradeRing: 'full' },
+      { primaryOrgId: 'org-a' },
     );
     expect(ringMiss[0]).toEqual(
       expect.objectContaining({

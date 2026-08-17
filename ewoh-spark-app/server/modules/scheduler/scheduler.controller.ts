@@ -117,8 +117,9 @@ export class SchedulerController {
    * 前端 ResourcePool 不得自行拼装 SpatialEntity/DeviceInfo 作为正式资源状态。
    */
   @Get('resources/state')
-  async getUnifiedResourceState() {
-    return this.resourceProjectionService.getUnifiedResourceState();
+  async getUnifiedResourceState(@Req() request?: { userContext?: OrgContext }) {
+    // NEST-102（2026-08-17）：资源投影透传认证上下文（org 过滤）。
+    return this.resourceProjectionService.getUnifiedResourceState(request?.userContext);
   }
 
   /**
@@ -331,8 +332,9 @@ export class SchedulerController {
   }
 
   @Get('snapshot')
-  async getSnapshot() {
-    return this.schedulerService.getSnapshot();
+  async getSnapshot(@Req() request?: { userContext?: OrgContext }) {
+    // NEST-111（2026-08-17）：透传认证上下文，snapshot 读取按 org 过滤。
+    return this.schedulerService.getSnapshot(request?.userContext);
   }
 
   @Get('plans/:planId')
@@ -416,8 +418,12 @@ export class SchedulerController {
   }
 
   @Get('tasks/:id/candidates')
-  async getTaskCandidates(@Param('id') id: string) {
-    return this.schedulerService.getTaskCandidates(id);
+  async getTaskCandidates(
+    @Param('id') id: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NEST-111（2026-08-17）：透传认证上下文，候选资源按 org 过滤。
+    return this.schedulerService.getTaskCandidates(id, request?.userContext);
   }
 
   @Get('routes')
@@ -428,8 +434,12 @@ export class SchedulerController {
 
   @Post('routes/calculate')
   @HttpCode(200)
-  async calculateRoute(@Body() body: CalculateRouteRequest) {
-    return this.schedulerService.calculateRouteV2(body);
+  async calculateRoute(
+    @Body() body: CalculateRouteRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NEST-111（2026-08-17）：路由计算走 loadGraph（org 过滤拓扑）。
+    return this.schedulerService.calculateRouteV2(body, request?.userContext);
   }
 
   @Get('conflicts')
@@ -515,10 +525,10 @@ export class SchedulerController {
 
   // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
 
-  /** 返回当前生效策略 + 配置（只读）。 */
+  /** 返回当前生效策略 + 配置（只读）。NEST-105：透传认证上下文 org 过滤。 */
   @Get('policy')
-  async getPolicy() {
-    return this.schedulerService.getPolicy();
+  async getPolicy(@Req() request?: { userContext?: OrgContext }) {
+    return this.schedulerService.getPolicy(request?.userContext);
   }
 
   /** 列出全部策略版本（含 active 标志、操作人、创建时间）。 */
@@ -589,12 +599,20 @@ export class SchedulerController {
     this.schedulerStreamService.start().catch(() => undefined);
     // P4-SSE：组织隔离——订阅者仅收到本 org 事件 + 全局事件（orgId null）。
     const viewerOrgId = request?.userContext?.primaryOrgId ?? null;
+    // NEST-113 修复（2026-08-17）：viewerOrgId 缺失（无认证上下文）时不再
+    // 放行全部事件——业务事件一律过滤（仅保留心跳），fail-closed。全局 guard
+    // 正常生效时本分支不可达，此为纵深防御。
+    if (!viewerOrgId) {
+      this.logger.warn('SSE stream requested without org context; business events suppressed');
+    }
 
     // 实时事件 + 心跳。
     const live$ = merge(
       this.schedulerStreamService.events().pipe(
-        // P4-SSE：org 隔离（全局事件放行）。
-        filter((event) => !viewerOrgId || event.orgId == null || event.orgId === viewerOrgId),
+        // P4-SSE：org 隔离（全局事件放行）；NEST-113：无 viewerOrg 一律不放行业务事件。
+        filter((event) =>
+          Boolean(viewerOrgId) && (event.orgId == null || event.orgId === viewerOrgId),
+        ),
         map(
           (event): MessageEvent => ({
             type: 'scheduling.event',
@@ -636,8 +654,18 @@ export class SchedulerController {
         complete: () => subscriber.complete(),
       });
 
-      this.schedulerStreamService
-        .replaySince(lastEventId, lastEventId, viewerOrgId)
+      // NEST-113：无 viewerOrg 时不做增量重放（replaySince 无 org 过滤会返回
+      // 全部租户事件），直接发 resync 让客户端走认证路径全量同步。
+      const replayPromise = viewerOrgId
+        ? this.schedulerStreamService.replaySince(lastEventId, lastEventId, viewerOrgId)
+        : this.schedulerStreamService.currentSequence().then((currentSequence) => ({
+            events: [] as never[],
+            resyncNeeded: true as const,
+            gap: false as const,
+            currentSequence,
+          }));
+
+      replayPromise
         .then((result) => {
           if (result.resyncNeeded) {
             // 缺口/客户端超前 → 通知客户端放弃增量、全量重同步。
@@ -789,8 +817,10 @@ export class SchedulerController {
   async previewConflictAction(
     @Param('id') conflictId: string,
     @Body() body: import('@shared/api.interface').ConflictPreviewRequest,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    const conflict = await this.conflictService.getConflictDetail(conflictId);
+    // NEST-112（2026-08-17）：冲突读取透传认证上下文（跨租户 404）。
+    const conflict = await this.conflictService.getConflictDetail(conflictId, request?.userContext);
     return this.conflictPreviewService.preview(
       conflictId,
       {
@@ -825,11 +855,13 @@ export class SchedulerController {
   @Get('policy/replay')
   async listReplays(
     @Query('candidatePolicyVersion') candidateVersion?: string,
-    @Query('orgId') orgId?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
+    // NEST-112（2026-08-17）：org 只允许来自认证上下文——query 参数 orgId
+    // 欺骗路径废弃（与 listActivations 同口径，ADR-073 §3/§15）。
     return this.policyReplayService.listReplayRecords(
       candidateVersion ? Number(candidateVersion) : undefined,
-      orgId ?? null,
+      request?.userContext?.primaryOrgId ?? null,
     );
   }
 
@@ -841,8 +873,15 @@ export class SchedulerController {
   async enableShadow(
     @Param('version') version: string,
     @Body() body: { operator?: string; reason?: string },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    await this.shadowPolicyService.setStatus(Number(version), 'SHADOW', body.operator);
+    // NEST-115（2026-08-17）：透传认证上下文（策略状态变更 org 校验）。
+    await this.shadowPolicyService.setStatus(
+      Number(version),
+      'SHADOW',
+      body.operator,
+      request?.userContext,
+    );
     return { ok: true, status: 'SHADOW', policyVersion: Number(version) };
   }
 
@@ -890,11 +929,15 @@ export class SchedulerController {
   async rollbackPolicy(
     @Param('activationId') activationId: string,
     @Body() body: { operator: string; reason?: string },
+    @Req() request?: { userContext?: OrgContext },
   ) {
+    // NEST-112（2026-08-17）：透传认证上下文（rollback 按 org 校验归属，
+    // 跨租户 activationId 404，NEST-032）。
     return this.policyActivationService.rollback(
       activationId,
-      body.operator ?? 'system',
+      body.operator ?? request?.userContext?.userId ?? 'system',
       body.reason,
+      request?.userContext,
     );
   }
 

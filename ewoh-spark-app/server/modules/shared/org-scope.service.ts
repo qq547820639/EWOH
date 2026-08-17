@@ -13,6 +13,12 @@ export interface OrgNode {
 export interface OrgHierarchyProvider {
   loadOrg(orgId: string): Promise<OrgNode | null>;
   loadChildren(parentId: string): Promise<OrgNode[]>;
+  /**
+   * NEST-511（2026-08-17）：可选的批量加载——一次查询取回全量 org 行，
+   * 供 resolveOrgScope 在内存中做 BFS（替代逐节点 loadChildren 的 N+1 查询：
+   * 宽层级下原实现 = 节点数次往返）。测试 fake 可不实现（回退逐节点路径）。
+   */
+  loadAll?(): Promise<OrgNode[]>;
 }
 
 export interface OrgScopeResolution {
@@ -82,6 +88,12 @@ export class DatabaseOrgHierarchyProvider implements OrgHierarchyProvider {
 
 @Injectable()
 export class OrgScopeService {
+  /**
+   * NEST-520 文档化（2026-08-17）：cache 为进程内 Map，多实例部署下失效不跨
+   * 实例同步——各实例在 TTL（ORG_SCOPE_CACHE_TTL_MS，默认 5min）内可能返回
+   * 过期 org 树（最终一致）。org 写路径调用 invalidate() 仅本实例生效；
+   * 如需强一致，缩短 TTL 或迁移共享缓存（Redis）另行立项。
+   */
   private readonly cache = new Map<string, { resolution: OrgScopeResolution; expiresAt: number }>();
   private readonly invalidationListeners = new Set<OrgInvalidationListener>();
   private readonly provider: OrgHierarchyProvider;
@@ -106,14 +118,40 @@ export class OrgScopeService {
     const visited = new Set<string>([root.id]);
     const queue = [root.id];
 
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const children = await this.provider.loadChildren(current);
-      for (const child of children) {
-        if (!visited.has(child.id)) {
-          visited.add(child.id);
-          descendants.push(child);
-          queue.push(child.id);
+    // NEST-511（2026-08-17）：provider 支持批量加载时用单查询 + 内存 BFS，
+    // 消除宽层级下的逐节点 N+1 查询；否则回退原逐节点路径（fake provider 兼容）。
+    if (typeof this.provider.loadAll === 'function') {
+      const allNodes = await this.provider.loadAll();
+      const byParent = new Map<string, OrgNode[]>();
+      for (const node of allNodes) {
+        if (node.parentId == null) continue;
+        const bucket = byParent.get(node.parentId);
+        if (bucket) {
+          bucket.push(node);
+        } else {
+          byParent.set(node.parentId, [node]);
+        }
+      }
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        for (const child of byParent.get(current) ?? []) {
+          if (!visited.has(child.id)) {
+            visited.add(child.id);
+            descendants.push(child);
+            queue.push(child.id);
+          }
+        }
+      }
+    } else {
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        const children = await this.provider.loadChildren(current);
+        for (const child of children) {
+          if (!visited.has(child.id)) {
+            visited.add(child.id);
+            descendants.push(child);
+            queue.push(child.id);
+          }
         }
       }
     }

@@ -41,6 +41,11 @@ import { TimelineModule } from './modules/timeline/timeline.module';
 import { SimulationModule } from './modules/simulation/simulation.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { ExoSessionModule } from './modules/exo/exo-session.module';
+// NEST-507/515（2026-08-17，spec 已裁决：legacy 保留但补齐 guard/interceptor
+// 至可用最小集）：legacy 入口补 RateLimitGuard 与 MetricsInterceptor。
+import { RateLimitGuard } from './modules/shared/rate-limit.guard';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 
 @Module({
   imports: [
@@ -81,6 +86,8 @@ import { ExoSessionModule } from './modules/exo/exo-session.module';
     SimulationModule,
     NotificationModule,
     ExoSessionModule,
+    // NEST-507/515：MetricsModule 提供 MetricsInterceptor 依赖（最小集补齐）。
+    MetricsModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last
@@ -107,6 +114,16 @@ import { ExoSessionModule } from './modules/exo/exo-session.module';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // NEST-507/515：legacy 补齐限流与指标最小集（与 standalone 入口对齐；
+    // 生产仍建议 EWOH_DEPLOY_TARGET=standalone，见 main.ts 警告）。
+    {
+      provide: APP_GUARD,
+      useClass: RateLimitGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
     },
   ],
 })

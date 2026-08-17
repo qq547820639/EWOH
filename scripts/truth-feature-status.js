@@ -84,6 +84,13 @@ const PRODUCTION_CLAIM_PHRASES = [
 ];
 const CLAIM_PROXIMITY_CHARS = 80;
 
+// SCR-019: implemented=false 但文档提及的显式豁免表（featureKey -> 理由）。
+// 仅登记在此的 feature 降级 WARN，其余一律 FAIL；豁免理由必须说明为何属规划描述而非交付声明。
+const UNIMPLEMENTED_DOC_MENTION_EXEMPTIONS = {
+  // 示例（当前无豁免项；新增时必须附理由）：
+  // decisionCockpit: 'README 版本日志将驾驶舱列为 Unreleased 规划范围，非交付声明',
+};
+
 // 代码中已知解决、但 OPEN-DECISIONS 中不得仍为 OPEN 的项（如再次出现即 FAIL）。
 const KNOWN_RESOLVED_IN_CODE = [
   { id: 'lark-cli-async', label: '飞书侧车 lark-cli 异步化', pattern: /lark-cli/ },
@@ -205,16 +212,17 @@ function auditDocsCrossCheck(checks, manifest, readme, changelog) {
       }
     }
 
-    // b3：未实现功能被文档描述为已建成 → WARN（如 README 版本日志将
-    // decisionCockpit 驾驶舱列为 Unreleased 范围，属规划描述而非交付声明，
-    // 故降级为 WARN；生产启用声明仍由 b2 强制 FAIL）。
+    // b3：未实现功能被文档描述为已建成 → 默认 FAIL（SCR-019）。
+    // 仅显式豁免（UNIMPLEMENTED_DOC_MENTION_EXEMPTIONS，必须附理由）降级 WARN；
+    // 生产启用声明仍由 b2 强制 FAIL。
     if (f.implemented === false && mentionedIn.length > 0) {
+      const exemptReason = UNIMPLEMENTED_DOC_MENTION_EXEMPTIONS[key];
       check(
         checks,
         'docs_unimplemented_claim',
-        true,
-        `feature.${key}: implemented=false 但文档提及（${mentionedIn.join(',')}）——按规划描述处理`,
-        'WARN',
+        Boolean(exemptReason),
+        `feature.${key}: implemented=false 但文档提及（${mentionedIn.join(',')}）${exemptReason ? `——显式豁免（${exemptReason}）` : '——未实现功能不得被文档描述为已建成，如属规划描述请登记 UNIMPLEMENTED_DOC_MENTION_EXEMPTIONS 并附理由'}`,
+        exemptReason ? 'WARN' : 'FAIL',
       );
     }
   }
@@ -306,10 +314,12 @@ function auditReadmeCapabilityTable(checks, manifest, readme) {
   check(
     checks,
     'readme_capability_table_exists',
-    tableFound || rows.length === 0,
+    tableFound,
     tableFound
       ? 'README 包含「能力状态清单」表且解析到 feature 行'
-      : 'README 未解析到「能力状态清单」表的 feature 行（需添加或检查（featureKey）标注）',
+      : rows.length === 0
+        ? 'README 缺少「能力状态清单」表（SCR-008：缺失判 FAIL，不再视为通过）'
+        : 'README「能力状态清单」表存在但未解析到 feature 行（需检查（featureKey）标注）',
   );
   check(
     checks,
@@ -579,7 +589,18 @@ function auditSolverActivation(checks, manifest, readme, envExample) {
         : `productionEnabled=false 时 README 不得声称 CP-SAT canonical（heuristicCanonical=${heuristicCanonical} cpsatMarkedNonCanonical=${cpsatMarkedNonCanonical} cpsatCanonicalClaim=${cpsatCanonicalClaim}）`,
     );
   } else if (readme && productionEnabled) {
-    check(checks, 'solver_readme_no_cpsat_canonical_claim', true, 'productionEnabled=true：跳过 canonical 声称检查');
+    // SCR-021: productionEnabled=true 时不得自动通过——清单与 README 必须一致：
+    // README 不得仍标注 CP-SAT OPTIONAL/EXPERIMENTAL/不生产启用（启用与否定标记互斥）。
+    const cpsatStillMarkedOptional =
+      /CP-SAT[^\n]{0,120}(OPTIONAL|EXPERIMENTAL|不生产启用|未启用|未部署 OR-Tools)/i.test(readme);
+    check(
+      checks,
+      'solver_readme_no_cpsat_canonical_claim',
+      !cpsatStillMarkedOptional,
+      cpsatStillMarkedOptional
+        ? 'productionEnabled=true 但 README 仍标注 CP-SAT OPTIONAL/EXPERIMENTAL/不生产启用——feature-status.yaml 与文档不一致'
+        : 'productionEnabled=true：README 无 CP-SAT 非生产标注，与清单一致',
+    );
   }
 }
 
@@ -626,11 +647,14 @@ function runSelfTest() {
 // ---------------- R7 OpenAPI 契约零漂移 ----------------
 function auditOpenApiNoDrift(checks, skip) {
   if (skip) {
+    // SCR-020: 跳过不得记 ok:true（假成功）——记 BLOCKED，不计入通过也不判失败，
+    // 由 standalone.yml "OpenAPI contract drift gate (W4)" 的 npm run gen:openapi:check 兜底。
     check(
       checks,
       'openapi_no_drift',
-      true,
-      '跳过（--skip-openapi）：CI 中该漂移已由 standalone.yml "OpenAPI contract drift gate (W4)" 的 npm run gen:openapi:check 覆盖',
+      false,
+      'BLOCKED（--skip-openapi）：本步骤未执行，须由 standalone.yml "OpenAPI contract drift gate (W4)" 的 npm run gen:openapi:check 覆盖',
+      'BLOCKED',
     );
     return;
   }
@@ -698,6 +722,8 @@ function main() {
 
   const failed = checks.filter((c) => !c.ok && c.level === 'FAIL');
   const warnings = checks.filter((c) => c.level === 'WARN');
+  const blockedChecks = checks.filter((c) => c.level === 'BLOCKED');
+  const passed = checks.filter((c) => c.ok).length;
 
   if (json) {
     console.log(
@@ -705,9 +731,10 @@ function main() {
         {
           root,
           skipOpenApi,
-          passed: checks.length - failed.length,
+          passed,
           failed: failed.length,
           warnings: warnings.length,
+          blocked: blockedChecks.length,
           checks,
           verdict: failed.length === 0 ? 'PASS' : 'FAIL',
         },
@@ -718,10 +745,10 @@ function main() {
   } else {
     console.log('TRUTH FEATURE-STATUS GATE');
     for (const c of checks) {
-      const tag = c.level === 'WARN' ? 'WARN' : c.ok ? 'PASS' : 'FAIL';
+      const tag = c.level === 'WARN' ? 'WARN' : c.level === 'BLOCKED' ? 'BLOCKED' : c.ok ? 'PASS' : 'FAIL';
       console.log(`  ${tag} ${c.name}: ${c.detail}`);
     }
-    console.log(`  summary: ${checks.length - failed.length}/${checks.length} passed, ${failed.length} failed, ${warnings.length} warn`);
+    console.log(`  summary: ${passed}/${checks.length} passed, ${failed.length} failed, ${warnings.length} warn, ${blockedChecks.length} blocked`);
     console.log(failed.length === 0 ? 'TRUTH-GATE PASS' : 'TRUTH-GATE FAIL');
   }
 

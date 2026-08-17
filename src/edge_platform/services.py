@@ -106,20 +106,29 @@ WORK_NORM_MIN = 120  # 连续作业时长归一化基准（分钟）
 OPEN_HIGH_SEVERITY = ("L2", "L3")
 
 
-def person_metrics(storage, person, device, events_cache=None):
+def person_metrics(storage, person, device, events_cache=None, latest_cache=None, day_rows_cache=None):
     """从真实记录推导人员指标：当前负荷、连续作业分钟、近期风险。
 
     events_cache: 可选的已归一化事件列表（norm_event 输出）。由批量调用方
     （recommend）一次性查询后传入，避免每个人员重复 list_events(N)（N+1 查询）。
+    latest_cache / day_rows_cache（EDGE-044）：可选的 {device_id: 最新遥测} 与
+    {device_id: 当日遥测行} 预取缓存，批量调用方一次拉取后复用，消除逐人员
+    latest_telemetry/query_telemetry 的 N+1 查询。
     """
     now = datetime.now().astimezone()
     load, work_min = 0.0, 0.0
     if device:
-        latest = norm_telemetry(storage.latest_telemetry(device["device_id"]))
+        if latest_cache is not None and device["device_id"] in latest_cache:
+            latest = latest_cache[device["device_id"]]
+        else:
+            latest = norm_telemetry(storage.latest_telemetry(device["device_id"]))
         if latest:
             load = float(latest["telemetry"].get("load_score", 0) or 0)
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        rows = storage.query_telemetry(device["device_id"], iso(day_start), iso(now), 20000)
+        if day_rows_cache is not None and device["device_id"] in day_rows_cache:
+            rows = day_rows_cache[device["device_id"]]
+        else:
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            rows = storage.query_telemetry(device["device_id"], iso(day_start), iso(now), 20000)
         if len(rows) >= 2:
             t0, t1 = parse_ts(norm_telemetry(rows[0])["timestamp"]), parse_ts(norm_telemetry(rows[-1])["timestamp"])
             if t0 and t1:
@@ -162,11 +171,25 @@ def recommend(storage, assignments, payload, device_online):
     by_person = {d.get("person_id"): d for d in devices if d.get("person_id")}
     # A3 修复：事件列表只查询一次并复用于所有候选人员，消除 person_metrics 的 N+1 查询。
     events_cache = [norm_event(x) for x in storage.list_events(200)]
+    # EDGE-044：最新遥测/当日遥测同样一次预取复用（原为每个候选人员逐个查询）。
+    now = datetime.now().astimezone()
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    latest_cache = {}
+    day_rows_cache = {}
+    for d in devices:
+        dev_id = d.get("device_id")
+        if not dev_id:
+            continue
+        latest_cache[dev_id] = norm_telemetry(storage.latest_telemetry(dev_id))
+        day_rows_cache[dev_id] = storage.query_telemetry(dev_id, iso(day_start), iso(now), 20000)
     rows = []
     for p in storage.list_people():
         skills = person_skills(p)
         dev = by_person.get(p.get("person_id"))
-        m = person_metrics(storage, p, dev, events_cache=events_cache)
+        m = person_metrics(
+            storage, p, dev, events_cache=events_cache,
+            latest_cache=latest_cache, day_rows_cache=day_rows_cache,
+        )
         skill_ok = skill in skills
         zone_score = 1.0 if p.get("team") == zone or p.get("zone") == zone else 0.6
         capacity = max(0.0, 1 - max(m["current_load"], load_level * 0.3))
@@ -368,53 +391,22 @@ def _no_data():
 
 
 def answer(storage, question, device_online, assignments):
-    """白名单问答：8 类可答（必须引用真实证据），7 类拒绝。"""
+    """白名单问答：8 类可答（必须引用真实证据），7 类拒绝。
+
+    EDGE-049：拒绝规则同时匹配原文与去空白文本（阻断"医学 诊断"类分隔混淆）。
+    EDGE-050：分支判定按意图强度排序——负荷/事件/人选/动作等强意图词先于
+    泛化的"在线设备"统计分支，"在线设备最近事件"类多词问题不再答非所问。
+    """
     q = (question or "").strip()
     if not q:
         return {"answer": "请输入问题。", "evidence": [], "refused": True, "category": "空问题"}
+    q_compact = "".join(q.split())  # EDGE-049：去空白后二次匹配
     for name, keys, msg in REFUSE_RULES:
-        if any(k in q for k in keys):
+        if any(k in q or k in q_compact for k in keys):
             return {"answer": f"拒绝回答（{name}）。{msg}", "evidence": [], "refused": True, "category": name}
 
     devices = storage.list_devices()
-    # 1. 在线设备
-    if "在线" in q or ("多少" in q and "设备" in q):
-        views = [
-            {
-                "device_id": d["device_id"],
-                "online": device_online(d),
-                "source_type": d.get("source_type"),
-                "last_seen": d.get("last_seen"),
-            }
-            for d in devices
-        ]
-        on = [v for v in views if v["online"]]
-        return {
-            "answer": "当前在线设备 {} 台，离线 {} 台：{}。".format(
-                len(on),
-                len(views) - len(on),
-                "、".join(f"{v['device_id']}({v['source_type']})" for v in on) or "无",
-            ),
-            "evidence": views,
-            "refused": False,
-            "category": "在线设备",
-        }
-    # 6. 设备掉线情况
-    if "掉线" in q or "离线" in q or "断连" in q:
-        off = [
-            {"device_id": d["device_id"], "last_seen": d.get("last_seen"), "source_type": d.get("source_type")}
-            for d in devices
-            if not device_online(d)
-        ]
-        return {
-            "answer": "当前离线设备 {} 台：{}。恢复通信后平台无需重启即可自动恢复显示。".format(
-                len(off), "、".join(x["device_id"] for x in off) or "无"
-            ),
-            "evidence": off,
-            "refused": False,
-            "category": "设备掉线情况",
-        }
-    # 2. 最高负荷
+    # 2. 最高负荷（EDGE-050：强意图词先判）
     if "负荷" in q:
         recs = _recent_records(storage, _window(q))
         if not recs:
@@ -438,7 +430,7 @@ def answer(storage, question, device_online, assignments):
             "refused": False,
             "category": "最高负荷",
         }
-    # 3/4. 近期风险事件与告警原因
+    # 3/4. 近期风险事件与告警原因（EDGE-050：事件类意图先于设备在线统计）
     if "事件" in q or "风险" in q or "告警" in q or "报警" in q:
         events = [norm_event(e) for e in storage.list_events(50)]
         if not events:
@@ -539,6 +531,21 @@ def answer(storage, question, device_online, assignments):
             "refused": False,
             "category": "某时段动作记录",
         }
+    # 6. 设备掉线情况
+    if "掉线" in q or "离线" in q or "断连" in q:
+        off = [
+            {"device_id": d["device_id"], "last_seen": d.get("last_seen"), "source_type": d.get("source_type")}
+            for d in devices
+            if not device_online(d)
+        ]
+        return {
+            "answer": "当前离线设备 {} 台：{}。恢复通信后平台无需重启即可自动恢复显示。".format(
+                len(off), "、".join(x["device_id"] for x in off) or "无"
+            ),
+            "evidence": off,
+            "refused": False,
+            "category": "设备掉线情况",
+        }
     # 8. 数据来源
     if "来源" in q or "真实" in q or "模拟" in q:
         by_src = {}
@@ -554,6 +561,28 @@ def answer(storage, question, device_online, assignments):
             "evidence": [{"source_type": k, "devices": v} for k, v in by_src.items()],
             "refused": False,
             "category": "数据来源",
+        }
+    # 1. 在线设备（EDGE-050：泛化统计分支最后判定，避免遮蔽上方强意图）
+    if "在线" in q or ("多少" in q and "设备" in q):
+        views = [
+            {
+                "device_id": d["device_id"],
+                "online": device_online(d),
+                "source_type": d.get("source_type"),
+                "last_seen": d.get("last_seen"),
+            }
+            for d in devices
+        ]
+        on = [v for v in views if v["online"]]
+        return {
+            "answer": "当前在线设备 {} 台，离线 {} 台：{}。".format(
+                len(on),
+                len(views) - len(on),
+                "、".join(f"{v['device_id']}({v['source_type']})" for v in on) or "无",
+            ),
+            "evidence": views,
+            "refused": False,
+            "category": "在线设备",
         }
     return {
         "answer": "该问题不在白名单内。我可回答：在线设备、最高负荷、近期风险事件、告警原因、"
@@ -576,26 +605,40 @@ VETO_ITEMS = [
 
 
 def evaluate_scenario(p):
-    """首选条件加权评分（满分 100）+ 一票否决，输出候选场景一页纸。"""
+    """首选条件加权评分（满分 100）+ 一票否决，输出候选场景一页纸。
+
+    EDGE-051（2026-08-17 审计整改）：数值输入显式边界钳制——评分维度
+    （structured/roi/payer/fit/compliance/replicate）统一 0..5，
+    people 钳制 0..100000，杜绝负值/巨大值扭曲评分与设备建议。
+    """
     vetoes = [label for key, label in VETO_ITEMS if p.get(key)]
 
-    def num(k, d):
+    def num(k, d, lo=None, hi=None):
         try:
-            return float(p.get(k, d))
+            v = float(p.get(k, d))
         except (TypeError, ValueError):
-            return d
+            v = d
+        if lo is not None:
+            v = max(lo, v)
+        if hi is not None:
+            v = min(hi, v)
+        return v
+
+    def score_dim(k):
+        # EDGE-051：各评分维度合法区间 0..5
+        return num(k, 3, 0.0, 5.0)
 
     parts = {
-        "空间结构化": num("structured", 3) * 4,
-        "ROI可量化": num("roi", 3) * 4,
-        "付费方明确": num("payer", 3) * 3,
-        "设备适配": num("fit", 3) * 3,
-        "数据合规": num("compliance", 3) * 3,
-        "复制价值": num("replicate", 3) * 3,
+        "空间结构化": score_dim("structured") * 4,
+        "ROI可量化": score_dim("roi") * 4,
+        "付费方明确": score_dim("payer") * 3,
+        "设备适配": score_dim("fit") * 3,
+        "数据合规": score_dim("compliance") * 3,
+        "复制价值": score_dim("replicate") * 3,
     }
     score = round(sum(parts.values()), 1)  # 各维度 1-5 分，满分 100
     rating = "高" if score >= 75 else "中" if score >= 55 else "低"
-    people = int(num("people", 20))
+    people = int(num("people", 20, 0, 100000))
     dev_n = max(2, round(people * 0.35))
     backup = max(1, -(-dev_n // 10))
     recommended = not vetoes and rating in ("高", "中")
@@ -613,7 +656,7 @@ def evaluate_scenario(p):
         "付费方": p.get("payer_name", "待确认"),
         "接口": p.get("interfaces", "AIoT/门禁/定位接口待比对"),
         "数据条件": "需签署授权与 DPA，基线数据可采集",
-        "设备适配度": f"{int(num('fit', 3))}/5",
+        "设备适配度": f"{int(score_dim('fit'))}/5",
         "试点周期": f"{int(8 if rating == '高' else 10)} 周",
         "建议KPI": ["特定工序作业时间", "单位人力有效产出", "负荷/疲劳趋势", "设备连续运行与故障率"],
         "风险": vetoes or ["人员接受度", "现场网络条件", "基线数据质量"],

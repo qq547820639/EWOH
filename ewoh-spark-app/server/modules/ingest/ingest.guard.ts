@@ -6,9 +6,11 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
+import { RedisService } from '../shared/redis.service';
 
 /**
  * Ingestion 鉴权 + 限流 Guard
@@ -19,18 +21,19 @@ import type { Request } from 'express';
  *       · 非 production：除非显式设置 INGEST_INSECURE_DEV_MODE=true，否则同样拒绝。
  *   - key 比较使用 constant-time（timingSafeEqual），避免内容级 timing 泄漏。
  * 限流：单 IP 100 req/min，超出返回 429。
+ *   NEST-211：计数迁移到 RedisService（REDIS_URL 配置时多实例共享计数；
+ *   Redis 不可用自动回退进程内存——单实例语义同旧版，降级有结构化日志）。
  * 机器对机器租户上下文：优先 X-Org-Id，回退 EWOH_INGEST_ORG_ID。
  */
 @Injectable()
 export class IngestGuard implements CanActivate {
   private readonly logger = new Logger(IngestGuard.name);
   private static readonly RATE_LIMIT = 100; // 每分钟
-  private static readonly WINDOW_MS = 60_000;
+  private static readonly WINDOW_SECONDS = 60;
 
-  /** ip -> 时间戳数组（滑动窗口） */
-  private hits = new Map<string, number[]>();
+  constructor(@Optional() private readonly redis?: RedisService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
     const ingestKey = request.headers['x-ingest-key'] as string | undefined;
     const expectedKey = process.env.INGEST_API_KEY;
@@ -60,9 +63,10 @@ export class IngestGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or missing X-Ingest-Key');
     }
 
-    // 限流
-    const ip = (request.ip || request.socket.remoteAddress || 'unknown').replace('::ffff:', '');
-    if (!this.allowRequest(ip)) {
+    // 限流（NEST-211：Redis 固定窗口计数，多实例共享；失败回退内存）。
+    const ip = (request.ip || request.socket.remoteAddress || 'unknown').replace(/[^a-zA-Z0-9.:_-]/g, '_');
+    const allowed = await this.allowRequest(ip);
+    if (!allowed) {
       throw new HttpException('Rate limit exceeded (100 req/min)', 429);
     }
 
@@ -100,23 +104,20 @@ export class IngestGuard implements CanActivate {
     return timingSafeEqual(ba, bb);
   }
 
-  private allowRequest(ip: string): boolean {
-    const now = Date.now();
-    const windowStart = now - IngestGuard.WINDOW_MS;
-    const arr = this.hits.get(ip) ?? [];
-    // B3 修复：fresh 过滤后若为空则删除该 IP 的 key（过期 IP 不再保留空数组条目，
-    // 避免 Map 无限增长），否则 set 保留窗口记录；超限 return false 前同样按此规则维护。
-    const fresh = arr.filter((t) => t > windowStart);
-    if (fresh.length === 0) {
-      this.hits.delete(ip);
-    } else {
-      this.hits.set(ip, fresh);
-    }
-    if (fresh.length >= IngestGuard.RATE_LIMIT) {
-      return false;
-    }
-    fresh.push(now);
-    this.hits.set(ip, fresh);
-    return true;
+  /**
+   * NEST-211：Redis 固定窗口限流（incr + 首次设置 TTL）。Redis 不可用时
+   * RedisService 内部回退进程内存（降级经结构化日志可观测）。
+   * 回退实例必须进程级单例——内存计数在实例上，逐请求新建实例会让
+   * 计数永远归零（限流失效）。
+   */
+  private fallbackLimiter?: RedisService;
+
+  private async allowRequest(ip: string): Promise<boolean> {
+    const limiter = this.redis ?? (this.fallbackLimiter ??= new RedisService());
+    const count = await limiter.incr(
+      `ingest:rate:${ip}`,
+      IngestGuard.WINDOW_SECONDS,
+    );
+    return count <= IngestGuard.RATE_LIMIT;
   }
 }

@@ -26,7 +26,11 @@ truth semantic consistency" work.
 | 6 | `ewoh:///artifact/evidence/v1` | Evidence front-matter fields | `evidence.schema.json` |
 | 7 | `ewoh:///artifact/release-manifest/v1` | `docs/delivery/release-manifest.yaml` and `release/*` | `release-manifest.schema.json` |
 
-All schemas use `additionalProperties: false` and explicit `required` arrays.
+All schemas use `additionalProperties: false` and explicit `required` arrays,
+with one intentional exception: the `evidence` object in
+`release-manifest.schema.json` is an open evidence bag (free-form per-gate
+summaries whose keys evolve between releases) and therefore leaves its
+properties unconstrained.
 
 ## Validation
 

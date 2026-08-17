@@ -116,9 +116,13 @@ export class LearningService {
     };
     let inserted;
     try {
-      const result = await this.db.insert(ewohLearningEvaluation).values(row).returning();
+      // NEST-345：台账行 + 目录事件同事务（原先事件失败时评估已落库）。
+      const result = await this.db.transaction(async (tx) => {
+        const rows = await tx.insert(ewohLearningEvaluation).values(row).returning();
+        await this.recordEvent(tx, rows[0], orgId);
+        return rows;
+      });
       inserted = result[0];
-      await this.recordEvent(inserted, orgId);
     } catch (err) {
       // 幂等重评估：唯一 (org_id, eval_id) 冲突 → 返回既有行，不重复发事件
       const code = (err as { code?: string }).code;
@@ -259,7 +263,9 @@ export class LearningService {
     };
   }
 
+  /** NEST-345：接受 db 或事务（评估行 + 事件同事务提交）。 */
   private async recordEvent(
+    db: Pick<PostgresJsDatabase, 'insert'>,
     row: typeof ewohLearningEvaluation.$inferSelect,
     orgId: string,
   ) {
@@ -277,7 +283,7 @@ export class LearningService {
       correlationId: currentTraceId() ?? null,
     });
     const envelopeRecord = envelopeForEvidence(envelope);
-    await this.db.insert(ewohEvent).values({
+    await db.insert(ewohEvent).values({
       eventId,
       eventType: 'LearningEvaluationRecorded',
       eventCode: 'LEARNING_EVALUATION_RECORDED',

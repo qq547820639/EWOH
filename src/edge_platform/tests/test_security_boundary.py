@@ -6,123 +6,29 @@
 - SQL 注入：/api/query 注入 ' OR 1=1 → 不返回额外数据（白名单问答不执行原始 SQL）
 - XSS 注入：/api/events/{id}/comment 注入 <script> → validate_input 拒绝或 JSON 响应安全
 - 请求大小超限：POST body > 1MB → 400 body_too_large
+- production 语义：匿名 export → 401（EDT-012，2026-08-17 审计整改补齐）
 
 纯 Python 标准库 unittest + urllib；运行：
   PYTHONPATH=src python -m unittest edge_platform.tests.test_security_boundary -v
 """
 
-import json
 import os
-import shutil
 import sys
-import tempfile
-import threading
 import unittest
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta
-from pathlib import Path
 
 # 支持 PYTHONPATH=src 与直接运行两种方式
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# EDT-014：共享 server fixture（本目录加入 path 后可导入）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from edge_platform import server, stubs  # noqa: E402
+from _fixtures import _ServerFixture  # noqa: E402
+
 from edge_platform.security import validate_input  # noqa: E402
 
 
 def _iso(dt):
     return dt.astimezone().isoformat(timespec="milliseconds")
-
-
-class _ServerFixture:
-    """每个测试类共享一个 server 实例（随机端口）。"""
-
-    def __init__(self):
-        self.tmp = tempfile.mkdtemp(prefix="ewoh_secbound_")
-        self.db_path = Path(self.tmp) / "test.db"
-        self.storage = stubs.Storage(self.db_path)
-        stubs.seed_base(self.storage)
-        # 插入一条遥测供 export 测试
-        now = datetime.now().astimezone()
-        self.storage.insert_telemetry(
-            {
-                "record_id": "TS-SEC-001",
-                "device_id": "EXO-001",
-                "timestamp": _iso(now),
-                "sequence": 1,
-                "source_type": "simulated",
-                "telemetry": {"pitch_deg": 5.0, "load_score": 0.3, "battery_pct": 85},
-                "quality": {"status": "good"},
-            }
-        )
-        # 插入一条事件供 comment XSS 测试
-        self.storage.insert_event(
-            {
-                "event_id": "EVT-SEC0001",
-                "event_code": "LOAD_CONTINUOUS",
-                "severity": "L2",
-                "status": "open",
-                "person_id": "P-001",
-                "device_id": "EXO-001",
-                "start_time": _iso(now),
-                "trigger": {"type": "rule", "condition": "连续高负荷"},
-                "evidence": {"window_before_sec": 30, "window_after_sec": 30},
-                "source_type": "simulated",
-            }
-        )
-        bus = stubs.Bus()
-        registry = stubs.ModelRegistry(Path(self.tmp) / "models")
-        rules = stubs.RuleEngine("risk-rule-stub-0.1", {})
-        pipeline = stubs.InferencePipeline(self.storage, bus, registry, rules)
-        manager = stubs.AdapterManager(self.storage, bus)
-        self.ctx = server.Context(
-            self.storage, bus=bus, pipeline=pipeline, registry=registry, rules=rules, manager=manager
-        )
-        self.httpd = server.build_server(("127.0.0.1", 0), self.ctx)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
-        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
-
-    def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=3)
-        self.storage.close()
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def req(self, path, method="GET", body=None, headers=None):
-        """发起请求，返回 (status, headers, body_dict)。"""
-        data = json.dumps(body).encode() if body is not None else None
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=data, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                raw = resp.read().decode()
-                return resp.status, resp.headers, (json.loads(raw) if raw else {})
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode()
-            return e.code, e.headers, (json.loads(raw) if raw else {})
-
-    def raw(self, path, method="GET", body_bytes=None, headers=None):
-        """发起原始字节请求（用于测试超大 body），返回 (status, headers, body_bytes)。"""
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=body_bytes, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                return resp.status, resp.headers, resp.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.headers, e.read()
-
-    def login(self, username, password):
-        """登录获取 Bearer token；返回 (token, role) 或 (None, None)。"""
-        status, _, body = self.req("/api/auth/login", method="POST", body={"username": username, "password": password})
-        if status == 200:
-            return body["token"], body["user"].get("role")
-        return None, None
 
 
 # ---------- 1. 未认证访问受保护端点 ----------
@@ -131,7 +37,7 @@ class UnauthenticatedAccessTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_secbound_", telemetry_record_id="TS-SEC-001", event_id="EVT-SEC0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -166,7 +72,7 @@ class PrivilegeEscalationExportTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_secbound_", telemetry_record_id="TS-SEC-001", event_id="EVT-SEC0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -248,7 +154,7 @@ class SqlInjectionTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_secbound_", telemetry_record_id="TS-SEC-001", event_id="EVT-SEC0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -272,6 +178,17 @@ class SqlInjectionTest(unittest.TestCase):
                 evidence = body.get("evidence", [])
                 self.assertLessEqual(len(evidence), 50, "不应因注入返回大量数据")
 
+    def test_normal_question_returns_real_evidence(self):
+        """EDT-003 对照断言：正常问题返回非空 evidence——证明上方注入用例的
+        "无额外数据"不是"端点本来就不返回数据"的恒真结果。"""
+        status, _, body = self.fx.req("/api/query", method="POST", body={"question": "在线设备"})
+        self.assertEqual(status, 200)
+        self.assertFalse(body.get("refused"), "正常问题不应被拒答")
+        evidence = body.get("evidence", [])
+        self.assertGreater(len(evidence), 0, "在线设备问题应引用真实设备证据（对照断言）")
+        device_ids = {e.get("device_id") for e in evidence}
+        self.assertIn("EXO-001", device_ids, "种子设备 EXO-001 应出现在证据中")
+
     def test_normal_question_still_works(self):
         """正常问题仍能得到回答（回归）。"""
         status, _, body = self.fx.req("/api/query", method="POST", body={"question": "在线设备"})
@@ -292,7 +209,7 @@ class XssInjectionTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_secbound_", telemetry_record_id="TS-SEC-001", event_id="EVT-SEC0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -346,7 +263,7 @@ class BodySizeLimitTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_secbound_", telemetry_record_id="TS-SEC-001", event_id="EVT-SEC0001")
 
     @classmethod
     def tearDownClass(cls):
@@ -372,6 +289,57 @@ class BodySizeLimitTest(unittest.TestCase):
         big_bytes = b"x" * (1024 * 1024 + 100)
         status, _, raw = self.fx.raw("/api/query", method="POST", body_bytes=big_bytes)
         self.assertEqual(status, 400)
+
+
+# ---------- 6. production 语义：导出必须认证（EDT-012） ----------
+class ProductionExportAuthTest(unittest.TestCase):
+    """EDT-012：production 模式下匿名导出必须 401（development 的宽松仅限离线演示）。
+
+    development fixture（上方各类）覆盖演示语义；本类以真实 production 装配
+    验证收紧语义：匿名 POST /api/telemetry/export → 401 unauthorized。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._old_env = dict(os.environ)
+        os.environ["EWOH_RUNTIME_MODE"] = "production"
+        from edge_platform.config import Settings
+
+        Settings.reset()
+        cls.fx = _ServerFixture(
+            prefix="ewoh_secbound_prod_",
+            telemetry_record_id="TS-SEC-P-001",
+            event_id="EVT-SECP0001",
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fx.stop()
+        os.environ.clear()
+        os.environ.update(cls._old_env)
+        from edge_platform.config import Settings
+
+        Settings.reset()
+
+    def test_production_anonymous_export_post_401(self):
+        now = datetime.now().astimezone()
+        s, e = _iso(now - timedelta(minutes=5)), _iso(now + timedelta(seconds=5))
+        status, _, body = self.fx.req(
+            "/api/telemetry/export",
+            method="POST",
+            body={"device_id": "EXO-001", "start": s, "end": e, "format": "json"},
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"]["code"], "unauthorized")
+
+    def test_production_anonymous_export_get_401(self):
+        now = datetime.now().astimezone()
+        s, e = _iso(now - timedelta(minutes=5)), _iso(now + timedelta(seconds=5))
+        status, _, body = self.fx.req(
+            f"/api/telemetry/export?device_id=EXO-001&start={s}&end={e}"
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(body["error"]["code"], "unauthorized")
 
 
 if __name__ == "__main__":

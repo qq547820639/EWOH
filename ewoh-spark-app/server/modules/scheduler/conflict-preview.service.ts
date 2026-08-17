@@ -55,7 +55,24 @@ export class ConflictPreviewService {
     ctx?: OrgContext,
   ): Promise<ConflictPreviewResult> {
     // 1) 世界快照 + 影响分析（复用 ReplanCoordinator 的 ImpactAnalyzer 语义）
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(undefined as never);
+    //    NEST-001/002 修复（2026-08-17）：不再 `undefined as never` 绕过类型
+    //    系统，也绝不回退 SYSTEM_CTX（空 orgId → 约束/状态加载无 org 过滤）。
+    //    ctx 缺省时显式构造带哨兵标记的系统上下文并留痕（快照收集走系统
+    //    语义，GUC/RLS 兜底）；有 ctx 时按租户过滤。
+    const effectiveCtx: OrgContext =
+      ctx ?? {
+        userId: 'system',
+        primaryOrgId: '',
+        role: 'system',
+        accessibleOrgIds: [],
+        isGlobalAdmin: false,
+      };
+    if (!ctx) {
+      this.logger.warn(
+        `conflict preview without org context (conflict=${conflictId}); falling back to system snapshot scope`,
+      );
+    }
+    const snapshot = await this.worldStateSnapshotService.buildSnapshot(effectiveCtx);
     const impact = await this.replanCoordinator.impactAnalysis(
       snapshot,
       conflict.type,
@@ -84,7 +101,7 @@ export class ConflictPreviewService {
         ? await this.constraintLoaderService.loadForPlan(
             baselinePlanId ?? '',
             [],
-            ctx ?? { userId: 'system', primaryOrgId: '', role: 'system', accessibleOrgIds: [], isGlobalAdmin: false },
+            effectiveCtx,
           )
         : [];
       const plans = await this.solverService.solveVariants(snapshot, previewConstraints, {

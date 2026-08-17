@@ -77,7 +77,11 @@ CREATE INDEX IF NOT EXISTS idx_schedule_plan_constraint_hash
   ON __EWOH_SCHEMA__.ewoh_schedule_plan (effective_constraints_hash);
 
 -- ============================================================================
--- 6) RLS：约束表组织隔离（org_id = current_setting('app.primary_org_id') OR NULL 放行）
+-- 6) RLS：约束表组织隔离（审计 SQL-044 修复，2026-08-17：原 policy 读取
+--    app.primary_org_id，与应用实际设置的 GUC app.current_org_id 不一致——
+--    单跑本迁移时 policy 过滤掉全部 org 行。现与 standalone_025 统一：优先
+--    app.current_org_id，未设置时回退 app.primary_org_id。025/057 顺序执行
+--    后本 policy 由其重建覆盖，此处保持一致仅为单跑场景正确性。）
 -- ============================================================================
 ALTER TABLE __EWOH_SCHEMA__.ewoh_scheduling_constraint ENABLE ROW LEVEL SECURITY;
 
@@ -88,13 +92,23 @@ CREATE POLICY scheduler_constraint_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = current_setting('app.primary_org_id', true)
+    org_id = COALESCE(
+      NULLIF(current_setting('app.current_org_id', true), ''),
+      NULLIF(current_setting('app.primary_org_id', true), '')
+    )
+    OR org_id IS NULL
+  )
+  WITH CHECK (
+    org_id = COALESCE(
+      NULLIF(current_setting('app.current_org_id', true), ''),
+      NULLIF(current_setting('app.primary_org_id', true), '')
+    )
     OR org_id IS NULL
   );
 
 COMMENT ON POLICY scheduler_constraint_org_isolation
   ON __EWOH_SCHEMA__.ewoh_scheduling_constraint
-  IS '约束组织隔离：org_id 匹配当前 primary_org_id 或 NULL（全局）放行';
+  IS '约束组织隔离：org_id 匹配当前 org（app.current_org_id，回退 app.primary_org_id）或 NULL（全局）放行';
 
 -- ============================================================================
 -- 7) 权限

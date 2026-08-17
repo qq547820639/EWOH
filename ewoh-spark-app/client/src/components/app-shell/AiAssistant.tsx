@@ -4,6 +4,7 @@ import { Bot, Loader2, Send, Sparkles } from 'lucide-react';
 import { aiChat, getAiConfigStatus } from '@/api/ai';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/queryKeys';
+import { sanitizeUserText } from '@/components/AppErrorState';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -53,11 +54,12 @@ const AiAssistant = () => {
       }
     },
     onError: (error) => {
+      // CLI-326：错误原文可能携带内部堆栈/接口信息，清洗后再展示给用户。
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `⚠️ ${error instanceof Error ? error.message : '请求失败'}`,
+          content: `⚠️ ${sanitizeUserText(error instanceof Error ? error.message : '') || '请求失败'}`,
         },
       ]);
     },
@@ -78,7 +80,7 @@ const AiAssistant = () => {
         onClick={() => setOpen(true)}
         aria-label="AI 助手"
         title="AI 助手（基于实时数据问答）"
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-[hsl(262_83%_58%)] bg-white px-2.5 text-sm font-medium text-[hsl(262_83%_58%)] hover:bg-[hsl(262_83%_96%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(262_83%_58%)]"
+        className="inline-flex h-8 items-center gap-2 rounded-lg border border-risk-conflict bg-white px-2.5 text-sm font-medium text-risk-conflict hover:bg-risk-conflict-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-risk-conflict"
       >
         <Bot className="h-4 w-4" aria-hidden />
         <span className="hidden sm:inline">AI 助手</span>
@@ -87,7 +89,7 @@ const AiAssistant = () => {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="size-4 text-[hsl(262_83%_58%)]" aria-hidden />
+              <Sparkles className="size-4 text-risk-conflict" aria-hidden />
               AI 助手
             </DialogTitle>
             <DialogDescription>
@@ -98,9 +100,9 @@ const AiAssistant = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex max-h-80 min-h-40 flex-col gap-3 overflow-y-auto rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] p-3">
+          <div className="flex max-h-80 min-h-40 flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-muted p-3">
             {messages.length === 0 && (
-              <p className="m-auto text-center text-sm text-[hsl(218_10%_42%)]">
+              <p className="m-auto text-center text-sm text-muted-foreground">
                 例如：近 1 小时哪些设备负荷最高？当前有哪些未结安全事件？
               </p>
             )}
@@ -109,15 +111,15 @@ const AiAssistant = () => {
                 key={index}
                 className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed ${
                   msg.role === 'user'
-                    ? 'self-end bg-[hsl(221_83%_53%)] text-white'
-                    : 'self-start border bg-white text-[hsl(220_14%_14%)]'
+                    ? 'self-end bg-primary text-white'
+                    : 'self-start border bg-white text-foreground'
                 }`}
               >
                 {msg.content}
               </div>
             ))}
             {chatMutation.isPending && (
-              <div className="flex items-center gap-2 self-start rounded-lg border bg-white px-3 py-2 text-sm text-[hsl(218_10%_42%)]">
+              <div className="flex items-center gap-2 self-start rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 正在结合实时数据思考…
               </div>
@@ -136,7 +138,7 @@ const AiAssistant = () => {
               }}
               placeholder="输入问题，Enter 发送，Shift+Enter 换行…"
               rows={2}
-              className="min-h-0 flex-1 resize-none rounded-lg border border-[hsl(220_14%_89%)] p-3 text-sm outline-none focus:border-[hsl(262_83%_58%)]"
+              className="min-h-0 flex-1 resize-none rounded-lg border border-border p-3 text-sm outline-none focus:border-risk-conflict"
             />
             <Button
               type="button"

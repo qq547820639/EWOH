@@ -13,12 +13,42 @@ type Row = Record<string, unknown>;
 
 function makeFakeDb(rows: Row[] = []) {
   const state = { rows: [...rows] };
+  // NEST-627/628：select 返回行快照（浅克隆）——模拟真实 drizzle 行为，
+  // 使服务持有的 current 与 store 行解引用，CAS 语义可测。
   const selectResult = () => {
-    const thenable = Promise.resolve(state.rows) as Promise<Row[]> & {
+    const snapshot = state.rows.map((row) => ({ ...row }));
+    const thenable = Promise.resolve(snapshot) as Promise<Row[]> & {
       limit: jest.Mock;
     };
-    thenable.limit = jest.fn(() => Promise.resolve(state.rows));
+    thenable.limit = jest.fn(() => Promise.resolve(snapshot));
     return thenable;
+  };
+  // NEST-627：fake 的 update where 尊重条件值（orgId/findingId/status），
+  // 支持 CAS——命中行应用 patch 并经 returning 返回。
+  const matchRows = (cond: unknown, candidates: Row[]): Row[] => {
+    const values = new Set<unknown>();
+    const walk = (node: unknown, seen: WeakSet<object>): void => {
+      if (node == null || typeof node !== 'object' || seen.has(node as object)) return;
+      seen.add(node as object);
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item, seen);
+        return;
+      }
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === 'value' && (typeof value === 'string' || typeof value === 'number')) {
+          values.add(value);
+        } else {
+          walk(value, seen);
+        }
+      }
+    };
+    walk(cond, new WeakSet());
+    if (values.size === 0) return candidates;
+    return candidates.filter((row) =>
+      [...values].every((v) =>
+        Object.values(row).includes(v as never),
+      ),
+    );
   };
   const fake = {
     select: jest.fn(() => fake),
@@ -35,8 +65,20 @@ function makeFakeDb(rows: Row[] = []) {
       })),
     })),
     update: jest.fn(() => ({
-      set: jest.fn(() => ({
-        where: jest.fn(() => Promise.resolve([])),
+      set: jest.fn((patch: Row) => ({
+        where: jest.fn((cond: unknown) => {
+          // NEST-627：CAS 语义——状态条件不匹配（他请求已改）返回空。
+          const hit = matchRows(cond, state.rows);
+          const updated = hit.map((row) => {
+            const clone = { ...row, ...patch };
+            const idx = state.rows.indexOf(row);
+            if (idx >= 0) state.rows[idx] = clone;
+            return clone;
+          });
+          return {
+            returning: jest.fn(async () => updated),
+          };
+        }),
       })),
     })),
     __state: state,
@@ -192,5 +234,20 @@ describe('QualityService', () => {
     expect(result).toEqual({ findingId: 'qf:1', from: 'open', to: 'under_review', disposition: null });
     expect(fake.update).toHaveBeenCalled();
     expect(fake.insert).not.toHaveBeenCalled();
+  });
+
+  it('NEST-627: CAS 未命中（状态被并发修改）显式冲突', async () => {
+    const fake = makeFakeDb([{ ...BASE_ROW, status: 'under_review' }]);
+    const service = new QualityService(fake as never, makeWorkOrderService() as never);
+    // 模拟读-写窗口间并发写者先落盘：update 触发时行状态已被改为 closed
+    // → CAS where status='under_review' 未命中 → 显式冲突（不再静默 0 行）。
+    const originalUpdate = fake.update;
+    fake.update = jest.fn(() => {
+      (fake.__state.rows as Row[])[0]!.status = 'closed';
+      return originalUpdate();
+    }) as never;
+    await expect(
+      service.transitionFinding('qf:1', { to: 'dispositioned', disposition: 'scrap' }, 'org-1'),
+    ).rejects.toThrow(/并发修改/);
   });
 });

@@ -1,4 +1,5 @@
 import { Controller, Get, Header, Req } from '@nestjs/common';
+import { Roles } from '../shared/roles.decorator';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import type {
@@ -18,8 +19,12 @@ import type { OrgContext } from '../shared/org-context.interceptor';
  *
  * 该端点只读，不触碰任何受保护文件，也不修改任何调度规则。
  * ADR-073：feedback 派生面按认证上下文 org 作用域（跨租户聚合关闭）。
+ * NEST-139 修复（2026-08-17）：/metrics 面向运维/抓取器，显式 @Roles 限
+ * global_admin（standalone 入口有全局 AccessTokenGuard；legacy 入口经
+ * RolesGuard 收敛——此前无角色约束，任何已认证/未认证（legacy）调用方可抓取）。
  */
 @Controller('api/scheduler/metrics')
+@Roles('global_admin')
 export class SchedulerMetricsController {
   constructor(
     private readonly metricsSvc: SchedulerMetricsService,

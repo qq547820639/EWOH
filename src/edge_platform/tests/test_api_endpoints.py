@@ -14,113 +14,20 @@
 
 import json
 import os
-import shutil
 import sys
-import tempfile
-import threading
 import unittest
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta
-from pathlib import Path
 
 # 支持 PYTHONPATH=src 与直接运行两种方式
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# EDT-014：共享 server fixture（本目录加入 path 后可导入）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from edge_platform import server, stubs  # noqa: E402
+from _fixtures import _ServerFixture  # noqa: E402
 
 
 def _iso(dt):
     return dt.astimezone().isoformat(timespec="milliseconds")
-
-
-class _ServerFixture:
-    """每个测试类共享一个 server 实例（随机端口），减少启停开销。"""
-
-    def __init__(self):
-        self.tmp = tempfile.mkdtemp(prefix="ewoh_api_")
-        self.db_path = Path(self.tmp) / "test.db"
-        self.storage = stubs.Storage(self.db_path)
-        stubs.seed_base(self.storage)
-        # 插入一条遥测（带 battery/packet_loss）用于 health/export 测试
-        now = datetime.now().astimezone()
-        self.storage.insert_telemetry(
-            {
-                "record_id": "TS-TEST-001",
-                "device_id": "EXO-001",
-                "timestamp": _iso(now),
-                "sequence": 1,
-                "source_type": "simulated",
-                "telemetry": {"pitch_deg": 5.0, "load_score": 0.3, "battery_pct": 85, "packet_loss_pct": 0.2},
-                "quality": {"status": "good", "packet_loss_pct": 0.2},
-            }
-        )
-        # 插入一条结构化事件用于 event 端点测试
-        self.storage.insert_event(
-            {
-                "event_id": "EVT-TEST0001",
-                "event_code": "LOAD_CONTINUOUS",
-                "severity": "L2",
-                "status": "open",
-                "person_id": "P-001",
-                "device_id": "EXO-001",
-                "start_time": _iso(now),
-                "trigger": {"type": "rule", "condition": "连续高负荷"},
-                "evidence": {"window_before_sec": 30, "window_after_sec": 30},
-                "source_type": "simulated",
-            }
-        )
-        # 注册一个模型与一条规则
-        self.storage.insert_model_record("MODEL-A", "action_classifier", "0.1", model_card_uri="card://a")
-        self.storage.insert_rule_record(
-            "RULE-LOAD", "v0.1", enabled=True, config_json={"threshold": 0.7}, severity="L2"
-        )
-        bus = stubs.Bus()
-        registry = stubs.ModelRegistry(Path(self.tmp) / "models")
-        rules = stubs.RuleEngine("risk-rule-stub-0.1", {})
-        pipeline = stubs.InferencePipeline(self.storage, bus, registry, rules)
-        manager = stubs.AdapterManager(self.storage, bus)
-        self.ctx = server.Context(
-            self.storage, bus=bus, pipeline=pipeline, registry=registry, rules=rules, manager=manager
-        )
-        self.httpd = server.build_server(("127.0.0.1", 0), self.ctx)
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self.thread.start()
-        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
-
-    def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join(timeout=3)
-        self.storage.close()
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def req(self, path, method="GET", body=None, headers=None):
-        """发起请求，返回 (status, headers, body_dict)。"""
-        data = json.dumps(body).encode() if body is not None else None
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=data, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                raw = resp.read().decode()
-                return resp.status, resp.headers, (json.loads(raw) if raw else {})
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode()
-            return e.code, e.headers, (json.loads(raw) if raw else {})
-
-    def raw(self, path, method="GET", body_bytes=None, headers=None):
-        """发起原始字节请求（用于测试超大 body），返回 (status, headers, body_bytes)。"""
-        h = {"Content-Type": "application/json"}
-        if headers:
-            h.update(headers)
-        r = urllib.request.Request(self.base + path, data=body_bytes, method=method, headers=h)
-        try:
-            with urllib.request.urlopen(r, timeout=5) as resp:  # nosec B310 - local test HTTP client
-                return resp.status, resp.headers, resp.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.headers, e.read()
 
 
 class CrossCuttingTest(unittest.TestCase):
@@ -128,7 +35,7 @@ class CrossCuttingTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -200,7 +107,7 @@ class AuthEndpointTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -268,7 +175,7 @@ class DeviceEndpointTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -334,7 +241,7 @@ class TelemetryExportPostTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -401,7 +308,7 @@ class EventEndpointTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -461,7 +368,7 @@ class RegistryEndpointTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -515,7 +422,7 @@ class ExistingEndpointsRegressionTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.fx = _ServerFixture()
+        cls.fx = _ServerFixture(prefix="ewoh_api_", telemetry_record_id="TS-TEST-001", event_id="EVT-TEST0001", with_model_rule=True)
 
     @classmethod
     def tearDownClass(cls):

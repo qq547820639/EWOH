@@ -103,11 +103,15 @@ describe('ErpService inbound orders', () => {
       {} as never,
     );
 
-    const result = await service.receiveOrder({
-      externalOrderId: 'SO-100',
-      productCode: 'P-1',
-      quantity: 10,
-    });
+    const result = await service.receiveOrder(
+      {
+        externalOrderId: 'SO-100',
+        productCode: 'P-1',
+        quantity: 10,
+      },
+      // W4：ERP 读写显式租户上下文。
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
 
     expect(result.duplicate).toBe(true);
     expect(result.order.eventId).toBe('ERP-O-1');
@@ -164,12 +168,15 @@ describe('ErpService outbound queue', () => {
     const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
     const service = new ErpService(db as never, audit as never, {} as never);
 
-    const queued = await service.receiveOutbound({
-      outboundId: 'OB-1',
-      type: 'production_report',
-      externalOrderId: 'SO-100',
-      payload: { quantity: 10 },
-    });
+    const queued = await service.receiveOutbound(
+      {
+        outboundId: 'OB-1',
+        type: 'production_report',
+        externalOrderId: 'SO-100',
+        payload: { quantity: 10 },
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
     expect(queued.duplicate).toBe(false);
     expect(entries[0].table).toBe(ewohEvent);
 
@@ -196,7 +203,7 @@ describe('ErpService outbound queue', () => {
       {} as never,
     );
     await expect(
-      service.ackOutbound('missing', { success: true }),
+      service.ackOutbound('missing', { success: true }, { userId: 'user-1', primaryOrgId: 'org-1' }),
     ).rejects.toThrow('not found');
   });
 });
@@ -224,7 +231,7 @@ describe('ErpService reconcile', () => {
       {} as never,
     );
 
-    const report = await service.reconcile();
+    const report = await service.reconcile({ userId: 'user-1', primaryOrgId: 'org-1' });
 
     expect(report.orders.total).toBe(2);
     expect(report.orders.byStatus.received).toBe(1);

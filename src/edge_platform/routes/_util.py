@@ -11,9 +11,20 @@ from edge_platform import services
 from edge_platform.config import Settings
 
 # 离线判定 / 证据窗口 / 来源标识（原 server.py 模块级常量）
-OFFLINE_AFTER_SEC = Settings.load().offline_after_sec
-EVIDENCE_WINDOW_SEC = Settings.load().evidence_window_sec
+# EDGE-045（2026-08-17 审计整改）：OFFLINE_AFTER_SEC/EVIDENCE_WINDOW_SEC 原为
+# import 时求值固化，Settings.reset()/force_reload 后不生效；改为运行时读取函数。
 SOURCE_LABELS = {"real": "REAL DEVICE", "controlled_test": "受控数据", "simulated": "模拟数据"}
+
+
+def offline_after_sec() -> int:
+    """离线判定阈值（运行时读取 Settings，配置热更新/测试 reset 后即生效）。"""
+    return int(Settings.load().offline_after_sec)
+
+
+def evidence_window_sec() -> int:
+    """证据窗口秒数（运行时读取 Settings）。"""
+    return int(Settings.load().evidence_window_sec)
+
 
 parse_ts = services.parse_ts
 

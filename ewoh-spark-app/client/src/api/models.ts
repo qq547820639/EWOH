@@ -19,7 +19,7 @@ export async function listModels(): Promise<ModelRecord[]> {
 
 export async function transitionModel(id: string, action: string): Promise<ModelRecord> {
   const res = await axiosForBackend({
-    url: `/api/models/${id}/state`,
+    url: `/api/models/${encodeURIComponent(id)}/state`,
     method: 'POST',
     params: { action },
   });

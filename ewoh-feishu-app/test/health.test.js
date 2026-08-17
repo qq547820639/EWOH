@@ -3,6 +3,9 @@
 //   - GET /health/live 恒 200 {status:'live'}（进程存活探针）
 //   - GET /health/ready 飞书健康（已配置 + 熔断关闭 + 最近同步成功）→ 200 {status:'ready'}
 //   - GET /health/ready 飞书不可用（未配置 / 熔断打开 / 最近同步失败）→ 503 {status:'not_ready'}
+//   - FS-012：探针 HTTP 响应仅状态位（status + feishu），不暴露内部错误串；
+//     完整诊断字段（reason/lastSyncError/circuitOpen 等）改为直接断言 readyStatus()
+//     进程内返回值（增强：字段仍被验证，只是不经 HTTP 暴露）。
 // 运行：node --test test/health.test.js
 
 'use strict';
@@ -22,9 +25,7 @@ const feishu = require('../server/feishu');
 // 健康探针免鉴权，不挂 /api 的 apiAuth）
 function buildApp(db) {
   const express = require('express');
-  const cors = require('cors');
   const app = express();
-  app.use(cors({ origin: ['http://localhost:3000'], methods: ['GET', 'POST', 'OPTIONS'], credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   health.registerHealthRoutes(app);
   return app;
@@ -68,6 +69,17 @@ function setFeishuHealthy() {
   feishu.__test.setBreakerOpenUntil(0);
 }
 
+// FS-012：探针响应只允许携带状态位字段
+function assertProbeShape(body, expectedStatus, expectedFeishu) {
+  assert.strictEqual(body.status, expectedStatus);
+  assert.strictEqual(body.feishu, expectedFeishu);
+  assert.deepStrictEqual(
+    Object.keys(body).sort(),
+    ['feishu', 'status'],
+    'FS-012：/health/ready 响应仅状态位，不得暴露内部诊断字段'
+  );
+}
+
 test('健康：/health/live 恒 200 {status:live}', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
@@ -89,14 +101,15 @@ test('健康：/health/ready 飞书健康 → 200 {status:ready, feishu:healthy}
   setFeishuHealthy();
   const res = await httpJson(baseUrl, 'GET', '/health/ready');
   assert.strictEqual(res.status, 200);
-  assert.strictEqual(res.body.status, 'ready');
-  assert.strictEqual(res.body.localApi, 'healthy');
-  assert.strictEqual(res.body.feishu, 'healthy');
-  assert.strictEqual(res.body.configured, true);
-  assert.strictEqual(res.body.circuitOpen, false);
+  assertProbeShape(res.body, 'ready', 'healthy');
+  // 诊断 detail 在进程内 readyStatus() 完整保留
+  const detail = health.readyStatus();
+  assert.strictEqual(detail.localApi, 'healthy');
+  assert.strictEqual(detail.configured, true);
+  assert.strictEqual(detail.circuitOpen, false);
 });
 
-test('健康：/health/ready 未配置飞书 → 503 {status:not_ready, feishu:unavailable}', async (t) => {
+test('健康：/health/ready 未配置飞书 → 503，响应不含内部 reason', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
   const app = buildApp(db);
@@ -107,13 +120,12 @@ test('健康：/health/ready 未配置飞书 → 503 {status:not_ready, feishu:u
   feishu.__test.reset(); // 熔断关闭（排除熔断因素，单独验证"未配置"）
   const res = await httpJson(baseUrl, 'GET', '/health/ready');
   assert.strictEqual(res.status, 503);
-  assert.strictEqual(res.body.status, 'not_ready');
-  assert.strictEqual(res.body.localApi, 'healthy');
-  assert.strictEqual(res.body.feishu, 'unavailable');
-  assert.match(res.body.reason, /not configured/);
+  assertProbeShape(res.body, 'not_ready', 'unavailable');
+  // reason 仅在进程内 readyStatus() 提供，不经 HTTP 暴露
+  assert.match(health.readyStatus().reason, /not configured/);
 });
 
-test('健康：/health/ready 熔断打开 → 503 {status:not_ready, feishu:unavailable}', async (t) => {
+test('健康：/health/ready 熔断打开 → 503，响应不含内部 reason', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
   const app = buildApp(db);
@@ -124,14 +136,12 @@ test('健康：/health/ready 熔断打开 → 503 {status:not_ready, feishu:unav
   feishu.__test.setBreakerOpenUntil(Date.now() + 60000); // 熔断打开 60s
   const res = await httpJson(baseUrl, 'GET', '/health/ready');
   assert.strictEqual(res.status, 503);
-  assert.strictEqual(res.body.status, 'not_ready');
-  assert.strictEqual(res.body.localApi, 'healthy');
-  assert.strictEqual(res.body.feishu, 'unavailable');
-  assert.strictEqual(res.body.circuitOpen, true);
-  assert.match(res.body.reason, /circuit breaker open/);
+  assertProbeShape(res.body, 'not_ready', 'unavailable');
+  assert.strictEqual(health.readyStatus().circuitOpen, true);
+  assert.match(health.readyStatus().reason, /circuit breaker open/);
 });
 
-test('健康：/health/ready 最近同步失败 → 503 {status:not_ready, feishu:unavailable}', async (t) => {
+test('健康：/health/ready 最近同步失败 → 503，响应不含 lastSyncError', async (t) => {
   const dir = tmpDir(t);
   const db = dbm.initDatabase(path.join(dir, 'feishu.db'));
   const app = buildApp(db);
@@ -149,11 +159,10 @@ test('健康：/health/ready 最近同步失败 → 503 {status:not_ready, feish
   feishu.__test.reset();
   const res = await httpJson(baseUrl, 'GET', '/health/ready');
   assert.strictEqual(res.status, 503);
-  assert.strictEqual(res.body.status, 'not_ready');
-  assert.strictEqual(res.body.localApi, 'healthy');
-  assert.strictEqual(res.body.feishu, 'unavailable');
-  assert.strictEqual(res.body.lastSyncOk, false);
-  assert.match(res.body.reason, /sync failed/);
+  assertProbeShape(res.body, 'not_ready', 'unavailable');
+  // 错误细节仅在进程内 readyStatus()，不进探针响应
+  assert.strictEqual(health.readyStatus().lastSyncOk, false);
+  assert.match(health.readyStatus().reason, /sync failed/);
 });
 
 test('健康：/health/ready 最近同步成功可恢复 200（失败→成功状态迁移）', async (t) => {

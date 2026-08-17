@@ -139,7 +139,7 @@ let replay={items:[],idx:0,timer:null};
 const SRC_LABEL={real:'REAL DEVICE',controlled_test:'受控数据',simulated:'模拟数据'};
 async function api(path,method='GET',body){const r=await fetch('/api'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return r.json()}
 function srcTag(s){return '<span class="source src-'+s+'">'+(SRC_LABEL[s]||s)+'</span>'}
-function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function switchPanel(id){$$('.panel').forEach(x=>x.classList.toggle('active',x.id===id));$$('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.panel===id));refreshPanel(id)}
 $$('#nav button').forEach(b=>b.addEventListener('click',()=>switchPanel(b.dataset.panel)));
 $('#srcFilter').addEventListener('change',e=>{SRC=e.target.value;$('#srcBadge').textContent='数据源：'+(SRC_LABEL[SRC]||'全部');loadDevices().then(loadPeople)});

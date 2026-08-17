@@ -1,8 +1,14 @@
 import { Controller, Get, Post, Param, Body, Query, Req } from '@nestjs/common';
 import { ResourceService } from './resource.service';
+import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
+/**
+ * NEST-617（2026-08-17 审计整改）：补 @Roles（原先任何认证用户可创建
+ * 预占/发放/释放）。角色集与 route-role.policy FALLBACK 表一致。
+ */
 @Controller('api/resource/preorders')
+@Roles('global_admin', 'dispatcher')
 export class ResourceController {
   constructor(private readonly resourceService: ResourceService) {}
 

@@ -20,10 +20,12 @@ describe('scale compatibility helpers', () => {
     expect(matchesCoreRange('>=0.6.0-rc2 <1.0.0', '1.0.0')).toBe(false);
   });
 
-  it('treats missing ranges as unconstrained', () => {
-    expect(matchesCoreRange(null, '0.6.0-rc2')).toBe(true);
-    expect(matchesCoreRange(undefined, '0.6.0-rc2')).toBe(true);
-    expect(matchesCoreRange('', '0.6.0-rc2')).toBe(true);
+  it('treats missing ranges as unconstrained (NEST-231: fail-closed)', () => {
+    // 审计整改 NEST-231：未约束版本不再默认视为兼容（掩盖核心版本不匹配），
+    // 由调用方以 reason='unconstrained' 显式标记。
+    expect(matchesCoreRange(null, '0.6.0-rc2')).toBe(false);
+    expect(matchesCoreRange(undefined, '0.6.0-rc2')).toBe(false);
+    expect(matchesCoreRange('', '0.6.0-rc2')).toBe(false);
   });
 
   it('orders prereleases before their release', () => {

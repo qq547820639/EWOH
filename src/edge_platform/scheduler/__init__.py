@@ -33,6 +33,12 @@ from .constraints import (
     HardConstraints,
 )
 from .explanation import Explanation, explain_candidate, explain_plan
+from .learning_loop import (  # EDGE-124：import 置于 __all__ 之前（原在文件尾）
+    CalibrationSuggestion,
+    LearningLoop,
+    LearningStats,
+    ScheduleOutcome,
+)
 from .models import (
     PLAN_APPROVED,
     PLAN_ARCHIVED,
@@ -220,10 +226,3 @@ __all__ = [
     "IllegalStateError",
     "Replanner",
 ]
-
-from .learning_loop import (  # noqa: E402,F401
-    CalibrationSuggestion,
-    LearningLoop,
-    LearningStats,
-    ScheduleOutcome,
-)

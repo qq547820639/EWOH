@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Play, Pause, Radio, Clock, Square } from 'lucide-react';
 import dayjs from 'dayjs';
 import type { ReplaySnapshot } from '@shared/api.interface';
@@ -61,10 +61,15 @@ export default function TimelinePanel({
     return events;
   }, [snapshots]);
 
-  const { now, minTime } = useMemo(() => {
-    const n = Date.now();
-    return { now: n, minTime: n - 60 * 60 * 1000 };
-  }, []);
+  // CLI-106：now/minTime 周期更新（原空依赖冻结在 mount 值，长时间挂载后
+  // 新事件超出时间窗不显示）。回放中冻结（避免时间轴在回放操作下漂移）。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (replayMode) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, [replayMode]);
+  const minTime = now - 60 * 60 * 1000;
 
   const ticks = useMemo(() => {
     const result: { label: string; ratio: number }[] = [];

@@ -10,24 +10,36 @@ export class AasController {
 
   @Post()
   importAsset(
-    @Body() body: Record<string, never>,
+    @Body() body: { assetId: string; idShort?: string; submodels?: never[] },
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.aasService.importAsset(body as never, request.userContext);
+    return this.aasService.importAsset(
+      body as Parameters<AasService['importAsset']>[0],
+      request.userContext,
+    );
   }
 
   @Get()
-  listAssets() {
-    return this.aasService.listAssets();
+  listAssets(@Req() request: { userContext?: OrgContext }) {
+    // NEST-421：org 过滤。
+    return this.aasService.listAssets(request.userContext);
   }
 
   @Get(':assetId/semantics')
-  getSemantics(@Param('assetId') assetId: string) {
-    return this.aasService.getSemantics(assetId);
+  getSemantics(
+    @Param('assetId') assetId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    // NEST-421：org 守卫。
+    return this.aasService.getSemantics(assetId, request.userContext);
   }
 
   @Get(':assetId')
-  getAsset(@Param('assetId') assetId: string) {
-    return this.aasService.getAsset(assetId);
+  getAsset(
+    @Param('assetId') assetId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    // NEST-421：org 守卫。
+    return this.aasService.getAsset(assetId, request.userContext);
   }
 }

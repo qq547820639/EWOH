@@ -115,8 +115,10 @@ export function buildGraphLayout(
       }
     }
   }
+  // CLI-218：processed 用 Set 查找（原 includes 数组线性扫描 O(n²)）。
+  const processedSet = new Set(processed);
   for (const item of selected) {
-    if (!processed.includes(item.id)) {
+    if (!processedSet.has(item.id)) {
       layers.set(item.id, 0);
     }
   }

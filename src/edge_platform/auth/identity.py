@@ -4,8 +4,11 @@
 - ``User``：已认证用户的数据载体。
 - ``IdentityBackend``：认证后端抽象基类，子类实现 ``authenticate``。
 - ``OfflineIdentityBackend``：本地内存用户表（预置 admin/safety_officer/operator
-  三个账号），密码使用 ``hashlib.sha256`` 加 salt 校验，用
-  ``secrets.compare_digest`` 做常量时间比较。
+  三个账号）。EDGE-007（2026-08-17 审计整改）：密码校验由快速哈希
+  sha256(salt+password) 升级为 ``hashlib.pbkdf2_hmac("sha256", ..., 200k迭代)``
+  （运行时零第三方依赖，bcrypt/argon2 不可引入；PBKDF2 为审计认可的等价强化），
+  用 ``secrets.compare_digest`` 做常量时间比较。种子口令保持不变（试点文档口径），
+  生产部署应经环境侧强制初始口令 + 首次登录改密（见 deploy/.env.example）。
 - ``OIDCIdentityBackend``：OIDC 后端 stub（仅留接口，未实现完整 OIDC 流程）。
 - ``get_identity_backend``：依据 ``Settings.auth_backend`` 选择后端。
 
@@ -14,11 +17,17 @@
 
 import hashlib
 import secrets
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
 from edge_platform.config import Settings
+
+# EDGE-007：PBKDF2-HMAC-SHA256 迭代次数（OWASP 2023 对该组合的推荐量级 ≥600k；
+# 边缘设备 CPU 预算与测试时长折中取 200k，且显著慢于原快速 sha256）。
+_PBKDF2_ITERATIONS = 200_000
+_SALT_BYTES = 16
 
 
 @dataclass
@@ -42,8 +51,9 @@ class IdentityBackend(ABC):
 class OfflineIdentityBackend(IdentityBackend):
     """离线（本地内存）身份后端。
 
-    预置三个账号：admin / safety_officer / operator，密码使用 sha256+salt 校验。
-    每个账号的 salt 在构造时随机生成（演示用途，不持久化）。
+    预置三个账号：admin / safety_officer / operator，密码使用 PBKDF2-HMAC-SHA256
+    （salt 随机 + 200k 迭代）校验。种子账号的 salt+hash 在进程内只派生一次并缓存
+    （派生成本约百毫秒级；SessionManager.login 每次构造本类时复用缓存）。
     """
 
     # 预置账号（user_id, username, role, display_name, 默认密码）
@@ -53,27 +63,45 @@ class OfflineIdentityBackend(IdentityBackend):
         ("U-OP", "operator", "operator", "操作员", "operator123"),
     )
 
+    # 进程级种子校验缓存：username -> {"user_id","role","display_name","salt","hash"}
+    _seed_verifiers: Optional[dict] = None
+    _seed_verifiers_lock = threading.Lock()
+
     def __init__(self):
-        # username -> {"user_id", "role", "display_name", "salt", "hash"}
         self._users: dict = {}
-        for user_id, username, role, display_name, password in self._SEED_ACCOUNTS:
-            salt = secrets.token_hex(8)
-            self._users[username] = {
-                "user_id": user_id,
-                "role": role,
-                "display_name": display_name,
-                "salt": salt,
-                "hash": self._hash(salt, password),
-            }
+        for username, entry in self._seed_verifiers_map().items():
+            self._users[username] = dict(entry)
+
+    @classmethod
+    def _seed_verifiers_map(cls) -> dict:
+        """惰性派生并缓存种子账号校验器（每进程一次）。"""
+        if cls._seed_verifiers is None:
+            with cls._seed_verifiers_lock:
+                if cls._seed_verifiers is None:
+                    verifiers = {}
+                    for user_id, username, role, display_name, password in cls._SEED_ACCOUNTS:
+                        salt = secrets.token_hex(_SALT_BYTES)
+                        verifiers[username] = {
+                            "user_id": user_id,
+                            "role": role,
+                            "display_name": display_name,
+                            "salt": salt,
+                            "hash": cls._hash(salt, password),
+                        }
+                    cls._seed_verifiers = verifiers
+        return cls._seed_verifiers
 
     @staticmethod
     def _hash(salt: str, password: str) -> str:
-        """sha256(salt + password) 十六进制摘要。"""
-        return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+        """PBKDF2-HMAC-SHA256(salt, password, 200k) 十六进制摘要。"""
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt.encode("utf-8"), _PBKDF2_ITERATIONS
+        )
+        return digest.hex()
 
     def add_user(self, user_id, username, role, display_name, password):
         """注册一个新用户到内存表（演示/测试用途）。"""
-        salt = secrets.token_hex(8)
+        salt = secrets.token_hex(_SALT_BYTES)
         self._users[username] = {
             "user_id": user_id,
             "role": role,

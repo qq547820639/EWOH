@@ -8,6 +8,7 @@
  * 构造后注入；getter 在调用时求值，保证后注入的 loader 生效）。
  */
 import {
+  ConflictException,
   Injectable,
   Inject,
   Logger,
@@ -116,9 +117,17 @@ export class SchedulerRunOrchestrator {
     // P0-6：objectiveProfile → 单变体筛选（on_time=A / load_balance=B / composite=C）。
     // 未识别或缺省保持 A/B/C 三变体现状（solveVariants 不支持单 profile 参数，
     // 在调用处按 planId 后缀筛选，返回值形状不变）。
+    // NEST-140 修复（2026-08-17）：筛选后空集是显式 INFEASIBLE 事实——抛出
+    // ConflictException 让 run 闭合为 failed（此前空集静默走 succeeded+planIds=[]，
+    // 调用方无法区分"单变体不可行"与"shadow 不落库"）。
     const profileSuffix = this.resolveObjectiveProfileSuffix(body.objectiveProfile);
     if (profileSuffix) {
       plans = plans.filter((p) => p.planId === `${run.runId}${profileSuffix}`);
+      if (plans.length === 0) {
+        throw new ConflictException(
+          `INFEASIBLE_PROFILE: objectiveProfile=${body.objectiveProfile} 无可行变体（planId 后缀 ${profileSuffix} 未产出方案）`,
+        );
+      }
     }
 
     // P1-1：统一约束 IR（仅审计/解释；additive，不参与求解决策，不改动求解结果）。
@@ -149,15 +158,18 @@ export class SchedulerRunOrchestrator {
     // P0-6：mode=SHADOW → 仅评估，不写入 ewoh_schedule_plan 正式表；
     // run 标记 succeeded 且 planIds=[]（shadow 方案不进入正式派工链）。
     const isShadow = body.mode === 'SHADOW';
-    if (!isShadow) {
-      for (const plan of plans) {
-        await this.planService.persistPlan(plan, ctx);
-      }
-    }
-
+    // NEST-129 修复（2026-08-17）：persistPlan 循环 + run 状态更新包进单个事务
+    // ——此前逐方案独立事务，plan 2 失败时 plan 1 已落库（半持久化）。
+    // RequestDatabaseContext 嵌套复用同一事务。
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
+        if (!isShadow) {
+          for (const plan of plans) {
+            await this.planService.persistPlan(plan, ctx);
+          }
+        }
+
         // standalone_030_solver_activation（Task A / P0）：run 回填方案求解器状态/回退原因
         // （取首个被采用方案；shadow 模式 plans 不落库正式表，仅回填观测值）。
         const first = plans[0];

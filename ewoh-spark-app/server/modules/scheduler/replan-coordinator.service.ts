@@ -198,25 +198,37 @@ export class ReplanCoordinatorService {
 
   /**
    * P0-5（跨实例一致性）：跨实例守卫权获取。
-   * 在短事务内执行 pg_try_advisory_xact_lock（事务级 advisory lock，事务结束自动释放，
-   * 无需显式 unlock），以 org 级稳定 key（hashtext('<orgId>:replan_guard')，int4 隐式提升
-   * 为 int8）在多 Pod 间串行化风暴守卫判定；返回 false → 另一实例正持有守卫 → 调用方
-   * 直接抑制（避免同一事件在多实例各自通过守卫 → 重复重排）。
-   * 与 resource-reservation.service.ts 的 pg_advisory_xact_lock(hashtext(...)) 先例保持一致。
-   * 锁能力不可用（mock db 无 execute / 非 PG / 只读副本 / 结果形状异常）→ 显式降级：
-   * - production（EWOH_DEPLOY_TARGET=production）：fail-closed——抛错阻止 automatic replan
-   *   （调用方返回 blocked 结果，不创建 run），并上报 degraded metric + readiness 状态；
-   * - 非 production：记录 reason（logger.warn）并视为"获得守卫权"，回退既有内存态逻辑
-   *   （与现状完全一致），不得在真实 PG 环境外静默跳过守卫。
+   * NEST-124（2026-08-17）：本方法已并入 evaluateStormGuard——advisory lock
+   * 与状态判定必须在**同一事务**内（此前锁在短事务内获取即提交释放，状态
+   * 检查发生在锁窗口外，构成 TOCTOU）。保留此注释作为设计说明锚点：
+   * pg_try_advisory_xact_lock 以 org 级稳定 key（hashtext('<orgId>:replan_guard')）
+   * 在多 Pod 间串行化风暴守卫判定；锁不可用时的降级语义
+   * （production fail-closed / 非 production 回退内存态）不变，见
+   * evaluateStormGuard 的 catch 分支。
    */
-  private async tryAcquireCrossInstanceGuard(
+
+  /**
+   * Replan V2 风暴守卫（08 §7）：按 org 有界 LRU（P0-5：内存态为降级缓存）。
+   * 距同 org 上次 replan < minimumReplanIntervalMs 且窗口内已达
+   * maximumReplansPerWindow → 抑制（计数 + SSE replan.suppressed）。
+   * 距上次 < replanDebounceMs → debounced（合并，不创建 run）。
+   * P0-5：先获取跨实例守卫权（org 级 advisory xact lock）；未获得 → 另一实例正在
+   * 处理该 org → 直接 suppressed；锁不可用 → 显式降级（见 catch）。
+   * NEST-124 修复（2026-08-17）：advisory lock 与状态判定收进**同一事务**——
+   * 此前锁在短事务内获取即提交释放，状态检查发生在锁窗口外（TOCTOU：实例 A
+   * 判定通过→释放锁→实例 B 获取锁→其本地内存态判定也通过→双实例并发重排）。
+   * 现在 runInTransaction 同时覆盖「取锁 + 读配置 + 内存态判定」，判定期间
+   * 锁始终持有；判定返回后事务提交释放锁，窗口收窄到判定本身。
+   */
+  private async evaluateStormGuard(
     ctx: OrgContext,
-    orgKey: string,
-  ): Promise<boolean> {
+  ): Promise<'allowed' | 'debounced' | 'suppressed'> {
+    const orgKey = ctx.primaryOrgId || 'ALL';
     try {
-      const acquired = await this.requestDatabaseContext.runInTransaction(
+      return await this.requestDatabaseContext.runInTransaction(
         buildGucSettings(ctx),
         async () => {
+          // 1) 跨实例守卫权（org 级 advisory xact lock；事务提交即释放）。
           const res = (await this.db.execute(
             sql`SELECT pg_try_advisory_xact_lock(hashtext(${orgKey + ':replan_guard'})) AS acquired`,
           )) as unknown;
@@ -226,10 +238,38 @@ export class ReplanCoordinatorService {
           if (row == null) {
             throw new Error('advisory lock result row missing (unexpected execute shape)');
           }
-          return row.acquired === true;
+          if (row.acquired !== true) {
+            return 'suppressed' as const;
+          }
+          // 2) 状态判定在锁事务内（NEST-124：不再在锁释放后判定）。
+          const now = Date.now();
+          const replan = await this.readReplanConfig();
+          const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;
+          const minIntervalMs =
+            replan?.minimumReplanIntervalMs ?? FALLBACK_REPLAN.minimumReplanIntervalMs!;
+          const maxPerWindow =
+            replan?.maximumReplansPerWindow ?? FALLBACK_REPLAN.maximumReplansPerWindow!;
+          const windowMs =
+            replan?.conflictAggregationWindowMs ?? FALLBACK_REPLAN.conflictAggregationWindowMs!;
+
+          const state = this.touchOrgState(orgKey);
+          // 清理窗口外时间戳（conflictAggregationWindowMs）。
+          state.replanTimes = state.replanTimes.filter(
+            (t) => now - t < windowMs,
+          );
+
+          if (now - state.lastReplanAt < debounceMs) {
+            return 'debounced' as const;
+          }
+          if (
+            now - state.lastReplanAt < minIntervalMs &&
+            state.replanTimes.length >= maxPerWindow
+          ) {
+            return 'suppressed' as const;
+          }
+          return 'allowed' as const;
         },
       );
-      return acquired;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       // P1-6：无论部署模式都上报降级（metric + readiness 状态）。
@@ -247,52 +287,27 @@ export class ReplanCoordinatorService {
       this.logger.warn(
         `cross-instance replan guard unavailable, falling back to in-memory state: ${reason}`,
       );
-      return true;
+      // 内存态降级判定（无锁，与历史行为一致）。
+      const now = Date.now();
+      const replan = await this.readReplanConfig();
+      const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;
+      const minIntervalMs =
+        replan?.minimumReplanIntervalMs ?? FALLBACK_REPLAN.minimumReplanIntervalMs!;
+      const maxPerWindow =
+        replan?.maximumReplansPerWindow ?? FALLBACK_REPLAN.maximumReplansPerWindow!;
+      const windowMs =
+        replan?.conflictAggregationWindowMs ?? FALLBACK_REPLAN.conflictAggregationWindowMs!;
+      const state = this.touchOrgState(orgKey);
+      state.replanTimes = state.replanTimes.filter((t) => now - t < windowMs);
+      if (now - state.lastReplanAt < debounceMs) return 'debounced';
+      if (
+        now - state.lastReplanAt < minIntervalMs &&
+        state.replanTimes.length >= maxPerWindow
+      ) {
+        return 'suppressed';
+      }
+      return 'allowed';
     }
-  }
-
-  /**
-   * Replan V2 风暴守卫（08 §7）：按 org 有界 LRU（P0-5：内存态为降级缓存）。
-   * 距同 org 上次 replan < minimumReplanIntervalMs 且窗口内已达
-   * maximumReplansPerWindow → 抑制（计数 + SSE replan.suppressed）。
-   * 距上次 < replanDebounceMs → debounced（合并，不创建 run）。
-   * P0-5：先获取跨实例守卫权（org 级 advisory xact lock）；未获得 → 另一实例正在
-   * 处理该 org → 直接 suppressed；锁不可用 → tryAcquireCrossInstanceGuard 已显式
-   * 降级返回 true，继续走既有内存态判定。
-   */
-  private async evaluateStormGuard(
-    ctx: OrgContext,
-  ): Promise<'allowed' | 'debounced' | 'suppressed'> {
-    const orgKey = ctx.primaryOrgId || 'ALL';
-    if (!(await this.tryAcquireCrossInstanceGuard(ctx, orgKey))) {
-      return 'suppressed';
-    }
-    const now = Date.now();
-    const replan = await this.readReplanConfig();
-    const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;
-    const minIntervalMs =
-      replan?.minimumReplanIntervalMs ?? FALLBACK_REPLAN.minimumReplanIntervalMs!;
-    const maxPerWindow =
-      replan?.maximumReplansPerWindow ?? FALLBACK_REPLAN.maximumReplansPerWindow!;
-    const windowMs =
-      replan?.conflictAggregationWindowMs ?? FALLBACK_REPLAN.conflictAggregationWindowMs!;
-
-    const state = this.touchOrgState(orgKey);
-    // 清理窗口外时间戳（conflictAggregationWindowMs）。
-    state.replanTimes = state.replanTimes.filter(
-      (t) => now - t < windowMs,
-    );
-
-    if (now - state.lastReplanAt < debounceMs) {
-      return 'debounced';
-    }
-    if (
-      now - state.lastReplanAt < minIntervalMs &&
-      state.replanTimes.length >= maxPerWindow
-    ) {
-      return 'suppressed';
-    }
-    return 'allowed';
   }
 
   /** 记录一次被抑制的触发（内存计数 + metrics + SSE replan.suppressed）。 */
@@ -389,16 +404,25 @@ export class ReplanCoordinatorService {
     }
   }
 
-  /** 获取或创建 org 状态（有界 LRU：超出上限时淘汰最旧）。 */
+  /**
+   * 获取或创建 org 状态（有界缓存）。
+   * NEST-040 修复（2026-08-17）：注释与实现一致化 + 真实 LRU 语义——命中时
+   * 重插键（Map 迭代序=插入序，重插即"最近使用"），超上限淘汰最久未使用键
+   * （旧实现只在新插入时淘汰队首= FIFO，且注释误称 LRU）。
+   */
   private touchOrgState(orgKey: string): OrgReplanState {
     let state = this.orgReplanStates.get(orgKey);
-    if (!state) {
-      state = { lastReplanAt: 0, replanTimes: [], suppressedCount: 0 };
+    if (state) {
+      // LRU：命中即刷新新鲜度（删除后重插到迭代序尾）。
+      this.orgReplanStates.delete(orgKey);
       this.orgReplanStates.set(orgKey, state);
-      if (this.orgReplanStates.size > MAX_ORG_STATES) {
-        const oldestKey = this.orgReplanStates.keys().next().value as string;
-        this.orgReplanStates.delete(oldestKey);
-      }
+      return state;
+    }
+    state = { lastReplanAt: 0, replanTimes: [], suppressedCount: 0 };
+    this.orgReplanStates.set(orgKey, state);
+    while (this.orgReplanStates.size > MAX_ORG_STATES) {
+      const lruKey = this.orgReplanStates.keys().next().value as string;
+      this.orgReplanStates.delete(lruKey);
     }
     return state;
   }
@@ -411,6 +435,24 @@ export class ReplanCoordinatorService {
     } catch {
       return {};
     }
+  }
+
+  /**
+   * NEST-167（2026-08-17）：求解视界（horizonMinutes）从策略配置读取
+   * （SchedulingPolicyConfig.horizonMinutes，缺省 480 与旧硬编码一致）——
+   * 不再散落魔数。
+   */
+  private async resolveHorizonMinutes(ctx?: OrgContext): Promise<number> {
+    try {
+      const config = await this.policyService.getConfig(
+        ctx?.primaryOrgId || null,
+      );
+      const h = config?.horizonMinutes;
+      if (typeof h === 'number' && h > 0) return h;
+    } catch {
+      // 配置不可用回退默认（与历史行为一致）
+    }
+    return 480;
   }
 
   /**
@@ -634,7 +676,8 @@ export class ReplanCoordinatorService {
         triggerType,
         triggerEntityId: run.triggerEntityId,
         snapshotVersion: snapshot.snapshotVersion,
-        horizonMinutes: 480,
+        // NEST-167：视界从策略配置读取（缺省 480）。
+        horizonMinutes: await this.resolveHorizonMinutes(ctx),
         baselineAssignee,
         // Task B / P0：局部重排真实影响集（scheduler_partial_replan_affected 取真实受影响数，
         // 不随 partial snapshot 的 frozen 任务数膨胀）。
@@ -678,43 +721,65 @@ export class ReplanCoordinatorService {
         this.logger.debug(
           `replan suppressed (minimum_objective_improvement): trigger=${triggerType}, candidate objective 改进率低于阈值`,
         );
-        return { run: null, plans: [], debounced: false, suppressed: true };
+        // NEST-130 修复（2026-08-17）：run 已闭合为 succeeded（planIds=[]），
+        // 返回真实状态视图（此前返回 run:null 与 DB 状态矛盾，调用方无法追溯
+        // 抑制对应的 run）。suppressed=true 仍标识抑制语义。
+        return {
+          run: {
+            ...run,
+            status: 'succeeded' as const,
+            snapshotVersion: snapshot.snapshotVersion,
+            planIds: [],
+          },
+          plans: [],
+          debounced: false,
+          suppressed: true,
+        };
       }
 
-      for (const plan of plans) {
-        await this.planService.persistPlan(plan, ctx);
-      }
-
-      // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
-      // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
-      try {
-        for (const plan of plans) {
-          const projected = projectReplanDecision({
-            planId: plan.planId,
-            runId: run.runId,
-            triggerType,
-            triggerEntityId: run.triggerEntityId ?? null,
-            affectedCount: impact.affectedTaskIds.length,
-            orgId: ctx.primaryOrgId ?? '',
-            now: new Date(),
-          });
-          if (projected.record) {
-            await appendPlanDecisionRecords(this.db, plan.planId, [projected.record]);
-          } else {
-            this.logger.warn(
-              `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
-            );
-          }
-        }
-      } catch (err) {
-        this.logger.warn(
-          `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-
+      // NEST-125 修复（2026-08-17）：persistPlan 循环 + 决策台账 + run 状态更新
+      // 包进**单个事务**——此前逐方案独立事务，plan 2 失败时 plan 1 已落库
+      // （半持久化，run 可能永远 queued/脏状态）。RequestDatabaseContext 嵌套
+      // 复用同一事务（persistPlan 内部 runInTransaction 加入外层事务）。
       await this.requestDatabaseContext.runInTransaction(
         buildGucSettings(ctx),
         async () => {
+          for (const plan of plans) {
+            await this.planService.persistPlan(plan, ctx);
+          }
+
+          // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
+          // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
+          try {
+            for (const plan of plans) {
+              const projected = projectReplanDecision({
+                planId: plan.planId,
+                runId: run.runId,
+                triggerType,
+                triggerEntityId: run.triggerEntityId ?? null,
+                affectedCount: impact.affectedTaskIds.length,
+                orgId: ctx.primaryOrgId ?? '',
+                now: new Date(),
+              });
+              if (projected.record) {
+                await appendPlanDecisionRecords(
+                  this.db,
+                  plan.planId,
+                  [projected.record],
+                  ctx.primaryOrgId || null,
+                );
+              } else {
+                this.logger.warn(
+                  `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
+                );
+              }
+            }
+          } catch (err) {
+            this.logger.warn(
+              `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+
           await this.db
             .update(ewohSchedulingRun)
             .set({
@@ -849,44 +914,52 @@ export class ReplanCoordinatorService {
         triggerType: 'RESERVATION_CONFLICT',
         triggerEntityId: entityId,
         snapshotVersion: snapshot.snapshotVersion,
-        horizonMinutes: 480,
+        // NEST-167：视界从策略配置读取（缺省 480）。
+        horizonMinutes: await this.resolveHorizonMinutes(ctx),
         baselineAssignee,
       });
 
-      for (const plan of plans) {
-        await this.planService.persistPlan(plan, ctx);
-      }
-
-      // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
-      // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
-      try {
-        for (const plan of plans) {
-          const projected = projectReplanDecision({
-            planId: plan.planId,
-            runId: run.runId,
-            triggerType: 'RESERVATION_CONFLICT',
-            triggerEntityId: run.triggerEntityId ?? null,
-            affectedCount: impact.affectedTaskIds.length,
-            orgId: ctx.primaryOrgId ?? '',
-            now: new Date(),
-          });
-          if (projected.record) {
-            await appendPlanDecisionRecords(this.db, plan.planId, [projected.record]);
-          } else {
-            this.logger.warn(
-              `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
-            );
-          }
-        }
-      } catch (err) {
-        this.logger.warn(
-          `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-
+      // NEST-125（2026-08-17）：同 handleTrigger——persist 循环 + 决策台账 +
+      // run 状态更新单事务（消除半持久化窗口）。
       await this.requestDatabaseContext.runInTransaction(
         buildGucSettings(ctx),
         async () => {
+          for (const plan of plans) {
+            await this.planService.persistPlan(plan, ctx);
+          }
+
+          // NO-13m / ADR-062：replan 决策追加进新方案决策台账（§12 Decision
+          // History；投影缺口/追加失败 log 显式绝不阻断重排主流程，§2/§33）。
+          try {
+            for (const plan of plans) {
+              const projected = projectReplanDecision({
+                planId: plan.planId,
+                runId: run.runId,
+                triggerType: 'RESERVATION_CONFLICT',
+                triggerEntityId: run.triggerEntityId ?? null,
+                affectedCount: impact.affectedTaskIds.length,
+                orgId: ctx.primaryOrgId ?? '',
+                now: new Date(),
+              });
+              if (projected.record) {
+                await appendPlanDecisionRecords(
+                  this.db,
+                  plan.planId,
+                  [projected.record],
+                  ctx.primaryOrgId || null,
+                );
+              } else {
+                this.logger.warn(
+                  `replan 决策投影缺口 ${plan.planId}（显式跳过，§33）：${projected.issues.join(',')}`,
+                );
+              }
+            }
+          } catch (err) {
+            this.logger.warn(
+              `replan 决策台账追加失败（不阻断重排主流程）：${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+
           await this.db
             .update(ewohSchedulingRun)
             .set({
@@ -989,54 +1062,77 @@ export class ReplanCoordinatorService {
     return dispatched;
   }
 
+  /** NEST-041：倒排索引追加（resourceId → taskIds）。 */
+  private appendToIndex(
+    idx: Map<string, string[]>,
+    key: string,
+    taskId: string,
+  ): void {
+    const list = idx.get(key);
+    if (list) list.push(taskId);
+    else idx.set(key, [taskId]);
+  }
+
   /**
    * Replan V2：将快照内 open conflicts（同资源时间窗重叠预占）聚合为 batch。
    * 同资源冲突归并为一个 triggerId；受影响任务并集（设备/人员维度）。
    * 纯计算，只读，不改生命周期写路径。
+   * NEST-041 修复（2026-08-17）：全对 O(n²) 扫描 → 按 (resourceType, resourceId)
+   * 分组后组内按 startMs 排序扫描（排序后 j 一旦不重叠即可 break，
+   * O(n log n + k)）；任务命中改为一次倒排索引（旧实现逐资源 × 全任务双循环）。
    */
   private aggregateReservationConflicts(snapshot: WorldStateSnapshot): {
     triggerIds: string[];
     affectedTaskIds: string[];
   } {
     const reserved = snapshot.reservations ?? [];
-    const resourceByType = new Map<string, Set<string>>();
+    // 1) 分组：同资源预占归并到同一列表。
+    const byResource = new Map<string, typeof reserved>();
+    for (const r of reserved) {
+      const key = `${r.resourceType}:${r.resourceId}`;
+      const list = byResource.get(key);
+      if (list) list.push(r);
+      else byResource.set(key, [r]);
+    }
+    // 2) 组内重叠检测（排序 + 提前 break）。
+    const conflictedResourceIds = new Set<string>();
+    for (const [key, list] of byResource) {
+      if (list.length < 2) continue;
+      const sorted = [...list].sort((x, y) => x.startMs - y.startMs);
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          if (sorted[j].startMs >= sorted[i].endMs) break;
+          conflictedResourceIds.add(key);
+          break; // 该资源已确认冲突，无需继续组内扫描
+        }
+      }
+    }
+    // 3) 受影响任务：一次倒排索引（resourceId → tasks，含类型维度判定）。
+    const tasksByPerson = new Map<string, string[]>();
+    const tasksByDevice = new Map<string, string[]>();
+    const tasksByStation = new Map<string, string[]>();
+    for (const t of snapshot.tasks) {
+      if (t.assigneeId) this.appendToIndex(tasksByPerson, t.assigneeId, t.id);
+      if (t.deviceId) this.appendToIndex(tasksByDevice, t.deviceId, t.id);
+      if (t.stationId) this.appendToIndex(tasksByStation, t.stationId, t.id);
+    }
     const affectedTaskIds = new Set<string>();
-    for (let i = 0; i < reserved.length; i++) {
-      for (let j = i + 1; j < reserved.length; j++) {
-        const a = reserved[i];
-        const b = reserved[j];
-        const sameResource =
-          a.resourceType === b.resourceType && a.resourceId === b.resourceId;
-        const overlap = a.startMs < b.endMs && b.startMs < a.endMs;
-        if (sameResource && overlap) {
-          if (!resourceByType.has(a.resourceType)) {
-            resourceByType.set(a.resourceType, new Set<string>());
-          }
-          resourceByType.get(a.resourceType)!.add(a.resourceId);
-        }
+    const triggerIds: string[] = [];
+    for (const key of conflictedResourceIds) {
+      const [resourceType, resourceId] = key.split(':');
+      triggerIds.push(resourceId);
+      const idx =
+        resourceType === 'person'
+          ? tasksByPerson
+          : resourceType === 'device'
+            ? tasksByDevice
+            : tasksByStation;
+      for (const taskId of idx.get(resourceId) ?? []) {
+        affectedTaskIds.add(taskId);
       }
     }
-    // 受影响任务：资源维度直接命中（person=assigneeId / device=deviceId / station=stationId）。
-    for (const [resourceType, resourceIds] of resourceByType) {
-      for (const resourceId of resourceIds) {
-        for (const t of snapshot.tasks) {
-          if (
-            (resourceType === 'person' && t.assigneeId === resourceId) ||
-            (resourceType === 'device' && t.deviceId === resourceId) ||
-            (resourceType === 'station' && t.stationId === resourceId)
-          ) {
-            affectedTaskIds.add(t.id);
-          }
-        }
-      }
-    }
-    // triggerIds=冲突资源并集（纯 resourceId，与旧 evaluate key 兼容；类型信息经
-    // buildSeed RESERVATION_CONFLICT 分支处理）。
-    const triggerIds = Array.from(
-      new Set(Array.from(resourceByType.values()).flatMap((s) => Array.from(s))),
-    ).sort();
     return {
-      triggerIds,
+      triggerIds: Array.from(new Set(triggerIds)).sort(),
       affectedTaskIds: Array.from(affectedTaskIds).sort(),
     };
   }

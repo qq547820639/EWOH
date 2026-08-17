@@ -21,6 +21,8 @@ export interface ConflictVMItem {
   taskIds: string[];
   message: string;
   resolution: string | null;
+  /** 后端原始 createdAt（ISO），避免下游用 detectedAt 伪造空串（CLI-007）。 */
+  createdAt: string;
   status: ConflictLifecycleStatus;
   detectedAt: string | null;
   acknowledgedBy: string | null;
@@ -84,6 +86,7 @@ export function conflictVM(conflicts: SchedulingConflict[]): ConflictVM {
       taskIds: c.taskIds ?? [],
       message: c.message,
       resolution: c.resolution ?? null,
+      createdAt: c.createdAt,
       status,
       detectedAt: c.detectedAt ?? null,
       acknowledgedBy: c.acknowledgedBy ?? null,
@@ -132,4 +135,33 @@ export function conflictStatusLabel(status: ConflictLifecycleStatus): string {
     SUPPRESSED: '已抑制',
   };
   return LABELS[status] ?? status;
+}
+
+/**
+ * 显式构造（CLI-007）：ConflictVMItem → SchedulingConflict，替代调用方手工
+ * 拼对象 + as 断言。createdAt 用后端原始值（不伪造空串），snapshotVersion
+ * 展示模型未持有 → null（与实时冲突的「CURRENT」标记不同源，调用方按需覆盖）。
+ */
+export function conflictVmItemToConflict(item: ConflictVMItem): SchedulingConflict {
+  return {
+    conflictId: item.conflictId,
+    type: item.type,
+    severity: item.severity,
+    scope: item.scope,
+    resourceId: item.resourceId,
+    resourceType: item.resourceType,
+    taskIds: item.taskIds,
+    message: item.message,
+    resolution: item.resolution,
+    createdAt: item.createdAt,
+    snapshotVersion: null,
+    status: item.status,
+    detectedAt: item.detectedAt,
+    acknowledgedBy: item.acknowledgedBy,
+    acknowledgedAt: item.acknowledgedAt,
+    resolvedBy: item.resolvedBy,
+    resolvedAt: item.resolvedAt,
+    suppressUntil: item.suppressUntil,
+    planId: item.planId,
+  };
 }

@@ -36,11 +36,16 @@ def _parse_ts(ts, default=None):
 
 
 def _overlaps(a_start, a_end, b_start, b_end):
-    """两个时间窗是否重叠（半开区间 [start, end)，端点相接不算重叠）。"""
+    """两个时间窗是否重叠（半开区间 [start, end)，端点相接不算重叠）。
+
+    EDGE-111（2026-08-17 审计整改）：任一时间戳无法解析时视为冲突（True）——
+    malformed 时间戳不再静默放行重叠预约（fail-closed，由调用方转
+    ReservationConflictError / 校验错误）。
+    """
     a_s, a_e = _parse_ts(a_start), _parse_ts(a_end)
     b_s, b_e = _parse_ts(b_start), _parse_ts(b_end)
     if a_s is None or a_e is None or b_s is None or b_e is None:
-        return False
+        return True
     return a_s < b_e and b_s < a_e
 
 

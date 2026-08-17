@@ -90,10 +90,15 @@ describe('command-map perf benchmark（Task 11/11.2）', () => {
     seedQueryCache(qc, fixture);
 
     // 渲染函数注入（SSR = React 组件渲染路径，等价 Shell 首绘成本）。
-    // 静默 React dev 模式对地图 SVG NaN 属性的 console.error 噪音，保证基准输出干净。
+    // CLI-723：仅过滤已知噪音（React dev 模式对地图 SVG NaN 属性的
+    // console.error 警告），其余错误照常输出，避免静默掩盖真实渲染错误。
     const renderShell = () => {
       const originalError = console.error;
-      console.error = () => undefined;
+      console.error = (...args: unknown[]) => {
+        const text = args.map((arg) => String(arg)).join(' ');
+        if (/NaN/.test(text) || /Warning: .*NaN/.test(text)) return;
+        originalError(...args);
+      };
       try {
         return renderToString(
           <QueryClientProvider client={qc}>

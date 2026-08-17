@@ -4,7 +4,10 @@ import { createContext, useContext } from 'react';
 
 import type { EntityComboboxContextValue } from '@client/src/components/business-ui/entity-combobox/types';
 
-const EntityComboboxContext = createContext<any | undefined>(undefined);
+// CLI-331：泛型 Provider 上下文，丢弃 any。
+const EntityComboboxContext = createContext<
+  EntityComboboxContextValue | undefined
+>(undefined);
 
 export const EntityComboboxProvider = EntityComboboxContext.Provider;
 

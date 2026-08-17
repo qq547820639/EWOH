@@ -128,17 +128,26 @@ export class QualityService {
       set.disposition = input.disposition;
       set.dispositionedAt = new Date();
     }
-    await this.db
+    // NEST-627：更新加 eq(status=current.status) CAS + returning——
+    // 并发双转移只有一个成功，败者显式冲突（原先 0 行命中静默无感知）。
+    const updatedRows = await this.db
       .update(ewohQualityFinding)
       .set(set)
-      .where(and(eq(ewohQualityFinding.orgId, orgId), eq(ewohQualityFinding.id, current.id)));
+      .where(
+        and(
+          eq(ewohQualityFinding.orgId, orgId),
+          eq(ewohQualityFinding.id, current.id),
+          eq(ewohQualityFinding.status, current.status),
+        ),
+      )
+      .returning();
+    if (updatedRows.length === 0) {
+      throw new BadRequestException(
+        `质量发现状态已被并发修改（${current.status} → ${input.to} CAS 未命中）`,
+      );
+    }
     if (input.to === 'dispositioned') {
-      const updated = await this.db
-        .select()
-        .from(ewohQualityFinding)
-        .where(and(eq(ewohQualityFinding.orgId, orgId), eq(ewohQualityFinding.id, current.id)))
-        .limit(1);
-      await this.recordEvent(orgId, updated[0], 'QualityFindingDispositioned');
+      await this.recordEvent(orgId, updatedRows[0], 'QualityFindingDispositioned');
       // NO-05e（ADR-012）：rework 处置 → WorkOrderService 唯一权威写路径创建
       // 真实工单行 + WorkOrderCreated（subject 取 links 首个规范身份；links 为空
       // 则无执行落点，记 warn 不伪造工单）。

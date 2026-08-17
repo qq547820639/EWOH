@@ -318,7 +318,7 @@ export function ConflictCenterPanel({
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-white/60 text-sm">
           <WifiOff className="w-5 h-5 text-red-400" />
           冲突列表加载失败（后端不可用或鉴权失败）
-          <span className="text-xs text-white/40">请检查 FEISHU_API_TOKEN 配置与后端服务状态</span>
+          <span className="text-xs text-white/40">请检查后端服务状态与登录鉴权是否有效</span>
         </div>
       ) : sorted.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-white/50 text-sm">

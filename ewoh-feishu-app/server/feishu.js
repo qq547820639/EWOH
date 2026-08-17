@@ -413,13 +413,18 @@ const __test = {
 // ============ 工具函数 ============
 
 // ISO 时间 → 飞书 datetime 字段接受的 "YYYY-MM-DD HH:mm:ss" 字符串
+// FS-006：时区口径统一 —— 内部一律 UTC（ISO 8601），写飞书 Base 的 datetime
+// 字段也统一按 UTC 生成（getUTC*），不再依赖进程本地时区（原先 getHours()
+// 在非 UTC 主机上会把同一时刻写出不同字符串，且与内部 UTC ISO 口径不一致）。
+// 说明：飞书 Base datetime 为无时区标记的日期时间字符串，按 Base 表属性配置
+// 的时区解释；本平台统一写 UTC 值，保证跨环境数据一致。
 function fmtDateTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+         `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
 // 防御性提取嵌套字段
@@ -613,7 +618,14 @@ async function sendFollowupMessage(chatId, text) {
 
 // 解析 base_token：优先环境变量 FEISHU_BASE_TOKEN（避免凭据落入配置文件），
 // 回退 feishu-config.json 的 base_token 字段；两者皆无返回 null。
-// P2-10：所有 base 命令统一走本函数，保证凭证来源一致（轮询路径原先直接用 cfg.base_token）。
+// P2-10 + FS-015/016：所有 base 命令统一走本函数，保证凭证来源唯一
+//（此前 baseRecordUpdate/baseRecordBatchCreate 各自内联 env||cfg 双份逻辑）。
+// 注入方式说明（FS-015 裁决）：lark-cli 当前仅支持 --base-token argv 注入
+//（base 子命令的 --json 不支持 stdin），env 优先指"凭证来源优先取环境变量，
+// 避免落入配置文件"；execFile 默认继承 process.env，FEISHU_BASE_TOKEN 已
+// 同步透传给子进程环境，待 lark-cli 支持 env 直读后可去掉 argv 传参。
+// argv 暴露面（ps 可见）依赖 lark-cli 上游支持 env/stdin 注入后彻底消除，
+// 与 README「运行要求」章节的既有裁决一致。
 function resolveBaseToken() {
   const cfg = getConfig();
   return process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token) || null;
@@ -634,9 +646,9 @@ async function baseRecordCreate(tableId, fields) {
 }
 
 // 更新记录（upsert 带 record-id 即更新）
+// FS-016：base_token 统一经 resolveBaseToken 解析（凭证来源单一）
 async function baseRecordUpdate(tableId, recordId, fields) {
-  const cfg = getConfig();
-  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  const baseToken = resolveBaseToken();
   if (!baseToken || !tableId || !recordId || !fields) return { ok: false, error: 'invalid args' };
   const r = await larkCliRetry(
     ['base', '+record-upsert', '--base-token', baseToken, '--table-id', tableId, '--record-id', recordId, '--json', JSON.stringify(fields)]
@@ -658,9 +670,9 @@ async function baseRecordSearch(tableId, { filter, limit } = {}) {
 }
 
 // 批量创建记录：fieldsList 为字段名数组，rows 为 [[v1,v2,...], ...]
+// FS-016：base_token 统一经 resolveBaseToken 解析（凭证来源单一）
 async function baseRecordBatchCreate(tableId, fieldsList, rows) {
-  const cfg = getConfig();
-  const baseToken = process.env.FEISHU_BASE_TOKEN || (cfg && cfg.base_token);
+  const baseToken = resolveBaseToken();
   if (!baseToken || !tableId || !Array.isArray(fieldsList) || !Array.isArray(rows) || rows.length === 0) {
     return { ok: false, error: 'invalid args' };
   }

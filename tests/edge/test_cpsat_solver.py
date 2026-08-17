@@ -152,7 +152,6 @@ class TestSolver(unittest.TestCase):
             self.skipTest("ortools 未安装，跳过可行性/确定性断言")
         resp = cpsat_solver.solve(self.request)
         if resp.solverStatus == "INFEASIBLE":
-            self.assertEqual(resp.solverStatus, "INFEASIBLE")
             self.assertIn("T1", resp.unassignedTaskIds)
             return
         # 可行：无硬违例，且 T1 已指派

@@ -204,7 +204,13 @@ describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
     expect(stale).toHaveLength(1);
     expect(stale[0].resourceId).toBeNull();
     expect(stale[0].snapshotVersion).toBe('WS-OLD-0001');
-    expect(mocks.worldStateSnapshotService.isPlanStale).toHaveBeenCalledWith('WS-OLD-0001');
+    // NEST-159（2026-08-17）：stale 判定传入 collectState 一次收集的 current
+    // 状态复用（N+1 消除）——断言第三参数为同一快照状态对象（含 tasks）。
+    expect(mocks.worldStateSnapshotService.isPlanStale).toHaveBeenCalledWith(
+      'WS-OLD-0001',
+      undefined,
+      expect.objectContaining({ tasks: expect.any(Array) }),
+    );
   });
 
   it('按 type / severity / resourceId 过滤', async () => {

@@ -144,4 +144,81 @@ describe('AiService（NO-08d 建议流元数据附着）', () => {
     expect(suggestion.suggestion).toContain('人工复核');
     expect(suggestion.inference).toBeUndefined();
   });
+
+  // ── NEST-449/422：createPlan / getSuggestion / getPlan / chatWithContext ──────
+
+  const ACTOR_ORG_A = { userId: 'u1', primaryOrgId: 'org-a', roles: [] };
+  const ACTOR_ORG_B = { userId: 'u2', primaryOrgId: 'org-b', roles: [] };
+
+  function makeSuggestionDb(row: Record<string, unknown> | null) {
+    const rows = row ? [row] : [];
+    const fake = {
+      select: jest.fn(() => fake),
+      from: jest.fn(() => fake),
+      where: jest.fn(() => Promise.resolve(rows)),
+      insert: jest.fn(() => ({
+        values: jest.fn(() => ({ returning: jest.fn(() => Promise.resolve([{ content: '{}' }])) })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve([])) })),
+      })),
+      __rows: rows,
+    };
+    return fake;
+  }
+
+  const SUGGESTION_ROW = {
+    suggestionId: 'sug-1',
+    orgId: 'org-a',
+    content: JSON.stringify({ id: 'sug-1', suggestion: '建议内容' }),
+    planContent: null,
+  };
+
+  it('NEST-449：createPlan（内存路径）正常创建 shadow 方案', async () => {
+    const service = new AiService(undefined, undefined);
+    const suggestion = await service.createSuggestion(INPUT);
+    const plan = await service.createPlan(suggestion.id, { shift: 'A' });
+    expect(plan).toMatchObject({ suggestionId: suggestion.id, status: 'shadow', isSimulation: true });
+  });
+
+  it('NEST-449/422：getSuggestion 跨租户 404（org 守卫）', async () => {
+    const service = new AiService(
+      makeSuggestionDb(SUGGESTION_ROW) as never,
+      undefined,
+    );
+    await expect(service.getSuggestion('sug-1', ACTOR_ORG_A)).resolves.toMatchObject({
+      id: 'sug-1',
+    });
+    await expect(service.getSuggestion('sug-1', ACTOR_ORG_B)).rejects.toThrow(/not found/i);
+  });
+
+  it('NEST-449/422：getPlan 跨租户 404（org 守卫）', async () => {
+    const db = makeSuggestionDb({
+      ...SUGGESTION_ROW,
+      planContent: { id: 'plan-1', suggestionId: 'sug-1', status: 'shadow' },
+    });
+    const service = new AiService(db as never, undefined);
+    const plan = await service.getPlan('plan-1', ACTOR_ORG_A);
+    expect(plan).toMatchObject({ id: 'plan-1' });
+    await expect(service.getPlan('plan-1', ACTOR_ORG_B)).rejects.toThrow(/not found/i);
+  });
+
+  it('NEST-449/422：createPlan 跨租户 404（建议归属校验）', async () => {
+    const service = new AiService(
+      makeSuggestionDb(SUGGESTION_ROW) as never,
+      undefined,
+    );
+    // org-b actor 读 org-a 的建议 → 404（绝不基于他租户建议生成方案）。
+    await expect(
+      service.createPlan('sug-1', { shift: 'A' }, ACTOR_ORG_B),
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it('NEST-449：chatWithContext 无 Ark → ok=false 显式返回（不抛错）', async () => {
+    const db = makeSuggestionDb(null);
+    const service = new AiService(db as never, undefined);
+    const result = await service.chatWithContext('当前设备状态？', 'org-a');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('未就绪');
+  });
 });

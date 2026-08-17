@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const { apiAuth, getApiToken, safeEqual, extractToken, isWriteMethod } = require('../server/auth');
+const ratelimit = require('../server/ratelimit');
 
 function makeRes() {
   const res = {
@@ -136,4 +137,55 @@ test('getApiToken: 读取环境变量并 trim', () => {
   withEnv({ FEISHU_API_TOKEN: undefined }, () => {
     assert.strictEqual(getApiToken(), '');
   });
+});
+
+// ---- FS-010：写操作 IP+token 失败计数限流 ----
+
+test('FS-010: 连续写鉴权失败达阈值 → 429 RATE_LIMITED，成功后解除', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'correct-token', FEISHU_RATELIMIT_MAX_FAILURES: '3' }, () => {
+    const wrong = makeReq('POST', { authorization: 'Bearer wrong' });
+    // 前 3 次失败 → 401
+    for (let i = 0; i < 3; i += 1) {
+      const res = makeRes();
+      apiAuth(wrong, res, () => assert.fail('不应放行'));
+      assert.strictEqual(res.statusCode, 401, `第 ${i + 1} 次失败应 401`);
+    }
+    // 第 4 次（无论 token 对错）→ 429
+    const blocked = makeRes();
+    apiAuth(makeReq('POST', { authorization: 'Bearer correct-token' }), blocked, () => assert.fail('达阈值后不得放行'));
+    assert.strictEqual(blocked.statusCode, 429);
+    assert.strictEqual(blocked.body.error.code, 'RATE_LIMITED');
+  });
+  ratelimit.reset();
+});
+
+test('FS-010: 鉴权成功清除计数（合法客户端不受影响）', () => {
+  ratelimit.reset();
+  withEnv({ FEISHU_API_TOKEN: 'correct-token', FEISHU_RATELIMIT_MAX_FAILURES: '3' }, () => {
+    // 2 次失败（未达阈值 3）
+    for (let i = 0; i < 2; i += 1) {
+      const res = makeRes();
+      apiAuth(makeReq('POST', { authorization: 'Bearer wrong' }), res, () => assert.fail('不应放行'));
+      assert.strictEqual(res.statusCode, 401);
+    }
+    // 成功一次 → 计数清零
+    let passed = false;
+    const okRes = makeRes();
+    apiAuth(makeReq('POST', { authorization: 'Bearer correct-token' }), okRes, () => { passed = true; });
+    assert.strictEqual(passed, true);
+    // 再失败 2 次仍不至于触发 429（计数已重置）
+    for (let i = 0; i < 2; i += 1) {
+      const res = makeRes();
+      apiAuth(makeReq('POST', { authorization: 'Bearer wrong' }), res, () => assert.fail('不应放行'));
+      assert.strictEqual(res.statusCode, 401, `清零后第 ${i + 1} 次失败应仍为 401 而非 429`);
+    }
+  });
+  ratelimit.reset();
+});
+
+test('FS-010: ratelimit key 不含明文 token', () => {
+  const k = ratelimit.key('api', '1.2.3.4', 'secret-token-value');
+  assert.ok(!k.includes('secret-token-value'), 'key 中不得出现明文 token');
+  assert.match(k, /^api\|1\.2\.3\.4\|[0-9a-f]{16}$/);
 });

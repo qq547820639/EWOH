@@ -1,16 +1,21 @@
-import axios, { type AxiosRequestConfig } from 'axios';
+import axios, { AxiosHeaders, type AxiosRequestConfig } from 'axios';
 import {
   clearTokens,
   getAccessToken,
-  getRefreshToken,
+  hasSessionTrace,
   setSession,
 } from './auth';
-import type { AuthTokens } from '../api/auth';
 
 const baseURL = (import.meta as unknown as { env?: Record<string, string> }).env
   ?.VITE_API_BASE_URL || '';
 
-const refreshClient = axios.create({ baseURL, timeout: 15000 });
+// CLI-701：刷新凭证在 httpOnly cookie；withCredentials 保证跨域 API
+// 网关部署下浏览器也会附带 cookie（同源部署时默认即附带）。
+const refreshClient = axios.create({
+  baseURL,
+  timeout: 15000,
+  withCredentials: true,
+});
 let refreshPromise: Promise<boolean> | null = null;
 
 interface RetriableRequestConfig extends AxiosRequestConfig {
@@ -25,10 +30,11 @@ export const http = axios.create({
 http.interceptors.request.use((config) => {
   const token = getAccessToken();
   if (token) {
-    if (!config.headers) {
-      config.headers = new axios.AxiosHeaders();
-    }
-    (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    // CLI-717：用 AxiosHeaders 构造/赋值，消除 `as Record<string,string>`
+    // 类型断言（错误断言会绕过 AxiosHeaders 的规范化与类型约束）。
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    config.headers = headers;
   }
   return config;
 });
@@ -36,12 +42,21 @@ http.interceptors.request.use((config) => {
 async function refreshSession(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
   refreshPromise = (async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) return false;
+    // CLI-706：无任何会话痕迹时不发刷新请求——refresh cookie 必然不存在，
+    // 发请求只会得到 401 并造成无意义的循环与日志噪声。
+    if (!hasSessionTrace()) return false;
     try {
-      const res = await refreshClient.post('/api/auth/refresh', { refreshToken });
-      const tokens = res.data as AuthTokens;
+      // CLI-701：refresh token 由服务端从 httpOnly cookie 读取（轮转后
+      // 重新 Set-Cookie），请求体不携带任何凭证。
+      const res = await refreshClient.post('/api/auth/refresh');
+      const tokens = res.data as Parameters<typeof setSession>[0];
       setSession(tokens);
+      // CLI-706：刷新成功但 access token 为空（畸形响应）视为失败，
+      // 不允许带着空 Bearer 头重放请求陷入 401 死循环。
+      if (!getAccessToken()) {
+        clearTokens();
+        return false;
+      }
       return true;
     } catch {
       clearTokens();
@@ -60,7 +75,27 @@ function redirectToLogin(): void {
   const base = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.BASE_URL || '/';
   const loginPath = `${base.replace(/\/+$/, '')}/login`;
-  window.location.assign(loginPath);
+  // CLI-507：携带 return 参数记录被中断的完整路径（含查询串），登录页
+  // 成功后可恢复到原页面，而不是丢失上下文跳默认首页。
+  const current = `${window.location.pathname}${window.location.search}`;
+  const target = current && current !== '/' ? `${loginPath}?redirect=${encodeURIComponent(current)}` : loginPath;
+  window.location.assign(target);
+}
+
+/**
+ * CLI-705：认证端点枚举精确匹配（去掉查询串后比对全路径）。
+ * 字符串 includes 会把 `/api/auth/login-callback` 等误判为登录调用，
+ * 导致其 401 被静默吞掉而非触发刷新/跳转。
+ */
+const AUTH_ENDPOINTS = new Set([
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/logout',
+]);
+
+function isAuthEndpoint(url: string): boolean {
+  const pathname = url.split('?')[0];
+  return AUTH_ENDPOINTS.has(pathname);
 }
 
 http.interceptors.response.use(
@@ -68,11 +103,7 @@ http.interceptors.response.use(
   async (error: unknown) => {
     const axiosError = error as {
       response?: { status?: number };
-      config?: {
-        url?: string;
-        headers?: Record<string, string>;
-        _retry?: boolean;
-      };
+      config?: RetriableRequestConfig & { headers?: unknown };
     };
     const status = axiosError.response?.status;
     const config = axiosError.config;
@@ -82,9 +113,8 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    const isAuthCall = url.includes('/api/auth/login') || url.includes('/api/auth/refresh');
-    if (isAuthCall || config._retry) {
-      if (!isAuthCall) redirectToLogin();
+    if (isAuthEndpoint(url) || config._retry) {
+      if (!isAuthEndpoint(url)) redirectToLogin();
       return Promise.reject(error);
     }
 
@@ -94,14 +124,30 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // CLI-706：重放前必须有非空 token；为空直接 reject，避免空 Bearer
+    // 触发又一轮 401→refresh 循环。
+    const token = getAccessToken();
+    if (!token) {
+      clearTokens();
+      redirectToLogin();
+      return Promise.reject(error);
+    }
+
     config._retry = true;
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${getAccessToken() ?? ''}`;
-    return http.request(config as RetriableRequestConfig);
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    config.headers = headers;
+    return http.request(config);
   },
 );
 
-export async function axiosForBackend<T = unknown>(config: {
+/**
+ * CLI-508 / CLI-718 / CLI-722：泛型 T 真正生效——原签名声明 <T> 却固定
+ * 返回 { data: any }，调用方（如 files.ts）传入的类型参数被静默忽略。
+ * 现按 T 返回 data；默认 any 保持存量未标注调用点的既有行为（25+ 个
+ * api/ 文件逐步标注类型时可获得真实检查）。
+ */
+export async function axiosForBackend<T = any>(config: {
   url: string;
   method?: string;
   params?: Record<string, unknown>;
@@ -109,8 +155,8 @@ export async function axiosForBackend<T = unknown>(config: {
   signal?: AbortSignal;
   headers?: Record<string, string>;
   timeout?: number;
-}): Promise<{ data: any }> {
-  return http.request({
+}): Promise<{ data: T }> {
+  const res = await http.request<T>({
     url: config.url,
     method: (config.method ?? 'GET') as never,
     params: config.params,
@@ -119,4 +165,5 @@ export async function axiosForBackend<T = unknown>(config: {
     headers: config.headers,
     timeout: config.timeout,
   });
+  return { data: res.data };
 }

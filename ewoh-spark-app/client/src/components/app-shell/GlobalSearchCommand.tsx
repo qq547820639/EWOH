@@ -43,11 +43,11 @@ const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="全局搜索（Cmd+K）"
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-2.5 text-sm text-[hsl(218_10%_42%)] hover:border-[hsl(220_14%_80%)] hover:text-[hsl(220_14%_14%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(221_83%_53%)]"
+        className="inline-flex h-8 items-center gap-2 rounded-lg border border-border bg-white px-2.5 text-sm text-muted-foreground hover:border-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Search className="h-4 w-4" aria-hidden />
         <span className="hidden sm:inline">搜索</span>
-        <kbd className="hidden rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] px-1 text-[10px] font-medium sm:inline">
+        <kbd className="hidden rounded border border-border bg-muted px-1 text-[10px] font-medium sm:inline">
           ⌘K
         </kbd>
       </button>
@@ -72,7 +72,7 @@ const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
               >
                 <item.icon className="h-4 w-4" aria-hidden />
                 <span>{item.label}</span>
-                <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+                <span className="ml-auto text-xs text-muted-foreground">
                   {item.group}
                 </span>
               </CommandItem>

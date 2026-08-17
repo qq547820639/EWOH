@@ -14,8 +14,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-// @deprecated 兼容路径：仅用于“AI 评估”展示，不再是调度写入路径。
-import { allocateResources } from '@client/src/api/gamification';
 import { getUnifiedResourceState, replan } from '@client/src/api/scheduler';
 import { getDevices } from '@client/src/api/dashboard';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -25,7 +23,6 @@ import type {
   CurrentWorldState,
   DeviceInfo,
   ResourceItem,
-  ResourceAllocationRequest,
   ResourceAllocationResult,
   AllocationEvaluation,
   SchedulingConstraint,
@@ -463,25 +460,10 @@ const ResourcePoolPanel = ({
   const [allocations, setAllocations] = useState<
     Record<string, { targetType: 'workstation'; targetId: string }>
   >({});
-  const [latestResult, setLatestResult] = useState<ResourceAllocationResult | null>(
-    null,
-  );
-
-  /**
-   * @deprecated 兼容评估路径：仅用于“AI 评估”展示，不再是授权的调度写入路径。
-   * 正式的调度写入路径为 handleCommit → replan（SchedulingConstraint + V2 重排）。
-   */
-  const allocateMutation = useMutation({
-    mutationFn: (body: ResourceAllocationRequest) => allocateResources(body),
-    onSuccess: (data) => {
-      setLatestResult(data);
-      toast.success(`AI 评估完成: ${data.evaluation.overall.toUpperCase()}`);
-      setAllocations({});
-    },
-    onError: () => {
-      toast.error('资源分配失败');
-    },
-  });
+  // CLI-030：废弃的 allocateMutation（AI 评估兼容路径）及「评估/兼容」按钮入口已移除，
+  // 正式调度写入唯一路径为下方 replanMutation（SchedulingConstraint + V2 重排）。
+  // latestResult 仅保留给 EvaluationPanel 空态展示（恒为 null 时显示未评估）。
+  const [latestResult] = useState<ResourceAllocationResult | null>(null);
 
   /**
    * 正式调度写入路径：把手动分配/锁定操作转换为 SchedulingConstraint，
@@ -595,20 +577,6 @@ const ResourcePoolPanel = ({
     });
   };
 
-  /** @deprecated 兼容评估：仅演示 AI 评估，不写入调度。 */
-  const handleLegacyEvaluate = () => {
-    const list = Object.entries(allocations).map(([entityId, v]) => ({
-      entityId,
-      targetType: v.targetType as 'person' | 'device',
-      targetId: v.targetId,
-    }));
-    if (list.length === 0) {
-      toast.error('请先选择分配目标');
-      return;
-    }
-    allocateMutation.mutate({ allocations: list, operator: getCurrentOperator() });
-  };
-
   const renderColumn = (
     title: string,
     icon: LucideIcon,
@@ -681,16 +649,6 @@ const ResourcePoolPanel = ({
           {replanMutation.isPending
             ? '重排中...'
             : `提交约束并重排 (${Object.keys(allocations).length})`}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 text-[10px] px-2 text-white/50"
-          onClick={handleLegacyEvaluate}
-          disabled={allocateMutation.isPending || Object.keys(allocations).length === 0}
-          title="已废弃：仅用于 AI 评估展示，不再写入调度"
-        >
-          评估/兼容
         </Button>
       </div>
 

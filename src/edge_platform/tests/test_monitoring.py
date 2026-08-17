@@ -151,6 +151,8 @@ class MetricsCollectorTest(unittest.TestCase):
         c.set_device_stats(1, 1)
         c.set_db_counts({"x": 1})
         old_start = c._start
+        # EDT-016：sleep(0.01) 仅为越过 monotonic 时钟分辨率，保证
+        # reset 后 _start 严格大于旧值（非异步行为等待，无需条件轮询）。
         time.sleep(0.01)
         c.reset()
         new_start = c._start
@@ -270,6 +272,9 @@ class _HandlerHarness:
         h._resp_body = io.BytesIO()
 
         class _WFile:
+            """EDT-016：stub 刻意隐藏真实 wfile.flush 语义（no-op）——本测试
+            关注 send_metrics 的头/体形状与状态码，不验证 TCP 刷新行为。"""
+
             def __init__(self, buf):
                 self.buf = buf
 

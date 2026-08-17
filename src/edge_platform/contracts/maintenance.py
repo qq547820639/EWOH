@@ -72,6 +72,11 @@ def validate_condition(record: Any) -> list[str]:
         return ["unknown_severity"]
     if record["status"] not in LIFECYCLE:
         return ["unknown_status"]
+    # EDGE-201（2026-08-17 审计整改说明）：Python 侧显式拒绝 disposition 字段
+    # （MaintenanceCondition 契约无此字段，fail-closed）。TS maintenance.ts 的
+    # validateMaintenanceCondition 缺同款检查属跨端漂移——按整改分工，TS 侧由
+    # 共享契约层任务（W6）补 disposition 拒绝规则与 Python 对齐；Python 侧
+    # 保持现状（更严语义为 canonical）。
     if "disposition" in record or record.get("disposition") is not None:
         return ["unexpected_field"]
     return []

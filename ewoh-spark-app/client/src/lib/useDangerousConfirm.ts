@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useReducer, useRef } from 'react';
 import {
   confirmDangerous,
   previewDangerousImpact,
@@ -19,6 +19,11 @@ import {
  */
 export function useDangerousConfirm() {
   const [state, dispatch] = useReducer(dangerousReducer, DANGEROUS_IDLE);
+  // CLI-529：以 ref 持有最新 idempotencyKey——preview-success 派发与极快的
+  // 确认点击之间，confirm 闭包可能仍是旧渲染的（idempotencyKey 为 null），
+  // ref 读取保证提交时拿到的是当前值。
+  const idempotencyKeyRef = useRef(state.idempotencyKey);
+  idempotencyKeyRef.current = state.idempotencyKey;
 
   /** 发起一次危险操作：生成幂等键并拉取影响预览。 */
   const preview = useCallback(
@@ -65,7 +70,8 @@ export function useDangerousConfirm() {
           targetId: input.targetId,
           affectedCount: input.affectedCount,
           reason: input.reason,
-          idempotencyKey: state.idempotencyKey ?? undefined,
+          // CLI-529：读 ref 拿最新幂等键，避免闭包过期拿到 null。
+          idempotencyKey: idempotencyKeyRef.current ?? undefined,
         });
         dispatch({
           type: 'confirm-success',
@@ -81,7 +87,7 @@ export function useDangerousConfirm() {
         throw error;
       }
     },
-    [state.idempotencyKey],
+    [],
   );
 
   /** 撤销已执行的操作（须在可撤销窗口内，否则状态机会拒绝）。 */

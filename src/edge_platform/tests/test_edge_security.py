@@ -94,6 +94,15 @@ class _ProductionServerFixture:
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()
 
+    def login(self, username="admin", password="admin123"):
+        """登录获取 Bearer token（EDGE-001 整改后 production GET 面需要认证）。"""
+        status, _, body = self.req(
+            "/api/auth/login", method="POST", body={"username": username, "password": password}
+        )
+        if status == 200:
+            return json.loads(body)["token"]
+        return None
+
 
 class CORSProductionTest(unittest.TestCase):
     @classmethod
@@ -108,21 +117,28 @@ class CORSProductionTest(unittest.TestCase):
         cls.fx.close()
 
     def test_allowed_origin_gets_cors_headers(self):
+        token = self.fx.login()
         status, headers, _ = self.fx.req(
-            "/api/devices", headers={"Origin": "https://app.ewoh.example"}
+            "/api/devices",
+            headers={"Origin": "https://app.ewoh.example", "Authorization": f"Bearer {token}"},
         )
         self.assertEqual(status, 200)
         self.assertEqual(headers.get("Access-Control-Allow-Origin"), "https://app.ewoh.example")
         self.assertEqual(headers.get("Access-Control-Allow-Credentials"), "true")
 
     def test_disallowed_origin_gets_no_cors_headers(self):
-        status, headers, _ = self.fx.req("/api/devices", headers={"Origin": "https://evil.example"})
+        token = self.fx.login()
+        status, headers, _ = self.fx.req(
+            "/api/devices",
+            headers={"Origin": "https://evil.example", "Authorization": f"Bearer {token}"},
+        )
         self.assertEqual(status, 200)  # 请求本身可处理（同源语义），但不回送 CORS 头
         self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
         self.assertIsNone(headers.get("Access-Control-Allow-Credentials"))
 
     def test_no_origin_gets_no_cors_headers(self):
-        status, headers, _ = self.fx.req("/api/devices")
+        token = self.fx.login()
+        status, headers, _ = self.fx.req("/api/devices", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(status, 200)
         self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
 
@@ -138,8 +154,11 @@ class CORSProductionNoAllowlistTest(unittest.TestCase):
         cls.fx.close()
 
     def test_production_without_allowlist_rejects_all_cors(self):
+        token = self.fx.login()
         for origin in ("http://localhost:5173", "https://app.ewoh.example"):
-            status, headers, _ = self.fx.req("/api/devices", headers={"Origin": origin})
+            status, headers, _ = self.fx.req(
+                "/api/devices", headers={"Origin": origin, "Authorization": f"Bearer {token}"}
+            )
             self.assertEqual(status, 200)
             self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
 
@@ -172,22 +191,36 @@ class ProductionAuthTest(unittest.TestCase):
         self.assertEqual(status, 401, body)
 
     def test_production_public_login_path_exempt(self):
-        # /api/auth/login 是公共端点，production 下不被 401 拦截
+        # EDT-006：/api/auth/login 是公共端点——钉死状态码语义：
+        # 正确凭证 → 200；错误凭证 → 401 invalid_credentials（业务层，非认证门禁）。
         status, _, body = self.fx.req(
             "/api/auth/login",
             method="POST",
-            body={"username": "admin", "password": "x"},
+            body={"username": "admin", "password": "admin123"},
         )
-        # 允许业务层返回 401（凭证错误）或 200；但不得是 CORS 层的 unauthorized 401 拦截
-        if status == 401:
-            err = json.loads(body)
-            self.assertNotEqual(err["error"]["code"], "unauthorized", body)
-        else:
-            self.assertIn(status, (200, 400))
+        self.assertEqual(status, 200, body)
+        self.assertIn("token", json.loads(body))
 
-    def test_production_get_public_read_allowed(self):
-        # 读端点不需要认证（生产仍允许匿名读状态；写才 fail-closed）
-        status, _, _ = self.fx.req("/api/devices")
+        status, _, body = self.fx.req(
+            "/api/auth/login",
+            method="POST",
+            body={"username": "admin", "password": "wrong-password"},
+        )
+        self.assertEqual(status, 401, body)
+        self.assertEqual(json.loads(body)["error"]["code"], "invalid_credentials")
+
+    def test_production_get_requires_token(self):
+        # EDGE-001（2026-08-17 审计整改）：production 下 GET 业务数据面不再匿名放行
+        status, _, body = self.fx.req("/api/devices")
+        self.assertEqual(status, 401, body)
+        err = json.loads(body)
+        self.assertEqual(err["error"]["code"], "unauthorized")
+
+    def test_production_get_with_token_allowed(self):
+        # EDGE-001：携带有效 token 的 GET 按 VIEW_* 动作放行
+        token = self.fx.login()
+        self.assertIsNotNone(token)
+        status, _, _ = self.fx.req("/api/devices", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(status, 200)
 
 
@@ -221,18 +254,26 @@ class ErrorRedactionTest(unittest.TestCase):
         cls.fx.close()
 
     def test_internal_error_does_not_leak_exception_detail(self):
-        # 触发一个内部异常：向未知子路径 POST 无 body → 触发 500（不泄露 str(e)）
-        # 构造：/api/telemetry/export 需要认证，直接请求一个会抛异常的路径
-        # 用未认证 POST /api/query 业务层正常；这里用 GET 到触发内部异常的路径验证脱敏格式
-        status, _, body = self.fx.req(
-            "/api/tasks",
-            method="POST",
-            body={"task_id": "T3"},
-            headers={"Authorization": "Bearer invalid-token"},
-        )
-        # 认证拦截路径的 401 不应携带 detail
+        # EDT-002：真实触达 500 路径——注入 storage 故障，认证 GET /api/devices
+        # 抛内部异常；断言响应为稳定 internal_error 信封且不泄露 str(e) 详情。
+        token = self.fx.login()
+        secret_marker = "SECRET-INTERNAL-DETAIL-XYZ"
+
+        def boom():
+            raise RuntimeError(secret_marker)
+
+        self.fx.ctx.storage.list_devices = boom
+        try:
+            status, _, body = self.fx.req(
+                "/api/devices", headers={"Authorization": f"Bearer {token}"}
+            )
+        finally:
+            del self.fx.ctx.storage.list_devices  # 还原类方法
+        self.assertEqual(status, 500, body)
         err = json.loads(body)
-        self.assertNotIn("detail", err["error"])
+        self.assertEqual(err["error"]["code"], "internal_error")
+        self.assertEqual(err["error"]["message"], "请求处理失败")
+        self.assertNotIn(secret_marker, body.decode("utf-8"), "500 响应不得泄露内部异常详情")
 
     def test_error_response_shape_is_stable(self):
         # 认证失败响应为稳定 {code,message,request_id} 结构

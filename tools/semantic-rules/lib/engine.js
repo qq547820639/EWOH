@@ -23,11 +23,11 @@ const { ALL_RULES, RULE_META, parseMarkdown } = require('./rules');
 // ---------------------------------------------------------------------------
 
 function findArtifactsDir(cwd) {
+  // TOOL-013: 仅 EWOH_WORK_ARTIFACTS_DIR env 可指向别处，否则只回退
+  // cwd/.codex/artifacts——不再向上搜索 ../..（可能误用上层目录的工件）。
   const candidates = [
     process.env.EWOH_WORK_ARTIFACTS_DIR,
     path.resolve(cwd, '.codex', 'artifacts'),
-    path.resolve(cwd, '..', '.codex', 'artifacts'),
-    path.resolve(cwd, '..', '..', '.codex', 'artifacts'),
   ].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'task-board.md'))) {
@@ -120,9 +120,11 @@ function isGitAncestor(root, commit) {
 function readSchemaManifest(root) {
   const text = readFileSafe(root, 'db/contracts/schema-manifest.yaml');
   if (!text) return null;
-  const match = text.match(/^\s*managed_count\s*:\s*(\d+)\s*$/m);
+  const managed = text.match(/^\s*managed_count\s*:\s*(\d+)\s*$/m);
+  const physical = text.match(/^\s*physical_create_count\s*:\s*(\d+)\s*$/m);
   return {
-    managed_count: match ? Number(match[1]) : null,
+    managed_count: managed ? Number(managed[1]) : null,
+    physical_create_count: physical ? Number(physical[1]) : null,
     text,
   };
 }
@@ -221,18 +223,21 @@ function buildContext(root, options = {}) {
 }
 
 /**
- * Parse decision-log entries into a list of decision ids.
+ * Parse decision-log entries into a list of { id, text } objects.
+ * TOOL-001: text carries the full decision row (decision/rationale) so the
+ * no-self-exemption rule can search the decision BODY for authorization
+ * wording — a bare D-number list can never match.
  */
 function parseDecisions(artifactsDir) {
   const text = readFileSafe(artifactsDir, 'decision-log.md');
   if (!text) return [];
-  const ids = [];
-  const re = /^\|\s*(D-\d+)\s*\|/gm;
+  const decisions = [];
+  const re = /^[ \t]*\|[ \t]*(D-\d+)[ \t]*\|(.*)(?:\r?\n|$)/gm;
   let match;
   while ((match = re.exec(text)) !== null) {
-    ids.push(match[1]);
+    decisions.push({ id: match[1], text: `${match[1]} ${match[2]}` });
   }
-  return ids;
+  return decisions;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,8 +282,13 @@ function runRules(ctx, opts = {}) {
   // In strict mode ANY unexempted semantic conflict (error or warning) fails
   // the run. Exemptions are per-rule and come from the context (authorized by
   // a decision-log entry, enforced by no-self-exemption).
-  const exempted = new Set(ctx.exemptions || []);
-  const unexempted = findings.filter((f) => !exempted.has(f.ruleId));
+  // TOOL-002: exemptions can only suppress WARNING findings; error findings are
+  // never exemptable, and the no-self-exemption meta-rule is hard-coded
+  // non-exemptable.
+  const exempted = new Set((ctx.exemptions || []).filter((id) => id !== 'no-self-exemption'));
+  const unexempted = findings.filter(
+    (f) => f.severity === 'error' || (!exempted.has(f.ruleId) && f.ruleId !== 'no-self-exemption'),
+  );
 
   return {
     findings,

@@ -21,6 +21,7 @@ import {
   notificationSummary,
 } from './approvalConsoleLogic';
 import { Button } from '@client/src/components/ui/button';
+import { toast } from 'sonner';
 
 /**
  * 审批控制台（ADR-030 / NO-12f，§17 操作台"是否批准？"）。
@@ -82,11 +83,23 @@ const ApprovalConsole = (): React.ReactElement => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
+    // CLI-002：失败不再静默，toast 透传后端错误信息。
+    onError: (err) => {
+      toast.error('标记已读失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
   });
   const retryPush = useMutation({
     mutationFn: (notificationId: string) => retryNotification(notificationId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    // CLI-002：重试失败显式反馈（§33 失败不静默）。
+    onError: (err) => {
+      toast.error('推送重试失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     },
   });
 

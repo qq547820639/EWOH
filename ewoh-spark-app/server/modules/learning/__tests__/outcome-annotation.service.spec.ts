@@ -55,6 +55,7 @@ function matches(cond: unknown, row: Record<string, unknown>): boolean {
 function createAnnotationDb(rows: Array<Record<string, unknown>> = []) {
   const state = { rows: [...rows] };
   const events: Array<Record<string, unknown>> = [];
+  let nextInsertError: unknown = null;
   function thenable(data: unknown[]): unknown {
     return {
       then: (resolve: (v: unknown[]) => void) => resolve(data),
@@ -70,11 +71,19 @@ function createAnnotationDb(rows: Array<Record<string, unknown>> = []) {
     })),
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: Record<string, unknown>) => {
+        if (nextInsertError) {
+          const err = nextInsertError;
+          nextInsertError = null;
+          throw err;
+        }
         if (table === ewohOutcomeAnnotation) state.rows.push(row);
         if (table === ewohEvent) events.push(row);
         return { returning: jest.fn(async () => [row]) };
       }),
     })),
+    __failNextInsertWith: (err: unknown) => {
+      nextInsertError = err;
+    },
   };
   const service = new OutcomeAnnotationService(db as never);
   return { db, rows: state.rows, events, service };
@@ -106,6 +115,30 @@ describe('OutcomeAnnotationService（ADR-034 真值标注面）', () => {
     const second = await service.create({ ...VALID_INPUT, annotationId: 'oa:fixed-1' }, ORG_A);
     expect(second.created).toBe(false);
     expect(events).toHaveLength(1);
+  });
+
+  it('NEST-332: 并发唯一键冲突（23505）回读既有行，不误报 500', async () => {
+    // 预置冲突行（模拟另一并发请求已提交同 annotationId）。
+    const conflicting = {
+      annotationId: 'oa:fixed-2', orgId: ORG_A, targetType: 'plan', targetId: 'PLAN-1',
+      outcomeKind: 'success', judgedBy: 'person:op1', judgedAt: new Date(),
+      measuredJson: null, comment: null, recordJson: {}, createdAt: new Date(),
+    };
+    const { db, events, rows, service } = createAnnotationDb([conflicting]);
+    db.__failNextInsertWith({ code: '23505' });
+    const result = await service.create({ ...VALID_INPUT, annotationId: 'oa:fixed-2' }, ORG_A);
+    expect(result.created).toBe(false);
+    expect((result.annotation as Record<string, unknown>).judgedBy).toBe('person:op1');
+    expect(events).toHaveLength(0); // 不重复发事件
+    expect(rows).toHaveLength(1);
+  });
+
+  it('NEST-355: 空 orgId 的 create/listByTarget/listRecent 显式拒绝', async () => {
+    const { service } = createAnnotationDb();
+    await expect(service.create(VALID_INPUT, '')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.listByTarget('', 'plan', 'PLAN-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.listRecent('')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.listRecent('  ')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('listByTarget 与 listRecent 租户作用域', async () => {

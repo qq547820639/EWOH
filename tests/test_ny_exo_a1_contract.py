@@ -16,7 +16,6 @@
 """
 
 import json
-import math
 import sys
 import unittest
 from datetime import datetime
@@ -505,9 +504,6 @@ class TestDataQualityContract(unittest.TestCase):
         self.assertEqual(inf_frame.quality["status"], "invalid")
         self.assertEqual(inf_frame.quality["confidence"], 0.0)
         self.assertIn("torque_nm", inf_frame.quality["reason"])
-        # 数学语义校验：确保确实用了 math.isnan/isinf 判定
-        self.assertTrue(math.isnan(float("nan")))
-        self.assertTrue(math.isinf(float("inf")))
 
     def test_sampling_rate_anomaly_marked_degraded(self):
         """Task 10.1：窗口内实际帧数远低于期望采样率 → degraded，reason 含 sampling_rate_anomaly。"""

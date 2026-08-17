@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
@@ -116,6 +116,15 @@ export default function EventCenterPanel({
     setContextError('');
   }, [selectedEventId]);
 
+  // CLI-025：异步回放上下文加载的取消守卫——卸载/重复触发后不再 setState。
+  const replayContextAliveRef = useRef(0);
+  useEffect(() => {
+    return () => {
+      // 卸载：全部在途 token 失效（++ 产生的 token 恒 ≥1）。
+      replayContextAliveRef.current = 0;
+    };
+  }, []);
+
   const { data: events, isLoading, isError } = useQuery<EventInfo[]>({
     queryKey: queryKeys.events(statusFilter),
     queryFn: () => getEvents(50, statusFilter),
@@ -187,15 +196,19 @@ export default function EventCenterPanel({
   );
 
   const loadReplayContext = async (eventId: string) => {
+    // CLI-025：请求序号守卫（竞态时旧响应丢弃；卸载后由清理 effect 置 0 使全部失效）。
+    const token = ++replayContextAliveRef.current;
     setContextLoading(true);
     setContextError('');
     try {
       const context = await getEventContext(eventId, 10);
+      if (token !== replayContextAliveRef.current) return;
       setReplayContext(summarizeReplayContext(context));
     } catch (error) {
+      if (token !== replayContextAliveRef.current) return;
       setContextError(error instanceof Error ? error.message : '回放上下文加载失败');
     } finally {
-      setContextLoading(false);
+      if (token === replayContextAliveRef.current) setContextLoading(false);
     }
   };
 

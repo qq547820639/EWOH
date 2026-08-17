@@ -1,9 +1,10 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, UnauthorizedException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { eq, and, desc } from 'drizzle-orm';
+import { currentRequestContext } from '../../common/request-context';
 import {
   ewohSchedulingRun,
   ewohReplanTrigger,
@@ -55,6 +56,19 @@ export class TriggerService {
     ctx: OrgContext,
     eventVersion = 0,
   ): Promise<SchedulingRun | null> {
+    // NEST-146 修复（2026-08-17）：HTTP 路径强制 actor（空 orgId 时 triggerKey
+    // 退化为 'ALL:...' 全租户共享去重键 + run.orgId=null 无归属）；
+    // 系统后台流（无 request context）保留 'ALL' 系统语义并留痕。
+    if (!ctx.primaryOrgId) {
+      if (currentRequestContext()) {
+        throw new UnauthorizedException(
+          'org context required for scheduling trigger（NEST-146）',
+        );
+      }
+      this.logger.warn(
+        `scheduling trigger ${String(triggerType)} without org context (system scope 'ALL')`,
+      );
+    }
     const orgKey = ctx.primaryOrgId || 'ALL';
     const triggerKey = `${orgKey}:${triggerType}:${entityId ?? 'ALL'}:${eventVersion ?? 0}`;
     const cooldownMs =
@@ -91,27 +105,27 @@ export class TriggerService {
           return null;
         }
 
-        // 2) 幂等去重：triggerKey 已存在则视为重复触发。
-        const existing = await this.db
-          .select()
-          .from(ewohReplanTrigger)
-          .where(eq(ewohReplanTrigger.triggerKey, triggerKey))
-          .limit(1);
-        if (existing[0]) {
+        // 2)+3) 幂等去重 + 记录（NEST-147 修复，2026-08-17）：
+        // check-then-insert 竞态（并发同 triggerKey 双插入双建 run）改为原子
+        // INSERT ... ON CONFLICT (trigger_key) DO NOTHING——冲突（重复触发）
+        // 返回空行集即合并；trigger_key 为全局唯一键（standalone 迁移）。
+        const insertedTrigger = await this.db
+          .insert(ewohReplanTrigger)
+          .values({
+            triggerKey,
+            orgId: orgKey,
+            triggerType,
+            entityId: entityId ?? 'ALL',
+            eventVersion: eventVersion ?? 0,
+            status: 'processed',
+            runId: null,
+          })
+          .onConflictDoNothing({ target: ewohReplanTrigger.triggerKey })
+          .returning();
+        if (!insertedTrigger[0]) {
           this.logger.debug(`trigger ${triggerType} deduped (${triggerKey})`);
           return null;
         }
-
-        // 3) 记录持久化触发。
-        await this.db.insert(ewohReplanTrigger).values({
-          triggerKey,
-          orgId: orgKey,
-          triggerType,
-          entityId: entityId ?? 'ALL',
-          eventVersion: eventVersion ?? 0,
-          status: 'processed',
-          runId: null,
-        });
 
         // 4) 创建排队运行记录。
         const [row] = await this.db

@@ -13,22 +13,25 @@ from edge_platform import services
 
 from . import Route, affix, dispatch_routes, exact, sub_path
 from ._util import (
-    EVIDENCE_WINDOW_SEC,
-    OFFLINE_AFTER_SEC,
     SOURCE_LABELS,
     _device_view,
     _filter_source,
+    evidence_window_sec,
     now_iso,
+    offline_after_sec,
     parse_ts,
     resolve_actor,
 )
+
+# EDGE-021：/api/events 用户 limit 的路由层硬上限（服务层另有同值兜底）。
+MAX_EVENTS_LIMIT = 1000
 
 
 def api_devices(ctx, h, req_meta):
     items = [
         _device_view(ctx, d) for d in _filter_source(ctx.storage.list_devices(), h.arg("source"))
     ]
-    return h.send_json({"items": items, "now": now_iso(), "offline_after_sec": OFFLINE_AFTER_SEC})
+    return h.send_json({"items": items, "now": now_iso(), "offline_after_sec": offline_after_sec()})
 
 
 def api_people(ctx, h, req_meta):
@@ -36,9 +39,12 @@ def api_people(ctx, h, req_meta):
 
 
 def api_events_list(ctx, h, req_meta):
-    items = [
-        services.norm_event(e) for e in ctx.storage.list_events(int(h.arg("limit", "100") or 100))
-    ]
+    try:
+        limit = int(h.arg("limit", "100") or 100)
+    except ValueError:
+        limit = 100
+    limit = max(1, min(limit, MAX_EVENTS_LIMIT))  # EDGE-021：钉死上限，拒绝 1e9 类输入
+    items = [services.norm_event(e) for e in ctx.storage.list_events(limit)]
     for e in items:
         e["source_label"] = SOURCE_LABELS.get(e.get("source_type"), e.get("source_type"))
     return h.send_json({"items": _filter_source(items, h.arg("source")), "now": now_iso()})
@@ -56,8 +62,8 @@ def api_event_detail(ctx, h, req_meta):
     if t0 and dev_id:
         rows = ctx.storage.query_telemetry(
             dev_id,
-            services.iso(t0 - timedelta(seconds=EVIDENCE_WINDOW_SEC)),
-            services.iso(t1 + timedelta(seconds=EVIDENCE_WINDOW_SEC)),
+            services.iso(t0 - timedelta(seconds=evidence_window_sec())),
+            services.iso(t1 + timedelta(seconds=evidence_window_sec())),
             500,
         )
         records = [services.norm_telemetry(r) for r in rows]
@@ -65,7 +71,7 @@ def api_event_detail(ctx, h, req_meta):
     return h.send_json(
         {
             "event": evt,
-            "evidence_window_sec": EVIDENCE_WINDOW_SEC,
+            "evidence_window_sec": evidence_window_sec(),
             "evidence_records": records,
             "now": now_iso(),
         }
@@ -206,8 +212,8 @@ def api_event_detail_v2(ctx, h, event_id):
     if t0 and dev_id:
         rows = ctx.storage.query_telemetry(
             dev_id,
-            services.iso(t0 - timedelta(seconds=EVIDENCE_WINDOW_SEC)),
-            services.iso(t1 + timedelta(seconds=EVIDENCE_WINDOW_SEC)),
+            services.iso(t0 - timedelta(seconds=evidence_window_sec())),
+            services.iso(t1 + timedelta(seconds=evidence_window_sec())),
             500,
         )
         records = [services.norm_telemetry(r) for r in rows]
@@ -218,7 +224,7 @@ def api_event_detail_v2(ctx, h, event_id):
     return h.send_json(
         {
             "event": evt,
-            "evidence_window_sec": EVIDENCE_WINDOW_SEC,
+            "evidence_window_sec": evidence_window_sec(),
             "evidence_records": records,
             "handlings": handlings,
             "now": now_iso(),

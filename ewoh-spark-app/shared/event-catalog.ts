@@ -2,7 +2,7 @@
  *
  * 权威契约：contracts/events/event-catalog.yaml（x-event-types）。
  * 本文件为锁定投影，由 scripts/audit-event-catalog.js 门禁强制与 YAML 目录
- * 逐项一致（64 类）；新增事件类型必须先改 catalog 再同步本列表。
+ * 逐项一致（65 类）；新增事件类型必须先改 catalog 再同步本列表。
  */
 
 export const EVENT_CATALOG_TYPES = [

@@ -28,9 +28,9 @@ export class OeeController {
       outputQty?: number;
       idealRatePerSec?: number;
     },
-    @Req() request: { userContext?: OrgContext },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.oeeService.recordDeviceStatus(body, request.userContext);
+    return this.oeeService.recordDeviceStatus(body, request?.userContext);
   }
 
   @Get('device-status')
@@ -38,8 +38,9 @@ export class OeeController {
     @Query('deviceId') deviceId?: string,
     @Query('start') start?: string,
     @Query('end') end?: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.oeeService.listDeviceStatus(deviceId, start, end);
+    return this.oeeService.listDeviceStatus(deviceId, start, end, request?.userContext);
   }
 
   @Post('calculate')
@@ -48,12 +49,14 @@ export class OeeController {
     @Query('start') start: string,
     @Query('end') end: string,
     @Query('plannedTimeSec') plannedTimeSec = '0',
+    @Req() request?: { userContext?: OrgContext },
   ) {
     return this.oeeService.calculateOee(
       deviceId,
       start,
       end,
       Number(plannedTimeSec),
+      request?.userContext,
     );
   }
 
@@ -67,14 +70,14 @@ export class OeeController {
       slaSeconds?: number;
       assignee?: string;
     },
-    @Req() request: { userContext?: OrgContext },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.oeeService.openAndon(body, request.userContext);
+    return this.oeeService.openAndon(body, request?.userContext);
   }
 
   @Get('andons')
-  listAndons() {
-    return this.oeeService.listAndons();
+  listAndons(@Req() request?: { userContext?: OrgContext }) {
+    return this.oeeService.listAndons(request?.userContext);
   }
 
   @Post('andons/:id/state')
@@ -82,9 +85,9 @@ export class OeeController {
     @Param('id') id: string,
     @Query('action') action: string,
     @Body() body: Record<string, unknown>,
-    @Req() request: { userContext?: OrgContext },
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.oeeService.transitionAndon(id, action, body, request.userContext);
+    return this.oeeService.transitionAndon(id, action, body, request?.userContext);
   }
 
   @Get('summary')
@@ -92,7 +95,8 @@ export class OeeController {
     @Query('deviceId') deviceId: string,
     @Query('start') start: string,
     @Query('end') end: string,
+    @Req() request?: { userContext?: OrgContext },
   ) {
-    return this.oeeService.getSummary(deviceId, start, end);
+    return this.oeeService.getSummary(deviceId, start, end, request?.userContext);
   }
 }

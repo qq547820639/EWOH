@@ -51,31 +51,46 @@ interface ConfigRow {
 }
 
 function extractConditionValue(condition: unknown): string | null {
-  const chunks = (condition as { queryChunks?: unknown[] } | undefined)
-    ?.queryChunks;
-  if (!Array.isArray(chunks)) {
-    return null;
-  }
-  let value: string | null = null;
-  for (const chunk of chunks) {
-    if (chunk !== null && typeof chunk === 'object') {
-      const candidate = (chunk as Record<string, unknown>).value;
-      if (Array.isArray(candidate)) {
-        continue;
-      }
-      if (typeof candidate === 'string' || typeof candidate === 'number' || typeof candidate === 'boolean') {
-        value = String(candidate);
-      }
-      continue;
+  // NEST-201：readConfig/listConfigs 条件现含 org 谓词（and(eq(org), eq/like(key))）
+  // ——递归遍历 queryChunks/参数对象收集候选值，优先取 configKey 命名空间值
+  //（eam./ops.），org 值与 SQL 片段（like/空白/括号）不参与过滤。
+  const isConfigKeyLike = (candidate: string) =>
+    /^(eam|ops|diff|aas)\./.test(candidate);
+  const isSqlNoise = (candidate: string) =>
+    /^[\s()]+$/.test(candidate) ||
+    /^(like|ilike|and|or|=|%)$/i.test(candidate) ||
+    /_id$|_key$|config_key/.test(candidate);
+  const values: string[] = [];
+  const seen = new Set<unknown>();
+  const visit = (node: unknown): void => {
+    if (node === null || node === undefined) return;
+    if (typeof node === 'string') {
+      if (!isSqlNoise(node)) values.push(node);
+      return;
     }
-    if (
-      chunk !== null &&
-      (typeof chunk === 'string' || typeof chunk === 'number' || typeof chunk === 'boolean')
-    ) {
-      value = String(chunk);
+    if (typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
     }
+    const record = node as Record<string, unknown>;
+    if (typeof record.value === 'string' && !isSqlNoise(record.value)) {
+      values.push(record.value);
+    }
+    if (Array.isArray(record.queryChunks)) {
+      visit(record.queryChunks);
+    }
+    for (const child of Object.values(record)) {
+      if (child !== null && typeof child === 'object') visit(child);
+    }
+  };
+  visit(condition);
+  const keyLike = values.filter(isConfigKeyLike);
+  if (keyLike.length > 0) {
+    return keyLike[keyLike.length - 1];
   }
-    return value;
+  return values.length > 0 ? values[values.length - 1] : null;
 }
 
 function createDb(initial: ConfigRow[] = []) {
@@ -326,12 +341,16 @@ describe('OperationsService', () => {
       { appendAuditLog: jest.fn() } as never,
     );
     await expect(
-      service.registerEfficiencyEntry({
-        workerId: 'P-1',
-        workCenterId: 'WC-A1',
-        operationCode: 'OP-999',
-        actualMinutes: 10,
-      }),
+      service.registerEfficiencyEntry(
+        {
+          workerId: 'P-1',
+          workCenterId: 'WC-A1',
+          operationCode: 'OP-999',
+          actualMinutes: 10,
+        },
+        // NEST-201：org 上下文强制。
+        createActor(),
+      ),
     ).rejects.toThrow('no standard hour');
   });
 
@@ -368,7 +387,8 @@ describe('OperationsService', () => {
       },
       createActor(),
     );
-    const summary = await service.efficiencySummary();
+    // NEST-201：汇总按 org 作用域（带 actor）。
+    const summary = await service.efficiencySummary(createActor());
     expect(summary.entryCount).toBe(2);
     expect(summary.workerCount).toBe(2);
     expect(summary.averageEfficiencyPercent).toBe(75);

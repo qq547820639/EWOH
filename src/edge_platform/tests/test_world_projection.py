@@ -85,11 +85,23 @@ class TelemetryWorldProjectorTest(unittest.TestCase):
         self.assertEqual(self.store.current("exo:EXO-001", "exo").version, 2)
 
     def test_non_contract_source_rejected_counted(self):
-        out = self.projector.handle(_row("EXO-001", source_type="controlled_test"))
+        # EDGE-202 整改后 controlled_test 显式映射 derived（见下方专项用例）；
+        # 非法来源（不在采集面/世界契约任一枚举内）仍拒绝并计数。
+        out = self.projector.handle(_row("EXO-001", source_type="bogus"))
         self.assertFalse(out["projected"])
         self.assertEqual(out["skipped_reason"], "bad_source")
         self.assertEqual(self.projector.health()["counters"]["rejected_source"], 1)
         self.assertEqual(len(self.store.declarations()), 0)
+
+    def test_controlled_test_mapped_to_derived(self):
+        """EDGE-202：受控采集帧显式映射 derived 投影（不再整类拒绝）。"""
+        out = self.projector.handle(_row("EXO-CT-1", source_type="controlled_test"))
+        self.assertTrue(out["projected"])
+        self.assertEqual(out["entity_id"], "exo:EXO-CT-1")
+        decl = self.store.declaration("exo:EXO-CT-1")
+        self.assertEqual(decl["source"], "derived")  # 世界契约三态内的显式映射
+        state = self.store.current("exo:EXO-CT-1", "exo")
+        self.assertIsNotNone(state)
 
     def test_unmapped_prefix_skipped_counted(self):
         out = self.projector.handle(_row("AGV-001"))

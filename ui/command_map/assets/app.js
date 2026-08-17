@@ -901,7 +901,9 @@
     });
   };
   CM.srcTag = function (s) {
-    return '<span class="cm-source cm-src-' + s + '">' + (CM.SRC_LABEL[s] || s) + '</span>';
+    // CFG-009：class token 白名单化 + 内容经 CM.esc 转义（防 innerHTML 注入）
+    var token = String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '');
+    return '<span class="cm-source cm-src-' + token + '">' + CM.esc(CM.SRC_LABEL[s] || s) + '</span>';
   };
   CM.findEntity = function (id) {
     for (var i = 0; i < CM.DATA.entities.length; i++) if (CM.DATA.entities[i].entity_id === id) return CM.DATA.entities[i];

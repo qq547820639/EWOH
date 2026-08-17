@@ -3,12 +3,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
 
 export const AAS_VALUE_TYPES = [
   'string',
@@ -127,6 +129,14 @@ export class AasService {
     if (!body.assetId?.trim()) {
       throw new BadRequestException('AAS assetId is required');
     }
+    // NEST-420：写入显式携带 orgId（onConflict target 含 orgId 而插入省略，
+    // NULL 不参与唯一冲突 → 无限插入新行）。
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：AAS 资产导入必须带租户上下文',
+      );
+    }
     const record: AasAssetRecord = {
       assetId: body.assetId.trim(),
       idShort: body.idShort?.trim() || body.assetId.trim(),
@@ -140,6 +150,7 @@ export class AasService {
         configKey: `aas.${record.assetId}`,
         configValue: record as unknown as Record<string, unknown>,
         updatedBy: actor?.userId ?? 'system',
+        orgId,
       })
       .onConflictDoUpdate({
         target: [ewohSchedulerConfig.orgId, ewohSchedulerConfig.configKey],
@@ -164,16 +175,31 @@ export class AasService {
     return this.parseRecord(row);
   }
 
-  async listAssets() {
+  /** NEST-421：org 过滤（global_admin 放行；org 缺失 401）。 */
+  async listAssets(actor?: OrgContext) {
+    const orgId = actor?.primaryOrgId?.trim();
+    if (!actor?.isGlobalAdmin && !orgId) {
+      throw new UnauthorizedException(
+        'org 上下文缺失：AAS 资产列表必须带租户上下文',
+      );
+    }
     const rows = await this.db
       .select()
       .from(ewohSchedulerConfig)
-      .where(like(ewohSchedulerConfig.configKey, 'aas.%'))
+      .where(
+        actor?.isGlobalAdmin
+          ? like(ewohSchedulerConfig.configKey, 'aas.%')
+          : and(
+              eq(ewohSchedulerConfig.orgId, orgId as string),
+              like(ewohSchedulerConfig.configKey, 'aas.%'),
+            ),
+      )
       .orderBy(desc(ewohSchedulerConfig.updatedAt));
     return rows.map((row) => this.parseRecord(row));
   }
 
-  async getAsset(assetId: string) {
+  /** NEST-421：单条读 org 守卫（跨租户 404）。 */
+  async getAsset(assetId: string, actor?: OrgContext) {
     const [row] = await this.db
       .select()
       .from(ewohSchedulerConfig)
@@ -181,11 +207,12 @@ export class AasService {
     if (!row) {
       throw new NotFoundException(`AAS asset ${assetId} not found`);
     }
+    assertTenantVisible(row.orgId, actor, `AAS asset ${assetId}`);
     return this.parseRecord(row);
   }
 
-  async getSemantics(assetId: string) {
-    const record = await this.getAsset(assetId);
+  async getSemantics(assetId: string, actor?: OrgContext) {
+    const record = await this.getAsset(assetId, actor);
     return {
       assetId: record.assetId,
       idShort: record.idShort,

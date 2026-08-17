@@ -13,7 +13,9 @@ import {
   Inject,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { currentRequestContext } from '../../common/request-context';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -49,6 +51,7 @@ import type {
   ExecutionListResponse,
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { createHash } from 'node:crypto';
 import { assertTenantVisible } from './plan-tenant-guard';
 import { WorldStateSnapshotService } from './world-state.service';
 import { PlanService } from './plan.service';
@@ -103,10 +106,26 @@ export class SchedulerQueryService {
     private readonly outboxService?: OutboxService,
   ) {}
 
+  /**
+   * NEST-110 修复（2026-08-17）：HTTP 请求上下文内 actor 必传——无 actor 的
+   * 读请求（controller 忘传 userContext / 中间层吞掉）一律 401 fail-closed，
+   * 杜绝「无 actor 即全表」跨租户路径；系统后台流（无 request context）与
+   * 函数式测试（无 request context）保持 GUC/RLS 兜底语义。
+   * getPlans/getAudit/getActivePlans/getSnapshot 同口径。
+   */
+  private assertActorForHttp(actor: OrgContext | undefined): void {
+    if (!actor && currentRequestContext()) {
+      throw new UnauthorizedException(
+        'org context required for scheduler read（NEST-110：HTTP 读路径必须携带认证上下文）',
+      );
+    }
+  }
+
   async getPlans(status?: string, actor?: OrgContext): Promise<SchedulePlan[]> {
     try {
+      this.assertActorForHttp(actor);
       const conditions = status ? [eq(ewohSchedulePlan.status, status)] : [];
-      // ADR-071：actor 提供时按 org 过滤（org 匹配或 NULL 存量行——与 RLS USING 等价）。
+      // ADR-071 / NEST-110：actor 提供时按 org 过滤（org 匹配或 NULL 存量行）。
       if (actor) {
         conditions.push(
           or(isNull(ewohSchedulePlan.orgId), eq(ewohSchedulePlan.orgId, actor.primaryOrgId)),
@@ -127,6 +146,7 @@ export class SchedulerQueryService {
 
   async getAudit(planId?: string, actor?: OrgContext): Promise<ScheduleAudit[]> {
     try {
+      this.assertActorForHttp(actor);
       const conditions = planId ? [eq(ewohScheduleAudit.planId, planId)] : [];
       // ADR-072：audit 表无 org 列/RLS——归属经父方案事实推导过滤
       // （planId ∈ 本租户可见方案：org 匹配或 NULL 存量），§3 单一事实源。
@@ -215,7 +235,19 @@ export class SchedulerQueryService {
       this.db
         .select()
         .from(ewohSchedulePlan)
-        .where(inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES))
+        .where(
+          and(
+            inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
+            // NEST-106（2026-08-17）：活跃方案聚合同口径 org 过滤
+            // （org 匹配或 NULL 存量），消除跨租户方案混入 listRuns 响应。
+            actor
+              ? or(
+                  isNull(ewohSchedulePlan.orgId),
+                  eq(ewohSchedulePlan.orgId, actor.primaryOrgId),
+                )
+              : undefined,
+          ),
+        )
         .orderBy(desc(ewohSchedulePlan.createdAt)),
     ]);
 
@@ -242,6 +274,7 @@ export class SchedulerQueryService {
    * SSE 仅作为增量更新机制，不作为唯一状态源。
    */
   async getActivePlans(actor?: OrgContext): Promise<SchedulingPlanV2[]> {
+    this.assertActorForHttp(actor);
     const conditions: SQL[] = [
       inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
     ];
@@ -265,8 +298,10 @@ export class SchedulerQueryService {
    * 复用 WorldStateSnapshotService.getCurrentWorldState() 的真实当前状态（不持久化、不虚构），
    * 以 snapshotVersion='CURRENT' + 当前 ts 包装为 WorldStateSnapshot。
    */
-  async getSnapshot(): Promise<WorldStateSnapshot> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+  async getSnapshot(actor?: OrgContext): Promise<WorldStateSnapshot> {
+    this.assertActorForHttp(actor);
+    // NEST-101/111：世界状态收集透传 ctx（7 表 org 过滤）。
+    const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
     return {
       ...state,
       snapshotVersion: 'CURRENT',
@@ -280,11 +315,13 @@ export class SchedulerQueryService {
 
   // ===== SchedulingPolicy versioning (Task 6: 命令图调度闭环) =====
 
-  /** 返回当前生效策略 + 配置（只读）。 */
-  async getPolicy(): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
+  /** 返回当前生效策略 + 配置（只读）。NEST-105：actor org 过滤。 */
+  async getPolicy(actor?: OrgContext): Promise<{ policy: SchedulingPolicy; config: SchedulingPolicyConfig }> {
+    this.assertActorForHttp(actor);
+    const orgId = actor?.primaryOrgId || null;
     const [policy, config] = await Promise.all([
-      this.policyService.getActivePolicy(),
-      this.policyService.getConfig(),
+      this.policyService.getActivePolicy(orgId),
+      this.policyService.getConfig(orgId),
     ]);
     return { policy, config };
   }
@@ -307,7 +344,8 @@ export class SchedulerQueryService {
   ): Promise<SchedulingPolicyComparison> {
     const ctx = toOrgContext(actor);
     const [activeConfig, candidateConfig, feedbackKpis] = await Promise.all([
-      this.policyService.getConfig(),
+      // NEST-105：生效配置按 actor org 过滤（跨租户策略不进入对比基线）。
+      this.policyService.getConfig(ctx.primaryOrgId || null),
       this.policyService.getConfigByVersion(configVersion),
       // ADR-073：对比 KPI 按本租户反馈派生（跨租户聚合关闭）。
       this.feedbackService.deriveKpis(ctx.primaryOrgId || null),
@@ -363,9 +401,11 @@ export class SchedulerQueryService {
    */
   async calculateRouteV2(
     body: CalculateRouteRequest,
+    actor?: OrgContext,
   ): Promise<Route | RouteCandidatesResponse> {
     if (body.candidates && body.candidates.length > 0) {
-      const state = await this.worldStateSnapshotService.getCurrentWorldState();
+      // NEST-101/111：世界状态（含路由/禁区事实）透传 ctx（org 过滤）。
+      const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
       const stationById = new Map(state.stations.map((s) => [s.id, s]));
       const taskStation = state.tasks.find((t) => t.id === body.taskId)?.stationId;
       const taskPoint = taskStation ? stationById.get(taskStation) : undefined;
@@ -433,7 +473,8 @@ export class SchedulerQueryService {
       }
       return { data: { taskId: body.taskId, candidates } };
     }
-    return this.routingService.calculateRoute(body.personId, body.taskId);
+    // NEST-118（2026-08-17）：单对路由计算透传 actor（loadGraph org 过滤拓扑）。
+    return this.routingService.calculateRoute(body.personId, body.taskId, actor);
   }
 
   /**
@@ -441,16 +482,17 @@ export class SchedulerQueryService {
    * T03 / P1-2（G7）：注入 CandidateEngineService 时委托其富化响应（rejectReasons /
    * scoreBreakdown / stationOptions / timeWindows）；未注入回退旧逻辑（兼容旧单测）。
    */
-  async getTaskCandidates(taskId: string): Promise<TaskCandidatesResponse> {
+  async getTaskCandidates(taskId: string, actor?: OrgContext): Promise<TaskCandidatesResponse> {
     if (this.candidateEngineService) {
-      return this.candidateEngineService.evaluateTaskCandidates(taskId);
+      // NEST-101/111：候选引擎透传 ctx（资源/预占 org 过滤）。
+      return this.candidateEngineService.evaluateTaskCandidates(taskId, actor);
     }
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+    const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task) throw new NotFoundException(`Task ${taskId} not found`);
 
-    const policy = await this.policyService.getActivePolicy();
-    const config = await this.policyService.getConfig();
+    const policy = await this.policyService.getActivePolicy(actor?.primaryOrgId || null);
+    const config = await this.policyService.getConfig(actor?.primaryOrgId || null);
     const now = Date.now();
 
     const stationById = new Map(state.stations.map((s) => [s.id, s]));
@@ -636,11 +678,14 @@ export class SchedulerQueryService {
    * Phase 3 / P3-T1：生产路径委托 ConflictService（推导+落库+生命周期）；
    * 未注入 ConflictService（旧单测）时回退本服务内存推导。
    */
-  async listConflicts(params: ConflictsListRequest = {}): Promise<ConflictsListResponse> {
+  async listConflicts(
+    params: ConflictsListRequest = {},
+    actor?: OrgContext,
+  ): Promise<ConflictsListResponse> {
     if (this.conflictService) {
-      return this.conflictService.listConflicts(params);
+      return this.conflictService.listConflicts(params, actor);
     }
-    let conflicts = await this.buildConflicts();
+    let conflicts = await this.buildConflicts(actor);
     if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
     if (params.severity) conflicts = conflicts.filter((c) => c.severity === params.severity);
     if (params.scope) conflicts = conflicts.filter((c) => c.scope === params.scope);
@@ -650,11 +695,11 @@ export class SchedulerQueryService {
   }
 
   /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。 */
-  async getConflictDetail(conflictId: string): Promise<SchedulingConflict> {
+  async getConflictDetail(conflictId: string, actor?: OrgContext): Promise<SchedulingConflict> {
     if (this.conflictService) {
-      return this.conflictService.getConflictDetail(conflictId);
+      return this.conflictService.getConflictDetail(conflictId, actor);
     }
-    const { conflicts } = await this.listConflicts({});
+    const { conflicts } = await this.listConflicts({}, actor);
     const found = conflicts.find((c) => c.conflictId === conflictId);
     if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
     return found;
@@ -670,11 +715,13 @@ export class SchedulerQueryService {
     return this.executionService.list({ ...query, orgId: actor?.primaryOrgId ?? null });
   }
 
-  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。 */
-  private async buildConflicts(): Promise<SchedulingConflict[]> {
-    const state = await this.worldStateSnapshotService.getCurrentWorldState();
+  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。NEST-107：ctx 透传。 */
+  private async buildConflicts(actor?: OrgContext): Promise<SchedulingConflict[]> {
+    // NEST-107（2026-08-17）：冲突推导的世界状态按 ctx org 过滤（此前无 ctx
+    // 全表收集，冲突列表跨租户聚合 + emitNewConflicts 推 null orgId 事件）。
+    const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
     const config = (await this.policyService
-      .getConfig()
+      .getConfig(actor?.primaryOrgId || null)
       .catch(() => null)) as SchedulingPolicyConfig | null;
     const minBatteryPct = config?.minBatteryPct ?? 15;
     const now = Date.now();
@@ -702,6 +749,9 @@ export class SchedulerQueryService {
         for (let j = i + 1; j < sorted.length; j++) {
           const a = sorted[i];
           const b = sorted[j];
+          // NEST-159（2026-08-17）：按 startMs 升序后，一旦 b.startMs >= a.endMs，
+          // 后续 j 不可能与 a 重叠——提前跳出内层循环（O(n²) → O(n log n + k)）。
+          if (b.startMs >= a.endMs) break;
           if (a.startMs < b.endMs && b.startMs < a.endMs) {
             const [resourceType, resourceId] = key.split(':');
             conflicts.push(
@@ -952,13 +1002,30 @@ export class SchedulerQueryService {
     }
 
     // 11. stale plan：活跃方案基于已过期的快照。
+    //    NEST-159（2026-08-17）：N+1 修复——当前世界状态只收集一次，逐方案
+    //    与同一 current 比较（原逐方案 isPlanStale 各自全量 collectState）；
+    //    活跃方案查询同口径 org 过滤（NEST-106）。
     const activePlans = await this.db
       .select()
       .from(ewohSchedulePlan)
-      .where(inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES));
+      .where(
+        and(
+          inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
+          actor
+            ? or(
+                isNull(ewohSchedulePlan.orgId),
+                eq(ewohSchedulePlan.orgId, actor.primaryOrgId),
+              )
+            : undefined,
+        ),
+      );
     for (const p of activePlans) {
       if (!p.snapshotVersion) continue;
-      const stale = await this.worldStateSnapshotService.isPlanStale(p.snapshotVersion);
+      const stale = await this.worldStateSnapshotService.isPlanStale(
+        p.snapshotVersion,
+        actor,
+        state,
+      );
       if (stale) {
         conflicts.push(
           this.mkConflict(`stale_plan:${p.planId}`, {
@@ -1048,7 +1115,8 @@ export class SchedulerQueryService {
     // v0.7 B3：新冲突实时推送（SSE conflict.detected）。
     // 仅推送首次出现的 conflictId（内存去重），避免前端轮询触发的重复推送；
     // 冲突消失不推送（由前端轮询/快照兜底）。缺失 outboxService（测试）时静默跳过。
-    this.emitNewConflicts(conflicts);
+    // NEST-107：事件携带推导上下文 orgId（SSE 订阅者按 org 过滤）。
+    this.emitNewConflicts(conflicts, actor?.primaryOrgId ?? null);
 
     return conflicts;
   }
@@ -1062,7 +1130,7 @@ export class SchedulerQueryService {
    * 内存去重：同 conflictId（内容哈希稳定）只推送一次；缓存超上限时清空最老一半。
    * 幂等性由 sequence 机制 + 前端去重双保险。
    */
-  private emitNewConflicts(conflicts: SchedulingConflict[]): void {
+  private emitNewConflicts(conflicts: SchedulingConflict[], orgId: string | null): void {
     if (!this.outboxService) return;
     for (const c of conflicts) {
       if (this.emittedConflictIds.has(c.conflictId)) continue;
@@ -1091,7 +1159,9 @@ export class SchedulerQueryService {
             message: c.message,
             resolution: c.resolution,
           },
-          null,
+          // NEST-107（2026-08-17）：携带推导上下文 orgId（此前恒 null——
+          // SSE filter 将其当全局事件放行给全部订阅者）。
+          orgId,
         ),
       ).catch((e) => {
         this.logger.warn(`conflict.detected enqueue failed: ${(e as Error).message}`);
@@ -1111,13 +1181,16 @@ export class SchedulerQueryService {
     };
   }
 
-  /** djb2 字符串哈希（生成稳定冲突 id）。 */
+  /**
+   * NEST-158 修复（2026-08-17）：djb2 32-bit → SHA-256 48-bit 折叠。
+   * conflictId 仅作稳定字符串标识（`CFL-${hash}`），碰撞会使不同 seed 的
+   * 冲突被归并去重；SHA-256 折叠碰撞概率 2^-48。
+   */
   private hash(str: string): number {
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) {
-      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-    }
-    return h >>> 0;
+    return parseInt(
+      createHash('sha256').update(str).digest('hex').slice(0, 12),
+      16,
+    );
   }
 
   private mapRun(

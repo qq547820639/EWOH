@@ -53,13 +53,14 @@ rsync -a "${ROOT_DIR}/.codex/artifacts/" "${OUT}/.codex/artifacts/"
 rsync -a "${ROOT_DIR}/output/" "${OUT}/output/"
 rsync -a "${ROOT_DIR}/.github/workflows/" "${OUT}/.github/workflows/"
 
-cp "${ROOT_DIR}/README.md" "${OUT}/README.md" 2>/dev/null || true
-cp "${ROOT_DIR}/CHANGELOG.md" "${OUT}/CHANGELOG.md" 2>/dev/null || true
-cp "${ROOT_DIR}/SECURITY.md" "${OUT}/SECURITY.md" 2>/dev/null || true
-cp "${ROOT_DIR}/Makefile" "${OUT}/Makefile" 2>/dev/null || true
-cp "${ROOT_DIR}/pyproject.toml" "${OUT}/pyproject.toml" 2>/dev/null || true
-cp "${ROOT_DIR}/requirements-dev.txt" "${OUT}/requirements-dev.txt" 2>/dev/null || true
-cp "${ROOT_DIR}/run.py" "${OUT}/run.py" 2>/dev/null || true
+# SCR-027: 根目录必备文件缺失必须失败（set -e 生效），不得 || true 吞掉后打出缺件 bundle。
+cp "${ROOT_DIR}/README.md" "${OUT}/README.md"
+cp "${ROOT_DIR}/CHANGELOG.md" "${OUT}/CHANGELOG.md"
+cp "${ROOT_DIR}/SECURITY.md" "${OUT}/SECURITY.md"
+cp "${ROOT_DIR}/Makefile" "${OUT}/Makefile"
+cp "${ROOT_DIR}/pyproject.toml" "${OUT}/pyproject.toml"
+cp "${ROOT_DIR}/requirements-dev.txt" "${OUT}/requirements-dev.txt"
+cp "${ROOT_DIR}/run.py" "${OUT}/run.py"
 
 echo "== guard: no real environment files may ship =="
 if find "$OUT" -type f \( -name '.env' -o -name '.env.local' \) | grep -q .; then
@@ -105,6 +106,19 @@ JWT_SECRET='<32+ chars>' \\
 PORT=3000 \\
 node dist/server/main.js
 \`\`\`
+
+## Verify bundle integrity
+
+Before building or deploying, verify the bundle against the shipped checksums
+(REL-007: SHA256SUMS verification step):
+
+\`\`\`bash
+cd ewoh-${VERSION}  # bundle root containing SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS.txt        # macOS
+# or: sha256sum -c SHA256SUMS.txt       # Linux (GNU coreutils)
+\`\`\`
+
+Any mismatch means the bundle is corrupted or tampered — do not proceed.
 
 See \`docs/delivery/deployment-runbook.md\` and \`docs/delivery/release-manifest.yaml\`.
 EOF

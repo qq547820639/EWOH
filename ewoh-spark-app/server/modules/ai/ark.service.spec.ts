@@ -113,6 +113,34 @@ describe('v0.7 AI 接入修复: ArkService 配置读写', () => {
     );
     expect(ARK_CONFIG_KEY).toBe('ai.provider.ark');
   });
+
+  // ── NEST-414/439/450：saveConfig 审计留痕（密钥变更 risk:true、不落明文）──
+
+  it('NEST-414/450：saveConfig 写审计日志（密钥变更 risk:true + 不落明文 + actor 归属）', async () => {
+    const { db } = makeDb([]);
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const svc = new ArkService(db as never, audit as never);
+    const actor = { userId: 'admin-1', primaryOrgId: 'org-1', roles: ['global_admin'] };
+
+    // 首次配置（DB 无既有行 → 全部视为变更）。
+    await svc.saveConfig({ api_key: 'sk-new-secret', model: 'doubao-x' }, actor);
+
+    expect(audit.appendAuditLog).toHaveBeenCalledTimes(1);
+    const entry = audit.appendAuditLog.mock.calls[0][0] as Record<string, unknown>;
+    expect(entry.action).toBe('ai.config.save');
+    expect(entry.actorId).toBe('admin-1');
+    expect(entry.risk).toBe(true);
+    expect(entry.metadata).toMatchObject({ apiKeyChanged: true });
+    // 密钥本值绝不入审计。
+    expect(JSON.stringify(entry)).not.toContain('sk-new-secret');
+  });
+
+  it('NEST-439/450：updatedBy 取操作者（不再硬编码 system-admin）', async () => {
+    const { db, insertRows } = makeDb([]);
+    const svc = new ArkService(db as never, { appendAuditLog: jest.fn() } as never);
+    await svc.saveConfig({ model: 'doubao-x' }, { userId: 'admin-2', primaryOrgId: 'org-1', roles: ['global_admin'] });
+    expect(insertRows[0].updatedBy).toBe('admin-2');
+  });
 });
 
 describe('NO-08d（ADR-014）：Ark 文本结果包裹 ReasoningResult', () => {

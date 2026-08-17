@@ -132,7 +132,10 @@ export function hasContentHash(url: string): boolean {
   const u = new URL(url, 'http://x');
   const file = u.pathname.split('/').pop() ?? '';
   // Common hashed-filename shapes: `name.<hash>.ext`, `name-<hash>.ext`
-  return /[._-][A-Za-z0-9_-]{8,}\.(?:js|css|json|svg|png|woff2?|wasm)$/.test(file);
+  // CLI-526：hash 长度阈值由 8 下调到 6——部分构建产物（短 hash/base62）
+  // 为 6 位，按 8 判定会被误分类为 document 走 network-first，失去不可变
+  // 缓存语义；6 位 base62（≈2^36）仍足以区分内容版本。
+  return /[._-][A-Za-z0-9_-]{6,}\.(?:js|css|json|svg|png|woff2?|wasm)$/.test(file);
 }
 
 export function isAppShellUrl(pathname: string): boolean {
@@ -271,6 +274,9 @@ export function evictionCandidates(
   const now = opts.now ?? Date.now();
   const maxEntries = opts.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const ttlMs = opts.ttlMs ?? DEFAULT_SHELL_TTL_MS;
+  // CLI-546（裁决）：全排序 O(n log n)。缓存上限为 DEFAULT_MAX_ENTRIES 量级
+  // （数百条），且驱逐仅在写入路径偶发执行，排序开销可忽略；分桶/堆仅在
+  // 万级条目下才有收益，故保留简洁的全排序实现。
   const sorted = [...records].sort((a, b) => a.lastUsedAt - b.lastUsedAt);
   const toEvict: string[] = [];
   const kept: CacheRecord[] = [];

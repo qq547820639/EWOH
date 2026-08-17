@@ -264,13 +264,35 @@ function recordSendTime(): void {
   flushTimestamps.push(Date.now());
 }
 
-/** 记录一条指标到有界缓冲。 */
+/**
+ * 记录一条指标到有界缓冲。
+ *
+ * CLI-728：指标标签中的组织身份键在入缓冲前剥离（信封不携带 orgId/org，
+ * 深层 tag 也不例外）。复制其余标签，避免影响调用方对象。
+ */
+const ORG_IDENTITY_TAG_KEYS = new Set(['orgId', 'org', 'organizationId', 'tenantId']);
+
+function scrubOrgTags(
+  tags: Record<string, string | number | boolean> | undefined,
+): Record<string, string | number | boolean> | undefined {
+  if (!tags) return tags;
+  const keys = Object.keys(tags);
+  if (!keys.some((key) => ORG_IDENTITY_TAG_KEYS.has(key))) return tags;
+  const scrubbed: Record<string, string | number | boolean> = {};
+  for (const key of keys) {
+    if (!ORG_IDENTITY_TAG_KEYS.has(key)) {
+      scrubbed[key] = tags[key];
+    }
+  }
+  return scrubbed;
+}
+
 export function recordMetric(
   name: string,
   value: number,
   tags?: Record<string, string | number | boolean>,
 ): void {
-  buffer.push({ name, value, tags, at: Date.now() });
+  buffer.push({ name, value, tags: scrubOrgTags(tags), at: Date.now() });
   if (buffer.length > MAX_BUFFER_SIZE) {
     const dropped = buffer.length - MAX_BUFFER_SIZE;
     buffer.splice(0, dropped);
@@ -297,8 +319,23 @@ export function clearBuffer(): void {
  * - 失败 → 保留缓冲，指数退避 + 抖动安排重试；重试超限后转入离线暂存（重连后重放）。
  * - 采样丢弃是刻意行为（非静默 skip），仅当采样率 < 1 时发生。
  * - 绝不抛错。
+ *
+ * CLI-512：并发调用共享同一轮 in-flight flush——两个并发 flush 各自 slice
+ * 同一批缓冲并 POST 会导致服务端重复计数，这里以 Promise 单飞守卫互斥。
  */
-export async function flush(): Promise<number> {
+let flushInFlight: Promise<number> | null = null;
+
+export function flush(): Promise<number> {
+  if (flushInFlight) {
+    return flushInFlight;
+  }
+  flushInFlight = doFlush().finally(() => {
+    flushInFlight = null;
+  });
+  return flushInFlight;
+}
+
+async function doFlush(): Promise<number> {
   const payload = buffer.slice();
   if (payload.length === 0) return 0;
   if (!FRONTEND_METRICS_ENDPOINT) {
@@ -395,7 +432,7 @@ export function installPagehideFlush(): () => void {
   };
 }
 
-/** 用 sendBeacon 尽量投递当前缓冲；失败或不可用时回退到常规 flush。 */
+/** 用 sendBeacon 尽量投递当前缓冲。 */
 async function safeBeaconFlush(): Promise<void> {
   const payload = buffer.slice();
   if (payload.length === 0) return;
@@ -409,9 +446,13 @@ async function safeBeaconFlush(): Promise<void> {
       return;
     }
   } catch {
-    // 回退到常规 flush。
+    // sendBeacon 抛错时同样落入下方暂存路径。
   }
-  await flush();
+  // CLI-513：页面卸载期间回退 axios flush 会被浏览器截断 in-flight POST，
+  // 既不可靠也拿不到结果。改为转入离线暂存（localStorage），下次会话
+  // 联网后由 replay 逻辑重放，绝不静默丢弃。
+  stageForReplay(payload);
+  clearBuffer();
 }
 
 // ---- API 失败率 ----

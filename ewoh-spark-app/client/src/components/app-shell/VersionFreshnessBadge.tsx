@@ -11,9 +11,9 @@ import {
  */
 const VersionFreshnessBadge = ({ context }: { context: AppContext }) => {
   return (
-    <div className="flex items-center gap-2 text-[11px] text-[hsl(218_10%_42%)]">
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
       <span
-        className="inline-flex items-center gap-1 rounded-md border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] px-1.5 py-0.5 font-medium text-[hsl(220_14%_14%)]"
+        className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 font-medium text-foreground"
         title="应用版本"
       >
         <Tag className="h-3 w-3" aria-hidden />

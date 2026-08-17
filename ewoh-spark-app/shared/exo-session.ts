@@ -4,6 +4,8 @@
  * 语义与 src/edge_platform/contracts/exo_session.py 逐项一致（共享向量约束）。
  */
 
+import { isCanonicalIdentity } from './identity';
+
 export const EXO_SESSION_STATUSES = ['active', 'ended', 'aborted'] as const;
 export type ExoSessionStatus = (typeof EXO_SESSION_STATUSES)[number];
 
@@ -32,11 +34,13 @@ export function validateExoSession(record: unknown): string[] {
     return ['bad_session_id'];
   }
   const exoId = r.exoId;
-  if (typeof exoId !== 'string' || !exoId.startsWith('device:') || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(exoId)) {
+  // SH-001：与 Python is_canonical_identity 对齐（value 限 [A-Za-z0-9._~@-]），
+  // 弃用宽松 regex（不限 value 字符集，TS 放行 Python 拒绝的 ID）。
+  if (typeof exoId !== 'string' || !isCanonicalIdentity(exoId) || !exoId.startsWith('device:')) {
     return ['bad_exo_identity'];
   }
   const personId = r.personId;
-  if (typeof personId !== 'string' || !personId.startsWith('person:') || !/^[a-z][a-z0-9_]*:[^\s]+$/.test(personId)) {
+  if (typeof personId !== 'string' || !isCanonicalIdentity(personId) || !personId.startsWith('person:')) {
     return ['bad_person_identity'];
   }
   if (!STATUS_SET.has(String(r.status))) return ['unknown_status'];

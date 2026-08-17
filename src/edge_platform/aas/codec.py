@@ -214,14 +214,23 @@ def pack_aasx(shell: AasAssetShell, output_path: str | Path) -> Path:
 
 
 def unpack_aasx(input_path: str | Path) -> AasAssetShell:
-    """Read an AASX-like package and return the AAS shell."""
+    """Read an AASX-like package and return the AAS shell.
+
+    EDGE-213：解压前校验成员声明大小（上限 16MB），阻断 zip bomb 内存耗尽。
+    """
     source = Path(input_path)
     if not source.is_file():
         raise AasCodecError(f"AASX file not found: {source}")
+    _MAX_MEMBER_BYTES = 16 * 1024 * 1024
     with zipfile.ZipFile(source, "r") as archive:
         names = archive.namelist()
         if "aasx/aas.json" not in names:
             raise AasCodecError("AASX package is missing aasx/aas.json")
+        info = archive.getinfo("aasx/aas.json")
+        if info.file_size > _MAX_MEMBER_BYTES:
+            raise AasCodecError(
+                f"aasx/aas.json 声明大小超限（{info.file_size} > {_MAX_MEMBER_BYTES}，EDGE-213 zip bomb 防御）"
+            )
         try:
             document = json.loads(archive.read("aasx/aas.json").decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -232,16 +241,21 @@ def unpack_aasx(input_path: str | Path) -> AasAssetShell:
 
 
 def redact_aas(document: dict[str, Any]) -> dict[str, Any]:
-    """Return a deep copy with secret-like property values redacted."""
-    if isinstance(document, dict):
-        id_short = str(document.get("idShort", "")).lower()
-        if any(
-            token in id_short
-            for token in ("password", "secret", "token", "apikey", "credential")
-        ) and "value" in document:
-            result = dict(document)
-            result["value"] = "[REDACTED]"
-            return result
+    """Return a deep copy with secret-like property values redacted.
+
+    EDGE-212：非 dict 输入（如误传字符串/列表）原样返回，不再在
+    document.items() 上抛 AttributeError。
+    """
+    if not isinstance(document, dict):
+        return document
+    id_short = str(document.get("idShort", "")).lower()
+    if any(
+        token in id_short
+        for token in ("password", "secret", "token", "apikey", "credential")
+    ) and "value" in document:
+        result = dict(document)
+        result["value"] = "[REDACTED]"
+        return result
     result: dict[str, Any] = {}
     for key, value in document.items():
         if isinstance(value, dict):

@@ -131,7 +131,38 @@ export class IdentityService {
       validTo: input.validTo ? new Date(input.validTo) : null,
       evidenceId: input.evidenceId ?? null,
     };
-    const inserted = await this.db.insert(ewohIdentityMapping).values(row).returning();
+    let inserted;
+    try {
+      inserted = await this.db.insert(ewohIdentityMapping).values(row).returning();
+    } catch (err) {
+      // NEST-435：并发 supersede+insert 竞态（唯一约束 (org, system, id) 冲突）
+      // → 回读既有行（幂等收敛），不再向调用方抛 500。
+      if ((err as { code?: string }).code === '23505') {
+        const rows = await this.db
+          .select()
+          .from(ewohIdentityMapping)
+          .where(
+            and(
+              eq(ewohIdentityMapping.orgId, orgId),
+              eq(ewohIdentityMapping.sourceSystem, input.source.system),
+              eq(ewohIdentityMapping.sourceId, input.source.id),
+              eq(ewohIdentityMapping.status, 'active'),
+            ),
+          )
+          .limit(1);
+        if (
+          rows.length > 0 &&
+          rows[0].targetEntityId === input.target.entityId
+        ) {
+          const record = this.toRecord(rows[0]);
+          return { record, created: false, superseded };
+        }
+        throw new BadRequestException(
+          'conflict_identity_mapping：并发注册冲突（目标不一致，请重试）',
+        );
+      }
+      throw err;
+    }
     const record = this.toRecord(inserted[0]);
     await this.recordEvent(orgId, record);
     return { record, created: true, superseded };

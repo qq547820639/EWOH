@@ -244,7 +244,22 @@ export function makeResourceDb(
   const rowsOf = (table: unknown): Array<Record<string, unknown>> =>
     table === ewohResourcePreorder ? preorderRows : bindingRows;
 
+  // NEST-631：createPreorder 事务（pg_advisory_xact_lock 串行化「检查-插入」）。
+  // fake 以互斥队列模拟 advisory lock 的串行效果（并发预占不再交错读到同一库存）。
+  let txChain: Promise<unknown> = Promise.resolve();
+  const transaction = jest.fn((op: (tx: unknown) => Promise<unknown>) => {
+    const run = txChain.then(() => op(db));
+    txChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  });
+
   const db = {
+    // pg_advisory_xact_lock 等 raw SQL（fake no-op）。
+    execute: jest.fn().mockResolvedValue([]),
+    transaction,
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: Record<string, unknown>) => {
         const snake = toSnake(table, row);

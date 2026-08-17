@@ -27,10 +27,10 @@ export function DataCredibility({
 
   return (
     <dl
-      className={`grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 text-xs ${className ?? ''}`}
+      className={`grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border bg-white p-3 text-xs ${className ?? ''}`}
     >
       <div className="col-span-2 flex flex-wrap items-center gap-2">
-        <dt className="text-[hsl(218_10%_42%)]">来源</dt>
+        <dt className="text-muted-foreground">来源</dt>
         <dd>
           <DataSourceBadge source={summary.sourceType} />
         </dd>
@@ -39,43 +39,43 @@ export function DataCredibility({
       </div>
 
       <div>
-        <dt className="text-[hsl(218_10%_42%)]">采集时间</dt>
-        <dd className="mt-0.5 text-[hsl(220_14%_14%)]">
+        <dt className="text-muted-foreground">采集时间</dt>
+        <dd className="mt-0.5 text-foreground">
           {formatTimestamp(summary.collectedAt)}
         </dd>
       </div>
 
       <div>
-        <dt className="text-[hsl(218_10%_42%)]">最近同步</dt>
-        <dd className="mt-0.5 text-[hsl(220_14%_14%)]">
+        <dt className="text-muted-foreground">最近同步</dt>
+        <dd className="mt-0.5 text-foreground">
           {formatTimestamp(summary.lastSyncedAt)}
           {summary.isStale && (
-            <span className="ml-1 text-xs font-medium text-orange-600">（已过期）</span>
+            <span className="ml-1 text-xs font-medium text-warning">（已过期）</span>
           )}
         </dd>
       </div>
 
       <div>
-        <dt className="text-[hsl(218_10%_42%)]">完整性</dt>
-        <dd className="mt-0.5 text-[hsl(220_14%_14%)]">
+        <dt className="text-muted-foreground">完整性</dt>
+        <dd className="mt-0.5 text-foreground">
           {summary.completeness === undefined ? '—' : percent(summary.completeness)}
         </dd>
       </div>
 
       <div>
-        <dt className="text-[hsl(218_10%_42%)]">置信度</dt>
-        <dd className="mt-0.5 text-[hsl(220_14%_14%)]">
+        <dt className="text-muted-foreground">置信度</dt>
+        <dd className="mt-0.5 text-foreground">
           {summary.confidence === undefined ? '—' : percent(summary.confidence)}
         </dd>
       </div>
 
       <div className="col-span-2">
-        <dt className="inline text-[hsl(218_10%_42%)]">可用于决策</dt>
+        <dt className="inline text-muted-foreground">可用于决策</dt>
         <dd className="ml-2 inline">
           {summary.decisionEligible ? (
-            <span className="font-semibold text-[hsl(130_54%_42%)]">是</span>
+            <span className="font-semibold text-success">是</span>
           ) : (
-            <span className="font-semibold text-[hsl(2_84%_62%)]">否</span>
+            <span className="font-semibold text-destructive">否</span>
           )}
         </dd>
       </div>

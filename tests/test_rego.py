@@ -20,6 +20,19 @@ DEPLOY_GATE = (
     REPO_ROOT / "contracts" / "policy" / "deploy-gate.rego"
 ).read_text(encoding="utf-8")
 
+# deploy-gate 命名必检项输入（canonical 顺序，见 deploy-gate.rego 头注释）
+NAMED_CHECKS_ALL_PASS = [
+    {"id": "contract-identity", "passed": True},
+    {"id": "contract-domain", "passed": True},
+    {"id": "contract-envelope", "passed": True},
+]
+
+
+def _checks_with(index: int, **overrides) -> list:
+    checks = [dict(item) for item in NAMED_CHECKS_ALL_PASS]
+    checks[index].update(overrides)
+    return checks
+
 
 class TestRegoParse(unittest.TestCase):
     def test_parses_package_default_and_rules(self):
@@ -47,7 +60,7 @@ class TestRegoEvaluate(unittest.TestCase):
             DEPLOY_GATE,
             {
                 "artifacts_present": True,
-                "checks_passed": 4,
+                "checks": [dict(item) for item in NAMED_CHECKS_ALL_PASS],
                 "missing_contracts": 0,
             },
         )
@@ -60,7 +73,7 @@ class TestRegoEvaluate(unittest.TestCase):
             DEPLOY_GATE,
             {
                 "artifacts_present": True,
-                "checks_passed": 4,
+                "checks": [dict(item) for item in NAMED_CHECKS_ALL_PASS],
                 "missing_contracts": 2,
             },
         )
@@ -69,17 +82,61 @@ class TestRegoEvaluate(unittest.TestCase):
         self.assertIn("missing contracts", result["messages"])
         self.assertEqual(result["decision"], "deny")
 
-    def test_denies_when_checks_insufficient(self):
+    def test_denies_when_named_check_not_passed(self):
         result = evaluate_rego(
             DEPLOY_GATE,
             {
                 "artifacts_present": True,
-                "checks_passed": 2,
+                "checks": _checks_with(1, passed=False),
                 "missing_contracts": 0,
             },
         )
         self.assertFalse(result["allowed"])
-        self.assertIn("not enough checks passed", result["messages"])
+        self.assertIn(
+            "required check not passed: contract-domain", result["messages"]
+        )
+
+    def test_denies_when_named_check_id_mismatch(self):
+        result = evaluate_rego(
+            DEPLOY_GATE,
+            {
+                "artifacts_present": True,
+                "checks": _checks_with(2, id="contract-other"),
+                "missing_contracts": 0,
+            },
+        )
+        self.assertFalse(result["allowed"])
+        self.assertIn(
+            "required check missing: contract-envelope", result["messages"]
+        )
+
+    def test_denies_fail_closed_when_checks_missing(self):
+        result = evaluate_rego(
+            DEPLOY_GATE,
+            {
+                "artifacts_present": True,
+                "missing_contracts": 0,
+            },
+        )
+        self.assertFalse(result["allowed"])
+        self.assertTrue(result["denied"])
+        self.assertIn(
+            "required check missing: contract-identity", result["messages"]
+        )
+
+    def test_denies_fail_closed_when_checks_truncated(self):
+        result = evaluate_rego(
+            DEPLOY_GATE,
+            {
+                "artifacts_present": True,
+                "checks": NAMED_CHECKS_ALL_PASS[:1],
+                "missing_contracts": 0,
+            },
+        )
+        self.assertFalse(result["allowed"])
+        self.assertIn(
+            "required check missing: contract-domain", result["messages"]
+        )
 
     def test_supports_not_and_in(self):
         source = """

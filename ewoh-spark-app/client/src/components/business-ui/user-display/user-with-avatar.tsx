@@ -3,21 +3,21 @@ import React from 'react';
 
 import { useMemo } from 'react';
 
-import { OverflowTooltipText } from '@client/src/components/business-ui/user-display/overflow-tooltip-text';
-import { type UserWithAvatarProps } from '@client/src/components/business-ui/user-display/type';
+import { OverflowTooltipText } from '@/components/business-ui/user-display/overflow-tooltip-text';
+import { type UserWithAvatarProps } from '@/components/business-ui/user-display/type';
 import {
   userInfoToUser,
   createUnknownUser,
-} from '@client/src/components/business-ui/user-display/utils';
-import { normalizeUser, getI18nText } from '@client/src/components/business-ui/utils/user';
-import type { User } from '@client/src/components/business-ui/types/user';
-import { useUsersByIds } from '@client/src/components/business-ui/api/users/queries';
+} from '@/components/business-ui/user-display/utils';
+import { normalizeUser, getI18nText } from '@/components/business-ui/utils/user';
+import type { User } from '@/components/business-ui/types/user';
+import { useUsersByIds } from '@/components/business-ui/api/users/queries';
 import { cn } from '@/lib/utils';
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from '@client/src/components/ui/avatar';
+} from '@/components/ui/avatar';
 import { cva } from 'class-variance-authority';
 
 const userWithAvatarVariants = cva(

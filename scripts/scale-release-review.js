@@ -70,12 +70,15 @@ try {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(root, 'openapi/route-manifest.json'), 'utf8'),
   );
+  // SCR-024: 阈值从 manifest 自身派生——documented 必须等于 controller 操作总数
+  // （全量文档化），不再硬编码绝对数字（旧值 166 已随路由增长失效为恒真）。
   push(
     'openapi-route-manifest',
-    manifest.documentedControllerOperations >= 166 &&
+    manifest.controllerOperations > 0 &&
+      manifest.documentedControllerOperations === manifest.controllerOperations &&
       manifest.undocumented.length === 0 &&
       manifest.unimplemented.length === 0,
-    `${manifest.documentedControllerOperations} documented / 0 undocumented / 0 unimplemented`,
+    `${manifest.documentedControllerOperations}/${manifest.controllerOperations} documented / ${manifest.undocumented.length} undocumented / ${manifest.unimplemented.length} unimplemented`,
   );
 } catch (error) {
   push('openapi-route-manifest', false, String(error.message));
