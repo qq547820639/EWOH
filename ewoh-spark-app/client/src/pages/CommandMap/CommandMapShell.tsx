@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { createReplayItem } from '../../api/world';
 import { getEvents, handleEvent } from '../../api/dashboard';
 import type {
@@ -219,6 +220,9 @@ interface PlanAssignmentExplanation {
 }
 
 const CommandMapShell = (): React.ReactElement => {
+  // 返回按钮修复（2026-08-19）：原 window.history.back() 在无历史栈（直接 URL
+  // 进入）或从外部跳转进入时无响应/离开应用——改为显式导航到指挥中心主页。
+  const navigate = useNavigate();
   // Task 4 / P1：唯一状态源门面控制器——selection/mode/level/replay/viewport/decisionContext
   // 写入统一经 controller→store；本组件不再自持上述副本。
   const ctl = useCommandMapController();
@@ -783,7 +787,7 @@ const CommandMapShell = (): React.ReactElement => {
       <TopBar
         overview={overview ?? null}
         worldState={displayWorldState}
-        onBack={() => window.history.back()}
+        onBack={() => navigate('/command-center')}
         entities={entityList}
         onSelectEntity={setSelectedEntityId}
         searchRef={searchRef}
