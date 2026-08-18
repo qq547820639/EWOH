@@ -70,7 +70,12 @@ export class SchedulerRunOrchestrator {
   ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
     const ctx = toOrgContext(actor);
     const trigger = body.trigger ?? 'MANUAL';
-    const run = await this.triggerService.evaluate(trigger, body.entityId ?? null, ctx);
+    // DATA-FLOW 修复（2026-08-18）：手动触发（MANUAL）用时间戳作 eventVersion——
+    // trigger_key 幂等键固定为 `org:MANUAL:ALL:0` 会让手动调度"只成功一次"，
+    // 之后被 ON CONFLICT DO NOTHING 永久去重（前端手动触发按钮失效）。
+    // 手动 = 每次新意图 → 新 key；冷却（按 org+type+entity 查最近记录）仍生效。
+    const eventVersion = trigger === 'MANUAL' ? Date.now() : undefined;
+    const run = await this.triggerService.evaluate(trigger, body.entityId ?? null, ctx, eventVersion);
     if (!run) {
       return { run: null, plans: [], debounced: true };
     }

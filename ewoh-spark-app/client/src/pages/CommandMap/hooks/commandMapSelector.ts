@@ -81,7 +81,9 @@ export const DEFAULT_UI_STATE: CommandMapUIState = {
   selectedTaskId: null,
   selectedResourceId: null,
   selectedPlanId: null,
-  activeLayers: [],
+  // 2026-08-18：路线网默认开启——指挥地图打开即显示车间间连接（原默认全关，
+  // 只看到 base 静态层，路线边需手动在左上角图层开关点"路线"）。
+  activeLayers: ['route'],
   panelMode: 'none',
   viewport: { x: 0, y: 0, scale: 1 },
 };

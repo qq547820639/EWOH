@@ -888,14 +888,18 @@ export class WorldStateSnapshotService {
     return this.hash(JSON.stringify(obj));
   }
 
-  /** 精确比较两个 entityVersions 映射（键集与每个值都需一致）。 */
+  /** 精确比较两个 entityVersions 映射（键集与每个值都需一致）。
+   * DATA-FLOW 修复（2026-08-18）：a/b 可能为 null/undefined（collectState 异常分支
+   * 或缺字段的存量数据）——原实现 Object.keys(null) 抛 TypeError，导致
+   * 冲突中心（ConflictService.derive → isPlanStale）500。空对象防御：空 vs 空 = 相等，
+   * 空 vs 非空 = 不等（视为状态变更，安全降级为 stale）。 */
   private mapsEqual(
-    a: Record<string, number>,
-    b: Record<string, number>,
+    a: Record<string, number> | null | undefined,
+    b: Record<string, number> | null | undefined,
   ): boolean {
-    const aKeys = Object.keys(a);
-    if (aKeys.length !== Object.keys(b).length) return false;
-    return aKeys.every((k) => b[k] === a[k]);
+    const aKeys = Object.keys(a ?? {});
+    if (aKeys.length !== Object.keys(b ?? {}).length) return false;
+    return aKeys.every((k) => (b ?? {})[k] === a[k]);
   }
 
   /**

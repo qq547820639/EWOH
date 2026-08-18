@@ -213,6 +213,10 @@ const FactoryMap = ({
   //   L2 +生产节拍/安全风险等全量态势
   //   L3 工位近景 | L4 人员跟随（近景模式，自动缩放定位到焦点实体）
   const showDynamic = level !== 'L0';
+  // 2026-08-18 地图可读性优化：动态实体（人员/设备）文字标签仅在 L2+ 显示；
+  // L1 默认态势只显示点位（hover <title> 可见名称），避免 24 人+20 设备标签
+  // 在默认层级互相遮挡、糊成一团。camera/uwb 数量少，保持常显（加描边衬底）。
+  const showDynamicLabels = level === 'L2' || level === 'L3' || level === 'L4';
   const showPerception = level === 'L1' || level === 'L2';
   const showDensity = level === 'L2';
   const isNearView = level === 'L3' || level === 'L4';
@@ -442,6 +446,9 @@ const FactoryMap = ({
                     fill="rgba(34,211,238,0.9)"
                     fontSize="9"
                     pointerEvents="none"
+                    paintOrder="stroke"
+                    stroke="rgba(15,23,42,0.85)"
+                    strokeWidth={3}
                   >
                     {truncateLabel(u.name, 10)}
                   </text>
@@ -467,6 +474,9 @@ const FactoryMap = ({
                   fill="rgba(59,130,246,0.9)"
                   fontSize="9"
                   pointerEvents="none"
+                  paintOrder="stroke"
+                  stroke="rgba(15,23,42,0.85)"
+                  strokeWidth={3}
                 >
                   {truncateLabel(c.name, 10)}
                 </text>
@@ -934,16 +944,21 @@ const FactoryMap = ({
                 stroke={strokeFor(d.entityId, '#fff')}
                 strokeWidth={isSelected(d.entityId) ? 3 : 1.5}
               />
-              <text
-                x={d.x}
-                y={d.y - 10}
-                textAnchor="middle"
-                fill="rgba(255,255,255,0.75)"
-                fontSize="9"
-                pointerEvents="none"
-              >
-                {truncateLabel(d.name, 10)}
-              </text>
+              {showDynamicLabels && (
+                <text
+                  x={d.x}
+                  y={d.y - 10}
+                  textAnchor="middle"
+                  fill="rgba(255,255,255,0.75)"
+                  fontSize="9"
+                  pointerEvents="none"
+                  paintOrder="stroke"
+                  stroke="rgba(15,23,42,0.85)"
+                  strokeWidth={3}
+                >
+                  {truncateLabel(d.name, 10)}
+                </text>
+              )}
             </g>
           );
         })}
@@ -1014,16 +1029,21 @@ const FactoryMap = ({
                 stroke={strokeFor(p.entityId, '#ffffff')}
                 strokeWidth={isSelected(p.entityId) ? 3 : 1.5}
               />
-              <text
-                x={p.x}
-                y={p.y - 11}
-                textAnchor="middle"
-                fill="rgba(255,255,255,0.9)"
-                fontSize="9"
-                pointerEvents="none"
-              >
-                {truncateLabel(p.name, 10)}
-              </text>
+              {showDynamicLabels && (
+                <text
+                  x={p.x}
+                  y={p.y - 11}
+                  textAnchor="middle"
+                  fill="rgba(255,255,255,0.9)"
+                  fontSize="9"
+                  pointerEvents="none"
+                  paintOrder="stroke"
+                  stroke="rgba(15,23,42,0.85)"
+                  strokeWidth={3}
+                >
+                  {truncateLabel(p.name, 10)}
+                </text>
+              )}
             </g>
           );
         })}

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { defer, lastValueFrom, Observable } from 'rxjs';
+import { SSE_METADATA } from '@nestjs/common/constants';
 import { withRequestContext } from '../../common/request-context';
 import { TracingService, type TraceRecord } from './tracing.service';
 
@@ -15,6 +16,20 @@ export class TracingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') {
+      return next.handle();
+    }
+    // DATA-FLOW-L1 补充（2026-08-18）：SSE（@Sse）长连接直通——
+    // lastValueFrom(next.handle()) 会等待无限事件流 complete 永不返回，
+    // 且流中途出错时经 lastValueFrom reject 触发全局过滤器尝试写 500
+    // 响应 → "Cannot set headers after they are sent"，SSE 连接直接 error
+    // （前端表现为"调度上下文离线"）。与 OrgContextInterceptor 同款 SSE 特判；
+    // SSE 端点不写 trace_span（无单一请求边界），租户隔离由应用层过滤保证。
+    const routeHandler =
+      typeof context.getHandler === 'function' ? context.getHandler() : undefined;
+    const handlerIsSse =
+      routeHandler != null &&
+      Reflect.getMetadata(SSE_METADATA, routeHandler) !== undefined;
+    if (handlerIsSse) {
       return next.handle();
     }
     const http = context.switchToHttp();
