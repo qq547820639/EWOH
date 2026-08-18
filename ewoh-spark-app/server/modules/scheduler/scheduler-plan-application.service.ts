@@ -337,35 +337,50 @@ export class SchedulerPlanApplicationService {
     const plan = await this.planService.dispatchPlan(planId, toOrgContext(actor));
     // P4-EXEC：dispatch 后建立 Execution 记录（planned 事实；actual 由执行反馈回填）。
     if (this.executionService) {
-      try {
-        await this.executionService.createFromPlan(
-          {
-            planId: plan.planId,
-            runId: (plan as { runId?: string | null }).runId ?? null,
-            snapshotVersion: plan.snapshotVersion ?? null,
-            policyVersion: plan.policyVersion ?? null,
-            solverVersion: plan.solverVersion ?? null,
-          },
-          plan.assignments.map((a) => ({
-            assignmentId: a.assignmentId,
-            taskId: a.taskId,
-            personId: a.personId ?? null,
-            deviceId: a.deviceId ?? null,
-            stationId: a.stationId ?? null,
-            plannedStart: a.plannedStart ?? null,
-            plannedEnd: a.plannedEnd ?? null,
-            etaSeconds: a.etaSeconds,
-            distanceMeters: a.distanceMeters,
-          })),
-          toOrgContext(actor).primaryOrgId ?? null,
-          actor,
-        );
-      } catch (err) {
+      // DATA-FLOW-L3 修复（2026-08-18）：Execution 建档失败从"单次尝试"升级为
+      // "短重试（2 次 × 500ms）"，覆盖瞬时连接/约束冲突（createFromPlan 本身
+      // ON CONFLICT DO NOTHING 幂等）；重试仍失败才降级 executionSync 警告，
+      // 显著缩小"已派工但无 Execution 跟踪"窗口。
+      let syncError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await this.executionService.createFromPlan(
+            {
+              planId: plan.planId,
+              runId: (plan as { runId?: string | null }).runId ?? null,
+              snapshotVersion: plan.snapshotVersion ?? null,
+              policyVersion: plan.policyVersion ?? null,
+              solverVersion: plan.solverVersion ?? null,
+            },
+            plan.assignments.map((a) => ({
+              assignmentId: a.assignmentId,
+              taskId: a.taskId,
+              personId: a.personId ?? null,
+              deviceId: a.deviceId ?? null,
+              stationId: a.stationId ?? null,
+              plannedStart: a.plannedStart ?? null,
+              plannedEnd: a.plannedEnd ?? null,
+              etaSeconds: a.etaSeconds,
+              distanceMeters: a.distanceMeters,
+            })),
+            toOrgContext(actor).primaryOrgId ?? null,
+            actor,
+          );
+          syncError = null;
+          break;
+        } catch (err) {
+          syncError = err;
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      }
+      if (syncError) {
         // NEST-156 修复（2026-08-17）：Execution 建档失败不再只有日志——响应
         // 显式携带 executionSync 警告字段（dispatch 成功但无 Execution 跟踪
-        // 是可观测的降级状态，调用方需知情）。
-        const message = (err as Error)?.message ?? String(err);
-        this.logger.warn(`execution record creation failed: ${message}`);
+        // 是可观测的降级状态，调用方需知情）。L3 修复后此路径仅在重试耗尽后触发。
+        const message = (syncError as Error)?.message ?? String(syncError);
+        this.logger.warn(`execution record creation failed after 3 attempts: ${message}`);
         (plan as SchedulingPlanV2 & { executionSync?: { ok: boolean; error: string } }).executionSync = {
           ok: false,
           error: message,

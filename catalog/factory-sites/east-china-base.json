@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ewoh:///site-readiness/v1",
+  "factoryName": "华东智造基地",
+  "siteContact": "ops@huayue-mfg.cn",
+  "items": [
+    { "id": "DEV-INV", "label": "设备台账与协议清单", "required": true, "status": "pass", "evidence": "device-inventory-202608.json" },
+    { "id": "ERP-EP", "label": "ERP/MES 接口端点", "required": true, "status": "pass", "evidence": "erp-endpoint.json" },
+    { "id": "NET", "label": "网络分段与权限批准", "required": true, "status": "pass", "evidence": "network-approval.pdf" },
+    { "id": "TRAIN", "label": "现场培训计划", "required": true, "status": "pass", "evidence": "training-plan-2026Q3.docx" },
+    { "id": "RET", "label": "数据保留与隐私批准", "required": true, "status": "pass", "evidence": "retention-approval.pdf" },
+    { "id": "SAFETY", "label": "安全审计通过记录", "required": true, "status": "pass", "evidence": "safety-audit-202607.pdf" },
+    { "id": "WIFI", "label": "可选 WiFi 覆盖扩展", "required": false, "status": "na", "evidence": "not-applicable" }
+  ]
+}

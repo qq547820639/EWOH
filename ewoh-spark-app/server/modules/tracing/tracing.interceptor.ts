@@ -5,7 +5,7 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { catchError, defer, lastValueFrom, Observable, tap } from 'rxjs';
+import { defer, lastValueFrom, Observable } from 'rxjs';
 import { withRequestContext } from '../../common/request-context';
 import { TracingService, type TraceRecord } from './tracing.service';
 
@@ -41,53 +41,50 @@ export class TracingInterceptor implements NestInterceptor {
     const requestUser = request.userContext?.userId ?? null;
 
     return defer(() =>
-      withRequestContext({ requestId: traceId }, () =>
-        lastValueFrom(
-          next.handle().pipe(
-            tap(() => {
-              this.record(
-                traceId,
-                spanId,
-                method,
-                path,
-                response.statusCode ?? 200,
-                startedAt,
-                startedIso,
-                undefined,
-                orgId,
-                requestUser,
-              );
-            }),
-            catchError((error: unknown) => {
-              const status =
-                typeof (error as { status?: unknown })?.status === 'number'
-                  ? Number((error as { status: unknown }).status)
-                  : response.statusCode ?? 500;
-              this.record(
-                traceId,
-                spanId,
-                method,
-                path,
-                status,
-                startedAt,
-                startedIso,
-                error instanceof Error
-                  ? error.message
-                  : error !== null && typeof error === 'object'
-                    ? JSON.stringify(error)
-                    : String(error),
-                orgId,
-                requestUser,
-              );
-              throw error;
-            }),
-          ),
-        ),
-      ),
+      withRequestContext({ requestId: traceId }, async () => {
+        try {
+          const value = await lastValueFrom(next.handle());
+          await this.record(
+            traceId,
+            spanId,
+            method,
+            path,
+            response.statusCode ?? 200,
+            startedAt,
+            startedIso,
+            undefined,
+            orgId,
+            requestUser,
+          );
+          return value;
+        } catch (error: unknown) {
+          const status =
+            typeof (error as { status?: unknown })?.status === 'number'
+              ? Number((error as { status: unknown }).status)
+              : response.statusCode ?? 500;
+          await this.record(
+            traceId,
+            spanId,
+            method,
+            path,
+            status,
+            startedAt,
+            startedIso,
+            error instanceof Error
+              ? error.message
+              : error !== null && typeof error === 'object'
+                ? JSON.stringify(error)
+                : String(error),
+            orgId,
+            requestUser,
+          );
+          throw error;
+        }
+      }),
     );
   }
 
-  private record(
+  private async record(
     traceId: string,
     spanId: string,
     method: string,
@@ -98,7 +95,7 @@ export class TracingInterceptor implements NestInterceptor {
     error?: string,
     orgId?: string | null,
     requestUser?: string | null,
-  ): void {
+  ): Promise<void> {
     const finishedAt = new Date().toISOString();
     const entry: TraceRecord = {
       traceId,
@@ -114,7 +111,13 @@ export class TracingInterceptor implements NestInterceptor {
       requestUser,
     };
     this.tracingService.record(entry);
-    // NO-10a：span 持久化（best-effort，失败在服务层留痕不阻断响应）。
-    void this.tracingService.persistSpan(entry);
+    // DATA-FLOW-L1 修复（2026-08-18）：span 持久化改为在请求事务内同步等待完成。
+    // 原实现 fire-and-forget（void persistSpan）在响应 Observable 完成后异步执行，
+    // 此时 OrgContextInterceptor 的事务已提交，transaction-local GUC
+    // app.current_org_id(s) 失效 → RLS（ewoh_org_visible）拒绝 → trace 永不落库。
+    // TracingInterceptor 位于事务栈内层，await 保证 INSERT 在事务提交前完成。
+    // 错误路径：handler 抛错 → 事务回滚 → span 随回滚不落库（best-effort 语义保持，
+    // 优先保证成功请求的可观测性）。persistSpan 内部已 catch 留痕，不阻断响应。
+    await this.tracingService.persistSpan(entry);
   }
 }

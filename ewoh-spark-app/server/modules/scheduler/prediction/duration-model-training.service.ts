@@ -18,7 +18,7 @@ import {
   trainDurationModel,
   type DurationModel,
 } from './empirical-duration-model';
-import type { EmpiricalDurationPredictionProvider } from './empirical-duration-prediction-provider';
+import { PREDICTION_PROVIDER, type EmpiricalDurationPredictionProvider } from './empirical-duration-prediction-provider';
 
 /** NO-13r / ADR-067：per-taskType 分组训练结果（显式 skipped 不落版）。 */
 export interface TaskTypeRetrainEntry {
@@ -45,7 +45,7 @@ export class DurationModelTrainingService {
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
-    private readonly provider: EmpiricalDurationPredictionProvider,
+    @Inject(PREDICTION_PROVIDER) private readonly provider: EmpiricalDurationPredictionProvider,
   ) {}
 
   /** 从本租户真实执行反馈加载时长样本 + 任务类型事实（actual_end − actual_start；

@@ -223,14 +223,39 @@ class SparkBridge:
         ingest_key: str = "",
         source: Any = None,
         org_id: str = "",
+        queue_path: str = "",
     ):
         self.spark_url = spark_url.rstrip("/")
         self.ingest_key = ingest_key
         self.org_id = org_id
         self.source = source
         self._buffer: list = []
+        self._queue_path = queue_path
+        # DATA-FLOW-L2（2026-08-18）：磁盘持久化缓冲——断网/崩溃不丢帧，
+        # 启动时断点续传（对齐 event_uplink 的 queue_path 模式；损坏显式 ERROR 空队列启动）。
+        if self._queue_path and os.path.exists(self._queue_path):
+            try:
+                with open(self._queue_path, encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, list):
+                    self._buffer = [f for f in loaded if isinstance(f, dict)]
+                print(f"[bridge] 队列恢复 {len(self._buffer)} 条（{self._queue_path}）")
+            except Exception as exc:
+                print(f"[bridge] 队列加载失败（以空队列启动）: {exc}")
         self._running = False
         self._consecutive_failures = 0
+
+    def _persist(self) -> None:
+        """未发送队列原子落盘（tmp + rename；queue_path 为空 = 不持久化）。"""
+        if not self._queue_path:
+            return
+        tmp = f"{self._queue_path}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._buffer, fh, ensure_ascii=False)
+            os.replace(tmp, self._queue_path)
+        except Exception as exc:
+            print(f"[bridge] 队列持久化失败: {exc}")
 
     def run(self):
         """主循环：持续读取帧并尝试发送。"""
@@ -247,6 +272,7 @@ class SparkBridge:
                         self._flush_batch()
                     continue
                 self._buffer.append(frame)
+                self._persist()  # L2：入队即落盘（跨重启断点续传）
                 # 达到批量上限或单帧模式直接发送
                 if len(self._buffer) >= 1:
                     self._flush_batch()
@@ -269,6 +295,7 @@ class SparkBridge:
             ok = self._post_batch(batch)
             if ok:
                 self._buffer = self._buffer[len(batch) :]
+                self._persist()  # L2：发送成功即从磁盘队列移除
                 self._consecutive_failures = 0
                 print(f"[bridge] 发送成功 {len(batch)} 条")
             else:
@@ -326,6 +353,11 @@ def main():
     parser.add_argument("--device-id", default="EXO-SIM-001", help="模拟模式设备ID（默认 EXO-SIM-001）")
     parser.add_argument("--worker-id", default="P-SIM-001", help="模拟模式工人ID（默认 P-SIM-001）")
     parser.add_argument("--interval-ms", type=int, default=1000, help="模拟模式帧间隔毫秒（默认 1000）")
+    parser.add_argument(
+        "--queue-path",
+        default=os.path.expanduser("~/.ewoh/edge_to_spark.queue.json"),
+        help="未发送帧持久化队列路径（默认 ~/.ewoh/edge_to_spark.queue.json；传空禁用持久化）",
+    )
     args = parser.parse_args()
 
     # 选择数据源
@@ -348,6 +380,7 @@ def main():
         ingest_key=args.ingest_key,
         source=source,
         org_id=args.org_id,
+        queue_path=args.queue_path,
     )
     bridge.run()
 

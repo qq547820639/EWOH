@@ -658,8 +658,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_task_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_template_org ON public.ewoh_task_template (org_id);
@@ -679,8 +678,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_task_step (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_step_org ON public.ewoh_task_step (org_id);
@@ -1157,8 +1155,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_factory_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_template_lifecycle ON public.ewoh_factory_template (lifecycle_status);
@@ -1177,8 +1174,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_factory_profile (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_profile_status ON public.ewoh_factory_profile (status);
@@ -1198,8 +1194,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_asset_package (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_asset_package_type ON public.ewoh_asset_package (package_type, status);
@@ -1325,6 +1320,28 @@ BEGIN
   END IF;
 END
 $ewoh_personnel$;
+
+-- 审计回归修复（2026-08-18 部署）：其余 legacy 表 org_id varchar→uuid 条件转换
+-- （与 ewoh_personnel 同模式；缺失时下方 COALESCE(org_id, v_default_org) 会报
+--  "COALESCE types character varying and uuid cannot be matched"）。
+DO $ewoh_legacy_org_uuid$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'ewoh_ai_suggestion','ewoh_device','ewoh_device_binding','ewoh_device_config',
+    'ewoh_environment','ewoh_event_chain','ewoh_model_registry','ewoh_organization',
+    'ewoh_production_task','ewoh_schedule_audit','ewoh_telemetry','ewoh_topology'
+  ] LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'org_id' AND data_type <> 'uuid'
+    ) THEN
+      EXECUTE format('ALTER TABLE public.%I ALTER COLUMN org_id TYPE uuid USING (CASE WHEN org_id ~ ''^[0-9a-fA-F-]{36}$'' THEN org_id::uuid ELSE NULL END)', t);
+    END IF;
+  END LOOP;
+END
+$ewoh_legacy_org_uuid$;
 
 -- Table 79 detailed ALTERs.
 ALTER TABLE public.ewoh_spatial_entity ADD COLUMN IF NOT EXISTS z real DEFAULT 0;

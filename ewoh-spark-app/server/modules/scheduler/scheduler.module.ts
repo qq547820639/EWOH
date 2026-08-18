@@ -33,7 +33,7 @@ import { SchedulingContextService } from './scheduling-context.service';
 import { CandidateEngineService } from './candidate-engine.service';
 import { OverridePreviewService } from './override-preview.service';
 import { ReplanPreviewService } from './replan-preview.service';
-import { EmpiricalDurationPredictionProvider } from './prediction/empirical-duration-prediction-provider';
+import { EmpiricalDurationPredictionProvider, PREDICTION_PROVIDER } from './prediction/empirical-duration-prediction-provider';
 import { DurationModelTrainingService } from './prediction/duration-model-training.service';
 import { DecisionHistoryService } from './decision-history.service';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
@@ -42,9 +42,6 @@ import { TaskModule } from '../task/task.module';
 import { HealthModule } from '../health/health.module';
 // NO-12s / ADR-042：审批前自动布局仿真预验证（SimulationService 注入 PlanService）。
 import { SimulationModule } from '../simulation/simulation.module';
-
-/** 预测提供者注入 token（shadow only）：消费者应将其视为可选。 */
-export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
 
 /**
  * Task 6：Outbox → LISTEN/NOTIFY 低延迟 wake-up。

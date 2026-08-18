@@ -1,4 +1,5 @@
 import { axiosForBackend } from '../lib/http';
+import { getAccessToken } from '../lib/auth';
 
 /*
  * CLI-721（裁决确认）：visionUnderstand / saveAiConfig 接受可选 api_key 并
@@ -117,4 +118,76 @@ export async function aiChat(question: string): Promise<AiChatResult> {
     timeout: 180000,
   });
   return res.data;
+}
+
+export interface AiChatStreamEvent {
+  delta?: string;
+  done?: boolean;
+  ok?: boolean;
+  model?: string;
+  answer?: string;
+  error?: string;
+}
+
+/**
+ * POST /api/ai/chat（SSE 流式）— 自然语言问答，逐增量回调渲染（打字机效果）。
+ * 后端输出 `data: {delta}` → `data: {done, ok, model, answer}`；出错输出 `data: {error}`。
+ */
+export async function aiChatStream(
+  question: string,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<AiChatResult> {
+  const res = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getAccessToken() ?? ''}`,
+    },
+    body: JSON.stringify({ question }),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, answer: '', model: '', error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+  let model = '';
+  let error: string | undefined;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload) continue;
+        let evt: AiChatStreamEvent;
+        try {
+          evt = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        if (evt.delta) {
+          answer += evt.delta;
+          onDelta(evt.delta);
+        }
+        if (evt.error) error = evt.error;
+        if (evt.done) {
+          if (evt.answer) answer = evt.answer;
+          if (evt.model) model = evt.model;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { ok: !error, answer, model, error };
 }

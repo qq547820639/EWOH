@@ -287,6 +287,9 @@ const WorkGraphPanel = (): React.ReactElement => {
     y: number;
   } | null>(null);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
+  // 滚轮平移基准：由 TransformWrapper onTransformed 持续同步
+  // （2026-08-18 修复：原滚轮=缩放且无平滑，滚动"一跳一跳"）
+  const transformStateRef = useRef({ scale: 0.85, positionX: 0, positionY: 0 });
   const { ref: viewportRef, size: viewportSize } = useElementSize<HTMLDivElement>();
 
   const graphQuery = useQuery({
@@ -510,6 +513,38 @@ const WorkGraphPanel = (): React.ReactElement => {
       setTracking(null);
     }
   };
+
+  // 滚轮交互（2026-08-18 修复"滚动太跳"）：
+  //  - 普通滚动 → 平滑平移画布（delta 除以 scale，保证视口位移与缩放无关）
+  //  - Ctrl/Cmd + 滚动 → 平滑缩放
+  // 必须用原生监听（passive:false）：React 17+ 的 onWheel 是 passive，
+  // preventDefault 无效，无法拦截库/浏览器的默认行为。
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onCanvasWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        if (event.deltaY < 0) transformRef.current?.zoomIn(1, 140);
+        else transformRef.current?.zoomOut(1, 140);
+        return;
+      }
+      event.preventDefault();
+      const t = transformStateRef.current;
+      if (!t) return;
+      const dx = event.deltaX / t.scale;
+      const dy = event.deltaY / t.scale;
+      transformRef.current?.setTransform(
+        t.positionX - dx,
+        t.positionY - dy,
+        t.scale,
+        0,
+      );
+    };
+    el.addEventListener('wheel', onCanvasWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onCanvasWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <QueryState
@@ -781,7 +816,14 @@ const WorkGraphPanel = (): React.ReactElement => {
               minScale={0.35}
               maxScale={2.5}
               centerOnInit
-              wheel={{ step: 0.08 }}
+              wheel={{ disabled: true }}
+              onTransform={(_ref, state) => {
+                transformStateRef.current = {
+                  scale: state.scale,
+                  positionX: state.positionX,
+                  positionY: state.positionY,
+                };
+              }}
             >
               <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
                 <GraphCanvas

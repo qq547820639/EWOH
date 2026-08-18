@@ -33,9 +33,11 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO v_dml_grants
-    FROM information_schema.role_table_grants
-   WHERE table_schema = 'public' AND table_name = 'ewoh_user'
-     AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE');
+    FROM information_schema.role_table_grants g
+    JOIN pg_tables t ON t.schemaname = g.table_schema AND t.tablename = g.table_name
+   WHERE g.table_schema = 'public' AND g.table_name = 'ewoh_user'
+     AND g.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+     AND g.grantee <> t.tableowner;
   IF v_dml_grants <> 0 THEN
     RAISE EXCEPTION 'verify standalone_002_users: ewoh_user 存在直接 DML 授权 % 条（设计为全拒，仅函数受控读取）', v_dml_grants;
   END IF;

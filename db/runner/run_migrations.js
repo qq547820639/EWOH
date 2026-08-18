@@ -426,6 +426,21 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-rls-null-reject',
   '--rollback-standalone-rls-null-reject',
   '--verify-standalone-rls-null-reject',
+  '--apply-standalone-shadow-plan-isolation',
+  '--rollback-standalone-shadow-plan-isolation',
+  '--verify-standalone-shadow-plan-isolation',
+  '--apply-standalone-agent-approval',
+  '--rollback-standalone-agent-approval',
+  '--verify-standalone-agent-approval',
+  '--apply-standalone-control-attempt-unique',
+  '--rollback-standalone-control-attempt-unique',
+  '--verify-standalone-control-attempt-unique',
+  '--apply-standalone-spatial-entity-org-unique',
+  '--rollback-standalone-spatial-entity-org-unique',
+  '--verify-standalone-spatial-entity-org-unique',
+  '--apply-standalone-idempotency-org',
+  '--rollback-standalone-idempotency-org',
+  '--verify-standalone-idempotency-org',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
@@ -746,9 +761,12 @@ function main() {
     // SIMPLE_VERIFY_COMMANDS 表驱动分支，替代原先 23 个结构相同的 if 分支。
     if (SIMPLE_VERIFY_COMMANDS[command]) {
       const [fileKey, okField, okLabel] = SIMPLE_VERIFY_COMMANDS[command];
-      const rows = await sql.unsafe(substitute(read(FILES[fileKey]), schema));
-      console.log(JSON.stringify(rows, null, 2));
-      const row = rows[0] || {};
+      const result = await sql.unsafe(substitute(read(FILES[fileKey]), schema));
+      console.log(JSON.stringify(result, null, 2));
+      // 多语句 verify（如前置 SELECT set_config 的 002）返回多个结果集；
+      // 在所有结果集中查找断言字段（部署回归修复 2026-08-18）。
+      const rows = Array.isArray(result[0]) ? result.flat() : result;
+      const row = rows.find((r) => r && okField in r) || {};
       if (Number(row[okField] || 0) !== 1) {
         console.error(`VERIFY FAILED: ${command} did not return ${okField}=1`);
         process.exitCode = 1;

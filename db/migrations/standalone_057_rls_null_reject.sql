@@ -145,14 +145,14 @@ DROP POLICY IF EXISTS scheduler_constraint_org_isolation ON __EWOH_SCHEMA__.ewoh
 CREATE POLICY scheduler_constraint_org_isolation ON __EWOH_SCHEMA__.ewoh_scheduling_constraint
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -164,14 +164,14 @@ DROP POLICY IF EXISTS scheduler_run_org_isolation ON __EWOH_SCHEMA__.ewoh_schedu
 CREATE POLICY scheduler_run_org_isolation ON __EWOH_SCHEMA__.ewoh_scheduling_run
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -183,14 +183,14 @@ DROP POLICY IF EXISTS scheduler_plan_org_isolation ON __EWOH_SCHEMA__.ewoh_sched
 CREATE POLICY scheduler_plan_org_isolation ON __EWOH_SCHEMA__.ewoh_schedule_plan
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -202,14 +202,14 @@ DROP POLICY IF EXISTS scheduler_plan_assignment_org_isolation ON __EWOH_SCHEMA__
 CREATE POLICY scheduler_plan_assignment_org_isolation ON __EWOH_SCHEMA__.ewoh_scheduling_plan_assignment
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -221,14 +221,14 @@ DROP POLICY IF EXISTS scheduler_resource_reservation_org_isolation ON __EWOH_SCH
 CREATE POLICY scheduler_resource_reservation_org_isolation ON __EWOH_SCHEMA__.ewoh_resource_reservation
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -240,14 +240,14 @@ DROP POLICY IF EXISTS scheduler_policy_org_isolation ON __EWOH_SCHEMA__.ewoh_sch
 CREATE POLICY scheduler_policy_org_isolation ON __EWOH_SCHEMA__.ewoh_scheduling_policy
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -259,14 +259,14 @@ DROP POLICY IF EXISTS scheduler_feedback_org_isolation ON __EWOH_SCHEMA__.ewoh_s
 CREATE POLICY scheduler_feedback_org_isolation ON __EWOH_SCHEMA__.ewoh_scheduling_feedback
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -278,14 +278,14 @@ DROP POLICY IF EXISTS scheduler_replan_trigger_org_isolation ON __EWOH_SCHEMA__.
 CREATE POLICY scheduler_replan_trigger_org_isolation ON __EWOH_SCHEMA__.ewoh_replan_trigger
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -298,14 +298,14 @@ DROP POLICY IF EXISTS route_node_org_isolation ON __EWOH_SCHEMA__.ewoh_route_nod
 CREATE POLICY route_node_org_isolation ON __EWOH_SCHEMA__.ewoh_route_node
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -317,14 +317,14 @@ DROP POLICY IF EXISTS route_edge_org_isolation ON __EWOH_SCHEMA__.ewoh_route_edg
 CREATE POLICY route_edge_org_isolation ON __EWOH_SCHEMA__.ewoh_route_edge
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR coalesce(current_setting('app.is_global_admin', true), '') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )

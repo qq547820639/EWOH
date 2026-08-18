@@ -55,14 +55,14 @@ CREATE POLICY scheduler_constraint_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -86,14 +86,14 @@ CREATE POLICY scheduler_run_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -109,14 +109,14 @@ CREATE POLICY scheduler_plan_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -132,14 +132,14 @@ CREATE POLICY scheduler_plan_assignment_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -155,14 +155,14 @@ CREATE POLICY scheduler_resource_reservation_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -178,14 +178,14 @@ CREATE POLICY scheduler_policy_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -201,14 +201,14 @@ CREATE POLICY scheduler_feedback_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -224,14 +224,14 @@ CREATE POLICY scheduler_replan_trigger_org_isolation
   FOR ALL
   TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )

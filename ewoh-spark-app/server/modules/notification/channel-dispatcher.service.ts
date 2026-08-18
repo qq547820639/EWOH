@@ -12,7 +12,7 @@
 // - 投递状态落在权威通知行：pending → sent（sentAt）/ failed（errorMessage）；
 //   CAS 更新（WHERE status='pending' RETURNING）防多实例重复投递；
 // - 失败显式留痕、绝不吞异常；人工重试走 POST /api/notifications/:id/retry。
-import { Injectable, Inject, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Inject, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { ewohNotification } from '@server/database/schema';
@@ -132,8 +132,8 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
-    transport?: LarkTransport,
-    emailConnector?: SmtpConnector,
+    @Optional() transport?: LarkTransport,
+    @Optional() emailConnector?: SmtpConnector,
   ) {
     this.larkTransport = transport ?? realLarkTransport;
     this.emailSender = (config, message) =>

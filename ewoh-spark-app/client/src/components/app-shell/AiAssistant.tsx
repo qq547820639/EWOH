@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Bot, Loader2, Send, Sparkles } from 'lucide-react';
-import { aiChat, getAiConfigStatus } from '@/api/ai';
+import { aiChatStream, getAiConfigStatus } from '@/api/ai';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks/queryKeys';
 import { sanitizeUserText } from '@/components/AppErrorState';
@@ -17,6 +17,9 @@ import {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  id?: string;
+  /** 流式生成中（显示光标） */
+  pending?: boolean;
 }
 
 /**
@@ -27,6 +30,13 @@ const AiAssistant = () => {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 新消息/流式增量时自动滚动到底部（打字机效果跟随）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   const configQuery = useQuery({
     queryKey: queryKeys.aiConfigStatus,
@@ -36,32 +46,53 @@ const AiAssistant = () => {
   });
 
   const chatMutation = useMutation({
-    mutationFn: (question: string) => aiChat(question),
-    onSuccess: (result) => {
-      if (result.ok) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: result.answer },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `⚠️ ${result.error ?? 'AI 服务暂不可用'}`,
-          },
-        ]);
-      }
+    mutationFn: async (question: string) => {
+      const placeholderId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: question },
+        { role: 'assistant', content: '', id: placeholderId, pending: true },
+      ]);
+      const result = await aiChatStream(
+        question,
+        (delta) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === placeholderId
+                ? { ...msg, content: msg.content + delta }
+                : msg,
+            ),
+          );
+        },
+      );
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === placeholderId
+            ? {
+                ...msg,
+                pending: false,
+                content: result.ok
+                  ? result.answer
+                  : `⚠️ ${result.error ?? 'AI 服务暂不可用'}`,
+              }
+            : msg,
+        ),
+      );
     },
     onError: (error) => {
       // CLI-326：错误原文可能携带内部堆栈/接口信息，清洗后再展示给用户。
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `⚠️ ${sanitizeUserText(error instanceof Error ? error.message : '') || '请求失败'}`,
-        },
-      ]);
+      const cleaned =
+        sanitizeUserText(error instanceof Error ? error.message : '') || '请求失败';
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        // 若最后一条是占位 assistant 消息，就地替换为错误；否则追加一条
+        if (last?.role === 'assistant' && last.pending) {
+          return prev.map((msg, i) =>
+            i === prev.length - 1 ? { ...msg, pending: false, content: `⚠️ ${cleaned}` } : msg,
+          );
+        }
+        return [...prev, { role: 'assistant', content: `⚠️ ${cleaned}` }];
+      });
     },
   });
 
@@ -100,7 +131,10 @@ const AiAssistant = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex max-h-80 min-h-40 flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-muted p-3">
+          <div
+            ref={scrollRef}
+            className="flex max-h-80 min-h-40 flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-muted p-3"
+          >
             {messages.length === 0 && (
               <p className="m-auto text-center text-sm text-muted-foreground">
                 例如：近 1 小时哪些设备负荷最高？当前有哪些未结安全事件？
@@ -108,7 +142,7 @@ const AiAssistant = () => {
             )}
             {messages.map((msg, index) => (
               <div
-                key={index}
+                key={msg.id ?? index}
                 className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'self-end bg-primary text-white'
@@ -116,9 +150,12 @@ const AiAssistant = () => {
                 }`}
               >
                 {msg.content}
+                {msg.pending && (
+                  <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-risk-conflict align-middle" />
+                )}
               </div>
             ))}
-            {chatMutation.isPending && (
+            {chatMutation.isPending && messages[messages.length - 1]?.role !== 'assistant' && (
               <div className="flex items-center gap-2 self-start rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 正在结合实时数据思考…

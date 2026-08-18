@@ -39,14 +39,14 @@ DROP POLICY IF EXISTS route_edge_org_isolation ON __EWOH_SCHEMA__.ewoh_route_edg
 CREATE POLICY route_node_org_isolation ON __EWOH_SCHEMA__.ewoh_route_node
   FOR ALL
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
@@ -56,14 +56,14 @@ CREATE POLICY route_node_org_isolation ON __EWOH_SCHEMA__.ewoh_route_node
 CREATE POLICY route_edge_org_isolation ON __EWOH_SCHEMA__.ewoh_route_edge
   FOR ALL
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )

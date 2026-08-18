@@ -286,6 +286,101 @@ export class ArkService {
     return finish({ ok: true, text, model: cfg.model });
   }
 
+  /**
+   * 流式聊天：调用 Ark Chat Completions（stream:true），逐增量产出文本。
+   * 返回 AsyncGenerator<string>，每次 yield 一段新增文本。
+   * 错误（未配置/网络/HTTP）在首个 yield 前以 throw 抛出，由调用方处理。
+   */
+  async *chatStream(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    opts: {
+      temperature?: number;
+      maxTokens?: number;
+      timeoutMs?: number;
+    } = {},
+  ): AsyncGenerator<string, void, undefined> {
+    const cfg = await this.getConfig();
+    if (!cfg.apiKey) {
+      throw new Error(
+        '未配置 Ark API Key（可在 系统管理 → AI 能力接入 中配置，或设置 EWOH_ARK_API_KEY）。',
+      );
+    }
+    const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+    const body: Record<string, unknown> = {
+      model: cfg.model,
+      messages,
+      stream: true,
+    };
+    if (opts.temperature !== undefined) body.temperature = opts.temperature;
+    if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cfg.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 300000),
+      });
+    } catch (e) {
+      throw new Error(`请求失败: ${String(e)}`);
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${detail.slice(0, 500)}`);
+    }
+    if (!res.body) {
+      throw new Error('模型未返回可读流。');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          let chunk: { choices?: Array<{ delta?: { content?: unknown } }> };
+          try {
+            chunk = JSON.parse(payload);
+          } catch {
+            continue; // 忽略无法解析的分片
+          }
+          const delta = chunk.choices?.[0]?.delta?.content;
+          const text = this.extractDeltaText(delta);
+          if (text) yield text;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  private extractDeltaText(delta: unknown): string {
+    if (typeof delta === 'string') return delta;
+    if (Array.isArray(delta)) {
+      return delta
+        .map((c) =>
+          typeof c === 'object' && c && (c as { type?: string }).type === 'text'
+            ? (c as { text?: string }).text ?? ''
+            : '',
+        )
+        .join('');
+    }
+    return '';
+  }
+
   /** 便捷方法：系统提示 + 用户问题。 */
   async ask(
     systemPrompt: string,

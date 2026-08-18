@@ -142,6 +142,24 @@ const Operations = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('总览');
 
+  // UX 优化（2026-08-18）：页面顶部统一刷新按钮——按当前 Tab 刷新对应数据，
+  // 替代"每个 Tab 数据区右上角才有刷新"的隐蔽入口。
+  const refreshCurrentTab = () => {
+    const refreshers: Record<Tab, () => void> = {
+      总览: () => void summaryQuery?.refetch(),
+      维保资产: () => void assetsQuery?.refetch(),
+      维保任务: () => void tasksQuery?.refetch(),
+      工装校验: () => void toolsQuery?.refetch(),
+      工作中心: () => void workCentersQuery?.refetch(),
+      标准工时: () => void standardHoursQuery?.refetch(),
+      人员效率: () => {
+        void efficiencyQuery?.refetch();
+        void efficiencySummaryQuery?.refetch();
+      },
+    };
+    refreshers[tab]?.();
+  };
+
   const [assetName, setAssetName] = useState('');
   const [assetCategory, setAssetCategory] = useState('device');
   const [assetLocation, setAssetLocation] = useState('');
@@ -441,7 +459,18 @@ const Operations = (): React.ReactElement => {
             维保、工装、工作中心配置与人员效率。
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={refreshCurrentTab}
+            title="刷新当前 Tab 数据"
+            aria-label="刷新当前 Tab 数据"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm font-medium text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]"
+          >
+            <RotateCcw className="size-4" aria-hidden />
+            刷新
+          </button>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {metrics.map((metric) => {
             const Icon = metric.icon;
             return (
@@ -459,6 +488,7 @@ const Operations = (): React.ReactElement => {
               </div>
             );
           })}
+          </div>
         </div>
       </header>
 

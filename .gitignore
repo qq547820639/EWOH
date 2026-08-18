@@ -63,3 +63,6 @@ dist/
 build/
 .turbo/
 *.tsbuildinfo
+
+# 部署专用（含 SSH 私钥，禁止入库）
+.deploy/

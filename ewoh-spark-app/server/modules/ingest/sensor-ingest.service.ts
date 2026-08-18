@@ -183,6 +183,27 @@ export class SensorIngestService {
       };
     }
     try {
+      // DATA-FLOW-B1（2026-08-18）：坐标显式提供但非法（NaN/Infinity）→ fail-closed 拒绝；
+      // 缺省写 NULL（诚实表达"位置未知"，不再写 0 假坐标——ADR-007 UNKNOWN 语义，
+      // 消费方 x ?? 0 已兜底）。
+      for (const [label, value] of [
+        ['x', scan.x],
+        ['y', scan.y],
+        ['yaw', scan.yaw],
+        ['bbox_w', scan.bbox_w],
+        ['bbox_h', scan.bbox_h],
+      ] as const) {
+        if (value !== undefined && value !== null && !Number.isFinite(value)) {
+          return {
+            accepted: false,
+            skipped: false,
+            record_id: recordId,
+            data_quality: 'invalid',
+            events_triggered: 0,
+            error: `${label} 坐标非法（非有限数）`,
+          };
+        }
+      }
       const extra = {
         splat_url: scan.splat_url ?? null,
         pointcloud_url: scan.pointcloud_url ?? null,
@@ -197,11 +218,11 @@ export class SensorIngestService {
           entityType,
           parentId: scan.parent_id ?? null,
           name: scan.name ?? scan.entity_id,
-          x: scan.x ?? 0,
-          y: scan.y ?? 0,
-          yaw: scan.yaw ?? 0,
-          bboxW: scan.bbox_w ?? 0,
-          bboxH: scan.bbox_h ?? 0,
+          x: scan.x ?? null,
+          y: scan.y ?? null,
+          yaw: scan.yaw ?? null,
+          bboxW: scan.bbox_w ?? null,
+          bboxH: scan.bbox_h ?? null,
           status: 'active',
           sourceType: scan.source_type,
           confidence: scan.confidence ?? 1.0,
@@ -258,6 +279,18 @@ export class SensorIngestService {
       };
     }
     try {
+      // DATA-FLOW-B1（2026-08-18）：定位坐标 x/y 必须为有限数（DTO 声明必填，
+      // 运行时防 NaN/Infinity 污染 world_state 位置）。
+      if (!Number.isFinite(loc.x) || !Number.isFinite(loc.y)) {
+        return {
+          accepted: false,
+          skipped: false,
+          record_id: recordId,
+          data_quality: 'invalid',
+          events_triggered: 0,
+          error: 'x/y 坐标缺失或非法（非有限数）',
+        };
+      }
       await this.db.insert(ewohWorldState).values({
         entityId: loc.entity_id,
         stateJson: {

@@ -21,6 +21,9 @@ export interface OrgModelEntry {
   taskTypes: Map<string, { model: DurationModel; registryVersion: number }>;
 }
 
+/** 预测提供者注入 token（shadow only）：消费者注入用 @Inject(PREDICTION_PROVIDER)。 */
+export const PREDICTION_PROVIDER = 'PREDICTION_PROVIDER';
+
 export class EmpiricalDurationPredictionProvider {
   // NO-13u / ADR-070：模型按 org 键控（租户隔离机器强制；预测必须携带 orgId）。
   private orgModels = new Map<string, OrgModelEntry>();

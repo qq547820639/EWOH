@@ -400,6 +400,42 @@ export class AiService {
     };
   }
 
+  /**
+   * 自然语言问答（流式）：采集系统实时上下文后调用 Ark（stream:true），
+   * 逐增量产出回答文本。错误以 throw 抛出（首个 yield 前）。
+   */
+  async *chatWithContextStream(
+    question: string,
+    orgId?: string | null,
+  ): AsyncGenerator<{ delta: string }, void, undefined> {
+    const context = await this.collectSystemContext(orgId ?? null);
+    if (!this.ark) {
+      throw new Error('AI 服务未就绪。');
+    }
+    const systemPrompt =
+      '你是工厂具身操作系统的 AI 助手，基于给定的实时上下文回答管理人员的问题。' +
+      '用中文、简洁、结构化作答；若数据不足，如实说明，不要编造。可以给出改善建议。';
+    const userPrompt = `实时上下文：\n${context}\n\n问题：${question}`;
+    for await (const delta of this.ark.chatStream(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      { temperature: 0.3 },
+    )) {
+      yield { delta };
+    }
+  }
+
+  /** 当前 Ark 模型名（流式结束时附带返回）。 */
+  async getArkModel(): Promise<string> {
+    try {
+      return (await this.ark?.getConfig())?.model ?? '';
+    } catch {
+      return '';
+    }
+  }
+
   /** 采集系统实时上下文（遥测负荷电量、开放事件、生产任务统计）。 */
   private async collectSystemContext(orgId?: string | null): Promise<string> {
     if (!this.db) return '（无数据库连接，无法采集实时上下文）';
@@ -422,7 +458,7 @@ export class AiService {
             ),
           )
           .groupBy(ewohTelemetry.deviceId)
-          .orderBy(sql`"avgLoad" desc`)
+          .orderBy(sql`round(avg(load_score)::numeric, 2) desc`)
           .limit(8);
       if (tele?.length) {
         lines.push('【近1小时设备负荷/电量】');
@@ -448,7 +484,7 @@ export class AiService {
         .from(ewohEvent)
         .where(orgId ? eq(ewohEvent.orgId, orgId) : undefined)
         .groupBy(ewohEvent.severity, ewohEvent.status)
-        .orderBy(sql`cnt desc`)
+        .orderBy(sql`count(*) desc`)
         .limit(8);
       if (events?.length) {
         lines.push('【事件统计】');
@@ -471,7 +507,7 @@ export class AiService {
         .from(ewohProductionTask)
         .where(orgId ? eq(ewohProductionTask.orgId, orgId) : undefined)
         .groupBy(ewohProductionTask.status)
-        .orderBy(sql`cnt desc`);
+        .orderBy(sql`count(*) desc`);
       if (tasks?.length) {
         lines.push('【生产任务】');
         for (const t of tasks) {

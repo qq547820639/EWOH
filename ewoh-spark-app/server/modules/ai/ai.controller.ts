@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Param, Body, Req, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Req, Res, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import type { Response } from 'express';
 import { AiService } from './ai.service';
 import { ArkService } from './ark.service';
 import { Roles } from '../shared/roles.decorator';
@@ -92,20 +93,47 @@ export class AiController {
     };
   }
 
-  /** POST /api/ai/chat — 自然语言问答（采集系统实时上下文调用 Ark）。 */
+  /**
+   * POST /api/ai/chat — 自然语言问答（SSE 流式）。
+   * 采集系统实时上下文调用 Ark（stream:true），增量输出 `data: {delta}`
+   * 事件，结束时输出 `data: {done, ok, model, answer}`；出错输出 `data: {error}`。
+   * 前端用 fetch + ReadableStream 消费（POST + SSE，非 EventSource）。
+   */
   @Post('chat')
-  chat(
+  async chat(
     @Body() body: { question?: string },
+    @Res() res: Response,
     @Req() request?: { userContext?: OrgContext },
   ) {
     const question = (body.question ?? '').trim();
     if (!question) {
-      return { ok: false, answer: '', model: '', error: 'question 不能为空。' };
+      res.status(400).json({ ok: false, answer: '', model: '', error: 'question 不能为空。' });
+      return;
     }
     // ADR-078 + R2-SMI-006：AI 上下文按本租户采集（跨租户混读关闭）；
     // 非 global_admin 且 org 缺失 fail-closed 401。
     const orgId = requireOrgScope(request?.userContext);
-    return this.aiService.chatWithContext(question, orgId);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    try {
+      let answer = '';
+      for await (const { delta } of this.aiService.chatWithContextStream(question, orgId)) {
+        answer += delta;
+        res.write(`data: ${JSON.stringify({ delta })}\n\n`);
+      }
+      const model = await this.aiService.getArkModel();
+      res.write(
+        `data: ${JSON.stringify({ done: true, ok: true, model, answer })}\n\n`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @Get('snapshot-version')

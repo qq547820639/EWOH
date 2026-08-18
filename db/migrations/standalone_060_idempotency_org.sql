@@ -41,14 +41,14 @@ DROP POLICY IF EXISTS idempotency_org_isolation ON __EWOH_SCHEMA__.ewoh_idempote
 CREATE POLICY idempotency_org_isolation ON __EWOH_SCHEMA__.ewoh_idempotency_keys
   FOR ALL
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
     OR COALESCE(NULLIF(current_setting('app.is_global_admin', true), ''), 'false') = 'true'
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     )
