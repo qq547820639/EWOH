@@ -132,13 +132,13 @@ function SchedulerRealtimeBadge({
     : null;
   return (
     <div
-      className="absolute right-2 top-2 z-40 flex items-center gap-1.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1 text-[10px] text-white/80 shadow-lg"
+      className="absolute right-2 top-2 z-40 flex items-center gap-1.5 rounded-md border border-white/10 bg-surface-inverse-raised/95 px-2 py-1 text-[10px] text-white/80 shadow-lg"
       title={`调度实时连接状态 · ${reason}`}
     >
       <span className={`rounded border px-1 font-medium ${metaCls}`}>{FRESHNESS_STATUS_LABELS[status]}</span>
       {contextStale && (
         <span
-          className="rounded border border-red-500/50 bg-red-500/20 px-1 font-bold text-red-400"
+          className="rounded border border-risk-blocked/50 bg-risk-blocked/20 px-1 font-bold text-risk-blocked"
           title="活跃方案与统一调度上下文（/api/scheduler/context）版本不一致，可能展示混合版本数据"
         >
           上下文已过期
@@ -774,7 +774,7 @@ const CommandMapShell = (): React.ReactElement => {
       <div
         id="command-map-main"
         tabIndex={-1}
-        className="fixed inset-0 z-50 flex flex-col bg-[hsl(220_14%_10%)] text-white"
+        className="fixed inset-0 z-50 flex flex-col bg-surface-inverse text-white"
       >
       <a
         href="#command-map-main"
@@ -807,16 +807,16 @@ const CommandMapShell = (): React.ReactElement => {
         <div
           role="alert"
           aria-live="polite"
-          className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+          className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-md border border-risk-degraded/40 bg-risk-degraded/10 px-3 py-2"
         >
-          <TriangleAlert className="w-4 h-4 shrink-0 text-amber-400" />
-          <span className="text-xs text-amber-200">
+          <TriangleAlert className="w-4 h-4 shrink-0 text-risk-degraded" />
+          <span className="text-xs text-warning-foreground">
             {urlNotices.map((n) => n.message).join('；')}
           </span>
           <button
             type="button"
             onClick={() => urlNotices.forEach((_, i) => dismissUrlNotice(i))}
-            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-300/80 hover:bg-amber-500/10"
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-risk-degraded/80 hover:bg-risk-degraded/10"
             aria-label={UI_ARIA_LABELS.closeUrlNotices}
           >
             <X className="w-3 h-3" />
@@ -898,11 +898,11 @@ const CommandMapShell = (): React.ReactElement => {
       {/* 底部标签栏 + 面板区 */}
       <div
         className={cn(
-          'shrink-0 flex flex-col bg-[hsl(220_14%_12%)] border-t border-white/10',
+          'shrink-0 flex flex-col bg-surface-inverse border-t border-white/10',
           panelExpanded ? 'h-[60vh]' : 'h-[260px] lg:h-[320px]',
         )}
       >
-        <div className="flex items-center gap-1 px-3 h-9 border-b border-white/10 bg-[hsl(220_14%_14%)] overflow-x-auto">
+        <div className="flex items-center gap-1 px-3 h-9 border-b border-white/10 bg-surface-inverse-raised overflow-x-auto">
           {TABS.map((t) => {
             const active = activeTab === t.key;
             const Icon = t.icon;
@@ -1097,7 +1097,7 @@ const CommandMapShell = (): React.ReactElement => {
         >
           <div
             ref={helpDialogRef}
-            className="bg-[hsl(220_14%_14%)] border border-white/10 rounded-xl p-6 shadow-2xl min-w-[320px]"
+            className="bg-surface-inverse-raised border border-white/10 rounded-xl p-6 shadow-2xl min-w-[320px]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">

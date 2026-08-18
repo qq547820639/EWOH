@@ -266,6 +266,9 @@ def describe_image(image_url="", question=DEFAULT_QUESTION, api_key="", base_url
     # R2-EDM-02：禁用 urlopen 的自动重定向，改为手动逐跳处理——每一跳都重新走
     # resolve_public_ip 校验 + 固定 IP 直连，且受 MAX_REDIRECTS 上限约束；
     # 任一跳校验失败或超过跳数上限即 fail-closed 拒绝，杜绝 302 跳内网。
+    # P1（2026-08-19 审计）：跨 host 重定向剥离 Authorization——凭据
+    # （Bearer api_key）不得转发给重定向目标（CDN/预签名域名，或被劫持后的
+    # 任意第三方 host），否则 API Key 原样泄漏（RFC 7235 / OWASP 同款要求）。
     current_url = url
     status = None
     raw = None
@@ -294,7 +297,12 @@ def describe_image(image_url="", question=DEFAULT_QUESTION, api_key="", base_url
                     "error": f"HTTP {status} 重定向缺少 Location。",
                     "answer": "",
                 }
-            current_url = urljoin(current_url, location)
+            next_url = urljoin(current_url, location)
+            if urlparse(next_url).netloc != urlparse(current_url).netloc:
+                headers = {
+                    k: v for k, v in headers.items() if k.lower() != "authorization"
+                }
+            current_url = next_url
             continue
         raw = data.decode("utf-8", "replace")
         break

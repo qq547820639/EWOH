@@ -105,7 +105,7 @@ export default function DecisionHistoryConsole(): React.ReactElement {
         {query.isError && (
           <span
             data-testid="decision-history-error"
-            className="flex items-center gap-1.5 text-sm text-red-600"
+            className="flex items-center gap-1.5 text-sm text-risk-blocked"
           >
             <TriangleAlert className="size-4" />
             决策历史加载失败

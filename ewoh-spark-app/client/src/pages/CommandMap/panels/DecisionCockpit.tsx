@@ -68,16 +68,16 @@ export interface DecisionCockpitProps {
 }
 
 const SECTION_TONE_CLASS: Record<string, string> = {
-  positive: 'text-emerald-400',
-  negative: 'text-red-400',
-  warning: 'text-amber-400',
+  positive: 'text-risk-normal',
+  negative: 'text-risk-blocked',
+  warning: 'text-risk-degraded',
   neutral: 'text-white/80',
 };
 
 const ACTION_META: Array<{ id: DecisionActionId; label: string; icon: LucideIcon; cls?: string }> = [
-  { id: 'accept', label: '确认处置', icon: Check, cls: 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10' },
+  { id: 'accept', label: '确认处置', icon: Check, cls: 'text-risk-normal border-risk-normal/30 hover:bg-risk-normal/10' },
   { id: 'compare', label: '方案对比', icon: GitCompareArrows, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
-  { id: 'override', label: '人工覆盖', icon: SlidersHorizontal, cls: 'text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/10' },
+  { id: 'override', label: '人工覆盖', icon: SlidersHorizontal, cls: 'text-risk-offline border-risk-offline/30 hover:bg-risk-offline/10' },
   { id: 'lock', label: '锁定分配', icon: Lock, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
   { id: 'exclude', label: '排除资源', icon: Ban, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
   { id: 'locate', label: '定位', icon: MapPin, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
@@ -413,7 +413,7 @@ export function DecisionCockpit({
                         {item.statusLabel}
                       </span>
                       {item.deviationLabel && (
-                        <span className="min-w-0 truncate text-amber-300/90">{item.deviationLabel}</span>
+                        <span className="min-w-0 truncate text-risk-degraded/90">{item.deviationLabel}</span>
                       )}
                     </div>
                   ))}

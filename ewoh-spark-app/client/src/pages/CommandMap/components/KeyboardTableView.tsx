@@ -80,7 +80,7 @@ export function KeyboardTableView<T>({
       <table className="w-full border-collapse text-left text-[10px] text-white/80" aria-label={ariaLabel}>
         <caption className="sr-only">{ariaLabel}</caption>
         <thead>
-          <tr className="sticky top-0 z-10 bg-[hsl(220_14%_16%)] text-white/60">
+          <tr className="sticky top-0 z-10 bg-surface-inverse-raised text-white/60">
             {columns.map((col) => (
               <th key={col.key} scope="col" className="border-b border-white/10 px-2 py-1.5 font-medium whitespace-nowrap">
                 {col.header}

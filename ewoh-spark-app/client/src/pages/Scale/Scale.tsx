@@ -295,7 +295,7 @@ const Scale = (): React.ReactElement => {
           type="button"
           disabled={bundleMutation.isPending}
           onClick={() => bundleMutation.mutate()}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           <PackageSearch className="h-4 w-4" />
           {bundleMutation.isPending ? '生成中' : '生成诊断包'}

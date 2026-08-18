@@ -1,7 +1,8 @@
 import { WorldCursorService, CursorExpiredError } from '../../../server/modules/world-cursor/world-cursor.service';
 import { makeWorldDb } from '../../helpers/fake-world-db';
 
-const ORG = 'org-cursor-test';
+// P0 #9（2026-08-19 审计）：入口 UUID 校验——org id 用固定 UUID。
+const ORG = '11111111-2222-4333-8444-555555555555';
 
 describe('world snapshot/delta cursor protocol（ADR-079：drizzle 假库）', () => {
   it('persists snapshot then returns incremental delta', async () => {

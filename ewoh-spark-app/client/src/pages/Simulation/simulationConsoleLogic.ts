@@ -8,21 +8,21 @@
 
 export type ConsoleTone = 'positive' | 'negative' | 'warning' | 'neutral';
 
-/** 可见性修复（2026-08-19 审计 D13）：-600 级状态文字在深色画布（--background
- * hsl(222 47% 8%)）上对比度 ~2.5:1 不可读 → 换 -400 级；neutral 直接用主题
- * token text-muted-foreground。浅色 chip（emerald-50 等）同步换深色主题
- * 半透明 chip，消除"亮块 + 深字"的突兀观感。 */
+/** 可见性修复（2026-08-19 审计 D13，P1 lint 收口）：状态文字用 risk-* 语义
+ * token（暗色自动提亮，浅色/深色两主题可读）；neutral 直接用主题 token
+ * text-muted-foreground。chip 用半透明 risk-*（浅色/深色主题都成立），
+ * 消除"亮块 + 深字"的突兀观感。 */
 export const TONE_TEXT: Record<ConsoleTone, string> = {
-  positive: 'text-emerald-400',
-  negative: 'text-red-400',
-  warning: 'text-amber-400',
+  positive: 'text-risk-normal',
+  negative: 'text-risk-blocked',
+  warning: 'text-risk-degraded',
   neutral: 'text-muted-foreground',
 };
 
 export const TONE_BORDER: Record<ConsoleTone, string> = {
-  positive: 'border-emerald-500/30 bg-emerald-500/10',
-  negative: 'border-red-500/30 bg-red-500/10',
-  warning: 'border-amber-500/30 bg-amber-500/10',
+  positive: 'border-risk-normal/30 bg-risk-normal/10',
+  negative: 'border-risk-blocked/30 bg-risk-blocked/10',
+  warning: 'border-risk-degraded/30 bg-risk-degraded/10',
   neutral: 'border-border bg-muted',
 };
 

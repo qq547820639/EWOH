@@ -268,7 +268,14 @@ describe('SchedulerService generatePlans（P1-SSOT：委托 V2 createRun，不�
 
     const result = await service.generatePlans({});
 
-    expect(triggerService.evaluate).toHaveBeenCalledWith('MANUAL', null, expect.anything());
+    // P0 #10（2026-08-19 审计）：evaluate 第 4 参 eventVersion（秒级时间戳）
+    // 已接入——断言同步（原 3 参断言为 event_version 整改的残尾）。
+    expect(triggerService.evaluate).toHaveBeenCalledWith(
+      'MANUAL',
+      null,
+      expect.anything(),
+      expect.any(Number),
+    );
     expect(solver.solveVariants).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(1);
     expect(result[0].planId).toBe('RUN-1A');

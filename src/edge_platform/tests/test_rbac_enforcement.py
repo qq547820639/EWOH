@@ -73,7 +73,17 @@ class _Fixture:
         self.tmp = tempfile.mkdtemp(prefix="ewoh_rbac_")
         self._old_env = dict(os.environ)
         os.environ["EWOH_RUNTIME_MODE"] = "production"
+        # D14（2026-08-19 审计）：production 种子口令强制环境变量置换——
+        # fixture 显式配置非默认口令（与生产部署同款要求）。
+        os.environ["EWOH_SEED_ADMIN_PASSWORD"] = "prod-admin-pw-1"
+        os.environ["EWOH_SEED_SAFETY_PASSWORD"] = "prod-safety-pw-1"
+        os.environ["EWOH_SEED_OPERATOR_PASSWORD"] = "prod-operator-pw-1"
         Settings.reset()
+        # 进程级校验器缓存按首次构造环境派生（test_auth 同款隔离模式）——
+        # 不重置则沿用前序测试文件派生的口令，本 fixture 的口令全部失效。
+        from edge_platform.auth.identity import OfflineIdentityBackend as _OIB
+
+        _OIB._seed_verifiers = None
         self.storage = Storage(Path(self.tmp) / "rbac.db")
         self.storage.init_db()
         self.repo = SchedulingRepository(self.storage, readonly=False)
@@ -97,6 +107,11 @@ class _Fixture:
         self.httpd.shutdown()
         self.httpd.server_close()
         Settings.reset()
+        # 校验器缓存重置：避免本 fixture 的 prod 口令污染后续测试文件
+        #（development 默认口令登录，如 test_security_boundary）。
+        from edge_platform.auth.identity import OfflineIdentityBackend
+
+        OfflineIdentityBackend._seed_verifiers = None
         os.environ.clear()
         os.environ.update(self._old_env)
 
@@ -140,19 +155,19 @@ class RbacEnforcementTest(unittest.TestCase):
         cls.fx.close()
 
     def test_operator_create_task_forbidden(self):
-        token = self.fx.login("operator", "operator123")
+        token = self.fx.login("operator", "prod-operator-pw-1")
         status, body = self.fx.req("POST", "/api/tasks", {"task_type": "搬运", "priority": 5}, token=token)
         self.assertEqual(status, 403, f"operator 无 manage_assignments 应 403: {body}")
         self.assertEqual(body["error"]["code"], "forbidden")
 
     def test_admin_create_task_allowed(self):
-        token = self.fx.login("admin", "admin123")
+        token = self.fx.login("admin", "prod-admin-pw-1")
         status, body = self.fx.req("POST", "/api/tasks", {"task_type": "搬运", "priority": 5}, token=token)
         self.assertEqual(status, 200, f"admin 应有 manage_assignments: {body}")
         self.assertTrue(body.get("ok"))
 
     def test_operator_view_audit_allowed(self):
-        token = self.fx.login("operator", "operator123")
+        token = self.fx.login("operator", "prod-operator-pw-1")
         status, _ = self.fx.req("GET", "/api/audit", token=token)
         self.assertEqual(status, 200, "operator 有 view_audit")
 
@@ -179,7 +194,7 @@ class RbacEnforcementTest(unittest.TestCase):
 
     def test_authenticated_get_allowed_with_view_action(self):
         # EDGE-001：认证后按 VIEW_* 动作放行（operator 有 view_telemetry/view_events）
-        token = self.fx.login("operator", "operator123")
+        token = self.fx.login("operator", "prod-operator-pw-1")
         for path in ("/api/tasks", "/api/telemetry", "/api/status"):
             status, body = self.fx.req("GET", path, token=token)
             self.assertNotEqual(status, 401, f"{path} 认证读不应 401: {body}")
@@ -197,14 +212,14 @@ class RbacEnforcementTest(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "forbidden")
 
     def test_operator_patch_task_forbidden(self):
-        token = self.fx.login("operator", "operator123")
+        token = self.fx.login("operator", "prod-operator-pw-1")
         self.fx.storage.upsert_task("TSK-RBAC-1", task_type="搬运", priority=5, status="draft")
         status, body = self.fx.req("PATCH", "/api/tasks/TSK-RBAC-1", {"priority": 9}, token=token)
         self.assertEqual(status, 403, f"operator PATCH 应 403: {body}")
         self.assertEqual(body["error"]["code"], "forbidden")
 
     def test_safety_officer_handle_event_allowed(self):
-        token = self.fx.login("safety_officer", "safety123")
+        token = self.fx.login("safety_officer", "prod-safety-pw-1")
         # 事件不存在会 404，但绝不能是 RBAC forbidden——证明 handle_events 放行到领域逻辑。
         status, body = self.fx.req(
             "POST", "/api/events/EVT-NOT-EXIST/status", {"status": "handled"}, token=token

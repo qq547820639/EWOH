@@ -178,6 +178,14 @@ const FILES = {
   standalone_telemetry_org_ts_index: path.join(root, 'db/migrations/standalone_061_telemetry_org_ts_index.sql'),
   standalone_telemetry_org_ts_index_rollback: path.join(root, 'db/migrations/standalone_061_telemetry_org_ts_index.rollback.sql'),
   standalone_telemetry_org_ts_index_verify: path.join(root, 'db/verify/standalone_061_telemetry_org_ts_index.verify.sql'),
+  // 2026-08-19 审计 P1：route_edge.status CHECK（拼写错误值 DB 层拦截）。
+  standalone_route_edge_status_check: path.join(root, 'db/migrations/standalone_062_route_edge_status_check.sql'),
+  standalone_route_edge_status_check_rollback: path.join(root, 'db/migrations/standalone_062_route_edge_status_check.rollback.sql'),
+  standalone_route_edge_status_check_verify: path.join(root, 'db/verify/standalone_062_route_edge_status_check.verify.sql'),
+  // 2026-08-19 审计 P1：ai_suggestion 列宽漂移收口（title 255→500）。
+  standalone_ai_suggestion_title_width: path.join(root, 'db/migrations/standalone_063_ai_suggestion_title_width.sql'),
+  standalone_ai_suggestion_title_width_rollback: path.join(root, 'db/migrations/standalone_063_ai_suggestion_title_width.rollback.sql'),
+  standalone_ai_suggestion_title_width_verify: path.join(root, 'db/verify/standalone_063_ai_suggestion_title_width.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -447,6 +455,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-telemetry-org-ts-index',
   '--rollback-standalone-telemetry-org-ts-index',
   '--verify-standalone-telemetry-org-ts-index',
+  '--apply-standalone-route-edge-status-check',
+  '--rollback-standalone-route-edge-status-check',
+  '--verify-standalone-route-edge-status-check',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
@@ -487,6 +498,8 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-control-attempt-unique': ['standalone_control_attempt_unique_verify', 'standalone_058_verified', 'standalone_058 control attempt unique (uq_ewoh_control_command_attempt (request_id,command_key,attempt_no) 唯一且有效)'],
   '--verify-standalone-spatial-entity-org-unique': ['standalone_spatial_entity_org_unique_verify', 'standalone_059_verified', 'standalone_059 spatial entity org unique (uq_ewoh_spatial_entity_org_entity (org_id,entity_id) 唯一且有效 + 旧单列唯一已清除)'],
   '--verify-standalone-idempotency-org': ['standalone_idempotency_org_verify', 'standalone_060_verified', 'standalone_060 idempotency org (org_id NOT NULL + (org_id,scope,idempotency_key) 复合唯一 + RLS 租户隔离)'],
+  '--verify-standalone-telemetry-org-ts-index': ['standalone_telemetry_org_ts_index_verify', 'standalone_061_verified', 'standalone_061 telemetry org ts index ((org_id, ts DESC) 复合索引 + 列序自证)'],
+  '--verify-standalone-route-edge-status-check': ['standalone_route_edge_status_check_verify', 'standalone_062_verified', 'standalone_062 route edge status check (CHECK route_edge_status_valid + 存量归一自证)'],
   // 审计 SQL-103（2026-08-17）补齐的 5 个缺失 verify 脚本，同为单字段断言形态。
   '--verify-users': ['users_verify', 'users_verified', '002_ewoh_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
   '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
@@ -1443,6 +1456,10 @@ function main() {
       '--rollback-standalone-idempotency-org': 'standalone_idempotency_org_rollback',
       '--apply-standalone-telemetry-org-ts-index': 'standalone_telemetry_org_ts_index',
       '--rollback-standalone-telemetry-org-ts-index': 'standalone_telemetry_org_ts_index_rollback',
+      '--apply-standalone-route-edge-status-check': 'standalone_route_edge_status_check',
+      '--rollback-standalone-route-edge-status-check': 'standalone_route_edge_status_check_rollback',
+      '--apply-standalone-ai-suggestion-title-width': 'standalone_ai_suggestion_title_width',
+      '--rollback-standalone-ai-suggestion-title-width': 'standalone_ai_suggestion_title_width_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

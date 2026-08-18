@@ -121,6 +121,8 @@ function makeService() {
 function makePlanServiceForApproval(configOverride: Record<string, unknown> = {}) {
   const worldState = {
     buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
+    // P1（2026-08-19 审计）：consultReplanApproval 改走只读快照——mock 同步。
+    buildSnapshotReadOnly: jest.fn().mockResolvedValue(makeSnapshot()),
     getCurrentWorldState: jest.fn().mockResolvedValue(makeSnapshot()),
   };
   const policyService = {
@@ -274,6 +276,15 @@ describe('M03 ReplanPreviewService', () => {
     // 覆盖 worldState：t-lock 在 lockedAssignments 中。
     const worldState = {
       buildSnapshot: jest.fn().mockResolvedValue(
+        buildSnapshot({
+          tasks: [
+            { id: 't-lock', title: 't-lock', taskType: 'work', priority: 'medium', status: 'executing', assigneeId: 'p1', deviceId: 'd1', stationId: null, zoneId: null, planStart: null, planEnd: null, progress: 0, predecessorIds: [], requiredSkills: ['work'], requiredCertifications: [] },
+          ],
+          lockedAssignments: [{ taskId: 't-lock', personId: 'p1', deviceId: 'd1', stationId: null }],
+        }),
+      ),
+      // P1（2026-08-19 审计）：consultReplanApproval 改走只读快照——mock 同步。
+      buildSnapshotReadOnly: jest.fn().mockResolvedValue(
         buildSnapshot({
           tasks: [
             { id: 't-lock', title: 't-lock', taskType: 'work', priority: 'medium', status: 'executing', assigneeId: 'p1', deviceId: 'd1', stationId: null, zoneId: null, planStart: null, planEnd: null, progress: 0, predecessorIds: [], requiredSkills: ['work'], requiredCertifications: [] },

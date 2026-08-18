@@ -44,8 +44,10 @@ describe('ExecutionService（P4-EXEC：正式执行领域）', () => {
   it('createFromPlan：由 Plan Assignment 创建 PLANNED 执行记录（含 planned 行程事实）', async () => {
     const inserted = makeRow({ assignmentId: 'ASG-NEW', executionId: 'EXEC-NEW' });
     const db = {
+      // P1（2026-08-19 审计）：createFromPlan 批量化后存在性检查为一次性
+      // inArray 查询（真实 drizzle builder 可直接 await，mock 同步建模）。
       select: jest.fn(() => ({
-        from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve([])) })) })),
+        from: jest.fn(() => ({ where: jest.fn(() => Promise.resolve([])) })),
       })),
       insert: jest.fn(() => ({
         values: jest.fn(() => ({

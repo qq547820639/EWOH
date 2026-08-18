@@ -349,7 +349,7 @@ const System = (): React.ReactElement => {
             <button
               type="submit"
               disabled={evaluate.isPending || !flagKeys.trim()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
               <Search className="h-4 w-4" />
               评估
@@ -471,7 +471,7 @@ const System = (): React.ReactElement => {
             <button
               type="submit"
               disabled={addParameter.isPending || !paramKey.trim() || !paramName.trim()}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
               登记
@@ -582,7 +582,7 @@ const System = (): React.ReactElement => {
                               <button
                                 type="button"
                                 onClick={() => rollbackParam.mutate(parameter.key)}
-                                className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-800 px-2 text-xs font-medium text-white"
+                                className="inline-flex h-8 items-center gap-1 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground"
                               >
                                 <Undo2 className="h-3.5 w-3.5" />
                                 回滚

@@ -1,6 +1,8 @@
 import { ewohAiSuggestion, ewohTelemetry, ewohEvent, ewohProductionTask } from '@server/database/schema';
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -432,7 +434,17 @@ export class AiService {
       actor,
       `Suggestion ${id}`,
     );
-    return JSON.parse(String((row as Record<string, unknown>).content)) as AiSuggestion;
+    // P2（2026-08-19 审计）：content 为历史脏数据/截断时 JSON.parse 抛
+    // SyntaxError 直接 500——显式 502 数据损坏语义（LLM 解析路径已有防御，
+    // 此处为 DB 读路径的同款收口）。
+    try {
+      return JSON.parse(String((row as Record<string, unknown>).content)) as AiSuggestion;
+    } catch {
+      throw new HttpException(
+        `Suggestion ${id} content is corrupted (unparseable JSON)`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 
   /** NEST-422：单条读 org 守卫（跨租户 404）。 */

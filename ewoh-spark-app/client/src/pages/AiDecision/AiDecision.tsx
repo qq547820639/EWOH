@@ -135,21 +135,23 @@ const AiDecision = (): React.ReactElement => {
       </div>
 
       {suggestionMutation.isSuccess && !planMutation.isPending && (
-        <div className="flex items-center gap-2 text-sm text-emerald-700">
+        // P1（2026-08-19 审计）：暗绿文字透明底对比不足——-700 级在深色画布上
+        // 不可读，换 -400 级（与 Simulation/DecisionHistory D13 修复同模式）。
+        <div className="flex items-center gap-2 text-sm text-emerald-400">
           <CheckCircle2 className="size-4" />
           建议生成成功，可继续生成调度方案。
         </div>
       )}
 
       {planMutation.isSuccess && plan && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
           <CheckCircle2 className="size-4" />
           模拟方案 {plan.id} 已生成 · is_simulation={String(plan.isSimulation)} · status={plan.status}
         </div>
       )}
 
       {errorMessage && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           {errorMessage}
         </div>
@@ -188,9 +190,9 @@ const AiDecision = (): React.ReactElement => {
       )}
 
       {plan && (
-        <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
-          <h2 className="font-semibold text-emerald-800">模拟方案 {plan.id}</h2>
-          <p className="mt-1 text-sm text-emerald-700">
+        <section className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-5">
+          <h2 className="font-semibold text-emerald-400">模拟方案 {plan.id}</h2>
+          <p className="mt-1 text-sm text-emerald-400">
             is_simulation={String(plan.isSimulation)} · status={plan.status}
           </p>
         </section>

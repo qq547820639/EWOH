@@ -157,15 +157,17 @@ export const fileAttachmentArray = customType<{
 export const ewohAiSuggestion = pgTable("ewoh_ai_suggestion", {
   id: uuid("id").primaryKey().defaultRandom(),
   suggestionId: varchar("suggestion_id", { length: 255 }).notNull().unique(),
+  // 列宽与 DB 对齐（2026-08-19 审计 P1 契约对齐）：title 500 由
+  // standalone_063 拓宽（input.problem 可超 255）；其余三列回填 DB 实况 255。
   title: varchar("title", { length: 500 }),
-  suggestionType: varchar("suggestion_type", { length: 50 }),
-  status: varchar("status", { length: 50 }).default('not_generated'),
+  suggestionType: varchar("suggestion_type", { length: 255 }),
+  status: varchar("status", { length: 255 }).default('not_generated'),
   relatedEventId: varchar("related_event_id", { length: 255 }),
   relatedTaskId: varchar("related_task_id", { length: 255 }),
   inputSummary: text("input_summary"),
   content: text("content"),
   riskAssessment: text("risk_assessment"),
-  aiLevel: varchar("ai_level", { length: 10 }).default('A2'),
+  aiLevel: varchar("ai_level", { length: 255 }).default('A2'),
   triggeredBy: varchar("triggered_by", { length: 255 }),
   /**
    * @type { planTitle: string; planSummary: string; strategy: string; riskLevel: string; affectedPersons: string; taskAssignments: string; resourceChanges: string; estimatedCompletion: string; capacityImpact: string; riskAssessment: string; uncertainty: string; failureConditions: string; confirmationItems: string }

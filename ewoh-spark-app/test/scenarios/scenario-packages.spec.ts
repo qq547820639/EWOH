@@ -88,7 +88,8 @@ describe('EWOH scenario packages (unit smoke)', () => {
   it('SP-05 digital world: snapshot, delta, cursor expiry', async () => {
     // ADR-079：世界游标已改 drizzle 链式路径——共用 §31 单一假库。
     // W4：游标读写显式租户上下文（org 谓词过滤，缺省 fail-closed）。
-    const ORG = 'org-sp5';
+    // P0 #9（2026-08-19 审计）：入口 UUID 校验——org id 用固定 UUID。
+    const ORG = '11111111-2222-4333-8444-555555555555';
     const world = new WorldCursorService(makeWorldDb().db as never);
     await world.applyUpsert({ id: 'e1', type: 'person' }, ORG);
     const snapshot = await world.getSnapshot(ORG);

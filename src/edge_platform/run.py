@@ -360,9 +360,15 @@ def main():
         if world_store is not None:
             try:
                 import json as _json
+                import os as _os
 
-                with open(world_state_path, "w", encoding="utf-8") as fh:
+                # P1（2026-08-19 审计）：原子写（tmp + rename）——直接以 "w" 打开
+                # 目标文件时，持久化中途崩溃（断电/OOM）会留下截断的半份 JSON，
+                # 下次启动加载即损坏。与 event_uplink._persist 同款模式。
+                _tmp = f"{world_state_path}.tmp"
+                with open(_tmp, "w", encoding="utf-8") as fh:
                     _json.dump(world_store.to_dict(), fh, ensure_ascii=False)
+                _os.replace(_tmp, world_state_path)
                 print(f"[EWOH] 本地世界状态已持久化: {world_state_path}")
             except Exception as exc:  # 显式记录，不静默吞
                 print(f"[EWOH] ERROR: 本地世界状态持久化失败: {exc}")

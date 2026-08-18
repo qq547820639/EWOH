@@ -49,11 +49,11 @@ export function ReplanPreviewBlock({
           <div className="text-[9px] text-white/50">影响任务</div>
         </div>
         <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
-          <div className="text-sm font-bold text-amber-400">{summary.changedAssignmentCount}</div>
+          <div className="text-sm font-bold text-risk-degraded">{summary.changedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">变更分配</div>
         </div>
         <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
-          <div className="text-sm font-bold text-emerald-400">{summary.unchangedAssignmentCount}</div>
+          <div className="text-sm font-bold text-risk-normal">{summary.unchangedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">不变分配</div>
         </div>
         <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
@@ -61,7 +61,7 @@ export function ReplanPreviewBlock({
           <div className="text-[9px] text-white/50">新增</div>
         </div>
         <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
-          <div className="text-sm font-bold text-red-400">-{summary.removedAssignmentCount}</div>
+          <div className="text-sm font-bold text-risk-blocked">-{summary.removedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">移除</div>
         </div>
       </div>
@@ -74,7 +74,7 @@ export function ReplanPreviewBlock({
             <div
               className={cn(
                 'text-sm font-semibold',
-                d.value < 0 ? 'text-emerald-400' : d.value > 0 ? 'text-red-400' : 'text-white',
+                d.value < 0 ? 'text-risk-normal' : d.value > 0 ? 'text-risk-blocked' : 'text-white',
               )}
             >
               {d.value > 0 ? '+' : ''}
@@ -106,17 +106,17 @@ export function ReplanPreviewBlock({
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'approved':
-      return 'bg-green-500/20 text-green-400 border-green-500/30';
+      return 'bg-risk-normal/20 text-risk-normal border-risk-normal/30';
     case 'dispatched':
-      return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+      return 'bg-risk-offline/20 text-risk-offline border-risk-offline/30';
     case 'executing':
-      return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+      return 'bg-risk-offline/20 text-risk-offline border-risk-offline/30';
     case 'completed':
-      return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      return 'bg-risk-normal/20 text-risk-normal border-risk-normal/30';
     case 'rejected':
-      return 'bg-red-500/20 text-red-400 border-red-500/30';
+      return 'bg-risk-blocked/20 text-risk-blocked border-risk-blocked/30';
     default:
-      return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+      return 'bg-risk-unknown/20 text-risk-unknown border-risk-unknown/30';
   }
 }
 
@@ -190,7 +190,7 @@ export function ApprovePlanDialog({
 }): React.ReactElement {
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white">
         <DialogHeader>
           <DialogTitle className="text-white">审批调度方案</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -237,7 +237,7 @@ export function RejectPlanDialog({
 }): React.ReactElement {
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white">
         <DialogHeader>
           <DialogTitle className="text-white">驳回调度方案</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -292,7 +292,7 @@ export function AdjustAssignmentDialog({
 }): React.ReactElement {
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white">
         <DialogHeader>
           <DialogTitle className="text-white">调整指派并重排</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -310,7 +310,7 @@ export function AdjustAssignmentDialog({
                     selectedPlan.assignments.find((a) => a.taskId === e.target.value) ?? null,
                   )
                 }
-                className="mt-1 w-full rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+                className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white outline-none"
               >
                 {selectedPlan.assignments.map((a) => (
                   <option key={a.taskId} value={a.taskId}>
@@ -324,7 +324,7 @@ export function AdjustAssignmentDialog({
               <select
                 value={personId}
                 onChange={(e) => onPersonIdChange(e.target.value)}
-                className="mt-1 w-full rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+                className="mt-1 w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white outline-none"
               >
                 <option value="">请选择人员</option>
                 {personnel.map((p) => (
@@ -375,7 +375,7 @@ export function ReplanConfirmDialog({
 }): React.ReactElement {
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-white">重新排程确认</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -386,9 +386,9 @@ export function ReplanConfirmDialog({
         {previewLoading ? (
           <div className="py-6 text-center text-xs text-white/60">正在计算重排预览…</div>
         ) : previewError ? (
-          <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <div className="rounded-md border border-risk-blocked/30 bg-risk-blocked/10 px-3 py-2 text-xs text-risk-blocked">
             预览失败：{previewError}
-            <div className="mt-1 text-[10px] text-red-300/70">可关闭后重试；不会执行任何变更。</div>
+            <div className="mt-1 text-[10px] text-risk-blocked/70">可关闭后重试；不会执行任何变更。</div>
           </div>
         ) : preview && target ? (
           <ReplanPreviewBlock preview={preview} plan={target} />
@@ -439,7 +439,7 @@ export function DispatchConfirmDialog({
 }): React.ReactElement {
   return (
     <Dialog open={!!target} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-xl">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-white">确认下发执行</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -485,7 +485,7 @@ export function ComparePlansDialog({
 }): React.ReactElement {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-[hsl(220_14%_14%)] border-white/10 text-white max-w-2xl">
+      <DialogContent className="bg-surface-inverse-raised border-white/10 text-white max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-white">方案对比</DialogTitle>
           <DialogDescription className="text-white/70">
@@ -502,7 +502,7 @@ export function ComparePlansDialog({
             <select
               value={comparePlanId ?? ''}
               onChange={(e) => onComparePlanIdChange(e.target.value || null)}
-              className="flex-1 rounded-md border border-white/10 bg-[hsl(220_14%_18%)] px-2 py-1.5 text-xs text-white outline-none"
+              className="flex-1 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white outline-none"
             >
               <option value="">
                 {comparePlanId ? '请选择对比方案' : '暂无其他方案可选（无兜底）'}
@@ -549,7 +549,7 @@ function CompareResult({ result }: { result: Record<string, unknown> }) {
           return (
             <div key={key} className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5">
               <div className="text-[9px] text-white/50">{label}</div>
-              <div className={cn('text-sm font-semibold', v != null && v < 0 ? 'text-emerald-400' : v != null && v > 0 ? 'text-red-400' : 'text-white')}>
+              <div className={cn('text-sm font-semibold', v != null && v < 0 ? 'text-risk-normal' : v != null && v > 0 ? 'text-risk-blocked' : 'text-white')}>
                 {v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(0)}`}
               </div>
             </div>

@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from edge_platform.edge.bridge import event_uplink
 from edge_platform.edge.bridge.event_uplink import EventUplink
 from edge_platform.edge.bus import MessageBus
 
@@ -91,11 +92,11 @@ class EventUplinkTest(unittest.TestCase):
         self.assertEqual(posted["body"]["events"][0]["eventType"], "EntityDeclared")
 
     def test_post_failure_keeps_batch(self):
-        # 未监听端口 → 连接失败 → 批次回到缓冲（at-least-once）
+        # 未监听端口 → 连接失败 → 瞬态失败可重试（at-least-once）
         uplink = EventUplink(self.bus, "http://127.0.0.1:1")
         uplink._enqueue({"envelope": _envelope(event_id="EVT-FAIL")})
         batch = uplink._drain()
-        self.assertFalse(uplink._post_batch(batch))
+        self.assertEqual(uplink._post_batch(batch), "retry")
         self.assertEqual(uplink.health()["stats"]["failures"], 0)  # 直调不计数（loop 计数）
         self.assertEqual(len(batch), 1)
 
@@ -127,7 +128,7 @@ class EventUplinkTest(unittest.TestCase):
             uplink._enqueue({"envelope": _envelope(event_id=f"EVT-{i}")})
         batch = uplink._drain()
         self.assertEqual(len(batch), 2)
-        self.assertTrue(uplink._post_batch(batch))
+        self.assertEqual(uplink._post_batch(batch), "ok")
         deadline = time.time() + 3
         while time.time() < deadline and not _UplinkHandler.received_batches:
             time.sleep(0.05)
@@ -157,11 +158,11 @@ class EventUplinkTest(unittest.TestCase):
             uplink1 = EventUplink(self.bus, "http://127.0.0.1:1", queue_path=queue_path)
             uplink1._enqueue({"envelope": _envelope(event_id="EVT-RESUME")})
             self.assertTrue(os.path.exists(queue_path))
-            # 模拟进程重启：新实例从队列文件恢复未发送批次
+            # 模拟进程重启：新实例从队列文件恢复未发送批次（JSONL 格式）
             uplink2 = EventUplink(self.bus, f"http://127.0.0.1:{self.port}", queue_path=queue_path)
             self.assertEqual(uplink2.health()["buffer"], 1)
             batch = uplink2._drain()
-            self.assertTrue(uplink2._post_batch(batch))
+            self.assertEqual(uplink2._post_batch(batch), "ok")
             with uplink2._lock:
                 uplink2._persist()  # 成功截断
             deadline = time.time() + 3
@@ -171,11 +172,113 @@ class EventUplinkTest(unittest.TestCase):
             self.assertEqual(
                 _UplinkHandler.received_batches[0]["body"]["events"][0]["eventId"], "EVT-RESUME"
             )
-            # 队列文件已被截断为空
-            import json as _json
-
+            # 队列文件已被截断为空（JSONL：0 行）
             with open(queue_path, encoding="utf-8") as fh:
-                self.assertEqual(_json.load(fh), [])
+                self.assertEqual(fh.read().strip(), "")
+
+    def test_legacy_json_array_queue_loadable(self):
+        """旧全量重写格式（JSON 数组）的存量队列文件仍可恢复。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_path = os.path.join(tmp, "uplink-queue.json")
+            with open(queue_path, "w", encoding="utf-8") as fh:
+                json.dump([_envelope(event_id="EVT-LEGACY")], fh, ensure_ascii=False)
+            uplink = EventUplink(self.bus, f"http://127.0.0.1:{self.port}", queue_path=queue_path)
+            self.assertEqual(uplink.health()["buffer"], 1)
+            self.assertEqual(uplink._drain()[0]["eventId"], "EVT-LEGACY")
+
+    def test_poison_batch_dead_lettered_not_blocking(self):
+        """P1（2026-08-19 审计）：毒信封 dead-letter——队头信封连续失败达到
+        MAX_BATCH_ATTEMPTS 次后被剔除转死信文件，后续批次正常上行（不再永久
+        阻塞队头）。驱动真实 _loop（退避打桩加速）。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_path = os.path.join(tmp, "uplink-queue.json")
+            uplink = EventUplink(self.bus, "http://127.0.0.1:1", queue_path=queue_path)
+            uplink._backoff = lambda: None  # 测试加速：跳过退避 sleep
+            # 含毒信封（EVT-POISON）的批次持续失败；不含的正常成功
+            uplink._post_batch = (
+                lambda batch: "retry"
+                if any(e.get("eventId") == "EVT-POISON" for e in batch)
+                else "ok"
+            )
+            uplink._enqueue({"envelope": _envelope(event_id="EVT-POISON")})
+            uplink._enqueue({"envelope": _envelope(event_id="EVT-AFTER")})
+            uplink.start()
+            try:
+                # 等待毒信封剔除 + 后续批次投递成功
+                deadline = time.time() + 10
+                while time.time() < deadline:
+                    stats = uplink.health()["stats"]
+                    if stats["dead_lettered"] >= 1 and stats["sent"] >= 1:
+                        break
+                    time.sleep(0.02)
+                stats = uplink.health()["stats"]
+                self.assertEqual(stats["dead_lettered"], 1, "毒信封应剔除转死信（且仅它一条）")
+                self.assertEqual(stats["sent"], 1, "后续批次应正常上行（不被阻塞）")
+                self.assertEqual(uplink.health()["buffer"], 0)
+                # 死信文件落盘且可解析（人工重放载体），内容是毒信封
+                dl_path = f"{queue_path}.dead-letter.jsonl"
+                self.assertTrue(os.path.exists(dl_path))
+                with open(dl_path, encoding="utf-8") as fh:
+                    lines = [json.loads(line) for line in fh if line.strip()]
+                self.assertEqual([e["eventId"] for e in lines], ["EVT-POISON"])
+            finally:
+                uplink.stop()
+
+    def test_cloud_4xx_reject_goes_dead_letter(self):
+        """P1：云端 4xx（非 429）拒绝 → 立即 dead_letter（重试无意义）。"""
+
+        class _RejectHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok": false}')
+
+            def log_message(self, *args):
+                return
+
+        reject_httpd = HTTPServer(("127.0.0.1", 0), _RejectHandler)
+        reject_port = reject_httpd.server_address[1]
+        threading.Thread(target=reject_httpd.serve_forever, daemon=True).start()
+        try:
+            uplink = EventUplink(self.bus, f"http://127.0.0.1:{reject_port}")
+            uplink._enqueue({"envelope": _envelope(event_id="EVT-REJECT")})
+            self.assertEqual(uplink._post_batch(uplink._drain()), "dead_letter")
+        finally:
+            reject_httpd.shutdown()
+            reject_httpd.server_close()
+
+    def test_buffer_bounded_drops_oldest(self):
+        """P1：离线缓冲有界——满时丢最旧（dropped_overflow 计数），新事件优先。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_path = os.path.join(tmp, "uplink-queue.json")
+            uplink = EventUplink(self.bus, "http://127.0.0.1:1", queue_path=queue_path)
+            for i in range(event_uplink.MAX_BUFFER + 2):
+                uplink._enqueue({"envelope": _envelope(event_id=f"EVT-CAP-{i}")})
+            health = uplink.health()
+            self.assertEqual(health["buffer"], event_uplink.MAX_BUFFER, "缓冲以 MAX_BUFFER 为界")
+            self.assertEqual(health["stats"]["dropped_overflow"], 2, "溢出丢弃计数")
+            # 最旧 2 条被丢弃，队头是 EVT-CAP-2
+            self.assertEqual(uplink._drain()[0]["eventId"], "EVT-CAP-2")
+
+    def test_jsonl_tail_truncated_line_skipped(self):
+        """P1：JSONL 尾部半行（崩溃残留）加载时显式跳过，不影响其余行。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            queue_path = os.path.join(tmp, "uplink-queue.json")
+            with open(queue_path, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(_envelope(event_id="EVT-OK"), ensure_ascii=False) + "\n")
+                fh.write('{"eventId": "EVT-HALF"')  # 无换行的半行
+            uplink = EventUplink(self.bus, f"http://127.0.0.1:{self.port}", queue_path=queue_path)
+            self.assertEqual(uplink.health()["buffer"], 1)
+            self.assertEqual(uplink._drain()[0]["eventId"], "EVT-OK")
 
 
 if __name__ == "__main__":

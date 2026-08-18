@@ -270,7 +270,7 @@ const MapViewport = ({
 
     {/* R-6 / ADR-035：调度叠加图层开关（桌面端；移动端小屏控件见下）。 */}
     <div className="absolute left-2 top-2 z-30 hidden max-w-[calc(100%-1rem)] items-center gap-1.5 md:flex">
-      <div className="flex flex-wrap gap-0.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 p-0.5">
+      <div className="flex flex-wrap gap-0.5 rounded-md border border-white/10 bg-surface-inverse-raised/95 p-0.5">
         {LAYER_ITEMS.map((item) => {
           const active = schedulerState.ui.activeLayers.includes(item.key);
           return (
@@ -291,7 +291,7 @@ const MapViewport = ({
       </div>
       {schedulerState.ui.activeLayers.includes('execution-deviation') &&
         schedulerState.executionsError && (
-          <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
+          <span className="rounded border border-risk-blocked/30 bg-risk-blocked/10 px-1.5 py-0.5 text-[10px] text-risk-blocked">
             执行记录加载失败
           </span>
         )}
@@ -311,7 +311,7 @@ const MapViewport = ({
       <select
         value={mode}
         onChange={(event) => setMode(event.target.value)}
-        className="h-8 max-w-[150px] rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 text-xs text-white outline-none"
+        className="h-8 max-w-[150px] rounded-md border border-white/10 bg-surface-inverse-raised/95 px-2 text-xs text-white outline-none"
         aria-label="切换地图模式"
       >
         {MODE_ITEMS.map((item) => (
@@ -320,7 +320,7 @@ const MapViewport = ({
           </option>
         ))}
       </select>
-      <div className="flex gap-0.5 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 p-0.5">
+      <div className="flex gap-0.5 rounded-md border border-white/10 bg-surface-inverse-raised/95 p-0.5">
         {(['L0', 'L1', 'L2', 'L3', 'L4'] as const).map((l) => (
           <button
             key={l}

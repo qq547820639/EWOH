@@ -182,13 +182,18 @@ def action_for_request(method, path):
 
     写映射：
     - 事件处置/评论（含 legacy /api/event/status） → handle_events；
-    - 任务/调度/派工写路径 → manage_assignments（operator 无权，防越权派工）；
+    - 任务/调度/派工写路径（含 /api/scheduler/* 求解） → manage_assignments
+      （operator 无权，防越权派工）；
     - 模型/规则写路径 → manage_models / manage_rules；
+    - /api/telemetry/export（GET/POST 导出） → export_data；
     - /api/reset（破坏性数据重置） → manage_data（仅 admin）；
     - /api/world/*（写世界状态/事件/预测） → manage_world（仅 admin）；
     - /api/query、/api/scenario/evaluate、/api/vision/understand → query_assistant；
     - /api/andon/raise → raise_andon（现场开灯）；
     - /api/exo/bind|unbind → manage_devices（外骨骼绑定归属另见路由层校验）。
+
+    2026-08-19 审计 P1：production 下 server 对未映射的 /api/* 写路径
+    fail-closed 默认拒绝（与 GET 读守卫同款语义），未映射不再隐式放行。
     """
     m = (method or "").upper()
     p = path or ""
@@ -240,17 +245,26 @@ def _action_for_get(p):
 
 
 def _action_for_write(p):
-    """写路径 → 动作（未映射返回 None；production 下写仍强制认证）。"""
+    """写路径 → 动作（未映射返回 None；production 下 server 对未映射 /api/*
+    写路径 fail-closed 拒绝——2026-08-19 审计 P1：原语义为 action=None 静默
+    放行（fail-open），如 /api/scheduler/v2/solve 触发 CP-SAT 求解却绕过 RBAC）。"""
     if p == "/api/event/status":  # EDGE-008：legacy 端点显式映射，消除 RBAC 绕过
         return HANDLE_EVENTS
     if p.startswith("/api/events/"):
         return HANDLE_EVENTS
-    if p.startswith("/api/tasks") or p.startswith("/api/scheduling") or p.startswith("/api/assignments"):
+    if (
+        p.startswith("/api/tasks")
+        or p.startswith("/api/scheduling")
+        or p.startswith("/api/assignments")
+        or p.startswith("/api/scheduler/")  # P1：v2/solve 求解写路径属派工域
+    ):
         return MANAGE_ASSIGNMENTS
     if p.startswith("/api/models"):
         return MANAGE_MODELS
     if p.startswith("/api/rules"):
         return MANAGE_RULES
+    if p == "/api/telemetry/export":  # P1：POST 导出与 GET 同域（export_data）
+        return EXPORT_DATA
     if p == "/api/reset":  # EDGE-012：破坏性数据操作仅 admin
         return MANAGE_DATA
     if p.startswith("/api/world/"):  # EDGE-038：写世界模型仅 admin

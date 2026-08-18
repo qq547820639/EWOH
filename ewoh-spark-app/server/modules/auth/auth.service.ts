@@ -1,4 +1,11 @@
-import { Inject, Injectable, Optional, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
@@ -100,6 +107,7 @@ const DUMMY_BCRYPT_HASH =
 @Injectable()
 export class AuthService {
   private readonly redis: RedisService;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: any,
@@ -280,11 +288,21 @@ export class AuthService {
       secret(),
       { algorithm: 'HS256', expiresIn: refreshTtl },
     );
-    await this.redis.set(
-      `auth:refresh:${refreshJti}`,
-      { userId: user.userId, type: 'refresh' } satisfies StoredRefreshToken,
-      refreshTtl,
-    );
+    try {
+      await this.redis.set(
+        `auth:refresh:${refreshJti}`,
+        { userId: user.userId, type: 'refresh' } satisfies StoredRefreshToken,
+        refreshTtl,
+      );
+    } catch (err) {
+      // P2（2026-08-19 审计）：Redis 故障原样抛出会走全局过滤器未知异常分支，
+      // 非 production 环境 details/stack 原样返回客户端（裸错误未脱敏）。
+      // 与 findUser 同款收口：脱敏的 HttpException（503），详情只进服务端日志。
+      this.logger.error(
+        `refresh token persist failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new ServiceUnavailableException('Authentication store is unavailable');
+    }
     return {
       accessToken,
       refreshToken,

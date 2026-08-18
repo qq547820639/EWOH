@@ -32,16 +32,18 @@ const MainApp = () => {
       <AppContainer>
         <ErrorBoundary
           fallbackRender={({ error, resetErrorBoundary }) => (
-            <div className="flex min-h-screen items-center justify-center bg-[hsl(220_14%_96%)] p-6">
-              <div className="rounded-lg border border-red-200 bg-white p-6 text-center">
-                <p className="text-sm font-semibold text-red-700">页面加载失败</p>
-                <p className="mt-2 max-w-md text-xs text-[hsl(218_10%_42%)]">
+            // P1（2026-08-19 审计）：崩溃页改语义令牌（随 data-theme 自适应暗色），
+            // 原硬编码浅色（bg-white/hsl 220 14% 96%）在暗色模式下成刺眼白屏。
+            <div className="flex min-h-screen items-center justify-center bg-background p-6">
+              <div className="rounded-lg border border-border bg-card p-6 text-center text-card-foreground">
+                <p className="text-sm font-semibold text-destructive">页面加载失败</p>
+                <p className="mt-2 max-w-md text-xs text-muted-foreground">
                   {error instanceof Error ? error.message : '未知错误'}
                 </p>
                 <button
                   type="button"
                   onClick={resetErrorBoundary}
-                  className="mt-4 rounded-lg bg-[hsl(221_83%_53%)] px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+                  className="mt-4 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
                 >
                   重试
                 </button>

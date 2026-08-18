@@ -498,6 +498,12 @@ def make_handler(ctx):
                     return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
                 # P1 RBAC 落地：认证通过后按角色校验写动作（如 operator 无 manage_assignments）。
                 action = action_for_request("POST", p)
+                # P1（2026-08-19 审计）：fail-closed——未映射的 /api/* 写路径默认拒绝。
+                # 原 `if action and ...` 在 action=None 时静默放行（fail-open），
+                # 任何未登记 RBAC 动作的写端点都能绕过角色矩阵。与 GET 读守卫同款语义。
+                if action is None and p.startswith("/api/") and p not in PUBLIC_POST_PATHS:
+                    self._post_audit_pending = False
+                    return self._new_error("unauthorized", "production 下未映射的 API 写路径默认拒绝", 401)
                 if action and not rbac_allowed(self, action):
                     self._post_audit_pending = False
                     return _rbac_forbidden(self)
@@ -579,6 +585,10 @@ def make_handler(ctx):
                     return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
                 # P1 RBAC 落地：认证通过后按角色校验写动作（manage_assignments）。
                 action = action_for_request("PATCH", p)
+                # P1（2026-08-19 审计）：fail-closed——未映射的 /api/* 写路径默认拒绝
+                # （与 do_POST 同款语义；当前 PATCH 面收窄在 /api/tasks/*，此为防御纵深）。
+                if action is None and p.startswith("/api/") and p not in PUBLIC_POST_PATHS:
+                    return self._new_error("unauthorized", "production 下未映射的 API 写路径默认拒绝", 401)
                 if action and not rbac_allowed(self, action):
                     return _rbac_forbidden(self)
             # 写操作自动审计（与 do_POST 对齐）：send_json 响应前落库防竞态。

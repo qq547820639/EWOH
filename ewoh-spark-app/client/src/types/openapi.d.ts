@@ -7105,6 +7105,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/suggestions/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger A2 suggestion (SSE streaming)
+         * @description 建议生成流式版（AI 接入优化 2026-08-18）：规则骨架先出 → LLM 增量 （data: {phase} 事件流）→ done 落库。与 /api/ai/chat 同款 SSE 协议。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionRequest"];
+                };
+            };
+            responses: {
+                /** @description SSE stream (text/event-stream, phase events skeleton/delta/done) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/suggestions/{id}": {
         parameters: {
             query?: never;

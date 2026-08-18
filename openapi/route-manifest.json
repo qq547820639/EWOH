@@ -213,6 +213,7 @@
     "POST /api/ai/chat",
     "POST /api/ai/plans",
     "POST /api/ai/suggestions",
+    "POST /api/ai/suggestions/stream",
     "POST /api/ai/vision/understand",
     "POST /api/alerts/{id}/state",
     "POST /api/approvals",
@@ -614,6 +615,7 @@
     "POST /api/ai/chat",
     "POST /api/ai/plans",
     "POST /api/ai/suggestions",
+    "POST /api/ai/suggestions/stream",
     "POST /api/ai/vision/understand",
     "POST /api/alerts/{id}/state",
     "POST /api/approvals",
@@ -802,9 +804,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 399,
-  "specOperations": 592,
-  "documentedControllerOperations": 399,
+  "controllerOperations": 400,
+  "specOperations": 593,
+  "documentedControllerOperations": 400,
   "undocumented": [],
   "unimplemented": []
 }

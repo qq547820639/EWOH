@@ -400,6 +400,14 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
               if (parsed.event === 'heartbeat') {
                 continue;
               }
+              if (parsed.event === 'error') {
+                // P2（2026-08-19 审计）：服务端 error 帧（鉴权失效/限流/内部
+                // 错误）必须终止消费循环——原实现落入所有分支后继续 pump()，
+                // 错误被静默吞掉、连接僵死继续读。
+                handleStreamEnd(`server error: ${parsed.data.slice(0, 200)}`);
+                abort.abort();
+                return;
+              }
               if (parsed.event === 'resync') {
                 // 服务端判定缺口/客户端超前：放弃增量、走全量重同步（P2 收尾）。
                 handleResync(parsed.data);

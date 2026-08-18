@@ -148,19 +148,24 @@ export class ConflictService {
     });
   }
 
-  /** 冲突详情；当前真实数据中不存在且无落库行时抛 NotFoundException。 */
+  /**
+   * 冲突详情；当前真实数据中不存在且无落库行时抛 NotFoundException。
+   *
+   * P1（2026-08-19 审计）：详情查询不再全量 derive（原 getConflictDetail 走
+   * listConflicts = 全量推导 + 全行载入，只为定位 1 条）。conflictId 为内容
+   * 种子哈希（R2-SSV-06，跨推导稳定）——同 ID 的推导内容与落库内容一致，
+   * 落库行直接返回（生命周期字段反而更权威）。仅未落库（已推导未归并的新
+   * 冲突——GET 纯读不落库）才回退全量推导。
+   */
   async getConflictDetail(
     conflictId: string,
     actor?: OrgContext,
   ): Promise<SchedulingConflict> {
+    const row = await this.findRowByConflictId(conflictId, actor);
+    if (row) return this.rowToConflict(row);
     const { conflicts } = await this.listConflicts({}, actor);
     const found = conflicts.find((c) => c.conflictId === conflictId);
-    if (!found) {
-      // 兜底：已落库但当前不再推导的冲突（如已 RESOLVED/SUPPRESSED 历史行）。
-      const row = await this.findRowByConflictId(conflictId, actor);
-      if (!row) throw new NotFoundException(`Conflict ${conflictId} not found`);
-      return this.rowToConflict(row);
-    }
+    if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
     return found;
   }
 

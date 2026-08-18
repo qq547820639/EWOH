@@ -120,6 +120,18 @@ export function nearestNodeId(
 }
 
 /**
+ * P1（2026-08-19 审计）：路由边状态合法值集合（与
+ * shared/scheduler.ts RouteGraphEdge.status 联合类型、
+ * standalone_062 CHECK route_edge_status_valid 三方对齐）。
+ */
+const VALID_EDGE_STATUSES: ReadonlySet<string> = new Set([
+  'open',
+  'normal',
+  'congested',
+  'blocked',
+]);
+
+/**
  * 路由服务：从 ewoh_route_node / ewoh_route_edge 加载路由图，
  * 使用 A* 计算最短路径（边代价叠加拥塞/风险系数，跳过阻塞边）。
  * 起终点一律通过真实坐标解析最近节点，避免"首/末节点"盲回退。
@@ -145,6 +157,37 @@ export class RoutingService {
   private edgeFactorsRefreshedAt = 0;
   private static readonly EDGE_FACTORS_TTL_MS = 30_000;
 
+  /**
+   * P1（2026-08-19 审计）：路由图 TTL 缓存（org 维度）。此前每次
+   * calculateRouteBetween 都 loadGraph（route_node + route_edge 两表全量
+   * SELECT）——TravelCostService 候选矩阵 O(tasks×persons) 次估算即同数量
+   * 级全图加载（典型 600 次/请求）。路由拓扑无运行时写入方（仅种子/DB 运维
+   * 变更），单请求内世界不变，10s TTL 覆盖请求生命周期且与既有 edgeFactors
+   * TTL 缓存（NEST-133）同一模式。
+   */
+  private readonly graphCache = new Map<
+    string,
+    { expiresAt: number; graph: RouteGraph }
+  >();
+  private static readonly GRAPH_TTL_MS = Number(
+    process.env.EWOH_ROUTE_GRAPH_TTL_MS || 10_000,
+  );
+
+  /** 显式失效路由图缓存（DB 拓扑运维变更后可调；测试亦用）。 */
+  invalidateGraphCache(): void {
+    this.graphCache.clear();
+  }
+
+  /**
+   * P1（2026-08-19 审计）：DB 边状态归一——非法/拼写错误值（如 'nomol'）
+   * 不再强制 cast 透传给路由计价与前端（未知状态会落入暗色兜底不可见），
+   * 统一归一 'open'（保守通行语义）。CHECK 落地前的存量脏行由此兜底。
+   */
+  static normalizeEdgeStatus(raw: string | null | undefined): RouteGraphEdge['status'] {
+    if (raw && VALID_EDGE_STATUSES.has(raw)) return raw as RouteGraphEdge['status'];
+    return 'open';
+  }
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly policyService: SchedulingPolicyService,
@@ -159,8 +202,23 @@ export class RoutingService {
     return typeof actor === 'string' ? actor : actor.primaryOrgId || undefined;
   }
 
-  /** 加载完整路由图。 */
+  /** 加载完整路由图（P1：TTL 缓存包裹，见 graphCache 注释）。 */
   async loadGraph(actor?: OrgContext | string | null): Promise<RouteGraph> {
+    const cacheKey = this.orgIdOf(actor) ?? '__all__';
+    const cached = this.graphCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.graph;
+    const graph = await this.loadGraphUncached(actor);
+    this.graphCache.set(cacheKey, {
+      expiresAt: Date.now() + RoutingService.GRAPH_TTL_MS,
+      graph,
+    });
+    return graph;
+  }
+
+  /** 真实图加载（两表全量 SELECT + org 过滤，原 loadGraph 主体）。 */
+  private async loadGraphUncached(
+    actor?: OrgContext | string | null,
+  ): Promise<RouteGraph> {
     // ADR-074 / NEST-118：路由拓扑读面 org 条件（org 匹配或 NULL 存量，与 RLS 语义等价）。
     const orgId = this.orgIdOf(actor);
     const orgCond = orgId
@@ -195,7 +253,10 @@ export class RoutingService {
       direction: e.direction ?? null,
       capacity: e.capacity ?? null,
       riskLevel: e.riskLevel ?? null,
-      status: (e.status ?? 'open') as RouteGraphEdge['status'],
+      // P1（2026-08-19 审计）：拼写错误值（如 'nomol'）不再 as 强制透传——
+      // 未知状态归一 'open'（保守通行语义，避免未知值落入计价/前端暗色兜底）。
+      // DB 层由 standalone_062 CHECK route_edge_status_valid 兜底拦截新写入。
+      status: RoutingService.normalizeEdgeStatus(e.status),
       accessibleFor: Array.isArray(e.accessibleFor)
         ? (e.accessibleFor as string[])
         : [],

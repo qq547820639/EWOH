@@ -1213,7 +1213,8 @@ export class PlanService {
     }
 
     const affectedSet = new Set(impact.affectedTaskIds ?? []);
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    // P1（2026-08-19 审计）：审批政策判定只读 tasks/lockedAssignments——只读快照。
+    const snapshot = await this.worldStateSnapshotService.buildSnapshotReadOnly(ctx);
     const schedulableCount = snapshot.tasks.filter((t) =>
       ['draft', 'pending_confirm', 'pending_approval', 'pending_dispatch', 'pending', 'queued'].includes(
         t.status,

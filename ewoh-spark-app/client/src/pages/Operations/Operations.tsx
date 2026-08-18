@@ -94,16 +94,16 @@ function ActionButton({
 }) {
   const toneClass =
     tone === 'success'
-      ? 'bg-emerald-600 hover:bg-emerald-700'
+      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
       : tone === 'danger'
-        ? 'bg-red-600 hover:bg-red-700'
-        : 'bg-slate-800 hover:bg-slate-700';
+        ? 'bg-red-600 hover:bg-red-700 text-white'
+        : 'bg-primary hover:bg-primary/90 text-primary-foreground';
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-white disabled:opacity-40 ${toneClass}`}
+      className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-medium disabled:opacity-40 ${toneClass}`}
     >
       {children}
     </button>
@@ -320,12 +320,18 @@ const Operations = (): React.ReactElement => {
   });
 
   const addTool = useMutation({
-    mutationFn: () =>
-      registerMaintenanceTool({
+    mutationFn: () => {
+      // P2（2026-08-19 审计）：同 addAsset——空串数字输入显式拒绝不静默传 0。
+      const interval = Number(toolInterval);
+      if (!toolInterval.trim() || !Number.isFinite(interval) || interval <= 0) {
+        throw new Error('校准周期必须为正数（天）');
+      }
+      return registerMaintenanceTool({
         name: toolName.trim(),
         category: toolCategory,
-        calibrationIntervalDays: Number(toolInterval),
-      }),
+        calibrationIntervalDays: interval,
+      });
+    },
     onSuccess: () => {
       invalidateAll();
       setToolName('');
@@ -393,14 +399,21 @@ const Operations = (): React.ReactElement => {
   });
 
   const addEfficiency = useMutation({
-    mutationFn: () =>
-      registerEfficiencyEntry({
+    mutationFn: () => {
+      // P2（2026-08-19 审计）：actualMinutes 空串静默传 0——显式拒绝
+      //（standardMinutes 已有三元判空，保持不变）。
+      const actual = Number(efActual);
+      if (!efActual.trim() || !Number.isFinite(actual) || actual <= 0) {
+        throw new Error('实际工时必须为正数（分钟）');
+      }
+      return registerEfficiencyEntry({
         workerId: efWorker.trim(),
         workCenterId: efWorkCenter.trim(),
         operationCode: efCode.trim(),
-        actualMinutes: Number(efActual),
+        actualMinutes: actual,
         standardMinutes: efStandard ? Number(efStandard) : undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       invalidateAll();
       setEfWorker('');

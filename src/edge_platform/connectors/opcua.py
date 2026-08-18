@@ -132,6 +132,10 @@ class OpcUaAdapter(BaseAdapter):
         self._inbox: queue.Queue = queue.Queue(maxsize=1024)
         self._last_msg: dict[str, Any] | None = None
         self._last_seen: str | None = None
+        # P1（2026-08-19 审计）：_dropped_points 此前只在 except queue.Full
+        # 异常路径访问、__init__ 漏初始化（modbus.py:131 同款有初始化）——
+        # 收件箱第一次满即 AttributeError 崩溃采集线程。
+        self._dropped_points = 0
 
     def start(self) -> None:
         self._running = True

@@ -35,12 +35,12 @@ export const DECISION_AUTHORITY_LABELS: Record<string, string> = {
 
 export type RiskTone = 'high' | 'medium' | 'low' | 'unknown';
 
-/** 可见性修复（2026-08-19 审计 D13）：-600 级文字在深色表格（bg-card）上
- * 对比度 ~2.5:1 不可读 → 换 -400 级；unknown 用主题 token。 */
+/** 可见性修复（2026-08-19 审计 D13，P1 lint 收口）：风险档文字用 risk-*
+ * 语义 token（暗色自动提亮，浅色/深色两主题可读）；unknown 用主题 token。 */
 export const RISK_TONE_TEXT: Record<RiskTone, string> = {
-  high: 'text-red-400',
-  medium: 'text-amber-400',
-  low: 'text-emerald-400',
+  high: 'text-risk-blocked',
+  medium: 'text-risk-degraded',
+  low: 'text-risk-normal',
   unknown: 'text-muted-foreground',
 };
 

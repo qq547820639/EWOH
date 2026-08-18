@@ -126,7 +126,7 @@ const ApprovalConsole = (): React.ReactElement => {
       </header>
 
       {errorMessage && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked">
           {errorMessage}
         </div>
       )}
@@ -152,8 +152,8 @@ const ApprovalConsole = (): React.ReactElement => {
                       <span
                         className={
                           row.expired
-                            ? 'rounded bg-red-50 px-2 py-1 text-xs text-red-600'
-                            : 'rounded bg-amber-50 px-2 py-1 text-xs text-amber-700'
+                            ? 'rounded bg-risk-blocked/10 px-2 py-1 text-xs text-risk-blocked'
+                            : 'rounded bg-risk-degraded/10 px-2 py-1 text-xs text-risk-degraded'
                         }
                       >
                         {row.expired ? '已过期（不可操作）' : `剩余 ${formatRemaining(row.remainingMs, row.expired)}`}
@@ -272,7 +272,7 @@ const ApprovalConsole = (): React.ReactElement => {
                         {state === 'push-pending' && '待投递'}
                         {state === 'push-sent' && '已投递'}
                         {state === 'push-failed' && (
-                          <span className="text-red-600">投递失败{n.errorMessage ? `：${n.errorMessage}` : ''}</span>
+                          <span className="text-risk-blocked">投递失败{n.errorMessage ? `：${n.errorMessage}` : ''}</span>
                         )}
                         {state === 'unknown' && `状态 ${n.status}`}
                       </span>
@@ -318,7 +318,7 @@ function SchedulerDetail({
     );
   }
   if (!detail) {
-    return <div className="mt-3 text-sm text-red-600">审批详情加载失败。</div>;
+    return <div className="mt-3 text-sm text-risk-blocked">审批详情加载失败。</div>;
   }
   const pendingSteps = (detail.steps ?? []).filter((s) => s.status === 'pending');
   if (pendingSteps.length === 0) {

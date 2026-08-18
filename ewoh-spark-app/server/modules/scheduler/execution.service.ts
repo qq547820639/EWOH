@@ -52,6 +52,14 @@ export class ExecutionService {
   /**
    * 由 Plan Assignment 批量创建 Execution（dispatch 时调用；幂等：assignment 已存在则跳过）。
    * 只记录计划事实，不产生业务副作用。
+   *
+   * P1（2026-08-19 审计）：原逐 assignment 循环 INSERT（N+1 次往返——dispatch
+   * 大方案 N=任务数，典型数百次）→ 单条批量 INSERT。幂等语义保持：
+   * - org 非空路径：ON CONFLICT DO NOTHING（target=(org_id, assignment_id)，
+   *   standalone_057 复合唯一）原子防并发双插，冲突行不返回即跳过；
+   * - orgId 为 NULL 的系统路径不可作 conflict target（PG 中 NULL != NULL 不
+   *   命中唯一索引）：一次性批量查询已存在 assignmentId 后过滤（原逐条
+   *   存在性检查的批量化等价），并对入参批内 assignmentId 去重。
    */
   async createFromPlan(
     plan: { planId: string; runId?: string | null; snapshotVersion?: string | null; policyVersion?: number | null; solverVersion?: string | null },
@@ -69,28 +77,38 @@ export class ExecutionService {
     orgId: string | null,
     ctx?: OrgContext,
   ): Promise<SchedulingExecution[]> {
-    const created: SchedulingExecution[] = [];
-    for (const a of assignments) {
-      // NEST-010 修复（2026-08-17）：SELECT-then-INSERT 竞态（并发 dispatch 同
-      // assignment 双插入）→ 原子 ON CONFLICT DO NOTHING（target=(org_id,
-      // assignment_id)，standalone_057 复合唯一 uq_ewoh_scheduling_execution_
-      // org_assignment）。冲突行返回空 → 幂等跳过（与原 existing[0] continue
-      // 语义一致）。orgId 为 NULL 的系统路径不可作 conflict target（PG 中
-      // NULL != NULL 不命中唯一索引），保留前置存在性检查兜底。
-      if (orgId == null) {
-        const existing = await this.db
-          .select()
-          .from(ewohSchedulingExecution)
-          .where(eq(ewohSchedulingExecution.assignmentId, a.assignmentId))
-          .limit(1);
-        if (existing[0]) continue;
-      }
-      // NEST-047：Date.now()+Math.random → randomUUID（密码学随机）。
-      const executionId = `EXEC-${randomUUID()}`;
-      const inserted = await this.db
-        .insert(ewohSchedulingExecution)
-        .values({
-          executionId,
+    void ctx;
+    // 入批内去重（null-org 路径原靠逐条前置检查间接去重，批量化后显式化）。
+    const seen = new Set<string>();
+    const unique = assignments.filter((a) => {
+      if (seen.has(a.assignmentId)) return false;
+      seen.add(a.assignmentId);
+      return true;
+    });
+    if (unique.length === 0) return [];
+
+    let pending = unique;
+    if (orgId == null) {
+      const existingRows = await this.db
+        .select({ assignmentId: ewohSchedulingExecution.assignmentId })
+        .from(ewohSchedulingExecution)
+        .where(
+          inArray(
+            ewohSchedulingExecution.assignmentId,
+            unique.map((a) => a.assignmentId),
+          ),
+        );
+      const existing = new Set(existingRows.map((r) => r.assignmentId));
+      pending = unique.filter((a) => !existing.has(a.assignmentId));
+    }
+    if (pending.length === 0) return [];
+
+    // NEST-047：randomUUID（密码学随机）。
+    const inserted = await this.db
+      .insert(ewohSchedulingExecution)
+      .values(
+        pending.map((a) => ({
+          executionId: `EXEC-${randomUUID()}`,
           orgId,
           runId: plan.runId ?? null,
           planId: plan.planId,
@@ -108,20 +126,16 @@ export class ExecutionService {
           policyVersion: plan.policyVersion ?? null,
           solverVersion: plan.solverVersion ?? null,
           source: 'dispatch',
-        })
-        .onConflictDoNothing({
-          target: [
-            ewohSchedulingExecution.orgId,
-            ewohSchedulingExecution.assignmentId,
-          ],
-        })
-        .returning();
-      if (inserted[0]) {
-        created.push(this.toExecution(inserted[0]));
-      }
-      void ctx;
-    }
-    return created;
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          ewohSchedulingExecution.orgId,
+          ewohSchedulingExecution.assignmentId,
+        ],
+      })
+      .returning();
+    return inserted.map((row) => this.toExecution(row));
   }
 
   /** 幂等状态转换（终态不可再迁移）。返回更新后的 Execution。 */
@@ -175,6 +189,12 @@ export class ExecutionService {
         and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership),
       )
       .returning();
+    // P2（2026-08-19 审计）：update().returning() 解构未判空——前置 SELECT 与
+    // UPDATE 之间存在 TOCTOU 窗口（行被并发删除/改归属），影响 0 行时
+    // returning 为空数组、updated 为 undefined → toExecution 崩溃 500。
+    if (!updated) {
+      throw new NotFoundException(`Execution for assignment ${assignmentId} not found`);
+    }
     const execution = this.toExecution(updated);
 
     // 派生偏差：actual 与 planned 对比（仅在提供 actual 时判定；不猜测）。
