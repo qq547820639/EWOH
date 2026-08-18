@@ -20,6 +20,8 @@ interface Message {
   id?: string;
   /** 流式生成中（显示光标） */
   pending?: boolean;
+  /** AI 助手增强（2026-08-19）：thinking 模型思考链（独立渲染，不进入正文）。 */
+  reasoning?: string;
 }
 
 /**
@@ -64,6 +66,15 @@ const AiAssistant = () => {
             ),
           );
         },
+        (reasoning) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === placeholderId
+                ? { ...msg, reasoning: (msg.reasoning ?? '') + reasoning }
+                : msg,
+            ),
+          );
+        },
       );
       setMessages((prev) =>
         prev.map((msg) =>
@@ -99,7 +110,8 @@ const AiAssistant = () => {
   const submit = () => {
     const question = input.trim();
     if (!question || chatMutation.isPending) return;
-    setMessages((prev) => [...prev, { role: 'user', content: question }]);
+    // AI 助手修复（2026-08-19）：user 消息仅由 mutationFn 追加一次——
+    // 此前此处也追加，导致问题在消息列表重复显示。
     setInput('');
     chatMutation.mutate(question);
   };
@@ -149,6 +161,16 @@ const AiAssistant = () => {
                     : 'self-start border bg-card text-foreground'
                 }`}
               >
+                {msg.role === 'assistant' && msg.reasoning && (
+                  <details className="mb-2 rounded-md bg-muted/60 px-2 py-1.5">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground">
+                      思考过程
+                    </summary>
+                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                      {msg.reasoning}
+                    </p>
+                  </details>
+                )}
                 {msg.content}
                 {msg.pending && (
                   <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-risk-conflict align-middle" />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
-import { visionUnderstand, saveAiConfig, getAiConfigStatus, type VisionUnderstandResult } from '../../api/ai';
+import { aiChatStream, saveAiConfig, getAiConfigStatus, type AiChatResult } from '../../api/ai';
 import { getFleetStatus } from '../../api/scale';
 import {
   evaluateFeatureFlags,
@@ -91,9 +91,10 @@ const System = (): React.ReactElement => {
   //（原前端硬编码 ark 地址与模型名）。
   const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiModel, setAiModel] = useState('');
-  const [aiImageUrl, setAiImageUrl] = useState('');
-  const [aiQuestion, setAiQuestion] = useState('你看见了什么？');
-  const [aiResult, setAiResult] = useState<VisionUnderstandResult | null>(null);
+  // AI 接入修复（2026-08-19）：测试连接改为文本问答（deepseek 非多模态），
+  // 不再走视觉理解；移除图片 URL 输入。
+  const [aiQuestion, setAiQuestion] = useState('请用一句话介绍你自己');
+  const [aiResult, setAiResult] = useState<AiChatResult | null>(null);
   const query = useQuery<SystemConfigRecord[]>({
     queryKey: queryKeys.systemConfigs,
     queryFn: listSystemConfigs,
@@ -239,22 +240,21 @@ const System = (): React.ReactElement => {
     },
   });
 
-  const testVision = useMutation({
-    mutationFn: () =>
-      visionUnderstand({
-        api_key: aiApiKey.trim(),
-        base_url: aiBaseUrl.trim(),
-        model: aiModel.trim(),
-        image_url: aiImageUrl.trim(),
-        question: aiQuestion.trim(),
-      }),
+  // AI 接入修复（2026-08-19）：测试连接 = 文本问答（chat 流式，收集完整回答展示）。
+  // 适配 deepseek-v4-flash 文本模型（非多模态，不再走视觉理解）。
+  const testConnection = useMutation({
+    mutationFn: async () => {
+      const question = aiQuestion.trim() || '请用一句话介绍你自己';
+      return aiChatStream(question, () => {}, () => {});
+    },
     onSuccess: (result) => {
       setAiResult(result ?? null);
     },
     onError: (error) => {
       setAiResult({
-        status: 0,
         ok: false,
+        answer: '',
+        model: '',
         error: error instanceof Error ? error.message : '连接失败',
       });
     },
@@ -617,16 +617,16 @@ const System = (): React.ReactElement => {
             AI 能力接入
           </h2>
           <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-            默认演示：火山方舟视觉理解
+            默认演示：火山方舟大模型（deepseek-v4-flash）
           </span>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          在此配置接入大模型的全局密钥（API Key / Base URL / 模型）。保存后，整个系统（AI 决策中心、大脑建议、
-          自然语言问答、视觉理解）将统一使用该配置。
+          在此配置接入大模型的全局密钥（API Key / Base URL / 模型）。保存后，整个系统（AI 助手、AI 决策中心、
+          大脑建议、自然语言问答）将统一使用该配置。
           API Key 留空时使用服务端环境变量 <code className="font-mono">EWOH_ARK_API_KEY</code> 配置的演示密钥；
-          填入你自己的密钥后点击“保存配置”即可全局生效，点击“测试连接”可验证。
+          填入你自己的密钥后点击“保存配置”即可全局生效，点击“测试连接”可验证文本问答连通性。
         </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             API Key
             <input
@@ -654,15 +654,6 @@ const System = (): React.ReactElement => {
               className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            图片 URL（可选，留空用演示图；仅支持边缘平台/白名单域）
-            <input
-              value={aiImageUrl}
-              onChange={(event) => setAiImageUrl(event.target.value)}
-              placeholder="https://..."
-              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
-            />
-          </label>
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
@@ -675,11 +666,11 @@ const System = (): React.ReactElement => {
           </label>
           <button
             type="button"
-            disabled={testVision.isPending}
-            onClick={() => testVision.mutate()}
+            disabled={testConnection.isPending}
+            onClick={() => testConnection.mutate()}
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-[hsl(262_83%_58%)] px-4 text-sm font-medium text-white disabled:opacity-50"
           >
-            {testVision.isPending ? (
+            {testConnection.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <CheckCircle2 className="h-4 w-4" />
@@ -715,7 +706,6 @@ const System = (): React.ReactElement => {
           >
             <p className="font-medium">
               {aiResult.ok ? '连接成功' : '连接失败'}
-              {aiResult.backend ? ` · 后端 ${aiResult.backend}` : ''}
               {aiResult.model ? ` · 模型 ${aiResult.model}` : ''}
             </p>
             <p className="mt-1 whitespace-pre-wrap break-all">

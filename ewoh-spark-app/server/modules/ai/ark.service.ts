@@ -298,7 +298,7 @@ export class ArkService {
       maxTokens?: number;
       timeoutMs?: number;
     } = {},
-  ): AsyncGenerator<string, void, undefined> {
+  ): AsyncGenerator<{ text?: string; reasoning?: string }, void, undefined> {
     const cfg = await this.getConfig();
     if (!cfg.apiKey) {
       throw new Error(
@@ -351,15 +351,22 @@ export class ArkService {
           if (!trimmed.startsWith('data:')) continue;
           const payload = trimmed.slice(5).trim();
           if (!payload || payload === '[DONE]') continue;
-          let chunk: { choices?: Array<{ delta?: { content?: unknown } }> };
+          let chunk: { choices?: Array<{ delta?: { content?: unknown; reasoning_content?: unknown } }> };
           try {
             chunk = JSON.parse(payload);
           } catch {
             continue; // 忽略无法解析的分片
           }
-          const delta = chunk.choices?.[0]?.delta?.content;
-          const text = this.extractDeltaText(delta);
-          if (text) yield text;
+          const choiceDelta = chunk.choices?.[0]?.delta;
+          // AI 助手增强（2026-08-19）：thinking 模型（deepseek-v4-flash 等）在
+          // delta.reasoning_content 输出思考链——与正文分开流式透传，前端展示思考区。
+          const reasoningRaw = choiceDelta?.reasoning_content;
+          if (reasoningRaw !== undefined && reasoningRaw !== null) {
+            const reasoning = this.extractDeltaText(reasoningRaw);
+            if (reasoning) yield { reasoning };
+          }
+          const text = this.extractDeltaText(choiceDelta?.content);
+          if (text) yield { text };
         }
       }
     } finally {

@@ -186,6 +186,8 @@ export async function aiChat(question: string): Promise<AiChatResult> {
 
 export interface AiChatStreamEvent {
   delta?: string;
+  /** AI 助手增强（2026-08-19）：thinking 模型的思考链增量（独立事件）。 */
+  reasoning?: string;
   done?: boolean;
   ok?: boolean;
   model?: string;
@@ -195,11 +197,13 @@ export interface AiChatStreamEvent {
 
 /**
  * POST /api/ai/chat（SSE 流式）— 自然语言问答，逐增量回调渲染（打字机效果）。
- * 后端输出 `data: {delta}` → `data: {done, ok, model, answer}`；出错输出 `data: {error}`。
+ * 后端输出 `data: {reasoning}`（思考链）→ `data: {delta}`（正文）→ `data: {done, ok, model, answer}`；
+ * 出错输出 `data: {error}`。
  */
 export async function aiChatStream(
   question: string,
   onDelta: (delta: string) => void,
+  onReasoning?: (reasoning: string) => void,
   signal?: AbortSignal,
 ): Promise<AiChatResult> {
   const res = await fetch('/api/ai/chat', {
@@ -243,6 +247,7 @@ export async function aiChatStream(
           answer += evt.delta;
           onDelta(evt.delta);
         }
+        if (evt.reasoning) onReasoning?.(evt.reasoning);
         if (evt.error) error = evt.error;
         if (evt.done) {
           if (evt.answer) answer = evt.answer;

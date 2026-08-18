@@ -157,9 +157,16 @@ export class AiController {
     res.flushHeaders?.();
     try {
       let answer = '';
-      for await (const { delta } of this.aiService.chatWithContextStream(question, orgId)) {
-        answer += delta;
-        res.write(`data: ${JSON.stringify({ delta })}\n\n`);
+      for await (const chunk of this.aiService.chatWithContextStream(question, orgId)) {
+        // AI 助手增强（2026-08-19）：thinking 模型思考链独立事件 {reasoning}，
+        // 正文增量事件 {delta}——前端分别渲染（思考区 + 打字机）。
+        if (chunk.reasoning) {
+          res.write(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`);
+        }
+        if (chunk.delta) {
+          answer += chunk.delta;
+          res.write(`data: ${JSON.stringify({ delta: chunk.delta })}\n\n`);
+        }
       }
       const model = await this.aiService.getArkModel();
       res.write(

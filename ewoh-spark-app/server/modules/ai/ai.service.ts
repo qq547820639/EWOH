@@ -141,7 +141,7 @@ export class AiService {
     snapshot: { version: number; from: string; to: string; records: number };
     orgId?: string;
   }): AsyncGenerator<
-    { phase: 'basis' | 'delta' | 'done'; suggestion?: AiSuggestion; delta?: string; error?: string },
+    { phase: 'basis' | 'delta' | 'reasoning' | 'done'; suggestion?: AiSuggestion; delta?: string; error?: string },
     void,
     undefined
   > {
@@ -160,15 +160,20 @@ export class AiService {
       ].join('\n');
       const parts: string[] = [];
       try {
-        for await (const delta of this.ark.chatStream(
+        for await (const chunk of this.ark.chatStream(
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
           { temperature: 0.4 },
         )) {
-          parts.push(delta);
-          yield { phase: 'delta', delta };
+          if (chunk.reasoning) {
+            yield { phase: 'reasoning', delta: chunk.reasoning };
+          }
+          if (chunk.text) {
+            parts.push(chunk.text);
+            yield { phase: 'delta', delta: chunk.text };
+          }
         }
         const text = parts.join('');
         try {
@@ -488,7 +493,7 @@ export class AiService {
   async *chatWithContextStream(
     question: string,
     orgId?: string | null,
-  ): AsyncGenerator<{ delta: string }, void, undefined> {
+  ): AsyncGenerator<{ delta: string; reasoning?: string }, void, undefined> {
     const context = await this.collectSystemContext(orgId ?? null);
     if (!this.ark) {
       throw new Error('AI 服务未就绪。');
@@ -497,14 +502,16 @@ export class AiService {
       '你是工厂具身操作系统的 AI 助手，基于给定的实时上下文回答管理人员的问题。' +
       '用中文、简洁、结构化作答；若数据不足，如实说明，不要编造。可以给出改善建议。';
     const userPrompt = `实时上下文：\n${context}\n\n问题：${question}`;
-    for await (const delta of this.ark.chatStream(
+    for await (const chunk of this.ark.chatStream(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       { temperature: 0.3 },
     )) {
-      yield { delta };
+      // AI 助手增强（2026-08-19）：thinking 模型的思考链与正文分离透传。
+      if (chunk.reasoning) yield { delta: '', reasoning: chunk.reasoning };
+      if (chunk.text) yield { delta: chunk.text };
     }
   }
 
