@@ -32,8 +32,7 @@ import type {
   ReplanRequest,
   CalculateRouteRequest,
   TaskCandidatesResponse,
-  ListRunsRequest,
-  ListRunsResponse,
+  ListRunsRequest,  ListRunsResponse,
   WorldStateSnapshot,
   SchedulingConflict,
   ConflictsListRequest,
@@ -55,6 +54,7 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { WorldStateSnapshotService } from './world-state.service';
+import { SchedulingContextService } from './scheduling-context.service';
 import { TriggerService } from './trigger.service';
 import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
@@ -116,6 +116,8 @@ export class SchedulerService {
     private readonly constraintLoaderService?: ConstraintLoaderService,
     candidateEngineService?: CandidateEngineService,
     replanPreviewService?: ReplanPreviewService,
+    /** context 短缓存失效（run 成功后新快照立即对前端可见；可选兼容旧单测）。 */
+    private readonly schedulingContextService?: SchedulingContextService,
   ) {
     this.queryService = new SchedulerQueryService(
       db,
@@ -139,6 +141,7 @@ export class SchedulerService {
       worldStateSnapshotService,
       solverService,
       planService,
+      this.schedulingContextService,
       () => this.constraintLoaderService,
     );
     this.planApplication = new SchedulerPlanApplicationService(

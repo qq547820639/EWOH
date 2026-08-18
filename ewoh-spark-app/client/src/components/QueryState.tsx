@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Inbox, Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Inbox, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import ErrorState from '@client/src/components/ErrorState';
 
@@ -80,11 +80,14 @@ const QueryState = ({
             {isFetching ? (
               <Loader2 className="size-3 animate-spin" />
             ) : isStale ? (
-              <TriangleAlert className="size-3 text-warning" />
+              <RefreshCw className="size-3 text-muted-foreground" />
             ) : (
-              <RefreshCw className="size-3" />
+              <CheckCircle2 className="size-3 text-muted-foreground" />
             )}
-            {isFetching ? '正在刷新' : isStale ? '数据已过期' : '数据已同步'}
+            {/* 文案优化（2026-08-19）：原“数据已同步/数据已过期”语义误导——
+             * 实为 react-query 缓存新鲜度（staleTime 窗口），非业务同步状态；
+             * 改为中性的“已是最新/待更新”，过期态不再用三角警告图标。 */}
+            {isFetching ? '刷新中…' : isStale ? '数据待更新' : '数据已是最新'}
           </span>
           {updatedAt ? (
             <span>

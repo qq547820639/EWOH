@@ -847,6 +847,39 @@ const LIST_SOURCES: Record<string, WorkbenchPgListSource> = {
       { key: 'planEnd', label: '计划完成' },
     ],
   },
+  // 工作台修复（2026-08-19）：manager 的 orderDeliveryRisk 列表此前无 LIST_SOURCE →
+  // fallback 把 KPI 数字（8）当 rows → 列表恒空（KPI 与明细口径不一致）。
+  // 交付风险本质 = 延迟订单，与 delayedOrders 同源同条件。
+  orderDeliveryRisk: {
+    table: ewohScheduleTask,
+    orgColumn: ewohScheduleTask.orgId,
+    uniqueColumn: ewohScheduleTask.scheduleTaskId,
+    uniqueKey: 'scheduleTaskId',
+    statusColumn: ewohScheduleTask.status,
+    activeStatuses: ['draft', 'pending', 'in_progress', 'paused'],
+    searchableColumn: ewohScheduleTask.title,
+    extraWhere: () =>
+      sql`${ewohScheduleTask.planEnd} IS NOT NULL AND ${ewohScheduleTask.planEnd} < now()`,
+    sortable: {
+      scheduleTaskId: { column: ewohScheduleTask.scheduleTaskId, key: 'scheduleTaskId', type: 'text', dir: 'asc' },
+      title: { column: ewohScheduleTask.title, key: 'title', type: 'text', dir: 'asc' },
+      status: { column: ewohScheduleTask.status, key: 'status', type: 'text', dir: 'asc' },
+      planEnd: { column: ewohScheduleTask.planEnd, key: 'planEnd', type: 'timestamptz', dir: 'asc' },
+    },
+    defaultSort: { column: ewohScheduleTask.planEnd, key: 'planEnd', type: 'timestamptz', dir: 'asc' },
+    mapRow: (row) => ({
+      scheduleTaskId: row.scheduleTaskId,
+      title: row.title,
+      status: row.status,
+      planEnd: iso(row.planEnd as Date | string | null),
+    }),
+    columns: [
+      { key: 'scheduleTaskId', label: '工单号' },
+      { key: 'title', label: '标题' },
+      { key: 'status', label: '状态' },
+      { key: 'planEnd', label: '计划完成' },
+    ],
+  },
   abnormalDevices: {
     table: ewohSpatialEntity,
     orgColumn: ewohSpatialEntity.orgId,

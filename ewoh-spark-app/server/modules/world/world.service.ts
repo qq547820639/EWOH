@@ -124,15 +124,28 @@ export class WorldService {
       const latestStatesMap = new Map<string, WorldStateRow>();
       if (allEntityIds.length > 0) {
         const stateOrg = this.orgCondition(ewohWorldState.orgId, actor);
-        const states = await this.db
-          .selectDistinctOn([ewohWorldState.entityId])
-          .from(ewohWorldState)
-          .where(
-            stateOrg
-              ? and(inArray(ewohWorldState.entityId, allEntityIds), stateOrg)
-              : inArray(ewohWorldState.entityId, allEntityIds),
-          )
-          .orderBy(ewohWorldState.entityId, desc(ewohWorldState.ts));
+        // 性能修复（2026-08-19）：原 DISTINCT ON + IN(48) 在 ewoh_world_state 37 万行上
+        // 被 planner 降级为 Seq Scan + Sort（实测 37s）→ 前端 20s 超时 → 指挥地图无数据。
+        // 改 LATERAL JOIN：每个 entity 走 idx_ewoh_world_state_entity_ts 索引取 ts 最新行（毫秒级）。
+        // 注意：drizzle sql 模板会把 JS 数组展开为行值列表 ($1,...)，不能直接用于
+        // unnest/ARRAY 构造器 → 用 sql.raw 内联转义后的 id 字面量（id 源自 DB，转义单引号可控）。
+        const idLiteral = allEntityIds
+          .map((id) => `'${String(id).replace(/'/g, "''")}'`)
+          .join(', ');
+        const states = (await this.db.execute(sql`
+            SELECT ws."id" AS "id", ws."entity_id" AS "entityId", ws."state_json" AS "stateJson",
+                   ws."ts" AS "ts", ws."org_id" AS "orgId",
+                   ws."_created_at" AS "_createdAt", ws."_updated_at" AS "_updatedAt"
+            FROM unnest(ARRAY[${sql.raw(idLiteral)}]::text[]) AS ids(e)
+            JOIN LATERAL (
+              SELECT "id", "entity_id", "state_json", "ts", "org_id", "_created_at", "_updated_at"
+              FROM ${ewohWorldState}
+              WHERE "entity_id" = ids.e
+                ${stateOrg ? sql`AND ${stateOrg}` : sql``}
+              ORDER BY "ts" DESC
+              LIMIT 1
+            ) ws ON true
+          `)) as WorldStateRow[];
         for (const s of states) {
           latestStatesMap.set(s.entityId, s);
         }

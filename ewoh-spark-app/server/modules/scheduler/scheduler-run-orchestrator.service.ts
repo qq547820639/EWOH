@@ -33,6 +33,7 @@ import { TriggerService } from './trigger.service';
 import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
+import { SchedulingContextService } from './scheduling-context.service';
 import { toOrgContext } from './scheduler-run-context';
 import {
   compileConstraints,
@@ -50,6 +51,8 @@ export class SchedulerRunOrchestrator {
     private readonly worldStateSnapshotService: WorldStateSnapshotService,
     private readonly solverService: SolverService,
     private readonly planService: PlanService,
+    /** context 短缓存失效（run 成功后新快照立即对前端可见）。 */
+    private readonly schedulingContextService: SchedulingContextService,
     /** 惰性读取 facade 上的 constraintLoaderService（兼容旧单测构造后注入）。 */
     private readonly getConstraintLoader: () => ConstraintLoaderService | undefined,
   ) {}
@@ -212,6 +215,10 @@ export class SchedulerRunOrchestrator {
             fallbackReason: first?.fallbackReason ?? null,
           })
           .where(eq(ewohSchedulingRun.runId, run.runId));
+
+        // 缓存一致性（2026-08-19）：调度成功 = 世界版本推进，立即失效 org 的
+        // context 短缓存（否则"触发调度→前端看到新版本"延迟最多 10s TTL）。
+        this.schedulingContextService?.invalidate(ctx.primaryOrgId);
       },
     );
 

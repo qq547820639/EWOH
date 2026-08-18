@@ -69,12 +69,41 @@ export class WorldStateSnapshotService {
   /**
    * 基于实时的 ewoh 表状态构建并持久化一个世界状态快照。
    * 快照版本形如 WS-YYYYMMDD-NNNN（按天递增）。
+   * 仅写路径（调度 run / 事件应用 / 方案生成 / 预览）使用。
    */
   async buildSnapshot(ctx: OrgContext): Promise<WorldStateSnapshot> {
     const state = await this.collectState(ctx);
     const snapshot = await this.allocateAndPersistSnapshot(state, ctx);
     this.logger.log(`world state snapshot built: ${snapshot.snapshotVersion}`);
     return snapshot;
+  }
+
+  /**
+   * 构建世界状态快照（只读场景：不分配版本号、不持久化）。
+   * GET /api/scheduler/context 等高频读轮询使用——原 buildSnapshot 每次调用都
+   * 执行计数器 upsert（行锁）+ INSERT 快照（事务 + 表增长），是 context 接口
+   * 偶发数秒峰值的来源（2026-08-19 实测定位）。
+   * 语义：读轮询不改变世界状态，也不应推进世界版本——snapshotVersion 取最近
+   * 一次已持久化快照版本（只有调度 run 才推进版本）；entityVersions 仍真实收集
+   * （collectState 实时读表），isPlanStale（方案过期）判断不受影响。
+   */
+  async buildSnapshotReadOnly(ctx: OrgContext): Promise<WorldStateSnapshot> {
+    const state = await this.collectState(ctx);
+    const snapshotVersion = await this.latestPersistedSnapshotVersion(ctx);
+    return { ...state, snapshotVersion, ts: new Date().toISOString() };
+  }
+
+  /** 读取最近一次已持久化快照版本（org 维度；无则返回占位版本）。 */
+  private async latestPersistedSnapshotVersion(ctx: OrgContext): Promise<string> {
+    const orgId = ctx.primaryOrgId || null;
+    const rows = (await this.db.execute(sql`
+      SELECT "snapshot_version"
+      FROM "ewoh_world_state_snapshot"
+      WHERE "org_id" IS NOT DISTINCT FROM ${orgId}
+      ORDER BY "created_at" DESC
+      LIMIT 1
+    `)) as unknown as Array<{ snapshot_version?: string }>;
+    return rows[0]?.snapshot_version ?? 'WS-00000000-0000';
   }
 
   /**
