@@ -10,6 +10,7 @@ import {
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { parseDateInput } from '../shared/parse-date-input';
 import {
   ewohAssetPackage,
   ewohEvent,
@@ -338,8 +339,10 @@ export class MesService {
         status: 'draft',
         priority: body.priority ?? 'medium',
         source: 'mes',
-        planStart: body.planStart ? new Date(body.planStart) : null,
-        planEnd: body.planEnd ? new Date(body.planEnd) : null,
+        // P1（2026-08-19 审计）：日期入参显式校验（非法字符串原产生 Invalid
+        // Date → postgres 22007 → 稳定 500；现 400 fail-fast）。
+        planStart: parseDateInput(body.planStart, 'planStart'),
+        planEnd: parseDateInput(body.planEnd, 'planEnd'),
         isSimulation: false,
         progress: 0,
         orgId,

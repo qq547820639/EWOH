@@ -51,6 +51,20 @@ function makeDb(rowsByTable: Partial<Record<string, unknown[]>>) {
     if (key === 'reservation' || key === 'binding') {
       return { where: () => Promise.resolve(rows) };
     }
+    // P1（2026-08-19 审计）：collectState 事件查询收紧为 status='open'
+    // （生产语义），测试替身同步——where() 近似按 open 过滤（null 视作 open，
+    // 与 eventList 的 status ?? 'open' 缺省口径一致）。
+    if (key === 'event') {
+      return {
+        where: () =>
+          Promise.resolve(
+            rows.filter(
+              (r) => (r as { status?: string | null }).status == null
+                || (r as { status?: string | null }).status === 'open',
+            ),
+          ),
+      };
+    }
     return Promise.resolve(rows);
   });
   return { select: jest.fn(() => ({ from })) } as never;

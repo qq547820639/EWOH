@@ -295,6 +295,15 @@ const MapViewport = ({
             执行记录加载失败
           </span>
         )}
+      {/* P1（2026-08-19 审计）：偏差图层按选中方案拉取执行记录——未选方案时
+          图层恒空且无任何提示（"假开关"观感）。显式引导而非静默空白。 */}
+      {schedulerState.ui.activeLayers.includes('execution-deviation') &&
+        !selectedPlanId &&
+        !schedulerState.executionsError && (
+          <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60">
+            执行偏差：先在方案面板选择方案
+          </span>
+        )}
     </div>
 
     {/* 小屏模式/层级控件 */}

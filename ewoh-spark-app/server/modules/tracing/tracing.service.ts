@@ -82,8 +82,13 @@ export class TracingService {
         orgId: entry.orgId ?? null,
         requestUser: entry.requestUser ?? null,
       });
-      // bounded 清理：7 天 TTL + 行上限（每 N 次写入清理一次，避免每次全扫）
-      if (this.records.length % 20 === 0) {
+      // bounded 清理：7 天 TTL + 行上限（每 N 次写入清理一次，避免每次全扫）。
+      // P1（2026-08-19 审计）：改用独立持久化计数器触发——原 records.length % 20
+      // 在环形缓冲填满后 length 恒定，取模恒命中固定相位 → 每次请求（或永不）
+      // 全表 count/delete（trace_span 20 万行级）。persistCount 声明已久，
+      // 此前从未接线。
+      this.persistCount += 1;
+      if (this.persistCount % 20 === 0) {
         await this.enforceBounds();
       }
     } catch (error) {

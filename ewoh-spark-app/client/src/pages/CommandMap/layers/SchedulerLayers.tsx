@@ -118,7 +118,9 @@ export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps):
       {devices.map((d) =>
         d.x == null || d.y == null ? null : (
           <g key={`res-${d.id}`} transform={`translate(${d.x} ${d.y})`}>
-            <rect x={-5} y={-5} width={10} height={10} rx={2} fill={d.status === 'AVAILABLE' ? '#0ea5e9' : '#64748b'} stroke="#0f172a" strokeWidth={1} />
+            {/* P1（2026-08-19 审计）：不可用设备原 #64748b 在深色画布上隐形 →
+                提亮至 slate-400 级（不可用 ≠ 不可见）。 */}
+            <rect x={-5} y={-5} width={10} height={10} rx={2} fill={d.status === 'AVAILABLE' ? '#0ea5e9' : '#94a3b8'} stroke="#0f172a" strokeWidth={1} />
             <title>{`${d.name} ${d.status}`}</title>
           </g>
         ),
@@ -127,19 +129,24 @@ export const ResourceLayer = memo(function ResourceLayer({ state }: LayerProps):
   );
 });
 
-/** Availability 层：不可用资源高亮（stale/offline/low battery，数据来自 snapshot 字段透传）。 */
+/** Availability 层：不可用资源高亮（stale/offline/low battery，数据来自 snapshot 字段透传）。
+ * P1（2026-08-19 审计）：仅 dataQuality 显式 STALE/UNKNOWN 才画——字段缺失
+ * （undefined，旧后端/降级路径）不画红圈（原 `!== 'FRESH'` 满屏误报）：
+ * 缺数据 ≠ 异常。 */
 export const AvailabilityLayer = memo(function AvailabilityLayer({ state }: LayerProps): React.ReactElement | null {
   const s = state.snapshot;
   if (!s) return EMPTY;
+  const flagged = (dq: string | null | undefined): boolean =>
+    dq === 'STALE' || dq === 'UNKNOWN';
   return (
     <g data-layer="availability">
       {s.persons.map((p) =>
-        p.x == null || p.y == null || p.dataQuality === 'FRESH' ? null : (
+        p.x == null || p.y == null || !flagged(p.dataQuality) ? null : (
           <circle key={`avail-${p.id}`} cx={p.x} cy={p.y} r={10} fill="none" stroke="#f43f5e" strokeWidth={1.5} strokeDasharray="3 2" />
         ),
       )}
       {s.devices.map((d) =>
-        d.x == null || d.y == null || d.dataQuality === 'FRESH' ? null : (
+        d.x == null || d.y == null || !flagged(d.dataQuality) ? null : (
           <circle key={`avail-${d.id}`} cx={d.x} cy={d.y} r={10} fill="none" stroke="#f43f5e" strokeWidth={1.5} strokeDasharray="3 2" />
         ),
       )}
@@ -294,15 +301,19 @@ const ONTRACK_COLOR = '#10b981';
 
 function DeviationMarker({ entry }: { entry: ExecutionDeviationMapEntry }): React.ReactElement | null {
   const color = DEVIATION_COLORS[entry.tone];
+  // P1（2026-08-19 审计）：计划/实际坐标均缺失时不渲染——原 `?? 0` 兜底把
+  // 徽标画到世界原点（误导定位）；缺坐标事实已在 VM.missingCoordinates 记录。
+  if (entry.plannedPoint == null && entry.actualPoint == null) return null;
   const hasConnector = entry.plannedPoint != null && entry.actualPoint != null;
+  const anchor = entry.plannedPoint ?? entry.actualPoint!;
   const mx =
     entry.plannedPoint && entry.actualPoint
       ? (entry.plannedPoint.x + entry.actualPoint.x) / 2
-      : (entry.plannedPoint?.x ?? entry.actualPoint?.x ?? 0);
+      : anchor.x;
   const my =
     entry.plannedPoint && entry.actualPoint
       ? (entry.plannedPoint.y + entry.actualPoint.y) / 2
-      : (entry.plannedPoint?.y ?? entry.actualPoint?.y ?? 0);
+      : anchor.y;
   return (
     <g>
       {hasConnector && entry.plannedPoint && entry.actualPoint && (

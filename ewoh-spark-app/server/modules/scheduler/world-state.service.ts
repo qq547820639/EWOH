@@ -264,9 +264,17 @@ export class WorldStateSnapshotService {
             this.orgCondition(ewohSpatialEntity.orgId, ctx) as SQL,
           )
         : spatialQuery,
-      ctx?.primaryOrgId
-        ? eventsQuery.where(this.orgCondition(ewohEvent.orgId, ctx) as SQL)
-        : eventsQuery,
+      // P1（2026-08-19 审计）：events 只取 status='open'——快照的全部消费方
+      // （安全封锁循环 / eventImpacts / PriorityEngine / heuristic 求解器 /
+      // 前端回放标记）均只消费开放事件，而事件表以万计存量已结事件逐轮全量
+      // 进内存（实测 29,405 行/次）是 collectState 的最大内存/延迟项。
+      // 契约字段（events[].status: string）不变，仅收窄采集范围。
+      eventsQuery.where(
+        and(
+          eq(ewohEvent.status, 'open'),
+          this.orgCondition(ewohEvent.orgId, ctx),
+        ) as SQL,
+      ),
       ctx?.primaryOrgId
         ? routeNodesQuery.where(
             this.orgCondition(ewohRouteNode.orgId, ctx) as SQL,

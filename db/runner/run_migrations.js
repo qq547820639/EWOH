@@ -175,6 +175,9 @@ const FILES = {
   standalone_idempotency_org: path.join(root, 'db/migrations/standalone_060_idempotency_org.sql'),
   standalone_idempotency_org_rollback: path.join(root, 'db/migrations/standalone_060_idempotency_org.rollback.sql'),
   standalone_idempotency_org_verify: path.join(root, 'db/verify/standalone_060_idempotency_org.verify.sql'),
+  standalone_telemetry_org_ts_index: path.join(root, 'db/migrations/standalone_061_telemetry_org_ts_index.sql'),
+  standalone_telemetry_org_ts_index_rollback: path.join(root, 'db/migrations/standalone_061_telemetry_org_ts_index.rollback.sql'),
+  standalone_telemetry_org_ts_index_verify: path.join(root, 'db/verify/standalone_061_telemetry_org_ts_index.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -441,6 +444,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-idempotency-org',
   '--rollback-standalone-idempotency-org',
   '--verify-standalone-idempotency-org',
+  '--apply-standalone-telemetry-org-ts-index',
+  '--rollback-standalone-telemetry-org-ts-index',
+  '--verify-standalone-telemetry-org-ts-index',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
@@ -1435,6 +1441,8 @@ function main() {
       '--rollback-standalone-spatial-entity-org-unique': 'standalone_spatial_entity_org_unique_rollback',
       '--apply-standalone-idempotency-org': 'standalone_idempotency_org',
       '--rollback-standalone-idempotency-org': 'standalone_idempotency_org_rollback',
+      '--apply-standalone-telemetry-org-ts-index': 'standalone_telemetry_org_ts_index',
+      '--rollback-standalone-telemetry-org-ts-index': 'standalone_telemetry_org_ts_index_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

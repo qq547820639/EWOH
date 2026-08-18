@@ -16,6 +16,7 @@ import { Injectable, Inject, Logger, OnModuleDestroy, OnModuleInit, Optional } f
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { ewohNotification } from '@server/database/schema';
+import { RequestDatabaseContext } from '../../database/request-database-context';
 import {
   buildEmailMessage,
   emailConfig,
@@ -134,6 +135,8 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() transport?: LarkTransport,
     @Optional() emailConnector?: SmtpConnector,
+    /** P1-GUC（2026-08-19 审计）：定时器回调无 ALS store → 根句柄无 GUC。 */
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {
     this.larkTransport = transport ?? realLarkTransport;
     this.emailSender = (config, message) =>
@@ -175,18 +178,15 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     }
     this.dispatching = true;
     try {
-      const rows = await this.db
-        .select()
-        .from(ewohNotification)
-        .where(
-          and(
-            inArray(ewohNotification.channel, enabledChannels),
-            eq(ewohNotification.status, 'pending'),
-            or(isNull(ewohNotification.scheduledAt), lte(ewohNotification.scheduledAt, new Date())),
-          ),
-        )
-        .orderBy(asc(ewohNotification.createdAt))
-        .limit(batch);
+      // P1-GUC（2026-08-19 审计）：本方法由 setInterval 定时器触发（无请求
+      // ALS store）——`this.db` 回落根句柄且无 GUC，而 ewoh_notification 有
+      // RLS（ewoh_service_all: USING ewoh_org_visible(org_id)），无 GUC 时
+      // 恒 false → 查询静默读空 → 全部租户通知永不派发。派发器是必须跨 org
+      // 读写的可信系统设施：每条 DB 语句经 systemGlobalAdminTransaction 显式
+      // 建立全局管理员上下文（app.is_global_admin='true' 使 ewoh_org_visible
+      // 对所有 org 返回 true——与 DB 全局行判定同一 idiom）。事务只包 DB 语句
+      // （HTTP 投递在事务外），批量 50×5s 的外呼不再占用池连接。
+      const rows = await this.withGuc(() => this.claimPending(enabledChannels, batch));
       const summary: DispatchSummary = { claimed: rows.length, sent: 0, failed: 0 };
       for (const row of rows) {
         // NEST-643（2026-08-17 审计裁决，文档化）：NotificationLike 支持
@@ -214,30 +214,19 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
           } else {
             throw new Error(`unknown_push_channel:${row.channel}`);
           }
-          const [updated] = await this.db
-            .update(ewohNotification)
-            .set({ status: 'sent', sentAt: new Date(), errorMessage: null, updatedAt: new Date() })
-            .where(
-              and(
-                eq(ewohNotification.notificationId, row.notificationId),
-                eq(ewohNotification.status, 'pending'),
-              ),
-            )
-            .returning();
+          const updated = await this.withGuc(() => this.casMarkStatus(row.notificationId, {
+            status: 'sent',
+            sentAt: new Date(),
+            errorMessage: null,
+          }));
           if (updated) summary.sent += 1; // CAS 未命中 = 他实例已投递，跳过（幂等）
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
           this.logger.warn(`push dispatch failed ${row.channel} ${row.notificationId}: ${reason}`);
-          const [updated] = await this.db
-            .update(ewohNotification)
-            .set({ status: 'failed', errorMessage: reason, updatedAt: new Date() })
-            .where(
-              and(
-                eq(ewohNotification.notificationId, row.notificationId),
-                eq(ewohNotification.status, 'pending'),
-              ),
-            )
-            .returning();
+          const updated = await this.withGuc(() => this.casMarkStatus(row.notificationId, {
+            status: 'failed',
+            errorMessage: reason,
+          }));
           if (updated) summary.failed += 1;
         }
       }
@@ -245,5 +234,50 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.dispatching = false;
     }
+  }
+
+  /** DB 操作经全局管理员 GUC 事务执行（无 RequestDatabaseContext 的测试环境直通）。 */
+  private withGuc<T>(op: () => Promise<T>): Promise<T> {
+    if (!this.requestDatabaseContext) return op();
+    return this.requestDatabaseContext.systemGlobalAdminTransaction(op);
+  }
+
+  private claimPending(
+    enabledChannels: readonly PushChannel[],
+    batch: number,
+  ) {
+    return this.db
+      .select()
+      .from(ewohNotification)
+      .where(
+        and(
+          inArray(ewohNotification.channel, enabledChannels as readonly string[]),
+          eq(ewohNotification.status, 'pending'),
+          or(isNull(ewohNotification.scheduledAt), lte(ewohNotification.scheduledAt, new Date())),
+        ),
+      )
+      .orderBy(asc(ewohNotification.createdAt))
+      .limit(batch);
+  }
+
+  /** CAS 写回（WHERE status='pending' RETURNING；未命中 = 他实例已处理）。 */
+  private async casMarkStatus(
+    notificationId: string,
+    patch: { status: 'sent' | 'failed'; sentAt?: Date; errorMessage?: string | null },
+  ): Promise<boolean> {
+    const values: Record<string, unknown> = { status: patch.status, updatedAt: new Date() };
+    if (patch.sentAt != null) values.sentAt = patch.sentAt;
+    if (patch.errorMessage !== undefined) values.errorMessage = patch.errorMessage;
+    const [updated] = await this.db
+      .update(ewohNotification)
+      .set(values as never)
+      .where(
+        and(
+          eq(ewohNotification.notificationId, notificationId),
+          eq(ewohNotification.status, 'pending'),
+        ),
+      )
+      .returning();
+    return updated != null;
   }
 }

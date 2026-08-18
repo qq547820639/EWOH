@@ -71,9 +71,11 @@ export function getEntityColor(
     case 'scheduling':
       return entity.entityType === 'person' ? '#a855f7' : '#4b5563';
     case 'data_quality':
-      if (entity.confidence > 0.95) return '#10b981';
-      if (entity.confidence >= 0.8) return '#f59e0b';
-      return '#ef4444';
+    // P1（2026-08-19 审计）：confidence 缺失 → 灰色 unknown（缺数据 ≠ 低质量）。
+    if (entity.confidence == null) return '#6b7280';
+    if (entity.confidence > 0.95) return '#10b981';
+    if (entity.confidence >= 0.8) return '#f59e0b';
+    return '#ef4444';
     default:
       return '#3b82f6';
   }

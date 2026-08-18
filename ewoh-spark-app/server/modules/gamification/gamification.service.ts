@@ -31,6 +31,8 @@ import type {
   ApplyBrainSuggestionResult,
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { buildGucSettings } from '../shared/org-context.interceptor';
+import { RequestDatabaseContext } from '../../database/request-database-context';
 import { assertPlanTenantVisible } from '../scheduler/plan-tenant-guard';
 
 /**
@@ -46,6 +48,8 @@ export class GamificationService {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() private readonly ark?: ArkService,
     private readonly schedulerService?: SchedulerService,
+    /** P1-GUC（2026-08-19 审计）：后台 LLM 增强重建租户 GUC 上下文用。 */
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {}
 
   // ===== G3.1 玩家角色系统 =====
@@ -745,7 +749,7 @@ export class GamificationService {
       }
 
       // 3. 返回规则建议，同时后台异步触发 LLM 增强并回写缓存（本 org 桶）
-      void this.enrichBrainSuggestionsWithLlmAsync(orgId, suggestions);
+      void this.enrichBrainSuggestionsWithLlmAsync(actor, suggestions);
 
       this.logger.log(`getBrainSuggestions returned ${suggestions.length} rule suggestions`);
       return this.attachPlanIds(
@@ -989,12 +993,22 @@ export class GamificationService {
     }));
   }
 
-  /** 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议；
-   * NEST-308/309：按 org 分桶 + 聚合查询带 org 过滤）。 */
+  /**
+   * 后台异步执行 LLM 增强，成功后回写缓存（失败不影响已返回的规则建议；
+   * NEST-308/309：按 org 分桶 + 聚合查询带 org 过滤）。
+   *
+   * P1-GUC（2026-08-19 审计）：本方法经 `void` fire-and-forget 调用——请求
+   * 返回后 AsyncLocalStorage 事务 store 已释放，`this.db` 回落根句柄且无
+   * GUC（app.current_org_ids 空 → ewoh_org_visible 恒 false）→ RLS 下
+   * telemetry/event/device 查询**静默读空**，LLM 拿到空数据生成空增强。
+   * 修复：以调用时刻捕获的 actor 在 runInTransaction 中重建租户 GUC 上下文
+   * 再执行全部查询（与请求路径同语义；查询自身仍带显式 org WHERE 双保险）。
+   */
   private async enrichBrainSuggestionsWithLlmAsync(
-    orgId: string,
+    actor: OrgContext | undefined,
     fallback: BrainSuggestion[],
   ): Promise<void> {
+    const orgId = this.requireOrgId(actor);
     // 竞态守卫：该 org 已有增强在执行时直接跳过，避免前端每次轮询重复触发
     if (this.brainEnhancingOrgs.has(orgId)) {
       this.logger.log(`getBrainSuggestions 增强进行中，跳过本次触发 (org=${orgId})`);
@@ -1002,41 +1016,62 @@ export class GamificationService {
     }
     this.brainEnhancingOrgs.add(orgId);
     try {
-      const telemetryRows = await this.db
-        .select({
-          deviceId: ewohTelemetry.deviceId,
-          avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
-          avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
-        })
-        .from(ewohTelemetry)
-        .where(
-          and(
-            eq(ewohTelemetry.orgId, orgId),
-            gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
-          ),
-        )
-        .groupBy(ewohTelemetry.deviceId);
-      const openEvents = await this.db
-        .select()
-        .from(ewohEvent)
-        .where(and(eq(ewohEvent.status, 'open'), eq(ewohEvent.orgId, orgId)));
-      const lowBatteryDevices = await this.db
-        .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
-        .from(ewohDevice)
-        .where(and(sql`${ewohDevice.batteryPct} < 20`, eq(ewohDevice.orgId, orgId)));
-
-      const enriched = await this.enrichBrainSuggestionsWithLlm(
-        fallback,
-        { telemetryRows, openEvents, lowBatteryDevices },
-      );
-      if (enriched && enriched.length > 0) {
-        this.brainCacheByOrg.set(orgId, { suggestions: enriched, cachedAt: Date.now() });
-        this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions (org=${orgId})`);
-      }
+      await this.runWithTenantGuc(actor, async () => {
+        await this.enrichBrainSuggestionsWithLlmInner(orgId, fallback);
+      });
     } catch (error) {
       this.logger.warn(`getBrainSuggestions 异步增强失败：${String(error)}`);
     } finally {
       this.brainEnhancingOrgs.delete(orgId);
+    }
+  }
+
+  /** 重建租户 GUC 上下文执行后台查询（无 RequestDatabaseContext 的测试环境直通）。 */
+  private async runWithTenantGuc<T>(
+    actor: OrgContext | undefined,
+    op: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.requestDatabaseContext || !actor) return op();
+    return this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(actor),
+      op,
+    );
+  }
+
+  private async enrichBrainSuggestionsWithLlmInner(
+    orgId: string,
+    fallback: BrainSuggestion[],
+  ): Promise<void> {
+    const telemetryRows = await this.db
+      .select({
+        deviceId: ewohTelemetry.deviceId,
+        avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+        avgBattery: sql<number>`coalesce(avg(${ewohTelemetry.batteryPct}), 100)::float`,
+      })
+      .from(ewohTelemetry)
+      .where(
+        and(
+          eq(ewohTelemetry.orgId, orgId),
+          gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+        ),
+      )
+      .groupBy(ewohTelemetry.deviceId);
+    const openEvents = await this.db
+      .select()
+      .from(ewohEvent)
+      .where(and(eq(ewohEvent.status, 'open'), eq(ewohEvent.orgId, orgId)));
+    const lowBatteryDevices = await this.db
+      .select({ deviceId: ewohDevice.deviceId, workerName: ewohDevice.workerName, batteryPct: ewohDevice.batteryPct })
+      .from(ewohDevice)
+      .where(and(sql`${ewohDevice.batteryPct} < 20`, eq(ewohDevice.orgId, orgId)));
+
+    const enriched = await this.enrichBrainSuggestionsWithLlm(
+      fallback,
+      { telemetryRows, openEvents, lowBatteryDevices },
+    );
+    if (enriched && enriched.length > 0) {
+      this.brainCacheByOrg.set(orgId, { suggestions: enriched, cachedAt: Date.now() });
+      this.logger.log(`getBrainSuggestions cached ${enriched.length} LLM suggestions (org=${orgId})`);
     }
   }
 

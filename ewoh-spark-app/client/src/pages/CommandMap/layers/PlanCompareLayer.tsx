@@ -149,7 +149,9 @@ function UnchangedMarker({
         onFocus(taskId);
       }}
     >
-      <circle r={3.5} fill="#1e293b" stroke="#475569" strokeWidth={1} opacity={0.85} />
+      {/* P1（2026-08-19 审计）：描边原 #475569 深色画布低对比隐形 → 提亮至
+          slate-400 级（低干扰上下文 ≠ 不可见）。 */}
+      <circle r={3.5} fill="#1e293b" stroke="#94a3b8" strokeWidth={1} opacity={0.85} />
     </g>
   );
 }

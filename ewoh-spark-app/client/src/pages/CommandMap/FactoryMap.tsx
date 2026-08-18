@@ -987,9 +987,12 @@ const FactoryMap = ({
           } else if (mode === 'person') {
             fill = '#06b6d4';
           } else if (mode === 'data_quality') {
+            // P1（2026-08-19 审计）：confidence 缺失 → 灰色 unknown（原 `?? 0`
+            // 兜底把无数据人员画成红色——缺数据 ≠ 低质量）。
             const ent = entities.find((e) => e.entityId === p.entityId);
-            const c = ent?.confidence ?? 0;
-            if (c > 0.95) fill = '#10b981';
+            const c = ent?.confidence;
+            if (c == null) fill = '#6b7280';
+            else if (c > 0.95) fill = '#10b981';
             else if (c >= 0.8) fill = '#f59e0b';
             else fill = '#ef4444';
           } else if (mode === 'exoskeleton') {

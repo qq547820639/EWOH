@@ -84,6 +84,29 @@ export class RequestDatabaseContext {
     });
   }
 
+  /**
+   * Runs `operation` as trusted system infrastructure on RLS-protected tables
+   * across ALL org boundaries: sets only `app.is_global_admin='true'` (+ a
+   * `system` user id for audit lineage), which makes `ewoh_org_visible()`
+   * return true for every org (the DB's own global-row idiom, see
+   * standalone_001 world_snapshot policies).
+   *
+   * P1-GUC（2026-08-19 审计）：后台系统任务（定时器/派发器）在 ALS 之外运行，
+   * `this.db` 回落根句柄且无 GUC → RLS 表 `ewoh_org_visible` 恒 false →
+   * 查询静默读空（不报错、数据悄悄变空）。凡后台任务必须跨 org 读写的
+   * RLS 表，一律经本方法显式建立全局管理员上下文（与 systemTransaction
+   * 的区别：后者无任何 GUC，仅适用于无 RLS 的表）。
+   */
+  async systemGlobalAdminTransaction<T>(operation: () => Promise<T>): Promise<T> {
+    return this.runInTransaction(
+      [
+        { name: 'app.user_id', value: 'system' },
+        { name: 'app.is_global_admin', value: 'true' },
+      ],
+      operation,
+    );
+  }
+
   async runInTransaction<T>(
     settings: readonly TransactionSetting[],
     operation: () => Promise<T>,

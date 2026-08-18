@@ -217,20 +217,71 @@ export class WorldCursorService {
       generatedAt,
     } satisfies SnapshotPayload);
     const checksum = createHash('sha256').update(payloadJson).digest('hex');
-    await this.safeExecute('persist world snapshot', this.db.insert(ewohWorldSnapshotCursor).values({
-      snapshotVersion,
-      snapshotType: 'full',
-      payload: JSON.parse(payloadJson) as Record<string, unknown>,
-      entityCount: nextEntities.length,
-      checksum,
-      sourceType: 'service',
-      orgId: scope,
-    }));
+    try {
+      await this.db.insert(ewohWorldSnapshotCursor).values({
+        snapshotVersion,
+        snapshotType: 'full',
+        payload: JSON.parse(payloadJson) as Record<string, unknown>,
+        entityCount: nextEntities.length,
+        checksum,
+        sourceType: 'service',
+        orgId: scope,
+      });
+    } catch (error) {
+      // P1（2026-08-19 审计）：getSnapshot 读改写无锁——并发请求同算
+      // nextVersion 撞 uq_ewoh_world_snapshot_org_version（23505）→ 稳定 500。
+      // 收敛：唯一冲突 = 并发写者已胜出，重读胜者快照返回一致结果（幂等）；
+      // 其余错误照常走 safeExecute 语义抛 500。
+      if (this.isUniqueViolation(error)) {
+        const winner = await this.readLatestSnapshot(scope);
+        if (winner) {
+          this.logger.warn(
+            `world snapshot concurrent write detected (org=${scope}, attempted v${snapshotVersion}, serving v${winner.snapshotVersion})`,
+          );
+          return winner;
+        }
+      }
+      throw error;
+    }
     return {
       snapshotVersion,
       cursor: encodeCursor(snapshotVersion, lastSeq),
       entities: nextEntities,
       generatedAt,
+    };
+  }
+
+  /** postgres 唯一约束冲突（23505）判定。 */
+  private isUniqueViolation(error: unknown): boolean {
+    return (
+      error != null &&
+      typeof error === 'object' &&
+      (error as { code?: unknown }).code === '23505'
+    );
+  }
+
+  /** 读取指定 org 的最新持久化快照（并发写胜者结果复读）。 */
+  private async readLatestSnapshot(scope: string): Promise<WorldSnapshot | null> {
+    const [latest] = await this.safeExecute<WorldSnapshotRow>(
+      'read latest world snapshot after conflict',
+      this.db
+        .select({
+          snapshot_version: ewohWorldSnapshotCursor.snapshotVersion,
+          payload: ewohWorldSnapshotCursor.payload,
+          entity_count: ewohWorldSnapshotCursor.entityCount,
+        })
+        .from(ewohWorldSnapshotCursor)
+        .where(eq(ewohWorldSnapshotCursor.orgId, scope))
+        .orderBy(desc(ewohWorldSnapshotCursor.snapshotVersion))
+        .limit(1),
+    );
+    if (!latest) return null;
+    const payload = this.parseSnapshotPayload(latest.payload);
+    return {
+      snapshotVersion: Number(latest.snapshot_version),
+      cursor: encodeCursor(Number(latest.snapshot_version), payload.lastSeq),
+      entities: payload.entities,
+      generatedAt: payload.generatedAt,
     };
   }
 

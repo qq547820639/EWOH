@@ -9,6 +9,7 @@ import {
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql, eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { parseDateInput } from '../shared/parse-date-input';
 import {
   ewohEvent,
   ewohScheduleTask,
@@ -91,7 +92,8 @@ export class ErpService {
         status: 'draft',
         priority: 'high',
         source: 'erp',
-        planEnd: body.dueDate ? new Date(body.dueDate) : null,
+        // P1（2026-08-19 审计）：日期入参显式校验（原 Invalid Date → 稳定 500）。
+        planEnd: parseDateInput(body.dueDate, 'dueDate'),
         isSimulation: false,
         progress: 0,
       },

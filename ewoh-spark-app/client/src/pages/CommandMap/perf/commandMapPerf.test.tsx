@@ -60,7 +60,9 @@ function seedQueryCache(qc: QueryClient, fixture: LargeFixture): void {
   qc.setQueryData(queryKeys.organizations, fixture.organizations);
   qc.setQueryData(queryKeys.personnel(), fixture.personnel);
   qc.setQueryData(queryKeys.devices({ pageSize: 200 }), fixture.devices);
-  qc.setQueryData(['schedule-route-graph'], fixture.routeGraph);
+  // P1（2026-08-19 审计）：路由图 queryKey 已统一为 ['scheduler-routes']
+  // （原 ['schedule-route-graph'] 双 key 双缓存已收敛）。
+  qc.setQueryData(['scheduler-routes'], fixture.routeGraph);
   qc.setQueryData(queryKeys.schedulerSnapshot, fixture.snapshot);
   qc.setQueryData(queryKeys.schedulerContext, {
     snapshotVersion: 'WS-20260810-0001',

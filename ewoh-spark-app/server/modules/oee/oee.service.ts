@@ -10,6 +10,7 @@ import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ewohEvent, ewohNotification } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
+import { parseDateInput } from '../shared/parse-date-input';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { insertAndonNotifications } from '../notification/andon-notifications';
 import { alertActionToState, alertStateTransitionAllowed } from '@shared/alert-state-machine';
@@ -171,8 +172,9 @@ export class OeeService {
     }
     // NEST-602：事件行显式 orgId（NULL 行=全租户可见，禁止）。
     const orgId = this.requireOrgId(actor);
-    const startedAt = body.startedAt ? new Date(body.startedAt) : new Date();
-    const endedAt = body.endedAt ? new Date(body.endedAt) : null;
+    // P1（2026-08-19 审计）：日期入参显式校验（原 Invalid Date → 稳定 500）。
+    const startedAt = parseDateInput(body.startedAt, 'startedAt') ?? new Date();
+    const endedAt = parseDateInput(body.endedAt, 'endedAt');
     const durationSec =
       endedAt && startedAt.getTime() <= endedAt.getTime()
         ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000)

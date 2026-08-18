@@ -156,7 +156,13 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     for (const key of pollingInvalidateKeys()) {
       queryClient.invalidateQueries({ queryKey: key });
     }
-    queryClient.invalidateQueries({ queryKey: ['schedule-route-graph'] });
+    // P1（2026-08-19 审计）：路由图 queryKey 统一为 ['scheduler-routes']
+    // （pollingInvalidateKeys 已含）——此前 useCommandMapQueries 用
+    // ['schedule-route-graph']、useCommandMapSchedulerState 用
+    // ['scheduler-routes'] 双缓存同一 getRoutes，resync 只失效其中一份，
+    // 断线恢复后两处路线图版本不一致。此行原失效旧 key，现保底清理残留
+    // 旧缓存条目（升级过渡期无消费者，仅释放内存）。
+    queryClient.removeQueries({ queryKey: ['schedule-route-graph'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
     queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
     queryClient.invalidateQueries({ queryKey: ['scheduler-run'] });

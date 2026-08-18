@@ -112,9 +112,12 @@ export function useCommandMapQueries({
     staleTime: QUERY_STALE_TIME_MS,
   });
 
-  // 调度路由图（供调度方案覆盖层渲染拥堵/阻断边）
+  // 调度路由图（供调度方案覆盖层渲染拥堵/阻断边）。
+  // P1（2026-08-19 审计）：queryKey 统一为 ['scheduler-routes']（与
+  // useCommandMapSchedulerState / pollingInvalidateKeys / resync 同源）——
+  // 原双 key 双缓存同一 getRoutes，resync 后两处路线图版本不一致。
   const routeGraphQuery = useQuery<RouteGraph>({
-    queryKey: ['schedule-route-graph'],
+    queryKey: ['scheduler-routes'],
     queryFn: getRoutes,
     refetchInterval: 30000,
     staleTime: QUERY_STALE_TIME_MS,
