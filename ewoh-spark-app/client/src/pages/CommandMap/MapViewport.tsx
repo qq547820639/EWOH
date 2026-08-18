@@ -21,8 +21,9 @@ import type {
   TaskCandidatesResponse,
 } from '@shared/api.interface';
 import FactoryMap from './FactoryMap';
+import { computeViewBox } from './factoryMapUtils';
 import { MODES as MODE_ITEMS } from './ModePanel';
-import { SchedulerLayersOverlay, computeAggregateViewBox } from './layers/SchedulerLayers';
+import { SchedulerLayersOverlay } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
 import type { CommandMapSchedulerState } from './hooks/useCommandMapSchedulerState';
 import { toggleLayer, type CommandMapLayer } from './hooks/commandMapSelector';
@@ -166,7 +167,11 @@ const MapViewport = ({
 
     {/* Phase 3 / P3-T3：纯视觉叠加层（conflict/risk/reservation/availability 等，数据来自 hook 聚合状态） */}
     {mode === 'scheduling' && (() => {
-      const vb = computeAggregateViewBox(schedulerState);
+      // 坐标系修复（2026-08-19）：叠加层必须与 base 层（FactoryMap）共享同一
+      // viewBox（computeViewBox(entities)）。原 computeAggregateViewBox 按调度
+      // 快照坐标（旧布局 150-585）计算，与空间实体新布局（62-720）错位 →
+      // 路线/方案/冲突等叠加内容画在视图外被裁剪（"图层开启没变化/看不到通道"）。
+      const vb = computeViewBox(entities);
       return (
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
