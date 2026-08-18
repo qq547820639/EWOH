@@ -1545,7 +1545,10 @@ export interface RouteGraphEdge {
   direction: string | null;
   capacity: number | null;
   riskLevel: string | null;
-  status: 'open' | 'congested' | 'blocked';
+  // 契约对齐（2026-08-19）：后端透传 ewoh_route_edge.status（种子/DB 用 'normal'，
+  // 原类型仅 open/congested/blocked 导致前端 normal 分支被 TS 拒绝、通道线按
+  // 未知状态落入暗色兜底（不可见））。
+  status: 'open' | 'normal' | 'congested' | 'blocked';
   accessibleFor: string[];
 }
 

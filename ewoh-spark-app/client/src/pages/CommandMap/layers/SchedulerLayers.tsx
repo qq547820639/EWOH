@@ -213,8 +213,13 @@ export const RouteLayer = memo(function RouteLayer({ state }: LayerProps): React
             y1={a.y}
             x2={b.x}
             y2={b.y}
-            stroke={e.status === 'blocked' ? '#ef4444' : e.status === 'congested' ? '#f59e0b' : '#334155'}
-            strokeWidth={e.status === 'blocked' ? 2 : 1}
+            // 可见性修复（2026-08-19）：edge.status 为 'normal' 时原 #334155 1px
+            // 在深色画布上几乎不可见（16/18 条 normal 通道线隐形 → '开路线没用'）。
+            // normal 改亮蓝 1.75px（通道网清晰可读）；blocked/congested 红/橙高亮加粗。
+            stroke={e.status === 'blocked' ? '#ef4444' : e.status === 'congested' ? '#f59e0b' : '#38bdf8'}
+            strokeWidth={e.status === 'blocked' ? 2.5 : e.status === 'congested' ? 2 : 1.75}
+            strokeLinecap="round"
+            opacity={e.status === 'normal' ? 0.9 : 1}
           />
         );
       })}
