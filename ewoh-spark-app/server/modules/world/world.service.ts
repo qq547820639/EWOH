@@ -562,7 +562,8 @@ export class WorldService {
       deviceId: source.deviceId ?? null,
       eventCode: `REPLAY_${body.kind.toUpperCase()}`,
       eventType: body.kind,
-      severity: body.kind === 'issue' ? 'L2' : 'L1',
+      // B7（2026-08-19 审计）：事件严重度统一 canonical（原 legacy L1/L2）。
+      severity: body.kind === 'issue' ? 'high' : 'low',
       title: body.title?.trim() || `回放${body.kind}：${source.title ?? source.eventId}`,
       status: 'open',
       createdAt,

@@ -668,13 +668,9 @@ export class GamificationService {
 
       // 3. 写入事件 ewoh_event（NEST-311：显式 orgId）
       const priority = req.priority ?? 'normal';
-      const severityMap: Record<string, string> = {
-        critical: 'L3',
-        high: 'L2',
-        normal: 'L1',
-        low: 'L1',
-      };
-      const severity = severityMap[priority] ?? 'L1';
+      // B7（2026-08-19 审计）：事件严重度统一 canonical（原 legacy L1-L3 映射，
+      // 与 ingest/ERP 等模块的 canonical 词表分裂 → 安全封锁/优先级加权失配）。
+      const severity = priority === 'critical' || priority === 'high' ? priority : 'low';
       const title = `外骨骼反馈-${req.type}${req.message ? `: ${req.message}` : ''}`;
       const now = new Date();
 

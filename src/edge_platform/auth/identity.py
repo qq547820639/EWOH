@@ -7,8 +7,11 @@
   三个账号）。EDGE-007（2026-08-17 审计整改）：密码校验由快速哈希
   sha256(salt+password) 升级为 ``hashlib.pbkdf2_hmac("sha256", ..., 200k迭代)``
   （运行时零第三方依赖，bcrypt/argon2 不可引入；PBKDF2 为审计认可的等价强化），
-  用 ``secrets.compare_digest`` 做常量时间比较。种子口令保持不变（试点文档口径），
-  生产部署应经环境侧强制初始口令 + 首次登录改密（见 deploy/.env.example）。
+  用 ``secrets.compare_digest`` 做常量时间比较。
+  D14（2026-08-19 审计）：种子口令硬编码默认值（admin123 等）此前在 production
+  模式照常生效——现强制经环境变量置换（EWOH_SEED_ADMIN_PASSWORD 等）：
+  production 未配置或仍等于公开默认值 → 构造即拒绝（RuntimeError）；
+  development/simulation 保留试点文档默认口令（演示口径不变）。
 - ``OIDCIdentityBackend``：OIDC 后端 stub（仅留接口，未实现完整 OIDC 流程）。
 - ``get_identity_backend``：依据 ``Settings.auth_backend`` 选择后端。
 
@@ -16,6 +19,7 @@
 """
 
 import hashlib
+import os
 import secrets
 import threading
 from abc import ABC, abstractmethod
@@ -56,37 +60,74 @@ class OfflineIdentityBackend(IdentityBackend):
     （派生成本约百毫秒级；SessionManager.login 每次构造本类时复用缓存）。
     """
 
-    # 预置账号（user_id, username, role, display_name, 默认密码）
+    # 预置账号（user_id, username, role, display_name, 环境变量名, 开发默认密码）
     _SEED_ACCOUNTS = (
-        ("U-ADMIN", "admin", "admin", "管理员", "admin123"),
-        ("U-SAFETY", "safety_officer", "safety_officer", "安全官", "safety123"),
-        ("U-OP", "operator", "operator", "操作员", "operator123"),
+        ("U-ADMIN", "admin", "admin", "管理员", "EWOH_SEED_ADMIN_PASSWORD", "admin123"),
+        ("U-SAFETY", "safety_officer", "safety_officer", "安全官", "EWOH_SEED_SAFETY_PASSWORD", "safety123"),
+        ("U-OP", "operator", "operator", "操作员", "EWOH_SEED_OPERATOR_PASSWORD", "operator123"),
     )
 
     # 进程级种子校验缓存：username -> {"user_id","role","display_name","salt","hash"}
     _seed_verifiers: Optional[dict] = None
     _seed_verifiers_lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self, settings: Optional[Settings] = None):
+        settings = settings or Settings.load()
         self._users: dict = {}
-        for username, entry in self._seed_verifiers_map().items():
+        for username, entry in self._seed_verifiers_map(settings).items():
             self._users[username] = dict(entry)
 
     @classmethod
-    def _seed_verifiers_map(cls) -> dict:
+    def _resolve_seed_passwords(cls, settings: Settings) -> dict:
+        """种子口令解析（审计 D14，2026-08-19）。
+
+        - production：强制环境变量（EWOH_SEED_*_PASSWORD）——未配置或仍等于
+          公开默认值 → RuntimeError（拒绝启动，硬编码凭据不得在生产生效）；
+        - development / simulation：环境变量优先，未配置回退试点文档默认口令。
+
+        环境变量以字面量逐项读取（audit-env-inventory 静态识别要求，非变量间接）。
+        """
+        production = settings.runtime_mode == "production"
+        env_values = {
+            "admin": (os.environ.get("EWOH_SEED_ADMIN_PASSWORD") or "").strip(),
+            "safety_officer": (os.environ.get("EWOH_SEED_SAFETY_PASSWORD") or "").strip(),
+            "operator": (os.environ.get("EWOH_SEED_OPERATOR_PASSWORD") or "").strip(),
+        }
+        passwords: dict = {}
+        for _user_id, username, _role, _display, env_name, default in cls._SEED_ACCOUNTS:
+            value = env_values[username]
+            if production:
+                if not value:
+                    raise RuntimeError(
+                        f"production 模式离线身份后端要求 {env_name} 显式配置种子口令"
+                        f"（硬编码默认口令禁止在生产生效；审计 D14）"
+                    )
+                if value == default:
+                    raise RuntimeError(
+                        f"{env_name} 仍等于公开默认口令，拒绝启动（须置换后部署；审计 D14）"
+                    )
+            else:
+                value = value or default
+            passwords[username] = value
+        return passwords
+
+    @classmethod
+    def _seed_verifiers_map(cls, settings: Optional[Settings] = None) -> dict:
         """惰性派生并缓存种子账号校验器（每进程一次）。"""
         if cls._seed_verifiers is None:
             with cls._seed_verifiers_lock:
                 if cls._seed_verifiers is None:
+                    resolved = settings or Settings.load()
+                    passwords = cls._resolve_seed_passwords(resolved)
                     verifiers = {}
-                    for user_id, username, role, display_name, password in cls._SEED_ACCOUNTS:
+                    for user_id, username, role, display_name, _env_name, _default in cls._SEED_ACCOUNTS:
                         salt = secrets.token_hex(_SALT_BYTES)
                         verifiers[username] = {
                             "user_id": user_id,
                             "role": role,
                             "display_name": display_name,
                             "salt": salt,
-                            "hash": cls._hash(salt, password),
+                            "hash": cls._hash(salt, passwords[username]),
                         }
                     cls._seed_verifiers = verifiers
         return cls._seed_verifiers
@@ -150,7 +191,8 @@ def get_identity_backend(settings: Optional[Settings] = None) -> IdentityBackend
     settings = settings or Settings.load()
     backend = settings.auth_backend
     if backend == "offline":
-        return OfflineIdentityBackend()
+        # D14：production 未配置种子口令环境变量 → 构造抛 RuntimeError（拒绝启动）。
+        return OfflineIdentityBackend(settings)
     if backend == "oidc":
         return OIDCIdentityBackend(settings)
     raise ValueError(f"未知的身份认证后端: {backend!r}")

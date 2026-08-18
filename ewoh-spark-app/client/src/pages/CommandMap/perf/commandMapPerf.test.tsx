@@ -13,6 +13,7 @@
  * 运行：npm run benchmark:command-map（= jest --config client/jest.config.cjs src/pages/CommandMap/perf）
  */
 import { renderToString } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 
@@ -100,9 +101,13 @@ describe('command-map perf benchmark（Task 11/11.2）', () => {
         originalError(...args);
       };
       try {
+        // MemoryRouter：CommandMapShell 2026-08-19 返回按钮修复引入 useNavigate，
+        // 无 Router 上下文时渲染即抛 invariant（本测试原因此前失败）。
         return renderToString(
           <QueryClientProvider client={qc}>
-            <CommandMapShell />
+            <MemoryRouter>
+              <CommandMapShell />
+            </MemoryRouter>
           </QueryClientProvider>,
         );
       } finally {

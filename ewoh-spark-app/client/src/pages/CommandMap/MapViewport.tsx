@@ -9,11 +9,13 @@
  * 中 ModePanel / EntityDetail 的相对定位与分解前完全一致（零渲染回归）。
  */
 import React from 'react';
+import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import type {
   CurrentWorldState,
   EnvironmentReading,
   PlanCompareResult,
+  ReplanPreviewResult,
   RouteGraph,
   SchedulingConflict,
   SchedulingPlanV2,
@@ -21,7 +23,6 @@ import type {
   TaskCandidatesResponse,
 } from '@shared/api.interface';
 import FactoryMap from './FactoryMap';
-import { computeViewBox } from './factoryMapUtils';
 import { MODES as MODE_ITEMS } from './ModePanel';
 import { SchedulerLayersOverlay } from './layers/SchedulerLayers';
 import { PlanCompareLayer } from './layers/PlanCompareLayer';
@@ -30,6 +31,12 @@ import { toggleLayer, type CommandMapLayer } from './hooks/commandMapSelector';
 import type { MapLevel, MapMode } from './map-mode-machine';
 import type { VisibleBounds } from './store/viewportCulling';
 import type { PlanCompareMapVM, PlanCompareUiState } from './vm/planCompareVM';
+import {
+  alignRouteGraphToSpatial,
+  alignSnapshotToSpatial,
+  buildSpatialPointIndex,
+  remapPlanCompareVmToSpatial,
+} from './spatialPointIndex';
 import IntelligenceWorkspace from './IntelligenceWorkspace';
 import PlanCompareWorkspace from './PlanCompareWorkspace';
 
@@ -74,6 +81,8 @@ interface MapViewportProps {
   // ---- 冲突预览叠加层 ----
   previewConflict: SchedulingConflict | null;
   previewDiffVm: PlanCompareMapVM | null;
+  /** REPLAN dry-run 预览（审计 C12：changed-by-replan 图层数据源，SchedulePanel 上抛）。 */
+  replanPreview: ReplanPreviewResult | null;
   // ---- 智能调度工作台 ----
   activePlan: SchedulingPlanV2 | null;
   showIntelligence: boolean;
@@ -135,6 +144,7 @@ const MapViewport = ({
   onCloseDiff,
   previewConflict,
   previewDiffVm,
+  replanPreview,
   activePlan,
   showIntelligence,
   showWorkspace,
@@ -144,7 +154,70 @@ const MapViewport = ({
   onCloseIntelligence,
   setMode,
   onLevelSelect,
-}: MapViewportProps): ReactElement => (
+}: MapViewportProps): ReactElement => {
+  // ---- 坐标源统一（审计 A2，2026-08-19）----
+  // 叠加层坐标一律以空间实体为准（与底图 /api/spatial/entities 同源）：
+  // snapshot（persons/devices/stations）、路由图节点（stationId 关联）、
+  // Plan Compare VM 均做 spatial 优先对齐，杜绝 route_node/device 表旧布局
+  // 坐标把叠加标记整体画偏。数值一致时为 no-op（引用不变，memo 稳定）。
+  const spatialPointOf = useMemo(() => buildSpatialPointIndex(entities), [entities]);
+  const alignedSchedulerState = useMemo(() => {
+    const snapshot = schedulerState.snapshot
+      ? alignSnapshotToSpatial(schedulerState.snapshot, spatialPointOf)
+      : schedulerState.snapshot;
+    const routes = schedulerState.routes
+      ? alignRouteGraphToSpatial(schedulerState.routes, spatialPointOf)
+      : schedulerState.routes;
+    if (snapshot === schedulerState.snapshot && routes === schedulerState.routes) {
+      return schedulerState;
+    }
+    return { ...schedulerState, snapshot, routes };
+  }, [schedulerState, spatialPointOf]);
+  const alignedCompareVm = useMemo(
+    () => remapPlanCompareVmToSpatial(compareVm, spatialPointOf),
+    [compareVm, spatialPointOf],
+  );
+  const alignedPreviewDiffVm = useMemo(
+    () => remapPlanCompareVmToSpatial(previewDiffVm, spatialPointOf),
+    [previewDiffVm, spatialPointOf],
+  );
+
+  // ---- 叠加层内容（审计 A1：经 FactoryMap overlay prop 渲染进 TransformComponent
+  // 内的基础 svg——与底图同 viewBox、同 pan/zoom 变换，消除缩放/平移错位）----
+  const overlay =
+    mode === 'scheduling' ? (
+      <>
+        {/* 调度纯视觉图层：保持原有的 pointer-events:none（不拦截底图点击）。 */}
+        <g data-scheduler-overlay="1" pointerEvents="none" aria-hidden="true">
+          <SchedulerLayersOverlay
+            state={alignedSchedulerState}
+            // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：store.selectedPlanId）。
+            selectedPlanId={selectedPlanId}
+            // 审计 C12：REPLAN 预览接线——changed-by-replan 图层不再恒空。
+            replanPreview={replanPreview}
+          />
+        </g>
+        {showCompare && alignedCompareVm && (
+          <PlanCompareLayer
+            vm={alignedCompareVm}
+            focusedTaskId={compareUi.focusedTaskId}
+            onFocusTask={onFocusCompareTask}
+            unchangedTaskIds={alignedCompareVm.unchangedTaskIds}
+            unchangedPoints={compareUnchangedPoints}
+          />
+        )}
+        {previewConflict && alignedPreviewDiffVm && (
+          <PlanCompareLayer
+            vm={alignedPreviewDiffVm}
+            focusedTaskId={null}
+            onFocusTask={handleNoopFocusTask}
+            unchangedTaskIds={[]}
+          />
+        )}
+      </>
+    ) : null;
+
+  return (
   <>
     <FactoryMap
       entities={entities}
@@ -163,47 +236,8 @@ const MapViewport = ({
       selectedTaskId={selectedTaskId}
       visibleBounds={visibleBounds}
       onVisibleBoundsChange={onVisibleBoundsChange}
+      overlay={overlay}
     />
-
-    {/* Phase 3 / P3-T3：纯视觉叠加层（conflict/risk/reservation/availability 等，数据来自 hook 聚合状态） */}
-    {mode === 'scheduling' && (() => {
-      // 坐标系修复（2026-08-19）：叠加层必须与 base 层（FactoryMap）共享同一
-      // viewBox（computeViewBox(entities)）。原 computeAggregateViewBox 按调度
-      // 快照坐标（旧布局 150-585）计算，与空间实体新布局（62-720）错位 →
-      // 路线/方案/冲突等叠加内容画在视图外被裁剪（"图层开启没变化/看不到通道"）。
-      const vb = computeViewBox(entities);
-      return (
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          viewBox={`${vb.minX} ${vb.minY} ${vb.w} ${vb.h}`}
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden="true"
-        >
-          <SchedulerLayersOverlay
-            state={schedulerState}
-            // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：store.selectedPlanId）。
-            selectedPlanId={selectedPlanId}
-          />
-          {showCompare && compareVm && (
-            <PlanCompareLayer
-              vm={compareVm}
-              focusedTaskId={compareUi.focusedTaskId}
-              onFocusTask={onFocusCompareTask}
-              unchangedTaskIds={compareVm.unchangedTaskIds}
-              unchangedPoints={compareUnchangedPoints}
-            />
-          )}
-          {previewConflict && previewDiffVm && (
-            <PlanCompareLayer
-              vm={previewDiffVm}
-              focusedTaskId={null}
-              onFocusTask={handleNoopFocusTask}
-              unchangedTaskIds={[]}
-            />
-          )}
-        </svg>
-      );
-    })()}
 
     {/* 智能调度驾驶舱：开关 + 叠加层（仅调度模式且有方案时展示后端数据图层） */}
     <IntelligenceWorkspace
@@ -295,6 +329,7 @@ const MapViewport = ({
       </div>
     </div>
   </>
-);
+  );
+};
 
 export default MapViewport;

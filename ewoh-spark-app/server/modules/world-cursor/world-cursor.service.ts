@@ -92,12 +92,24 @@ export class WorldCursorService {
    * NEST-609（2026-08-17 审计整改）：snapshot/delta 读写按 org 作用域。
    * ewoh_world_snapshot / ewoh_world_delta_log 的 org_id 为 uuid 列
    * （GUC 默认）；读路径显式 eq(orgId)，写路径（delta 追加）显式携带。
+   *
+   * B9（2026-08-19 审计）：org_id 为 uuid 列而系统其余表多为 varchar——
+   * 非 UUID org（legacy/测试值）此前要么深处 22P02、要么 eq 比较静默落空
+   * （表现为 404）。入口显式 UUID 校验：非法值 400 fail-fast，不再静默。
    */
+  private static readonly UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   private requireOrgId(orgId?: string): string {
     const trimmed = orgId?.trim();
     if (!trimmed) {
       throw new BadRequestException(
         'org context missing: world cursor operations require tenant context',
+      );
+    }
+    if (!WorldCursorService.UUID_RE.test(trimmed)) {
+      throw new BadRequestException(
+        `org context invalid: org id must be a UUID (got ${JSON.stringify(trimmed)})`,
       );
     }
     return trimmed;

@@ -5,6 +5,7 @@ import type {
   SchedulingPolicyConfig,
   WorldStateSnapshot,
 } from '@shared/api.interface';
+import { isEventSeverityRisky } from '@shared/risk';
 import { computeBlockingReach } from './task-dag';
 
 /** 单个优先级影响因素（用于可解释性）。 */
@@ -137,15 +138,13 @@ export class PriorityEngine {
     }
 
     // 事件严重度 / 截止风险标记（T03 / P1-1 G4：死路径修复——从 events 推导 deadlineAtRisk）。
-    // 开放（status=open）且 severity ∈ {critical, high, medium}（ADR-027 规范
-    // 词表：除 low/unknown 外均为风险事件）或 eventType=DEADLINE_AT_RISK 触发。
+    // 开放（status=open）且 severity 为风险档（ADR-027 规范词表 critical/high/medium
+    // + 存量 legacy L2/L3 双词汇受理，审计 B7）或 eventType=DEADLINE_AT_RISK 触发。
     const taskExt = input.task as typeof input.task & {
       deadlineAtRisk?: boolean;
     };
     const eventRisky = (input.events ?? []).some(
-      (e) =>
-        (e.severity === 'critical' || e.severity === 'high' || e.severity === 'medium') ||
-        e.eventType === 'DEADLINE_AT_RISK',
+      (e) => isEventSeverityRisky(e.severity) || e.eventType === 'DEADLINE_AT_RISK',
     );
     const deadlineAtRisk =
       taskExt.deadlineAtRisk === true || eventRisky;

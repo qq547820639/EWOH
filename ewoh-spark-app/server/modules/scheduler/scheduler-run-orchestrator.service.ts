@@ -77,7 +77,10 @@ export class SchedulerRunOrchestrator {
     // trigger_key 幂等键固定为 `org:MANUAL:ALL:0` 会让手动调度"只成功一次"，
     // 之后被 ON CONFLICT DO NOTHING 永久去重（前端手动触发按钮失效）。
     // 手动 = 每次新意图 → 新 key；冷却（按 org+type+entity 查最近记录）仍生效。
-    const eventVersion = trigger === 'MANUAL' ? Date.now() : undefined;
+    // C10（2026-08-19 审计）：改秒级时间戳——毫秒级 Date.now()（13 位）超出
+    // int4 上限（2.1e9），在未热修 bigint 的新环境上手动调度必 500。
+    // 秒级粒度与触发冷却窗口（默认 30s）语义一致，不会引入额外去重。
+    const eventVersion = trigger === 'MANUAL' ? Math.floor(Date.now() / 1000) : undefined;
     const run = await this.triggerService.evaluate(trigger, body.entityId ?? null, ctx, eventVersion);
     if (!run) {
       return { run: null, plans: [], debounced: true };

@@ -11,15 +11,29 @@ export class DatabaseAuditSink implements AuditLogSink {
   // @Optional 以兼容无数据库装配的测试环境）。
   constructor(@Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: PostgresJsDatabase) {}
 
+  /** B8（2026-08-19 审计）：ewoh_audit_log.org_id / 函数参数均为 uuid——
+   * 非 UUID orgId（legacy/测试 varchar 值）经 ::uuid 强制 cast 触发 22P02，
+   * 使业务写路径 500+回滚。写入前校验：非法值记 error 并跳过持久化。 */
+  private static readonly UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   async append(entry: AuditLogEntry): Promise<void> {
     if (!this.db) {
       this.logger.warn('Database audit sink has no database; entry not persisted');
       return;
     }
 
+    const orgId = entry.orgId?.trim() || null;
+    if (orgId && !DatabaseAuditSink.UUID_RE.test(orgId)) {
+      this.logger.error(
+        `audit orgId 非 UUID，跳过 DB 持久化（orgId=${orgId}, action=${entry.action}, entity=${entry.entityType}:${entry.entityId}）`,
+      );
+      return;
+    }
+
     await this.db.execute(sql`
       select ewoh_append_audit_log(
-        ${entry.orgId || null}::uuid,
+        ${orgId}::uuid,
         ${entry.actorId},
         ${entry.action},
         ${entry.entityType},

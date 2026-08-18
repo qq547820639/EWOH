@@ -116,9 +116,11 @@ export function priorityLevelColor(level?: string): string {
   }
 }
 
-/** 资源可用性层：将后端 status 值映射为展示色（available/busy/unavailable/offline/fault/stale 等）。 */
+/** 资源可用性层：将后端 status 值映射为展示色（available/busy/unavailable/offline/fault/stale 等）。
+ * 大小写归一（2026-08-19）：后端 canonical status 为大写（'OFFLINE'/'DEGRADED'/
+ * 'UNKNOWN'），原实现仅匹配小写 → OFFLINE 落入 default 绿色（颜色与文字自相矛盾）。 */
 export function resourceStatusColor(status?: string): string {
-  switch (status) {
+  switch ((status ?? '').toLowerCase()) {
     case 'offline':
     case 'unavailable':
     case 'fault':
@@ -129,8 +131,10 @@ export function resourceStatusColor(status?: string): string {
     case 'executing':
       return '#f97316';
     case 'reserved':
+    case 'degraded':
       return '#f59e0b';
     case 'stale':
+    case 'unknown':
       return '#6b7280';
     case 'idle':
     case 'available':

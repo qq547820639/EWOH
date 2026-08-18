@@ -124,4 +124,12 @@ describe('entityColors: priorityLevelColor / resourceStatusColor', () => {
     expect(resourceStatusColor('offline')).toBe('#ef4444');
     expect(resourceStatusColor('executing')).toBe('#f97316');
   });
+  it('resource 状态大小写归一（A6：后端 canonical 大写 OFFLINE 曾落入 default 绿色）', () => {
+    expect(resourceStatusColor('OFFLINE')).toBe('#ef4444');
+    expect(resourceStatusColor('Unavailable')).toBe('#ef4444');
+    expect(resourceStatusColor('AVAILABLE')).toBe('#34d399');
+    expect(resourceStatusColor('DEGRADED')).toBe('#f59e0b');
+    expect(resourceStatusColor('UNKNOWN')).toBe('#6b7280');
+    expect(resourceStatusColor(undefined)).toBe('#34d399');
+  });
 });

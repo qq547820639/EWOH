@@ -118,6 +118,9 @@ function makeConstraints(): SchedulingConstraint[] {
 function makeSvc() {
   const worldStateSnapshotService = {
     buildSnapshot: jest.fn(),
+    // 2026-08-19 优化：context 读路径改走只读快照（不分配版本号、不 INSERT），
+    // mock 同步补齐（原缺该方法是本 spec 5 例失败的根因）。
+    buildSnapshotReadOnly: jest.fn(),
     getCurrentWorldState: jest.fn(),
   };
   const resourceProjectionService = { getUnifiedResourceState: jest.fn(), project: jest.fn() };
@@ -146,7 +149,7 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
   it('版本字段真实取值（snapshot/resource/routeGraph/policy/eventSequence/sourceTimestamp）', async () => {
     const { svc, mocks } = makeSvc();
     const snapshot = makeSnapshot();
-    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue(snapshot);
+    mocks.worldStateSnapshotService.buildSnapshotReadOnly.mockResolvedValue(snapshot);
     mocks.resourceProjectionService.getUnifiedResourceState.mockResolvedValue(makeResources());
     mocks.policyService.getActivePolicy.mockResolvedValue({ version: 7 } as never);
     mocks.outboxService.latestSequence.mockResolvedValue(42);
@@ -166,7 +169,7 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
   it('tasks/resources/reservations/constraints 来自对应 mock 源（单一时间切片）', async () => {
     const { svc, mocks } = makeSvc();
     const snapshot = makeSnapshot();
-    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue(snapshot);
+    mocks.worldStateSnapshotService.buildSnapshotReadOnly.mockResolvedValue(snapshot);
     mocks.resourceProjectionService.getUnifiedResourceState.mockResolvedValue(makeResources());
     mocks.policyService.getActivePolicy.mockResolvedValue({ version: 7 } as never);
     mocks.outboxService.latestSequence.mockResolvedValue(42);
@@ -184,7 +187,7 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
 
   it('org 过滤：buildSnapshot 与 loadGlobalActive 收到归一化后的 org 上下文', async () => {
     const { svc, mocks } = makeSvc();
-    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue(makeSnapshot());
+    mocks.worldStateSnapshotService.buildSnapshotReadOnly.mockResolvedValue(makeSnapshot());
     mocks.resourceProjectionService.getUnifiedResourceState.mockResolvedValue([]);
     mocks.policyService.getActivePolicy.mockResolvedValue({ version: 1 } as never);
     mocks.outboxService.latestSequence.mockResolvedValue(0);
@@ -192,7 +195,7 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
 
     await svc.getContext(orgCtx);
 
-    const passedCtx = mocks.worldStateSnapshotService.buildSnapshot.mock.calls[0][0] as OrgContext;
+    const passedCtx = mocks.worldStateSnapshotService.buildSnapshotReadOnly.mock.calls[0][0] as OrgContext;
     expect(passedCtx.primaryOrgId).toBe('org1');
     expect(passedCtx.userId).toBe('u1');
     const loaderCtx = mocks.constraintLoaderService.loadGlobalActive.mock.calls[0][0] as OrgContext;
@@ -201,7 +204,7 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
 
   it('缺省 ctx（无 userContext）不抛错，org 归一化为空（向后兼容）', async () => {
     const { svc, mocks } = makeSvc();
-    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue(makeSnapshot());
+    mocks.worldStateSnapshotService.buildSnapshotReadOnly.mockResolvedValue(makeSnapshot());
     mocks.resourceProjectionService.getUnifiedResourceState.mockResolvedValue([]);
     mocks.policyService.getActivePolicy.mockResolvedValue({ version: 1 } as never);
     mocks.outboxService.latestSequence.mockResolvedValue(0);
@@ -210,13 +213,13 @@ describe('P0-2: SchedulingContextService.getContext 统一上下文组装', () =
     const ctx = await svc.getContext(undefined);
 
     expect(ctx.snapshotVersion).toBe('WS-20260810-0007');
-    const passedCtx = mocks.worldStateSnapshotService.buildSnapshot.mock.calls[0][0] as OrgContext;
+    const passedCtx = mocks.worldStateSnapshotService.buildSnapshotReadOnly.mock.calls[0][0] as OrgContext;
     expect(passedCtx.primaryOrgId).toBe('');
   });
 
   it('dataQuality 汇总正确（stale/unknownLocation/degradedRoute/total）', async () => {
     const { svc, mocks } = makeSvc();
-    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue(makeSnapshot());
+    mocks.worldStateSnapshotService.buildSnapshotReadOnly.mockResolvedValue(makeSnapshot());
     mocks.resourceProjectionService.getUnifiedResourceState.mockResolvedValue(makeResources());
     mocks.policyService.getActivePolicy.mockResolvedValue({ version: 7 } as never);
     mocks.outboxService.latestSequence.mockResolvedValue(42);

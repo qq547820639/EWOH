@@ -50,7 +50,10 @@ function pointOf(state: CommandMapAggregate, id: string): { x: number; y: number
 
 const EMPTY = null;
 
-/** Factory Base 层：工位静态底座（数据来自 snapshot.stations，纯视觉）。 */
+/** Factory Base 层：工位静态底座（数据来自 snapshot.stations，纯视觉）。
+ * 可见性修复（2026-08-19 审计 D13）：原 #334155 描边在深色画布（hsl(220 14% 8%)）
+ * 上几乎不可见 → 提亮至 slate-400 级；标签同步提亮（#334155/#64748b 级禁止
+ * 用于深底描边/文字）。 */
 export const BaseLayer = memo(function BaseLayer({ state }: LayerProps): React.ReactElement | null {
   const stations = state.snapshot?.stations ?? [];
   if (stations.length === 0) return EMPTY;
@@ -58,8 +61,8 @@ export const BaseLayer = memo(function BaseLayer({ state }: LayerProps): React.R
     <g data-layer="base">
       {stations.map((s) => (
         <g key={`base-${s.id}`} transform={`translate(${s.x} ${s.y})`}>
-          <rect x={-14} y={-14} width={28} height={28} rx={4} fill="#1e293b" stroke="#334155" strokeWidth={1} />
-          <text x={0} y={-18} textAnchor="middle" fontSize={8} fill="#94a3b8">
+          <rect x={-14} y={-14} width={28} height={28} rx={4} fill="#1e293b" stroke="#94a3b8" strokeWidth={1} />
+          <text x={0} y={-18} textAnchor="middle" fontSize={8} fill="#cbd5e1">
             {s.name}
           </text>
         </g>

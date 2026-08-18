@@ -48,6 +48,7 @@ const baseProps = {
   onCloseDiff: jest.fn(),
   previewConflict: null,
   previewDiffVm: null,
+  replanPreview: null,
   activePlan: null,
   showIntelligence: false,
   showWorkspace: false,
@@ -63,12 +64,16 @@ describe('MapViewport 页面级渲染 smoke（NO-13e / ADR-054）', () => {
   it('非调度模式：渲染地图 svg（FactoryMap），不渲染调度叠加层', () => {
     const markup = renderToStaticMarkup(<MapViewport {...baseProps} />);
     expect(markup).toContain('<svg');
-    expect(markup).not.toContain('<svg class="absolute inset-0');
+    // 审计 A1（2026-08-19）：叠加层移入 FactoryMap 基础 svg 内（不再有独立
+    // 绝对定位 svg 容器）；调度叠加层以 data-scheduler-overlay 标识。
+    expect(markup).not.toContain('data-scheduler-overlay');
   });
 
-  it('scheduling 模式：叠加层容器出现（模式分支确定性）', () => {
+  it('scheduling 模式：叠加层渲染进基础 svg（同 viewBox/变换）', () => {
     const markup = renderToStaticMarkup(<MapViewport {...baseProps} mode={'scheduling' as never} />);
-    expect(markup).toContain('<svg class="absolute inset-0');
+    expect(markup).toContain('data-scheduler-overlay');
+    // 叠加层不再以独立绝对定位 svg 存在（旧实现缩放/平移错位的根源）。
+    expect(markup).not.toContain('<svg class="absolute inset-0');
   });
 
   it('visibleBounds 接线不破坏渲染（culling 边界透传面）', () => {

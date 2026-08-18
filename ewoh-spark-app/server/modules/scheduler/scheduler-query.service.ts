@@ -895,9 +895,10 @@ export class SchedulerQueryService {
       }
     }
 
-    // 6. blocked route：路段状态非 open。
+    // 6. blocked route：路段状态非健康（open/normal 均为健康；'normal' 曾被
+    //    误判为 blocked → 每条 normal 通道都生成 high 冲突误报）。
     for (const r of state.routeStatus ?? []) {
-      if (r.status !== 'open') {
+      if (r.status !== 'open' && r.status !== 'normal') {
         conflicts.push(
           this.mkConflict(`blocked_route:${r.edgeId}`, {
             type: 'blocked_route',

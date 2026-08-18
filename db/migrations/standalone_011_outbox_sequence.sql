@@ -22,6 +22,10 @@ SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 
 CREATE SEQUENCE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_outbox_sequence_seq;
 
+-- C11（2026-08-19 审计）：序列授权沉淀进迁移链——service_role 无 USAGE 权限时
+-- nextval() 拒绝（生产 outbox 首次入队 500 事故的手工修复未沉淀，新环境必复发）。
+GRANT USAGE, SELECT ON SEQUENCE __EWOH_SCHEMA__.ewoh_outbox_sequence_seq TO service_role;
+
 DO $$
 BEGIN
   IF to_regclass('__EWOH_SCHEMA__.ewoh_outbox') IS NOT NULL THEN

@@ -109,6 +109,57 @@ class OfflineIdentityBackendTest(unittest.TestCase):
         self.assertIsNone(backend.authenticate("analyst", "wrong"))
 
 
+class SeedPasswordProductionEnforcementTest(_EnvIsolatedTest):
+    """D14（2026-08-19 审计）：production 模式种子口令强制环境变量置换。
+
+    - production 未配置 EWOH_SEED_*_PASSWORD → 构造抛 RuntimeError（拒绝启动）；
+    - 配置仍等于公开默认口令 → 同样拒绝；
+    - 置换后新口令生效、默认口令失效；
+    - development 环境变量优先、未配置回退默认口令。
+    """
+
+    def setUp(self):
+        super().setUp()
+        # 进程级校验器缓存按首次构造环境派生——测试间必须重置以反映环境变更。
+        OfflineIdentityBackend._seed_verifiers = None
+
+    def tearDown(self):
+        OfflineIdentityBackend._seed_verifiers = None
+        super().tearDown()
+
+    def test_production_without_env_rejects(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "production"
+        Settings.reset()
+        with self.assertRaises(RuntimeError):
+            OfflineIdentityBackend()
+
+    def test_production_with_default_password_rejects(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "production"
+        os.environ["EWOH_SEED_ADMIN_PASSWORD"] = "admin123"
+        os.environ["EWOH_SEED_SAFETY_PASSWORD"] = "safety123"
+        os.environ["EWOH_SEED_OPERATOR_PASSWORD"] = "operator123"
+        Settings.reset()
+        with self.assertRaises(RuntimeError):
+            OfflineIdentityBackend()
+
+    def test_production_with_rotated_passwords_authenticates(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "production"
+        os.environ["EWOH_SEED_ADMIN_PASSWORD"] = "rotated-admin-9f!"
+        os.environ["EWOH_SEED_SAFETY_PASSWORD"] = "rotated-safety-7a!"
+        os.environ["EWOH_SEED_OPERATOR_PASSWORD"] = "rotated-op-3c!"
+        Settings.reset()
+        backend = OfflineIdentityBackend()
+        self.assertIsNotNone(backend.authenticate("admin", "rotated-admin-9f!"))
+        self.assertIsNone(backend.authenticate("admin", "admin123"), "默认口令在生产必须失效")
+
+    def test_development_env_override_wins(self):
+        os.environ["EWOH_SEED_ADMIN_PASSWORD"] = "env-set-pw"
+        Settings.reset()
+        backend = OfflineIdentityBackend()
+        self.assertIsNotNone(backend.authenticate("admin", "env-set-pw"))
+        self.assertIsNone(backend.authenticate("admin", "admin123"))
+
+
 class OIDCIdentityBackendTest(_EnvIsolatedTest):
     def test_stub_returns_none(self):
         backend = OIDCIdentityBackend()

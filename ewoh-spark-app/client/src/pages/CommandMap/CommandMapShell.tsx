@@ -36,6 +36,7 @@ import type {
   DecisionTrace,
   PlanCompareResult,
   PlanOverrideKind,
+  ReplanPreviewResult,
   SchedulingConflict,
   SchedulingPlanV2,
   SchedulingContextResponse,
@@ -256,6 +257,9 @@ const CommandMapShell = (): React.ReactElement => {
   // Phase 4 / P4-PREVIEW：冲突处置工作台（预览冲突 + 地图 diff）。
   const [previewConflict, setPreviewConflict] = useState<SchedulingConflict | null>(null);
   const [previewResult, setPreviewResult] = useState<ConflictPreviewResult | null>(null);
+  // 审计 C12（2026-08-19）：REPLAN dry-run 预览（SchedulePanel 上抛 → 地图
+  // changed-by-replan 图层；原实现图层开关存在但数据永远到不了地图）。
+  const [replanPreview, setReplanPreview] = useState<ReplanPreviewResult | null>(null);
   // Phase 3 / P3-T3：聚合状态 Hook（React Query 权威数据 + SSE 增量 + 本地 UI state）。
   const schedulerState = useCommandMapSchedulerState();
   // 当前选中方案由 store 唯一真源 selectedPlanId 派生：无效/缺失 → null
@@ -865,6 +869,7 @@ const CommandMapShell = (): React.ReactElement => {
           onCloseDiff={handleCloseCompareDiff}
           previewConflict={previewConflict}
           previewDiffVm={previewDiffVm}
+          replanPreview={replanPreview}
           activePlan={activePlan}
           showIntelligence={showIntelligence}
           showWorkspace={showWorkspace}
@@ -978,6 +983,7 @@ const CommandMapShell = (): React.ReactElement => {
               selectedPlanId={selectedPlanId}
               onSelectPlan={handleSelectPlan}
               personnel={personnel ?? []}
+              onReplanPreviewChange={setReplanPreview}
             />
           )}
           {/* v0.7 A3：统一冲突中心 + Phase 4 / P4-PREVIEW 冲突处置工作台（覆盖式） */}

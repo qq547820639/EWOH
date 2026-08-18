@@ -40,7 +40,9 @@ describe('QueryState', () => {
         {children}
       </QueryState>,
     );
-    expect(markup).toContain('数据已过期');
+    // 文案优化（2026-08-19）：stale 态文案由“数据已过期”改为中性的“数据待更新”
+    // （实为 react-query 缓存新鲜度，非业务同步状态），断言同步。
+    expect(markup).toContain('数据待更新');
     expect(markup).toContain('更新于');
     // Stale 时仍渲染上次成功的数据内容
     expect(markup).toContain('>content<');
@@ -56,20 +58,22 @@ describe('QueryState', () => {
     expect(markup).not.toContain('暂无数据');
   });
 
-  it('R2-CC2-002: loading/empty 表面使用语义令牌（无字面 bg-card，dark 主题可读）', () => {
+  it('R2-CC2-002: loading/empty 表面使用语义令牌（无字面 bg-white，dark 主题可读）', () => {
     const loading = renderWithRouter(
       <QueryState isLoading isError={false}>
         {children}
       </QueryState>,
     );
     expect(loading).toContain('bg-card');
-    expect(loading).not.toContain('bg-card');
+    // 语义令牌 bg-card 存在、字面浅色 bg-white 不存在（2026-08-18 深色适配
+    // 提交曾把本行误改为 not.toContain('bg-card')，与上一行自相矛盾）。
+    expect(loading).not.toContain('bg-white');
     const empty = renderWithRouter(
       <QueryState isLoading={false} isError={false} isEmpty>
         {children}
       </QueryState>,
     );
     expect(empty).toContain('bg-card');
-    expect(empty).not.toContain('bg-card');
+    expect(empty).not.toContain('bg-white');
   });
 });

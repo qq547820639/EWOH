@@ -66,6 +66,14 @@ interface FactoryMapProps {
    * culling 生产接线）。缺省不启用（纯展示面不受影响）。
    */
   onVisibleBoundsChange?: (bounds: VisibleBounds | null) => void;
+  /**
+   * 调度叠加层（审计 A1，2026-08-19）：渲染在基础 svg 内部（TransformComponent
+   * 之内、所有底图图层之后）——与底图共享同一 viewBox 与 pan/zoom 变换。
+   * 原实现叠加层是 TransformWrapper 外的兄弟绝对定位 svg，底图缩放/平移时
+   * 叠加层纹丝不动 → 系统性错位。内容为 <g> 片段（SchedulerLayersOverlay /
+   * PlanCompareLayer），由调用方决定 pointer-events。
+   */
+  overlay?: React.ReactNode;
 }
 
 /** 设备是否为外骨骼装备（按实体名/ID 含 EXO 判断） */
@@ -88,6 +96,7 @@ const FactoryMap = ({
   selectedTaskId = null,
   visibleBounds = null,
   onVisibleBoundsChange,
+  overlay,
 }: FactoryMapProps): React.ReactElement => {
   // 视口 culling：bounds 非空时剔除视野外实体；null 保持默认（渲染全部）。
   const cullBounds = visibleBounds ?? null;
@@ -1080,6 +1089,10 @@ const FactoryMap = ({
               </circle>
             );
           })()}
+
+        {/* 调度叠加层（审计 A1）：置于基础 svg 末尾——与底图同 viewBox、
+            同 pan/zoom 变换（TransformComponent 内），消除缩放错位。 */}
+        {overlay}
       </svg>
             </TransformComponent>
 

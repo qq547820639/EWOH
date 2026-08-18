@@ -2239,7 +2239,9 @@ export const ewohReplanTrigger = pgTable("ewoh_replan_trigger", {
   orgId: varchar("org_id", { length: 255 }).notNull(),
   triggerType: varchar("trigger_type", { length: 100 }).notNull(),
   entityId: varchar("entity_id", { length: 255 }).notNull(),
-  eventVersion: integer("event_version").notNull().default(0),
+  // C10（2026-08-19 审计）：int4 → bigint——手动触发用时间戳作 eventVersion，
+  // 生产 DB 已热修 bigint，schema/迁移链原仍为 int4（新环境重建必失配）。
+  eventVersion: bigint("event_version", { mode: "number" }).notNull().default(0),
   status: varchar("status", { length: 50 }).notNull().default('processed'),
   runId: varchar("run_id", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),

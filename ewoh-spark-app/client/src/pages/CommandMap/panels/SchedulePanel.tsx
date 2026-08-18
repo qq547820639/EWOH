@@ -201,6 +201,12 @@ interface SchedulePanelProps {
   onSelectPlan?: (plan: SchedulingPlanV2 | null) => void;
   /** 人员列表（用于调整指派/解释说明） */
   personnel?: PersonnelInfo[];
+  /**
+   * REPLAN dry-run 预览上抛（审计 C12，2026-08-19）：REPLAN 确认框打开期间，
+   * 预览结果上抛至 Shell → 地图 changed-by-replan 图层（原实现图层开关存在
+   * 但 replanPreview 永远传不到地图，开关恒空）。对话框关闭/确认后上抛 null。
+   */
+  onReplanPreviewChange?: (preview: ReplanPreviewResult | null) => void;
 }
 
 function SchedulePanel({
@@ -210,6 +216,7 @@ function SchedulePanel({
   onSelectPlan,
   selectedPlanId = null,
   personnel = [],
+  onReplanPreviewChange,
 }: SchedulePanelProps) {
   const queryClient = useQueryClient();
 
@@ -560,6 +567,12 @@ function SchedulePanel({
     setReplanReason('');
     setReplanPreview(null);
   };
+
+  // 审计 C12：REPLAN 预览上抛（地图 changed-by-replan 图层接线）。
+  useEffect(() => {
+    onReplanPreviewChange?.(replanPreview);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replanPreview]);
 
   // ---- Task 10 / 10.2：DISPATCH 确认 ----
   const confirmDispatch = () => {

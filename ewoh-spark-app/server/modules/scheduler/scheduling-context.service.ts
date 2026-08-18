@@ -120,8 +120,10 @@ export class SchedulingContextService {
       const loc = r.location;
       return loc.x == null && loc.y == null && loc.stationId == null;
     }).length;
+    // 'normal' 与 'open' 均为健康状态（此前仅排除 'open'，'normal' 边全部被
+    // 误计为降级 → 前端恒显示"全部路由降级"误报）。
     const degradedRouteCount = (snapshot.routeStatus ?? []).filter(
-      (r) => r.status !== 'open',
+      (r) => r.status !== 'open' && r.status !== 'normal',
     ).length;
 
     const context: SchedulingContext = {

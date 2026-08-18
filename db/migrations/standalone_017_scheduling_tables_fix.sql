@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_replan_trigger (
   org_id varchar(255) NOT NULL,
   trigger_type varchar(100) NOT NULL,
   entity_id varchar(255) NOT NULL,
-  event_version integer NOT NULL DEFAULT 0,
+  -- C10（2026-08-19 审计）：int4 → bigint（手动触发以时间戳作 event_version，
+  -- int4 上限 2.1e9 溢出；与生产 DB 热修对齐，代码侧已同步改秒级时间戳）。
+  event_version bigint NOT NULL DEFAULT 0,
   status varchar(50) NOT NULL DEFAULT 'processed',
   run_id varchar(255),
   _created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -120,3 +122,8 @@ CREATE INDEX IF NOT EXISTS idx_ewoh_replan_trigger_org_type
 COMMENT ON TABLE __EWOH_SCHEMA__.ewoh_replan_trigger IS '持久化重排触发（trigger SSOT；Drizzle 声明补建，P0-DB-FIX）';
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_replan_trigger TO service_role;
+
+-- C11（2026-08-19 审计）：outbox 序列授权沉淀进迁移链——service_role 无序列
+-- USAGE 权限时 nextval() 拒绝（生产 outbox 入队 500 事故的手工修复此前未
+-- 沉淀，新环境重建必复发）。011/017 两个创建点均补（幂等，可重复执行）。
+GRANT USAGE, SELECT ON SEQUENCE __EWOH_SCHEMA__.ewoh_outbox_sequence_seq TO service_role;

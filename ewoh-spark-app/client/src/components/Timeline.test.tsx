@@ -44,13 +44,16 @@ describe('Timeline (统一对象时间线组件)', () => {
     expect(markup).toContain('暂无时间线事件');
   });
 
-  it('R2-CC2-002: 事件卡片/节点描边使用语义令牌（无字面 bg-card/ring-white，dark 主题可读）', () => {
+  it('R2-CC2-002: 事件卡片/节点描边使用语义令牌（无字面 bg-white/ring-white，dark 主题可读）', () => {
     const markup = renderToStaticMarkup(
       <Timeline events={[ev({ id: 'evt-token' })]} />,
     );
+    // 语义令牌存在（bg-card 卡面 / ring-background 节点描边），字面浅色不存在
+    // （2026-08-18 深色适配提交曾把第三行误改为 not.toContain('bg-card')，
+    // 与第一行自相矛盾）。
     expect(markup).toContain('bg-card');
     expect(markup).toContain('ring-background');
-    expect(markup).not.toContain('bg-card');
+    expect(markup).not.toContain('bg-white');
     expect(markup).not.toContain('ring-white');
   });
 

@@ -41,7 +41,7 @@ function ResultPanel({ run }: { run: SimulationRun }): React.ReactElement {
         <span className="text-xs text-muted-foreground">引擎 {run.engineVersion}</span>
       </div>
       {run.status === 'failed' && run.failureReason && (
-        <div className="mt-2 flex items-start gap-1.5 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <div className="mt-2 flex items-start gap-1.5 rounded border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-300">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span data-testid="simulation-failure-reason">{run.failureReason}</span>
         </div>

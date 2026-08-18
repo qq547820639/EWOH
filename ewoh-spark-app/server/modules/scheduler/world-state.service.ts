@@ -17,6 +17,7 @@ import {
 } from '@server/database/schema';
 import { eq, and, or, sql, isNull, type AnyColumn, type SQL } from 'drizzle-orm';
 import { validateCloudWorldSnapshot } from '@shared/world-contract';
+import { isEventSeverityRisky } from '@shared/risk';
 import type {
   SchedulingEventImpact,
   WorldStateSnapshot,
@@ -494,7 +495,10 @@ export class WorldStateSnapshotService {
 
     for (const e of events) {
       if (e.status !== 'open') continue;
-      if (e.severity !== 'L2' && e.severity !== 'L3') continue;
+      // B7（2026-08-19 审计）：severity 双词汇受理——存量 legacy L2/L3 与新写入
+      // canonical critical/high/medium 均触发安全封锁（原只认 legacy → ingest
+      // 上报的 canonical critical 安全事件不触发封锁）。L1/low/unknown 不封锁。
+      if (!isEventSeverityRisky(e.severity)) continue;
 
       const reasons: string[] = [];
       const deviceId = e.deviceId ?? null;
@@ -935,14 +939,18 @@ export class WorldStateSnapshotService {
    * 精确比较两个 reservations 列表（id/type/时间窗一致）。
    * NEST-150 修复（2026-08-17）：按 reservationId 建 Map 比较（顺序无关）——
    * 旧实现按数组下标配对，列表顺序变化（无 ORDER BY 的并发读）会误判 stale。
+   * DATA-FLOW 同款防御（2026-08-19）：a/b 可能为 null/undefined（存量快照缺
+   * reservations 键）——与 mapsEqual 同崩溃模式，空 vs 空 = 相等。
    */
   private reservationsEqual(
-    a: WorldStateSnapshot['reservations'],
-    b: WorldStateSnapshot['reservations'],
+    a: WorldStateSnapshot['reservations'] | null | undefined,
+    b: WorldStateSnapshot['reservations'] | null | undefined,
   ): boolean {
-    if (a.length !== b.length) return false;
-    const byId = new Map(b.map((r) => [r.reservationId, r]));
-    return a.every((ra) => {
+    const la = a ?? [];
+    const lb = b ?? [];
+    if (la.length !== lb.length) return false;
+    const byId = new Map(lb.map((r) => [r.reservationId, r]));
+    return la.every((ra) => {
       const rb = byId.get(ra.reservationId);
       return (
         rb != null &&

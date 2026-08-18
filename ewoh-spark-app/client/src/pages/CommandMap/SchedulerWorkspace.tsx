@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import type { ReactElement } from 'react';
-import type { PersonnelInfo, SchedulingPlanV2 } from '@shared/api.interface';
+import type { PersonnelInfo, ReplanPreviewResult, SchedulingPlanV2 } from '@shared/api.interface';
 import { MapPanelFallback } from './CommandMapShell';
 
 const SchedulePanel = React.lazy(() => import('./panels/SchedulePanel'));
@@ -21,6 +21,8 @@ interface SchedulerWorkspaceProps {
   onSelectPlan?: (plan: SchedulingPlanV2 | null) => void;
   /** 人员列表（用于调整指派/解释说明）。 */
   personnel?: PersonnelInfo[];
+  /** REPLAN dry-run 预览上抛（地图 changed-by-replan 图层接线，审计 C12）。 */
+  onReplanPreviewChange?: (preview: ReplanPreviewResult | null) => void;
 }
 
 const SchedulerWorkspace = ({
@@ -30,6 +32,7 @@ const SchedulerWorkspace = ({
   selectedPlanId,
   onSelectPlan,
   personnel,
+  onReplanPreviewChange,
 }: SchedulerWorkspaceProps): ReactElement => (
   <React.Suspense fallback={<MapPanelFallback />}>
     <SchedulePanel
@@ -39,6 +42,7 @@ const SchedulerWorkspace = ({
       selectedPlanId={selectedPlanId}
       onSelectPlan={onSelectPlan}
       personnel={personnel}
+      onReplanPreviewChange={onReplanPreviewChange}
     />
   </React.Suspense>
 );

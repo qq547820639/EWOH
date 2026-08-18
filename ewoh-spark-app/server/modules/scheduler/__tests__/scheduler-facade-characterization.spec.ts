@@ -542,7 +542,14 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(res.debounced).toBe(false);
       expect(res.run?.runId).toBe('RUN-1');
       expect(res.plans.map((p) => p.planId)).toEqual(['RUN-1A', 'RUN-1B', 'RUN-1C']);
-      expect(mocks.triggerService.evaluate).toHaveBeenCalledWith('MANUAL', null, expect.any(Object));
+      // DATA-FLOW（2026-08-18）/ C10（2026-08-19）：MANUAL 触发以秒级时间戳作
+      // 第 4 参 eventVersion（trigger_key 幂等去重键组成），断言同步表征。
+      expect(mocks.triggerService.evaluate).toHaveBeenCalledWith(
+        'MANUAL',
+        null,
+        expect.any(Object),
+        expect.any(Number),
+      );
       expect(mocks.solverService.solveVariants).toHaveBeenCalledWith(
         expect.any(Object),
         [],

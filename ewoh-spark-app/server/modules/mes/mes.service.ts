@@ -1334,7 +1334,9 @@ export class MesService {
         deviceId: step.assignedDeviceId ?? null,
         eventCode: 'QUALITY_INSPECTION',
         eventType: 'quality',
-        severity: body.result === 'pass' ? 'L1' : body.result === 'rework' ? 'L2' : 'L3',
+        // B7（2026-08-19 审计）：事件严重度统一 canonical（原 legacy L1/L2/L3，
+        // 与 ingest/ERP 等模块的 canonical 词表分裂 → 安全封锁/优先级加权失配）。
+        severity: body.result === 'pass' ? 'low' : body.result === 'rework' ? 'high' : 'critical',
         title: `质量检验-${body.result}`,
         status: 'open',
         createdAt: new Date(),

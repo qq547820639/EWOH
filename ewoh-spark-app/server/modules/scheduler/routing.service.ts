@@ -577,10 +577,12 @@ export class RoutingService {
       highRiskFactor: 2,
       mediumRiskFactor: 1.3,
     };
+    // 'normal' 与 'open' 同为无阻碍状态（种子/DB 用 'normal'；此前仅判 'open'
+    // 导致 'normal' 边全部落入 blockedFactor×2 → 路由系统性绕路）。
     const congestion =
       edge.status === 'congested'
         ? f.congestedFactor
-        : edge.status === 'open'
+        : edge.status === 'open' || edge.status === 'normal'
           ? 1
           : f.blockedFactor;
     const risk =

@@ -69,6 +69,28 @@ export function normalizeSeverity(value: string): RiskSeverity {
 export const EVENT_SEVERITY_UNKNOWN = 'unknown';
 
 /**
+ * 事件域风险严重度集合（审计 B7，2026-08-19）。
+ * ewoh_event 存量行用 legacy 词表（事件域语义：L1=info、L2=high、L3=critical，
+ * 见 MES 检验/游戏化反馈写入），新写入统一 canonical（ADR-027：critical/high/
+ * medium/low）。安全封锁（world-state）与优先级加权（priority-engine）两处
+ * 消费必须同时受理两套词表——否则 ingest 上报的 canonical critical/high
+ * 安全事件不触发封锁（原缺陷）。L1/low/unknown 为非风险档。
+ * 注意：与 RISK_LEGACY_SEVERITY_MAP（风险域 L1→critical）语义不同，勿混用。
+ */
+export const EVENT_RISKY_SEVERITIES: ReadonlySet<string> = new Set([
+  'critical',
+  'high',
+  'medium',
+  'L2',
+  'L3',
+]);
+
+/** 事件严重度是否为风险档（安全封锁 / 优先级加权共用判定）。 */
+export function isEventSeverityRisky(severity: string | null | undefined): boolean {
+  return severity != null && EVENT_RISKY_SEVERITIES.has(severity);
+}
+
+/**
  * 事件严重度入口归一化（ADR-027 决策 3）：规范值直通；legacy L1→critical /
  * L2→high / L3→medium；其余 → 显式 'unknown'（事件写入不因严重度未知而
  * 丢弃其他事实，但绝不静默伪装——与 normalizeSeverity 的 fail-closed
