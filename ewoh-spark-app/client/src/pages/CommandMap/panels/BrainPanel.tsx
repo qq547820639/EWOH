@@ -87,14 +87,14 @@ function SuggestionCard({
   return (
     <div
       className={cn(
-        'bg-white/5 rounded-lg p-3 border border-white/10',
+        'bg-card/5 rounded-lg p-3 border border-white/10',
         meta.ring,
       )}
     >
       <div className="flex items-start gap-2">
         <div
           className={cn(
-            'w-7 h-7 shrink-0 rounded-md flex items-center justify-center bg-white/5',
+            'w-7 h-7 shrink-0 rounded-md flex items-center justify-center bg-card/5',
           )}
         >
           <Icon className={cn('w-3.5 h-3.5', meta.color)} />
@@ -130,7 +130,7 @@ function SuggestionCard({
             {confidencePct != null ? `${confidencePct}%` : '—'}
           </span>
         </div>
-        <div className="mt-0.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+        <div className="mt-0.5 h-1.5 rounded-full bg-card/10 overflow-hidden">
           <div
             className={cn('h-full rounded-full', confidenceColor(suggestion.confidence))}
             style={{ width: `${confidencePct ?? 0}%` }}
@@ -143,7 +143,7 @@ function SuggestionCard({
           {suggestion.affectedEntities.map((id) => (
             <span
               key={id}
-              className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-white/60"
+              className="text-[9px] px-1.5 py-0.5 rounded bg-card/10 text-white/60"
             >
               {id}
             </span>

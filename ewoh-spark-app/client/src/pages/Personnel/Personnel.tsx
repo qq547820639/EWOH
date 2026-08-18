@@ -116,20 +116,20 @@ const Personnel = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">人员与外骨骼</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">人员与外骨骼</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             人员档案、组织归属、技能与健康风险概览（实施配置：录入甲方人员；绑定在外骨骼设备中操作）。
           </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[hsl(218_10%_42%)]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
               placeholder="搜索姓名 / 工号 / 岗位"
               aria-label="搜索人员"
-              className="h-9 w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white pl-9 pr-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm outline-none focus:border-primary"
             />
           </div>
           <Button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-2">
@@ -151,9 +151,9 @@ const Personnel = (): React.ReactElement => {
         emptyMessage="暂无人员记录，点击右上角「新增人员」录入。"
         updatedAt={query.dataUpdatedAt}
       >
-        <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">姓名</th>
                 <th className="px-5 py-3 font-medium">工号</th>
@@ -163,12 +163,12 @@ const Personnel = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">风险</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {rows.map((person) => (
-                <tr key={person.id} className="hover:bg-[hsl(220_14%_96%)]">
-                  <td className="px-5 py-3 font-medium text-[hsl(220_14%_14%)]">{person.name}</td>
+                <tr key={person.id} className="hover:bg-muted">
+                  <td className="px-5 py-3 font-medium text-foreground">{person.name}</td>
                   <td className="px-5 py-3 font-mono text-xs">{person.employeeNo}</td>
-                  <td className="px-5 py-3 text-[hsl(218_10%_42%)]">{person.orgId ?? '-'}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{person.orgId ?? '-'}</td>
                   <td className="px-5 py-3">{person.position ?? '-'}</td>
                   <td className="px-5 py-3">{person.status ?? '-'}</td>
                   <td className="px-5 py-3">

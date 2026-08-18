@@ -22,7 +22,7 @@ export function DecisionHistoryTable({
 }: DecisionHistoryTableProps): React.ReactElement {
   return (
     <div data-testid="decision-history-table">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(218_10%_42%)]">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span data-testid="decision-history-total">共 {total} 条</span>
         <span data-testid="decision-history-sources">{sourcesSummary}</span>
         {skippedInvalid > 0 && (
@@ -37,38 +37,38 @@ export function DecisionHistoryTable({
       {rows.length === 0 ? (
         <div
           data-testid="decision-history-empty"
-          className="rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_97%)] p-6 text-center text-sm text-[hsl(218_10%_42%)]"
+          className="rounded-lg border border-border bg-muted p-6 text-center text-sm text-muted-foreground"
         >
           暂无决策记录（含过滤条件）
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)]">
-          <table className="min-w-full divide-y divide-[hsl(220_14%_89%)] text-sm">
-            <thead className="bg-[hsl(220_14%_97%)]">
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">决策 ID</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">类型</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">状态</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">权威</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">风险</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">主体</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">时间</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">依据</th>
-                <th className="px-3 py-2 text-left font-semibold text-[hsl(220_14%_14%)]">审批人</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">决策 ID</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">类型</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">状态</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">权威</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">风险</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">主体</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">时间</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">依据</th>
+                <th className="px-3 py-2 text-left font-semibold text-foreground">审批人</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)] bg-white">
+            <tbody className="divide-y divide-border bg-card">
               {rows.map((row) => (
                 <tr key={row.decisionId} data-testid="decision-history-row">
-                  <td className="px-3 py-2 font-mono text-xs text-[hsl(220_14%_14%)]">{row.decisionId}</td>
-                  <td className="px-3 py-2 text-[hsl(220_14%_14%)]">{row.kindLabel}</td>
-                  <td className="px-3 py-2 text-[hsl(220_14%_14%)]">{row.statusLabel}</td>
-                  <td className="px-3 py-2 text-[hsl(220_14%_14%)]">{row.authorityLabel}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-foreground">{row.decisionId}</td>
+                  <td className="px-3 py-2 text-foreground">{row.kindLabel}</td>
+                  <td className="px-3 py-2 text-foreground">{row.statusLabel}</td>
+                  <td className="px-3 py-2 text-foreground">{row.authorityLabel}</td>
                   <td className={cn('px-3 py-2 font-semibold', RISK_TONE_TEXT[row.riskTone])}>{row.riskLevel}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-[hsl(218_10%_42%)]">{row.subject}</td>
-                  <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">{row.decidedAt}</td>
-                  <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">{row.selectedReason}</td>
-                  <td className="px-3 py-2 text-xs text-[hsl(218_10%_42%)]">{row.approver ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{row.subject}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{row.decidedAt}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{row.selectedReason}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{row.approver ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

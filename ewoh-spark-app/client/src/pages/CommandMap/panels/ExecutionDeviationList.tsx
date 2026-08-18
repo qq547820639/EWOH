@@ -68,7 +68,7 @@ export function ExecutionDeviationList({
       {executions.slice(0, 8).map((ex) => (
         <div
           key={ex.executionId}
-          className="flex items-baseline gap-1.5 rounded border border-white/5 bg-white/5 px-1.5 py-1 text-[10px]"
+          className="flex items-baseline gap-1.5 rounded border border-white/5 bg-card/5 px-1.5 py-1 text-[10px]"
         >
           <span className="shrink-0 truncate text-white/45">
             {personNameOf?.(ex.personId) ?? ex.personId ?? '—'} · {ex.taskId}

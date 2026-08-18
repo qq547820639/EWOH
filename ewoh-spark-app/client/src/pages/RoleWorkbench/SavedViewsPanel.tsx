@@ -115,8 +115,8 @@ export function SavedViewsPanel({
   const busy = danger.phase === 'confirming';
 
   return (
-    <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3">
-      <h2 className="mb-2 text-xs font-semibold text-[hsl(220_14%_14%)]">
+    <section className="rounded-lg border border-border bg-card p-3">
+      <h2 className="mb-2 text-xs font-semibold text-foreground">
         已保存视图（服务端，跨设备）
       </h2>
       <ul className="space-y-1">
@@ -125,8 +125,8 @@ export function SavedViewsPanel({
             key={view.key}
             className={`flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1 text-sm ${
               openedViewKey === view.key
-                ? 'bg-[hsl(221_83%_96%)] text-[hsl(220_14%_14%)]'
-                : 'text-[hsl(218_10%_42%)]'
+                ? 'bg-[hsl(221_83%_96%)] text-foreground'
+                : 'text-muted-foreground'
             }`}
           >
             <span>

@@ -87,8 +87,8 @@ export function WorkbenchChrome({
     <>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">角色任务工作台</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">角色任务工作台</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {schema.description}
           </p>
         </div>
@@ -119,7 +119,7 @@ export function WorkbenchChrome({
       <div
         role="status"
         aria-live="polite"
-        className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 py-2 text-xs text-[hsl(218_10%_42%)]"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground"
       >
         <span className="inline-flex items-center gap-1.5">
           <RefreshCw className="size-3" />
@@ -174,7 +174,7 @@ export function WorkbenchChrome({
         role="group"
         aria-label="输入方式"
       >
-        <span className="text-xs text-[hsl(218_10%_42%)]">输入方式：</span>
+        <span className="text-xs text-muted-foreground">输入方式：</span>
         {INPUT_MODES.map(([mode, label]) => (
           <button
             key={mode}
@@ -184,7 +184,7 @@ export function WorkbenchChrome({
             className={`rounded-md px-3 py-2 text-xs font-medium ${
               inputMode === mode
                 ? 'bg-semantic-info text-white'
-                : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
+                : 'text-muted-foreground hover:bg-muted'
             }`}
             style={{ minHeight: targetSize }}
           >
@@ -206,7 +206,7 @@ export function WorkbenchChrome({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-1">
+      <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
         {visibleTabs.map((item) => (
           <button
             key={item.key}
@@ -216,7 +216,7 @@ export function WorkbenchChrome({
             className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
               role === item.key
                 ? 'bg-semantic-info text-white'
-                : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
+                : 'text-muted-foreground hover:bg-muted'
             }`}
           >
             <Users className="size-4" />
@@ -227,7 +227,7 @@ export function WorkbenchChrome({
 
       {schema.quickActions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[hsl(218_10%_42%)]">快捷跳转：</span>
+          <span className="text-xs text-muted-foreground">快捷跳转：</span>
           {schema.quickActions.map((action) => (
             <Button
               key={action.to}
@@ -246,21 +246,21 @@ export function WorkbenchChrome({
         {kpiCards.map((kpi) => (
           <div
             key={kpi.key}
-            className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+            className="rounded-lg border border-border bg-card p-4"
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-[hsl(218_10%_42%)]">{kpi.label}</p>
+              <p className="text-xs text-muted-foreground">{kpi.label}</p>
               {kpi.unit && (
-                <span className="text-xs text-[hsl(218_10%_42%)]">{kpi.unit}</span>
+                <span className="text-xs text-muted-foreground">{kpi.unit}</span>
               )}
             </div>
-            <p className="mt-1 text-2xl font-semibold text-[hsl(220_14%_14%)]">
+            <p className="mt-1 text-2xl font-semibold text-foreground">
               {formatValue(kpi.format, data[kpi.key])}
             </p>
-            <p className="mt-2 text-xs text-[hsl(218_10%_42%)]">
+            <p className="mt-2 text-xs text-muted-foreground">
               来源：{kpi.source}
             </p>
-            <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               更新：{kpi.refreshHint}
               {generatedAt
                 ? ` · ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
@@ -274,11 +274,11 @@ export function WorkbenchChrome({
       </div>
 
       {debugMode && canDebug && (
-        <section className="rounded-lg border border-dashed border-[hsl(220_14%_89%)] bg-slate-50 p-4">
-          <h2 className="mb-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+        <section className="rounded-lg border border-dashed border-border bg-slate-50 p-4">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">
             原始诊断数据（服务端鉴权，仅管理员可见）
           </h2>
-          <pre className="overflow-x-auto text-xs text-[hsl(218_10%_42%)]">
+          <pre className="overflow-x-auto text-xs text-muted-foreground">
             {JSON.stringify(data, null, 2)}
           </pre>
         </section>

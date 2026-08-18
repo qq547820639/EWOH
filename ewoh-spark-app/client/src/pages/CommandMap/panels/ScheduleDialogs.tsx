@@ -44,30 +44,30 @@ export function ReplanPreviewBlock({
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-5 gap-1.5 text-center">
-        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+        <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
           <div className="text-sm font-bold text-white/90">{summary.affectedTaskCount}</div>
           <div className="text-[9px] text-white/50">影响任务</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+        <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
           <div className="text-sm font-bold text-amber-400">{summary.changedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">变更分配</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+        <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
           <div className="text-sm font-bold text-emerald-400">{summary.unchangedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">不变分配</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+        <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
           <div className="text-sm font-bold text-white/90">+{summary.addedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">新增</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+        <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
           <div className="text-sm font-bold text-red-400">-{summary.removedAssignmentCount}</div>
           <div className="text-[9px] text-white/50">移除</div>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-1.5">
         {summary.deltas.map((d) => (
-          <div key={d.key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+          <div key={d.key} className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
             <div className="text-[9px] text-white/50">
               {d.label} Δ{d.unit ? `（${d.unit}）` : ''}
             </div>
@@ -145,19 +145,19 @@ export function DispatchSummaryBlock({ plan }: { plan: SchedulingPlanV2 }): Reac
         />
       </div>
       <div className="grid grid-cols-4 gap-1.5">
-        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+        <div className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
           <div className="text-sm font-bold text-white/90">{summary.assignmentsCount}</div>
           <div className="text-[9px] text-white/50">分配数</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+        <div className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
           <div className="text-sm font-bold text-white/90">{summary.lateMinutes.toFixed(0)} min</div>
           <div className="text-[9px] text-white/50">预计延期</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+        <div className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
           <div className="text-sm font-bold text-white/90">{summary.walkingMeters.toFixed(0)} m</div>
           <div className="text-[9px] text-white/50">人员总移动</div>
         </div>
-        <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+        <div className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
           <div className="text-sm font-bold text-white/90">{formatPct(summary.maxWorkload)}</div>
           <div className="text-[9px] text-white/50">最大负荷</div>
         </div>
@@ -203,7 +203,7 @@ export function ApprovePlanDialog({
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
             placeholder="请输入审批理由..."
-            className="bg-white/5 border-white/10 text-white"
+            className="bg-card/5 border-white/10 text-white"
           />
         </div>
         <DialogFooter>
@@ -250,7 +250,7 @@ export function RejectPlanDialog({
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
             placeholder="请输入驳回理由..."
-            className="bg-white/5 border-white/10 text-white"
+            className="bg-card/5 border-white/10 text-white"
           />
         </div>
         <DialogFooter>
@@ -401,7 +401,7 @@ export function ReplanConfirmDialog({
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
             placeholder="请输入重新排程理由..."
-            className="bg-white/5 border-white/10 text-white"
+            className="bg-card/5 border-white/10 text-white"
           />
         </div>
         <DialogFooter>
@@ -494,11 +494,11 @@ export function ComparePlansDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Badge className="bg-white/10 text-white text-[9px]">A</Badge>
+            <Badge className="bg-card/10 text-white text-[9px]">A</Badge>
             <span className="text-xs text-white/80">{selectedPlan?.planName ?? selectedPlan?.planId}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Badge className="bg-white/10 text-white text-[9px]">B</Badge>
+            <Badge className="bg-card/10 text-white text-[9px]">B</Badge>
             <select
               value={comparePlanId ?? ''}
               onChange={(e) => onComparePlanIdChange(e.target.value || null)}
@@ -547,7 +547,7 @@ function CompareResult({ result }: { result: Record<string, unknown> }) {
         {labels.map(([key, label]) => {
           const v = metricsDelta[key];
           return (
-            <div key={key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5">
+            <div key={key} className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5">
               <div className="text-[9px] text-white/50">{label}</div>
               <div className={cn('text-sm font-semibold', v != null && v < 0 ? 'text-emerald-400' : v != null && v > 0 ? 'text-red-400' : 'text-white')}>
                 {v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(0)}`}
@@ -564,7 +564,7 @@ function CompareResult({ result }: { result: Record<string, unknown> }) {
           {assignmentDelta.map((d, i) => (
             <div
               key={String(d.taskId ?? `delta-${i}`)}
-              className="rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/70"
+              className="rounded border border-white/10 bg-card/5 px-2 py-1 text-[10px] text-white/70"
             >
               {String(d.taskId ?? '—')}：
               {d.personChanged ? '人员变更' : ''}

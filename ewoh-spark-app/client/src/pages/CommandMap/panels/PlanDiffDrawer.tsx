@@ -111,7 +111,7 @@ export function PlanDiffDrawer({
           type="button"
           onClick={onClose}
           aria-label={UI_ARIA_LABELS.closePlanDiff}
-          className="rounded px-1.5 text-[10px] text-white/50 hover:bg-white/10"
+          className="rounded px-1.5 text-[10px] text-white/50 hover:bg-card/10"
         >
           ✕
         </button>

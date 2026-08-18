@@ -25,17 +25,17 @@ const CatalogPanel = (): React.ReactElement => {
       loadingMessage="正在读取资产目录"
       updatedAt={catalogQuery.dataUpdatedAt}
     >
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <PackageSearch className="h-4 w-4 text-emerald-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">Final 6 资产目录</h2>
-          <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+          <h2 className="font-semibold text-foreground">Final 6 资产目录</h2>
+          <span className="ml-auto text-xs text-muted-foreground">
             {catalogQuery.data?.assets.length ?? 0} 个资产包
           </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">资产</th>
                 <th className="px-5 py-3 font-medium">类型</th>
@@ -44,12 +44,12 @@ const CatalogPanel = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">来源</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {(catalogQuery.data?.assets ?? []).map((asset) => (
-                <tr key={asset.packageId} className="hover:bg-[hsl(220_14%_96%)]">
+                <tr key={asset.packageId} className="hover:bg-muted">
                   <td className="px-5 py-3">
-                    <div className="font-medium text-[hsl(220_14%_14%)]">{asset.name}</div>
-                    <div className="font-mono text-xs text-[hsl(218_10%_42%)]">{asset.packageId}</div>
+                    <div className="font-medium text-foreground">{asset.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{asset.packageId}</div>
                   </td>
                   <td className="px-5 py-3 text-xs">{asset.packageType}</td>
                   <td className="px-5 py-3 font-mono text-xs">{asset.version}</td>

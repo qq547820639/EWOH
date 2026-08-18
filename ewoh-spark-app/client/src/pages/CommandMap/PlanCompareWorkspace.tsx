@@ -45,7 +45,7 @@ const PlanCompareWorkspace = ({
       <button
         type="button"
         onClick={onToggleCompare}
-        className="absolute right-2 top-[6.5rem] z-40 flex items-center gap-1 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-white/10"
+        className="absolute right-2 top-[6.5rem] z-40 flex items-center gap-1 rounded-md border border-white/10 bg-[hsl(220_14%_14%)]/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-card/10"
         title="Plan Compare：基线/候选/差异三模式"
       >
         <GitCompareArrows className="w-3.5 h-3.5 text-emerald-400" />

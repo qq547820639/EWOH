@@ -206,7 +206,7 @@ function ResourceCard({
   const battery = item.batteryPct ?? null;
   const assigned = workstations.find((w) => w.entityId === item.assignedWorkstationId);
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+    <div className="bg-card/5 rounded-lg p-3 border border-white/10">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs font-medium text-white/90 truncate">{item.name}</div>
@@ -227,7 +227,7 @@ function ResourceCard({
             <span>负荷</span>
             <span className="tabular-nums">{(load * 100).toFixed(0)}%</span>
           </div>
-          <div className="mt-0.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div className="mt-0.5 h-1.5 rounded-full bg-card/10 overflow-hidden">
             <div
               className={cn('h-full rounded-full', loadColor(load))}
               style={{ width: `${Math.min(100, load * 100)}%` }}
@@ -246,9 +246,9 @@ function ResourceCard({
             <span className="tabular-nums">{battery == null ? '—' : `${battery.toFixed(0)}%`}</span>
           </div>
           {battery == null ? (
-            <div className="mt-0.5 h-1.5 rounded-full bg-white/10" />
+            <div className="mt-0.5 h-1.5 rounded-full bg-card/10" />
           ) : (
-            <div className="mt-0.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="mt-0.5 h-1.5 rounded-full bg-card/10 overflow-hidden">
               <div
                 className={cn('h-full rounded-full', batteryColor(battery))}
                 style={{ width: `${Math.min(100, battery)}%` }}
@@ -304,11 +304,11 @@ function AssignWorkstationMenu({
         <DropdownMenuLabel className="text-[10px] text-white/70">
           选择目标工位
         </DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-white/10" />
+        <DropdownMenuSeparator className="bg-card/10" />
         {workstations.map((w) => (
           <DropdownMenuItem
             key={w.entityId}
-            className="text-xs text-white/80 hover:bg-white/10 focus:bg-white/10"
+            className="text-xs text-white/80 hover:bg-card/10 focus:bg-card/10"
             onClick={() => onAllocate(w.entityId)}
           >
             {w.name}
@@ -327,19 +327,19 @@ function EvaluationPanel({
 }): React.ReactElement {
   if (!result) {
     return (
-      <div className="bg-white/5 rounded-lg p-3 border border-white/10 text-xs text-white/70">
+      <div className="bg-card/5 rounded-lg p-3 border border-white/10 text-xs text-white/70">
         暂未进行 AI 评估，请分配资源后查看评估结果。
       </div>
     );
   }
   const ev = result.evaluation;
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+    <div className="bg-card/5 rounded-lg p-3 border border-white/10">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5 text-xs text-white/80">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           AI 评估
-          <Badge className="text-[9px] px-1 py-0 text-white/60 bg-white/10 border-white/10">
+          <Badge className="text-[9px] px-1 py-0 text-white/60 bg-card/10 border-white/10">
             已废弃·只读
           </Badge>
         </div>
@@ -352,7 +352,7 @@ function EvaluationPanel({
       <div className="grid grid-cols-3 gap-2 text-[10px]">
         <div>
           <div className="text-white/60">负荷均衡</div>
-          <div className="mt-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div className="mt-1 h-1.5 rounded-full bg-card/10 overflow-hidden">
             <div
               className="h-full bg-cyan-500 rounded-full"
               style={{ width: `${ev.loadBalance * 100}%` }}
@@ -364,7 +364,7 @@ function EvaluationPanel({
         </div>
         <div>
           <div className="text-white/60">技能匹配</div>
-          <div className="mt-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div className="mt-1 h-1.5 rounded-full bg-card/10 overflow-hidden">
             <div
               className="h-full bg-violet-500 rounded-full"
               style={{ width: `${ev.skillMatch * 100}%` }}
@@ -376,7 +376,7 @@ function EvaluationPanel({
         </div>
         <div>
           <div className="text-white/60">电量续航</div>
-          <div className="mt-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div className="mt-1 h-1.5 rounded-full bg-card/10 overflow-hidden">
             <div
               className="h-full bg-green-500 rounded-full"
               style={{ width: `${ev.batteryEndurance * 100}%` }}

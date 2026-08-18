@@ -79,36 +79,36 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
       loadingMessage="正在读取交接记录"
       updatedAt={handoffsQuery.dataUpdatedAt}
     >
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <ArrowRightLeft className="h-4 w-4 text-blue-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">交接记录</h2>
+          <h2 className="font-semibold text-foreground">交接记录</h2>
         </div>
         {writable && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
             <input
               value={handoffFrom}
               onChange={(event) => setHandoffFrom(event.target.value)}
               placeholder="来源 Agent"
-              className="h-9 w-40 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="h-9 w-40 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
             <input
               value={handoffTo}
               onChange={(event) => setHandoffTo(event.target.value)}
               placeholder="接收 Agent"
-              className="h-9 w-40 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="h-9 w-40 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
             <input
               value={handoffScope}
               onChange={(event) => setHandoffScope(event.target.value)}
               placeholder="交接范围"
-              className="h-9 w-64 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="h-9 w-64 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
             <input
               value={handoffAcceptance}
               onChange={(event) => setHandoffAcceptance(event.target.value)}
               placeholder="验收标准"
-              className="h-9 w-64 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="h-9 w-64 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
             <button
               type="button"
@@ -127,7 +127,7 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
         )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">交接</th>
                 <th className="px-5 py-3 font-medium">范围</th>
@@ -138,9 +138,9 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
                 <th className="px-5 py-3 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {(handoffsQuery.data ?? []).map((handoff) => (
-                <tr key={handoff.handoffId} className="hover:bg-[hsl(220_14%_96%)]">
+                <tr key={handoff.handoffId} className="hover:bg-muted">
                   <td className="px-5 py-3 font-mono text-xs">{handoff.handoffId}</td>
                   <td className="px-5 py-3 font-medium">{handoff.scope}</td>
                   <td className="px-5 py-3">{handoff.fromActor}</td>
@@ -148,7 +148,7 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
                   <td className="px-5 py-3">
                     <StatusBadge status={handoff.status} />
                   </td>
-                  <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                  <td className="px-5 py-3 text-xs text-muted-foreground">
                     {formatTime(handoff.createdAt)}
                   </td>
                   <td className="px-5 py-3">
@@ -174,7 +174,7 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
                           type="button"
                           disabled={handoffStateMutation.isPending}
                           onClick={() => setPendingAction({ id: handoff.handoffId, action: 'closed' })}
-                          className="rounded-md border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-40"
                         >
                           关闭
                         </button>

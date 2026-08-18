@@ -57,7 +57,7 @@ function priorityLevelClass(level?: string): string {
     case 'low':
       return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
     default:
-      return 'bg-white/10 text-white/70 border-white/10';
+      return 'bg-card/10 text-white/70 border-white/10';
   }
 }
 
@@ -96,7 +96,7 @@ function Section({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white/80 hover:bg-white/5"
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold text-white/80 hover:bg-card/5"
       >
         {icon}
         <span>{title}</span>
@@ -261,7 +261,7 @@ function CandidateRow({ item }: { item: CandidateExplainItem }) {
         'rounded border px-2 py-1',
         item.eligible
           ? 'border-emerald-500/30 bg-emerald-500/10'
-          : 'border-red-500/20 bg-white/5 opacity-85',
+          : 'border-red-500/20 bg-card/5 opacity-85',
       )}
     >
       <div className="flex items-center gap-1.5">
@@ -433,7 +433,7 @@ const IntelligenceLayers = ({
                         'w-full text-left rounded border px-2 py-1 transition-colors',
                         active
                           ? 'border-violet-500/40 bg-violet-500/10'
-                          : 'border-white/10 bg-white/5 hover:bg-white/10',
+                          : 'border-white/10 bg-card/5 hover:bg-card/10',
                       )}
                     >
                       <div className="flex items-center gap-1.5">

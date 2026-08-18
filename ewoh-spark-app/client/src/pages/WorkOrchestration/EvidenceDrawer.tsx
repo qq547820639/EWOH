@@ -23,11 +23,11 @@ const MetaRow = ({
 }): React.ReactElement => {
   const hasValue = Boolean(value);
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 py-2">
-      <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">{label}</span>
+    <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-card px-3 py-2">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span
         className={`text-right text-xs ${mono ? 'font-mono' : ''} ${
-          hasValue ? 'text-[hsl(220_14%_14%)]' : 'text-[hsl(218_10%_42%)]'
+          hasValue ? 'text-foreground' : 'text-muted-foreground'
         }`}
       >
         {hasValue ? value : '—'}
@@ -72,9 +72,9 @@ const EvidenceDrawer = ({
   return (
     <Drawer open={open} onOpenChange={(next) => !next && onClose()} direction="right">
       <DrawerContent className="w-full sm:max-w-[520px]">
-        <DrawerHeader className="gap-2 border-b border-[hsl(220_14%_89%)] pb-3">
+        <DrawerHeader className="gap-2 border-b border-border pb-3">
           <div className="flex items-center gap-2">
-            <DrawerTitle className="text-base text-[hsl(220_14%_14%)]">
+            <DrawerTitle className="text-base text-foreground">
               {entry.title || entry.evidenceId}
             </DrawerTitle>
             {expired && (
@@ -88,7 +88,7 @@ const EvidenceDrawer = ({
               </span>
             )}
           </div>
-          <DrawerDescription className="text-xs text-[hsl(218_10%_42%)]">
+          <DrawerDescription className="text-xs text-muted-foreground">
             证据 ID：{entry.evidenceId}
           </DrawerDescription>
           <button
@@ -96,7 +96,7 @@ const EvidenceDrawer = ({
             type="button"
             onClick={onClose}
             aria-label="关闭证据抽屉"
-            className="ml-auto -mt-1 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] outline-none hover:bg-[hsl(220_14%_96%)] focus:border-blue-500"
+            className="ml-auto -mt-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground outline-none hover:bg-muted focus:border-blue-500"
           >
             关闭
           </button>
@@ -108,12 +108,12 @@ const EvidenceDrawer = ({
             className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
               expired
                 ? 'border-red-300 bg-red-50 text-red-800'
-                : 'border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] text-[hsl(220_14%_14%)]'
+                : 'border-border bg-muted text-foreground'
             }`}
           >
-            <span className="text-xs text-[hsl(218_10%_42%)]">状态</span>
+            <span className="text-xs text-muted-foreground">状态</span>
             <StatusBadge status={entry.status ?? 'unbound'} />
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <span className="ml-auto text-xs text-muted-foreground">
               结果{' '}
               <span className={expired ? 'font-semibold text-red-600' : 'font-semibold'}>
                 {entry.result ?? 'unknown'}
@@ -123,7 +123,7 @@ const EvidenceDrawer = ({
 
           {/* 版本与提交 */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[hsl(218_10%_42%)]">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               版本与提交
             </h3>
             <MetaRow
@@ -138,7 +138,7 @@ const EvidenceDrawer = ({
 
           {/* 产物与校验 */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[hsl(218_10%_42%)]">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               产物与校验
             </h3>
             <MetaRow label="类型 kind" value={entry.kind} />
@@ -149,7 +149,7 @@ const EvidenceDrawer = ({
 
           {/* 验证与门禁 */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[hsl(218_10%_42%)]">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               验证与门禁
             </h3>
             <MetaRow label="验证人 verifier" value={entry.verifier} />
@@ -164,7 +164,7 @@ const EvidenceDrawer = ({
 
           {/* 上下文 */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[hsl(218_10%_42%)]">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               上下文
             </h3>
             <MetaRow label="工作项 workItemId" value={entry.workItemId} mono />

@@ -49,11 +49,11 @@ function OrgTree({ nodes, depth = 0 }: { nodes: OrganizationTreeNode[]; depth?: 
             style={{ paddingLeft: `${depth * 14 + 8}px` }}
           >
             <span className="font-medium">{node.name}</span>
-            <span className="ml-2 text-xs text-[hsl(218_10%_42%)]">
+            <span className="ml-2 text-xs text-muted-foreground">
               {ORG_TYPE_LABEL[node.orgType] ?? node.orgType}
             </span>
             {node.description ? (
-              <span className="ml-2 text-xs text-[hsl(218_10%_52%)]">{node.description}</span>
+              <span className="ml-2 text-xs text-muted-foreground">{node.description}</span>
             ) : null}
           </div>
           {node.children.length > 0 && <OrgTree nodes={node.children} depth={depth + 1} />}
@@ -129,8 +129,8 @@ const Organization = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">组织与空间</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">组织与空间</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             组织层级与数据范围（实施配置：录入甲方组织信息；运行期只读展示）。
           </p>
         </div>
@@ -152,7 +152,7 @@ const Organization = (): React.ReactElement => {
         emptyMessage="暂无组织节点，点击右上角「新增组织」录入。"
         updatedAt={query.dataUpdatedAt}
       >
-        <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card p-4">
           <OrgTree nodes={tree} />
         </div>
       </QueryState>

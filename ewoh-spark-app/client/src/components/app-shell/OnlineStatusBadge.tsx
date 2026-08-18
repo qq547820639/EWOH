@@ -26,7 +26,7 @@ const OnlineStatusBadge = ({ snapshot }: { snapshot: OfflineStatusSnapshot | nul
         <Badge
           variant="outline"
           className={cn(
-            'gap-1.5 border-border bg-white text-foreground',
+            'gap-1.5 border-border bg-card text-foreground',
             (offline || pending) && 'border-destructive/30 bg-destructive/10 text-destructive',
           )}
         >

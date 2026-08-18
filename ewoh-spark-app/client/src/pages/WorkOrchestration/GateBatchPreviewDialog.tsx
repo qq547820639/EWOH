@@ -42,28 +42,28 @@ export const BatchGatePreviewDialog = ({
       aria-modal="true"
       aria-label="批量门禁预览"
     >
-      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5 shadow-lg">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card p-5 shadow-lg">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-[hsl(220_14%_14%)]">
+          <h3 className="text-lg font-semibold text-foreground">
             批量记录门禁决定
           </h3>
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1 text-sm text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="rounded-lg border border-border px-3 py-1 text-sm text-foreground hover:bg-muted"
           >
             关闭
           </button>
         </div>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+        <p className="mt-1 text-sm text-muted-foreground">
           将对筛选出的门禁执行「{decisionLabel}」。仅可执行门禁会被记录，不可执行门禁将被跳过。
         </p>
 
         {/* 影响范围摘要 */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] p-3">
-            <p className="text-xs text-[hsl(218_10%_42%)]">门禁总数</p>
-            <p className="mt-0.5 text-lg font-semibold text-[hsl(220_14%_14%)]">
+          <div className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-xs text-muted-foreground">门禁总数</p>
+            <p className="mt-0.5 text-lg font-semibold text-foreground">
               {rows.length}
             </p>
           </div>
@@ -95,7 +95,7 @@ export const BatchGatePreviewDialog = ({
           </h4>
           <div className="max-h-[200px] overflow-y-auto rounded-lg border border-emerald-200">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-emerald-200 bg-emerald-50 text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-emerald-200 bg-emerald-50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">门禁</th>
                   <th className="px-3 py-2 font-medium">状态</th>
@@ -103,24 +103,24 @@ export const BatchGatePreviewDialog = ({
                   <th className="px-3 py-2 font-medium">证据</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+              <tbody className="divide-y divide-border">
                 {executable.map((row) => (
                   <tr key={row.gateId}>
-                    <td className="px-3 py-2 text-[hsl(220_14%_14%)]">
+                    <td className="px-3 py-2 text-foreground">
                       <div className="font-medium">{row.gateId}</div>
-                      <div className="text-[10px] text-[hsl(218_10%_42%)]">
+                      <div className="text-[10px] text-muted-foreground">
                         {row.title}
                       </div>
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={row.status} />
                     </td>
-                    <td className="px-3 py-2 text-[hsl(218_10%_42%)]">
+                    <td className="px-3 py-2 text-muted-foreground">
                       {row.downstreamCount > 0
                         ? `${row.downstreamCount} 个节点`
                         : '无下游'}
                     </td>
-                    <td className="px-3 py-2 text-[hsl(218_10%_42%)]">
+                    <td className="px-3 py-2 text-muted-foreground">
                       {row.evidenceCount} 条
                     </td>
                   </tr>
@@ -138,7 +138,7 @@ export const BatchGatePreviewDialog = ({
           </h4>
           <div className="max-h-[200px] overflow-y-auto rounded-lg border border-red-200">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-red-200 bg-red-50 text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-red-200 bg-red-50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">门禁</th>
                   <th className="px-3 py-2 font-medium">状态</th>
@@ -146,12 +146,12 @@ export const BatchGatePreviewDialog = ({
                   <th className="px-3 py-2 font-medium">原因</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+              <tbody className="divide-y divide-border">
                 {nonExecutable.map((row) => (
                   <tr key={row.gateId}>
-                    <td className="px-3 py-2 text-[hsl(220_14%_14%)]">
+                    <td className="px-3 py-2 text-foreground">
                       <div className="font-medium">{row.gateId}</div>
-                      <div className="text-[10px] text-[hsl(218_10%_42%)]">
+                      <div className="text-[10px] text-muted-foreground">
                         {row.title}
                       </div>
                     </td>
@@ -165,7 +165,7 @@ export const BatchGatePreviewDialog = ({
                           缺失
                         </span>
                       ) : (
-                        <span className="text-[10px] text-[hsl(218_10%_42%)]">
+                        <span className="text-[10px] text-muted-foreground">
                           {row.evidenceCount} 条
                         </span>
                       )}
@@ -185,7 +185,7 @@ export const BatchGatePreviewDialog = ({
         </div>
 
         {/* 元数据 */}
-        <div className="mt-4 flex items-center gap-2 text-xs text-[hsl(218_10%_42%)]">
+        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-4 w-4" />
           操作者
           <span className="font-mono">{actor}</span>
@@ -199,7 +199,7 @@ export const BatchGatePreviewDialog = ({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 py-2 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
           >
             取消
           </button>

@@ -80,13 +80,13 @@ export function PendingQueuePanel({
   return (
     <section
       aria-label="待同步队列"
-      className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+      className="rounded-lg border border-border bg-card p-4"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">待同步队列</h2>
+        <h2 className="text-sm font-semibold text-foreground">待同步队列</h2>
         <div className="flex items-center gap-2">
           {selectableIds.size > 0 && (
-            <label className="flex items-center gap-1 text-xs text-[hsl(218_10%_42%)]">
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 checked={selected.size === selectableIds.size}
@@ -119,7 +119,7 @@ export function PendingQueuePanel({
           return (
             <li
               key={item.id}
-              className="flex flex-wrap items-start gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-2"
+              className="flex flex-wrap items-start gap-2 rounded border border-border bg-muted p-2"
             >
               {selectable && (
                 <input
@@ -131,10 +131,10 @@ export function PendingQueuePanel({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                <p className="truncate text-sm font-medium text-foreground">
                   {item.stepId} · {pendingActionLabel(item)}
                 </p>
-                <p className="mt-0.5 font-mono text-[10px] text-[hsl(218_10%_42%)]">
+                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                   工单 {item.orderId} / 工序 {item.stepId}
                 </p>
                 {item.error?.message && (
@@ -142,7 +142,7 @@ export function PendingQueuePanel({
                     {item.error.message}
                   </p>
                 )}
-                <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 text-[10px] text-[hsl(218_10%_42%)] sm:grid-cols-2">
+                <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground sm:grid-cols-2">
                   <div>
                     <dt className="inline">类型：</dt>
                     <dd className="inline">{pendingActionLabel(item)}</dd>

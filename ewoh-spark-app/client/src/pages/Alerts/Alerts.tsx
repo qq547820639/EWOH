@@ -78,8 +78,8 @@ const Alerts = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">风险与告警</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">告警确认、处置、关闭与重开闭环。</p>
+        <h1 className="text-2xl font-bold text-foreground">风险与告警</h1>
+        <p className="mt-1 text-sm text-muted-foreground">告警确认、处置、关闭与重开闭环。</p>
       </header>
 
       {isOffline && (
@@ -111,9 +111,9 @@ const Alerts = (): React.ReactElement => {
         emptyMessage="暂无告警记录。"
         updatedAt={query.dataUpdatedAt}
       >
-        <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">事件</th>
                 <th className="px-5 py-3 font-medium">等级</th>
@@ -121,16 +121,16 @@ const Alerts = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {rows.map((row) => {
                 const next = actionFor(row.status);
                 const busy =
                   transitionMutation.isPending && transitionMutation.variables?.eventId === row.eventId;
                 return (
-                  <tr key={row.id} className="hover:bg-[hsl(220_14%_96%)]">
+                  <tr key={row.id} className="hover:bg-muted">
                     <td className="px-5 py-3">
-                      <p className="font-medium text-[hsl(220_14%_14%)]">{row.title ?? row.eventId}</p>
-                      <p className="text-xs text-[hsl(218_10%_42%)]">{row.deviceId ?? '-'}</p>
+                      <p className="font-medium text-foreground">{row.title ?? row.eventId}</p>
+                      <p className="text-xs text-muted-foreground">{row.deviceId ?? '-'}</p>
                     </td>
                     <td className="px-5 py-3">{row.severity ?? '-'}</td>
                     <td className="px-5 py-3">{statusLabel[row.status ?? 'open'] ?? row.status}</td>

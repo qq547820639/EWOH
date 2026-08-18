@@ -33,16 +33,16 @@ export function SimulationRunList({
             className={cn(
               'w-full rounded border p-2.5 text-left',
               TONE_BORDER[row.tone],
-              selectedRunId === row.runId && 'ring-2 ring-[hsl(221_83%_53%)]/40',
+              selectedRunId === row.runId && 'ring-2 ring-primary/40',
             )}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate font-mono text-xs text-[hsl(220_14%_14%)]">{row.runId}</span>
-              <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">{row.kindLabel}</span>
+              <span className="truncate font-mono text-xs text-foreground">{row.runId}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{row.kindLabel}</span>
             </div>
             <div className="mt-0.5 flex items-center justify-between gap-2">
               <span className={cn('text-xs font-medium', TONE_TEXT[row.tone])}>{row.statusLabel}</span>
-              <span className="min-w-0 truncate text-xs text-[hsl(218_10%_42%)]">{row.headline}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">{row.headline}</span>
             </div>
           </button>
         </li>

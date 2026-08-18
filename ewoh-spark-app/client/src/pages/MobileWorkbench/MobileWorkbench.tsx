@@ -236,9 +236,9 @@ const MobileWorkbench = (): React.ReactElement => {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">移动工作台</h1>
+        <h1 className="text-2xl font-bold text-foreground">移动工作台</h1>
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          <p className="text-sm text-[hsl(218_10%_42%)]">
+          <p className="text-sm text-muted-foreground">
             扫码查单、待办工序与移动端开工/报工/审核/交收。
           </p>
         </div>
@@ -278,10 +278,10 @@ const MobileWorkbench = (): React.ReactElement => {
       {/* Offline data management (corruption / upgrade / capacity entry points) */}
       <section
         aria-label="离线数据管理"
-        className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3"
+        className="rounded-lg border border-border bg-card p-3"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-[hsl(220_14%_14%)]">离线数据管理</p>
+          <p className="text-sm font-semibold text-foreground">离线数据管理</p>
           <Button size="sm" variant="outline" onClick={() => void exportOffline()}>
             导出备份
           </Button>
@@ -297,7 +297,7 @@ const MobileWorkbench = (): React.ReactElement => {
             清空离线数据
           </Button>
         </div>
-        <p className="mt-1 text-[10px] text-[hsl(218_10%_42%)]">
+        <p className="mt-1 text-[10px] text-muted-foreground">
           数据库损坏、升级失败或容量不足时可导出备份、修复损坏项或清空离线队列。
         </p>
       </section>
@@ -305,10 +305,10 @@ const MobileWorkbench = (): React.ReactElement => {
       {/* Per-user + per-device workbench settings (scan / touch / one-hand / glove) */}
       <section
         aria-label="工作台设置"
-        className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3"
+        className="rounded-lg border border-border bg-card p-3"
       >
-        <p className="text-sm font-semibold text-[hsl(220_14%_14%)]">工作台设置</p>
-        <div className="mt-2 flex flex-wrap gap-3 text-xs text-[hsl(218_10%_42%)]">
+        <p className="text-sm font-semibold text-foreground">工作台设置</p>
+        <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
           <label className="flex items-center gap-1">
             <input
               type="checkbox"
@@ -351,7 +351,7 @@ const MobileWorkbench = (): React.ReactElement => {
                     | 'manual',
                 })
               }
-              className="rounded border border-[hsl(220_14%_89%)] bg-white px-1"
+              className="rounded border border-border bg-card px-1"
             >
               <option value="manual">手动输入</option>
               <option value="scanner">扫码枪</option>
@@ -393,9 +393,9 @@ const MobileWorkbench = (): React.ReactElement => {
         />
       )}
 
-      <div className="flex flex-col gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4 sm:flex-row">
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 sm:flex-row">
         <div className="relative flex-1">
-          <QrCode className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[hsl(218_10%_42%)]" />
+          <QrCode className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={scanner.scanInput}
             onChange={(event) => scanner.setScanInput(event.target.value)}
@@ -445,7 +445,7 @@ const MobileWorkbench = (): React.ReactElement => {
 
       <section aria-label="我的待办工序">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">我的待办工序</h2>
+          <h2 className="text-sm font-semibold text-foreground">我的待办工序</h2>
           <Button
             variant="ghost"
             size="sm"
@@ -479,13 +479,13 @@ const MobileWorkbench = (): React.ReactElement => {
                 key={step.stepId}
                 type="button"
                 onClick={() => setActiveOrderId(step.scheduleTaskId)}
-                className="flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 text-left hover:border-[hsl(221_83%_53%)]"
+                className="flex min-h-14 w-full items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 text-left hover:border-[hsl(221_83%_53%)]"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                  <p className="truncate text-sm font-medium text-foreground">
                     {step.name}
                   </p>
-                  <p className="mt-0.5 truncate font-mono text-xs text-[hsl(218_10%_42%)]">
+                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                     {step.scheduleTaskId} / {step.stepId}
                   </p>
                 </div>
@@ -498,13 +498,13 @@ const MobileWorkbench = (): React.ReactElement => {
 
       {activeOrder && (
         <section aria-label="已扫码工单">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold text-[hsl(220_14%_14%)]">
+                <h2 className="truncate text-base font-semibold text-foreground">
                   {activeOrder.workOrder.title}
                 </h2>
-                <p className="mt-0.5 font-mono text-xs text-[hsl(218_10%_42%)]">
+                <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                   {activeOrder.workOrder.scheduleTaskId}
                 </p>
               </div>
@@ -607,7 +607,7 @@ const MobileWorkbench = (): React.ReactElement => {
                 );
               })}
               {actionableSteps.length === 0 && (
-                <p className="rounded-lg bg-[hsl(220_14%_96%)] p-3 text-sm text-[hsl(218_10%_42%)] md:col-span-2">
+                <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground md:col-span-2">
                   该工单所有工序已交收。
                 </p>
               )}
@@ -616,7 +616,7 @@ const MobileWorkbench = (): React.ReactElement => {
         </section>
       )}
       {!ready && (
-        <p className="text-center text-xs text-[hsl(218_10%_42%)]">
+        <p className="text-center text-xs text-muted-foreground">
           正在加载离线存储…
         </p>
       )}

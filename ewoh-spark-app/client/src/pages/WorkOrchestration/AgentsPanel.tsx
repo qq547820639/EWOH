@@ -66,12 +66,12 @@ const AgentsPanel = (): React.ReactElement => {
       loadingMessage="正在读取 Agent 登记册"
       updatedAt={graphQuery.dataUpdatedAt}
     >
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <Users className="h-4 w-4 text-sky-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">Agent 登记册</h2>
+          <h2 className="font-semibold text-foreground">Agent 登记册</h2>
           {agents.length > 0 && (
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <span className="ml-auto text-xs text-muted-foreground">
               共 {agents.length} 条 · 虚拟化渲染 {renderedCount} 行
             </span>
           )}
@@ -83,7 +83,7 @@ const AgentsPanel = (): React.ReactElement => {
           data-testid="agents-virtual-scroll"
         >
           <table className="w-full min-w-[1500px] text-left text-sm">
-            <thead className="sticky top-0 z-10 border-b border-[hsl(220_14%_89%)] bg-white text-xs text-[hsl(218_10%_42%)]">
+            <thead className="sticky top-0 z-10 border-b border-border bg-card text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">ID</th>
                 <th className="px-5 py-3 font-medium">角色</th>
@@ -98,15 +98,15 @@ const AgentsPanel = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">最近交接</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {range.start > 0 && <tr aria-hidden style={{ height: range.offsetY }} />}
               {visibleRows.map((agent) => {
                 const m = metrics.get(agent.actorId);
                 return (
-                  <tr key={agent.actorId} className="hover:bg-[hsl(220_14%_96%)]">
+                  <tr key={agent.actorId} className="hover:bg-muted">
                     <td className="px-5 py-3 font-mono text-xs">{agent.actorId}</td>
                     <td className="px-5 py-3 font-medium">{agent.role}</td>
-                    <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">{agent.kind}</td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground">{agent.kind}</td>
                     <td className="px-5 py-3 font-mono text-xs">{agent.ownership ?? '—'}</td>
                     <td className="px-5 py-3">
                       <StatusBadge status={agent.status ?? 'registered'} />
@@ -114,12 +114,12 @@ const AgentsPanel = (): React.ReactElement => {
                     <td className="px-5 py-3">
                       <span
                         className={`font-semibold ${
-                          (m?.load ?? 0) > 5 ? 'text-amber-600' : (m?.load ?? 0) > 0 ? 'text-blue-600' : 'text-[hsl(218_10%_42%)]'
+                          (m?.load ?? 0) > 5 ? 'text-amber-600' : (m?.load ?? 0) > 0 ? 'text-blue-600' : 'text-muted-foreground'
                         }`}
                       >
                         {m?.load ?? 0}
                       </span>
-                      <span className="ml-1 text-xs text-[hsl(218_10%_42%)]">项</span>
+                      <span className="ml-1 text-xs text-muted-foreground">项</span>
                     </td>
                     <td className="px-5 py-3 text-xs">
                       {m && m.total > 0 ? (
@@ -127,7 +127,7 @@ const AgentsPanel = (): React.ReactElement => {
                           {m.failed}/{m.total}
                         </span>
                       ) : (
-                        <span className="text-[hsl(218_10%_42%)]">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-xs">
@@ -136,31 +136,31 @@ const AgentsPanel = (): React.ReactElement => {
                           {formatWait(m.waitTimeMs)}
                         </span>
                       ) : (
-                        <span className="text-[hsl(218_10%_42%)]">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-xs">
                       {agent.permissions && agent.permissions.length > 0 ? (
-                        <span className="line-clamp-1 text-[hsl(218_10%_42%)]">
+                        <span className="line-clamp-1 text-muted-foreground">
                           {agent.permissions.join(', ')}
                         </span>
                       ) : (
-                        <span className="text-[hsl(218_10%_42%)]">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">—</td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground">—</td>
                     <td className="px-5 py-3 text-xs">
                       {m?.recentHandoff ? (
                         <div>
-                          <div className="line-clamp-1 max-w-[220px] font-medium text-[hsl(220_14%_14%)]">
+                          <div className="line-clamp-1 max-w-[220px] font-medium text-foreground">
                             {m.recentHandoff.scope}
                           </div>
-                          <div className="mt-0.5 text-[10px] text-[hsl(218_10%_42%)]">
+                          <div className="mt-0.5 text-[10px] text-muted-foreground">
                             {formatTime(m.recentHandoff.createdAt)}
                           </div>
                         </div>
                       ) : (
-                        <span className="text-[hsl(218_10%_42%)]">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                   </tr>

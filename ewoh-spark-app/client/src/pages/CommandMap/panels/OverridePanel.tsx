@@ -253,7 +253,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
         <GitCompareArrows className="w-3.5 h-3.5 text-white/80" />
         <span className="text-xs text-white/80">人工覆盖</span>
-        <Badge className="ml-1 bg-white/10 text-white/70 border-white/20">约束 → 重排 → diff</Badge>
+        <Badge className="ml-1 bg-card/10 text-white/70 border-white/20">约束 → 重排 → diff</Badge>
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
@@ -273,7 +273,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   setPlanId(e.target.value || null);
                   setResult(null);
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
+                className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
               >
                 <option value="">请选择活跃方案</option>
                 {activePlans.map((p) => (
@@ -295,7 +295,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                 setTaskId(e.target.value);
                 setResult(null);
               }}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
+              className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
             >
               <option value="">请选择任务</option>
               {assignmentOptions.map((o) => (
@@ -322,8 +322,8 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                     className={cn(
                       'flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs border transition-colors',
                       selected
-                        ? 'bg-white/10 border-white/30 text-white'
-                        : 'border-white/10 text-white/60 hover:bg-white/5',
+                        ? 'bg-card/10 border-white/30 text-white'
+                        : 'border-white/10 text-white/60 hover:bg-card/5',
                     )}
                   >
                     <Icon className="w-3.5 h-3.5" />
@@ -349,7 +349,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   aria-label="选择目标人员（候选）"
                   value={targetPersonId}
                   onChange={(e) => setTargetPersonId(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
+                  className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
                 >
                   <option value="">请选择候选人员</option>
                   {candidateOptions
@@ -379,7 +379,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   value={targetPersonId}
                   onChange={(e) => setTargetPersonId(e.target.value)}
                   placeholder="输入人员 ID（如 p-001）"
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                  className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
                 />
               )}
             </div>
@@ -394,7 +394,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                 value={targetDeviceId}
                 onChange={(e) => setTargetDeviceId(e.target.value)}
                 placeholder="输入设备 ID（如 D-001）"
-                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
               />
             </div>
           )}
@@ -408,7 +408,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                 value={targetStationId}
                 onChange={(e) => setTargetStationId(e.target.value)}
                 placeholder="输入工位 ID（如 S1）"
-                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
               />
             </div>
           )}
@@ -424,7 +424,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   onChange={(e) => setStartMs(e.target.value)}
                   placeholder="startMs"
                   inputMode="numeric"
-                  className="w-1/2 bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                  className="w-1/2 bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
                 />
                 <input
                   aria-label="结束时间 ms"
@@ -432,7 +432,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
                   onChange={(e) => setEndMs(e.target.value)}
                   placeholder="endMs"
                   inputMode="numeric"
-                  className="w-1/2 bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+                  className="w-1/2 bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
                 />
               </div>
             </div>
@@ -446,7 +446,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
               value={operator}
               onChange={(e) => setOperator(e.target.value)}
               placeholder="输入操作人（写审计）"
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
+              className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30"
             />
           </div>
 
@@ -459,14 +459,14 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
               onChange={(e) => setReason(e.target.value)}
               placeholder="说明人工干预原因（必填）"
               rows={2}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none"
+              className="w-full bg-card/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white/80 placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none"
             />
           </div>
 
           <Button
             onClick={handleSubmit}
             disabled={overrideMutation.isPending || !planId}
-            className="w-full bg-white/10 text-white hover:bg-white/20 border border-white/20"
+            className="w-full bg-card/10 text-white hover:bg-card/20 border border-white/20"
           >
             {overrideMutation.isPending ? (
               <>
@@ -544,19 +544,19 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
           ) : preview ? (
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-1.5 text-center">
-                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
                   <div className="text-sm font-bold text-white/90">
                     {overridePreviewSummary(preview).affectedCount}
                   </div>
                   <div className="text-[9px] text-white/50">受影响分配</div>
                 </div>
-                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
                   <div className="text-sm font-bold text-amber-400">
                     {overridePreviewSummary(preview).planChurn}
                   </div>
                   <div className="text-[9px] text-white/50">改派任务（换人成本）</div>
                 </div>
-                <div className="rounded-md border border-white/10 bg-white/5 px-1 py-1.5">
+                <div className="rounded-md border border-white/10 bg-card/5 px-1 py-1.5">
                   <div className="text-sm font-bold text-white/90">
                     {overridePreviewSummary(preview).conflictsIntroduced.length}
                   </div>
@@ -565,7 +565,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {overridePreviewDeltaRows(preview).map((d) => (
-                  <div key={d.key} className="rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                  <div key={d.key} className="rounded-md border border-white/10 bg-card/5 px-2 py-1">
                     <div className="text-[9px] text-white/50">{d.label} Δ（{d.unit || '—'}）</div>
                     <div
                       className={cn(

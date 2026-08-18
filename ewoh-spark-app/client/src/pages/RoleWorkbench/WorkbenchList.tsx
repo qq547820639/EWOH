@@ -109,7 +109,7 @@ const STATE_BLOCK_ICON: Partial<Record<WorkbenchListState, LucideIcon>> = {
 };
 
 const STATE_BLOCK_CLASS: Partial<Record<WorkbenchListState, string>> = {
-  no_data: 'border-[hsl(220_14%_89%)] bg-white',
+  no_data: 'border-border bg-card',
   not_configured: 'border-amber-200 bg-amber-50',
   permission_denied: 'border-amber-200 bg-amber-50',
   source_unavailable: 'border-orange-200 bg-orange-50',
@@ -138,19 +138,19 @@ function ListStateBlock({
     <div
       role={state === 'source_unavailable' ? 'alert' : 'status'}
       aria-live="polite"
-      className={`flex flex-col gap-3 rounded-lg border p-4 text-sm ${STATE_BLOCK_CLASS[state] ?? 'bg-white'}`}
+      className={`flex flex-col gap-3 rounded-lg border p-4 text-sm ${STATE_BLOCK_CLASS[state] ?? 'bg-card'}`}
     >
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-5 shrink-0 text-[hsl(218_10%_42%)]" />
+        <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
-          <p className="font-semibold text-[hsl(220_14%_14%)]">
+          <p className="font-semibold text-foreground">
             「{list.label}」{workbenchListStateTitle(state)}
           </p>
-          <p className="mt-0.5 text-[hsl(218_10%_42%)]">
+          <p className="mt-0.5 text-muted-foreground">
             {workbenchListStateDescription(state)}
           </p>
           {source && (
-            <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               数据源：{source}
             </p>
           )}
@@ -232,12 +232,12 @@ export function WorkbenchList({
   const blocking = isBlockingListState(dataState);
 
   return (
-    <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-      <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
+    <section className="rounded-lg border border-border bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
         <ClipboardList className="size-4 text-semantic-info" />
-        <h2 className="font-semibold text-[hsl(220_14%_14%)]">{list.label}</h2>
+        <h2 className="font-semibold text-foreground">{list.label}</h2>
         <span
-          className="text-xs text-[hsl(218_10%_42%)]"
+          className="text-xs text-muted-foreground"
           title={
             dataFreshness
               ? `数据更新于 ${new Date(dataFreshness).toLocaleTimeString('zh-CN', {
@@ -265,7 +265,7 @@ export function WorkbenchList({
               onFocus={onFilterFocus}
               placeholder="筛选…"
               aria-label={`筛选${list.label}`}
-              className="h-8 w-40 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs text-[hsl(220_14%_14%)] outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-8 w-40 rounded-md border border-border px-2 text-xs text-foreground outline-none focus:border-primary"
               style={{ minHeight: targetSize }}
             />
             {hasActiveFilter && (
@@ -273,7 +273,7 @@ export function WorkbenchList({
                 type="button"
                 aria-label={`清除${list.label}筛选`}
                 onClick={() => onClearFilter(list.key)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-[hsl(218_10%_42%)] hover:text-[hsl(220_14%_14%)]"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
               >
                 <X className="size-3.5" />
               </button>
@@ -301,7 +301,7 @@ export function WorkbenchList({
             导出
           </Button>
           {exporting ? (
-            <span role="status" className="text-xs text-[hsl(218_10%_42%)]">
+            <span role="status" className="text-xs text-muted-foreground">
               {exportStatusLabel(exportState.status)} {exportState.progress}%
             </span>
           ) : exportState.status === 'succeeded' ? (
@@ -335,14 +335,14 @@ export function WorkbenchList({
           />
         </div>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-[hsl(218_10%_42%)]">{list.emptyText}</p>
+        <p className="px-4 py-3 text-sm text-muted-foreground">{list.emptyText}</p>
       ) : (
         <div
           ref={scrollRef}
           className="max-h-[60vh] overflow-x-auto overflow-y-auto"
         >
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 {list.columns.map((column) => (
                   <th
@@ -359,7 +359,7 @@ export function WorkbenchList({
                     <button
                       type="button"
                       onClick={() => onToggleSort(column.key)}
-                      className="inline-flex items-center gap-1 hover:text-[hsl(220_14%_14%)]"
+                      className="inline-flex items-center gap-1 hover:text-foreground"
                     >
                       {column.label}
                       {sort?.key === column.key ? (
@@ -376,7 +376,7 @@ export function WorkbenchList({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {topPad > 0 && (
                 <tr aria-hidden="true">
                   <td
@@ -394,14 +394,14 @@ export function WorkbenchList({
                     onClick={rowPath ? () => handleRowClick(row) : undefined}
                     className={
                       rowPath
-                        ? 'cursor-pointer hover:bg-[hsl(220_14%_96%)]'
+                        ? 'cursor-pointer hover:bg-muted'
                         : undefined
                     }
                   >
                     {list.columns.map((column) => (
                       <td
                         key={column.key}
-                        className="px-4 py-2 text-[hsl(220_14%_14%)]"
+                        className="px-4 py-2 text-foreground"
                       >
                         {renderCell(column, row)}
                       </td>
@@ -423,7 +423,7 @@ export function WorkbenchList({
       )}
 
       {hasMore && (
-        <div className="border-t border-[hsl(220_14%_89%)] px-4 py-2">
+        <div className="border-t border-border px-4 py-2">
           <Button
             size="sm"
             variant="outline"

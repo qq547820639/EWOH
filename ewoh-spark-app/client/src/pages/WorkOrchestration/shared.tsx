@@ -90,13 +90,13 @@ export const SummaryTile = ({
     red: 'bg-red-50 text-red-600',
   };
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
       <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconTones[tone]}`}>
         <Icon className="h-4 w-4" />
       </div>
       <div>
-        <p className="text-xs text-[hsl(218_10%_42%)]">{label}</p>
-        <p className="mt-0.5 text-2xl font-semibold text-[hsl(220_14%_14%)]">{value}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="mt-0.5 text-2xl font-semibold text-foreground">{value}</p>
       </div>
     </div>
   );
@@ -136,21 +136,21 @@ export const EvidenceRow = ({
           : undefined
       }
       className={`rounded-lg border px-4 py-3 ${
-        onSelect ? 'cursor-pointer transition-colors hover:border-blue-400 hover:bg-white' : ''
+        onSelect ? 'cursor-pointer transition-colors hover:border-blue-400 hover:bg-card' : ''
       } ${
         expired
           ? 'border-red-300 bg-red-50'
-          : 'border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)]'
+          : 'border-border bg-muted'
       }`}
     >
       <div className="flex items-center gap-2">
         <CheckCircle2
           className={`h-4 w-4 ${expired ? 'text-red-500' : 'text-emerald-600'}`}
         />
-        <span className="font-medium text-[hsl(220_14%_14%)]">
+        <span className="font-medium text-foreground">
           {entry.title || entry.evidenceId}
         </span>
-        <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">{entry.kind}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{entry.kind}</span>
         {onPreview && (
           <button
             type="button"
@@ -158,7 +158,7 @@ export const EvidenceRow = ({
               event.stopPropagation();
               onPreview(entry);
             }}
-            className="rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
           >
             预览
           </button>
@@ -171,18 +171,18 @@ export const EvidenceRow = ({
               onSelect(entry);
             }}
             aria-label={`查看证据 ${entry.title || entry.evidenceId} 元数据`}
-            className="rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
           >
             详情
           </button>
         )}
       </div>
-      <p className="mt-1 font-mono text-xs text-[hsl(218_10%_42%)]">{entry.path}</p>
-      <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+      <p className="mt-1 font-mono text-xs text-muted-foreground">{entry.path}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
         校验 {entry.checksum.slice(0, 12)} · 结果 {entry.result ?? 'unknown'}
       </p>
       {(entry.status || entry.commitSha || entry.expiresAt || entry.verifier) && (
-        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[hsl(218_10%_42%)]">
+        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <StatusBadge status={entry.status ?? 'unbound'} />
           {entry.commitSha && <span>提交 {entry.commitSha.slice(0, 8)}</span>}
           {entry.expiresAt && (
@@ -245,35 +245,35 @@ export const WriteConfirmDialog = ({
       aria-modal="true"
       aria-label={title}
     >
-      <div className="w-full max-w-md rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5 shadow-lg">
-        <h3 className="text-lg font-semibold text-[hsl(220_14%_14%)]">{title}</h3>
-        {description && <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">{description}</p>}
-        <div className="mt-3 space-y-2 text-sm text-[hsl(220_14%_14%)]">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        <div className="mt-3 space-y-2 text-sm text-foreground">
           <div className="flex items-center gap-2">
-            <UserRound className="h-4 w-4 text-[hsl(218_10%_42%)]" />
+            <UserRound className="h-4 w-4 text-muted-foreground" />
             操作者
             <span className="font-mono text-xs">{actor}</span>
           </div>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-[hsl(218_10%_42%)]" />
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
             来源
             <span className="font-mono text-xs">UI</span>
           </div>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-[hsl(218_10%_42%)]" />
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
             时间
             <span className="font-mono text-xs">{timestamp}</span>
           </div>
           <label className="block">
-            <span className="text-xs text-[hsl(218_10%_42%)]">原因（可选）</span>
+            <span className="text-xs text-muted-foreground">原因（可选）</span>
             <input
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="填写该操作的原因"
-              className="mt-1 h-9 w-full rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="mt-1 h-9 w-full rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
           </label>
-          <div className="rounded-md bg-blue-50 px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+          <div className="rounded-md bg-blue-50 px-3 py-2 text-xs text-muted-foreground">
             回滚点：{rollbackPoint}
           </div>
         </div>
@@ -281,7 +281,7 @@ export const WriteConfirmDialog = ({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 py-2 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
           >
             取消
           </button>

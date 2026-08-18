@@ -116,10 +116,10 @@ const ApprovalConsole = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex items-center gap-3">
-        <ShieldCheck className="h-7 w-7 text-[hsl(220_14%_30%)]" />
+        <ShieldCheck className="h-7 w-7 text-muted-foreground" />
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">审批控制台</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">审批控制台</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             待批审批 {rows.length} 项 · 未读通知 {notifications.unread} 条（审批闭环交互面，ADR-030）
           </p>
         </div>
@@ -133,19 +133,19 @@ const ApprovalConsole = (): React.ReactElement => {
 
       {/* ── 待批清单 ─────────────────────────────────────────── */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-[hsl(220_14%_14%)]">待批审批</h2>
+        <h2 className="mb-3 text-lg font-semibold text-foreground">待批审批</h2>
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-6 text-sm text-[hsl(218_10%_42%)]">
+          <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             当前没有待批审批。
           </div>
         ) : (
           <ul className="space-y-3">
             {rows.map((row) => (
-              <li key={row.key} className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+              <li key={row.key} className="rounded-lg border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="font-medium text-[hsl(220_14%_14%)]">{row.title}</div>
-                    <div className="mt-1 text-xs text-[hsl(218_10%_42%)]">{row.detail}</div>
+                    <div className="font-medium text-foreground">{row.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{row.detail}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {row.kind === 'agent' && (
@@ -214,15 +214,15 @@ const ApprovalConsole = (): React.ReactElement => {
 
       {/* ── 通知中心 ─────────────────────────────────────────── */}
       <section>
-        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-[hsl(220_14%_14%)]">
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-foreground">
           <Bell className="h-5 w-5" />
           通知中心
-          <span className="text-xs font-normal text-[hsl(218_10%_42%)]">
+          <span className="text-xs font-normal text-muted-foreground">
             未读 {notifications.unread} · 已读 {notifications.read}
           </span>
         </h2>
         {notifications.pending.length === 0 ? (
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-6 text-sm text-[hsl(218_10%_42%)]">
+          <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             没有未读通知。
           </div>
         ) : (
@@ -230,14 +230,14 @@ const ApprovalConsole = (): React.ReactElement => {
             {notifications.pending.map((n) => (
               <li
                 key={n.notificationId}
-                className="flex items-center justify-between gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3"
+                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-3"
               >
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                  <div className="truncate text-sm font-medium text-foreground">
                     {n.title}
                   </div>
                   {n.body && (
-                    <div className="mt-1 line-clamp-2 text-xs text-[hsl(218_10%_42%)]">{n.body}</div>
+                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{n.body}</div>
                   )}
                 </div>
                 <Button
@@ -256,18 +256,18 @@ const ApprovalConsole = (): React.ReactElement => {
         {/* R-58/R-62 / ADR-037/ADR-041：推送渠道状态（飞书/邮件投递 + 失败显式 + 人工重试） */}
         {notifications.push.length > 0 && (
           <div className="mt-4">
-            <h3 className="text-sm font-medium text-[hsl(218_10%_42%)]">推送状态</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">推送状态</h3>
             <ul className="mt-2 space-y-1.5">
               {notifications.push.map((n) => {
                 const state = notificationState(n);
                 return (
                   <li
                     key={n.notificationId}
-                    className="flex items-center justify-between gap-2 rounded border border-[hsl(220_14%_89%)] bg-white px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded border border-border bg-card px-3 py-2"
                   >
                     <div className="min-w-0">
-                      <span className="truncate text-xs font-medium text-[hsl(220_14%_14%)]">{n.title}</span>
-                      <span className="ml-2 text-[10px] text-[hsl(218_10%_42%)]">
+                      <span className="truncate text-xs font-medium text-foreground">{n.title}</span>
+                      <span className="ml-2 text-[10px] text-muted-foreground">
                         {notificationChannelLabel(n.channel)} ·{' '}
                         {state === 'push-pending' && '待投递'}
                         {state === 'push-sent' && '已投递'}
@@ -311,7 +311,7 @@ function SchedulerDetail({
 }): React.ReactElement {
   if (loading) {
     return (
-      <div className="mt-3 flex items-center gap-2 text-sm text-[hsl(218_10%_42%)]">
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         加载审批详情…
       </div>
@@ -323,7 +323,7 @@ function SchedulerDetail({
   const pendingSteps = (detail.steps ?? []).filter((s) => s.status === 'pending');
   if (pendingSteps.length === 0) {
     return (
-      <div className="mt-3 text-sm text-[hsl(218_10%_42%)]">
+      <div className="mt-3 text-sm text-muted-foreground">
         该审批实例已无 pending 步骤（状态 {detail.status ?? 'unknown'}）。
       </div>
     );
@@ -333,9 +333,9 @@ function SchedulerDetail({
       {pendingSteps.map((step) => (
         <div
           key={step.id}
-          className="flex items-center justify-between gap-2 rounded border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_97%)] p-2"
+          className="flex items-center justify-between gap-2 rounded border border-border bg-muted p-2"
         >
-          <span className="text-sm text-[hsl(220_14%_30%)]">步骤角色：{step.role}</span>
+          <span className="text-sm text-muted-foreground">步骤角色：{step.role}</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="default" disabled={busy} onClick={() => onAction(step.id, 'approve')}>
               <CheckCircle2 className="mr-1 h-4 w-4" />

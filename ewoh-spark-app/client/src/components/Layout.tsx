@@ -14,7 +14,6 @@ import PageSkeleton from './app-shell/PageSkeleton';
 import PendingInbox from './app-shell/PendingInbox';
 import RecentAccessMenu from './app-shell/RecentAccessMenu';
 import AiAssistant from './app-shell/AiAssistant';
-import ThemeToggle from './app-shell/ThemeToggle';
 import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
 import OnboardingQuickStart from './OnboardingQuickStart';
 import { prefetchRoute } from '../lib/routePrefetch';
@@ -61,14 +60,14 @@ const Layout = () => {
     <div className="flex w-screen h-screen bg-muted">
       <a
         href="#main-content"
-        /* R2-CC2-002：跳转链接表面色改设计令牌（bg-white 在 dark 主题下与浅色前景冲突，WCAG 1.4.3 失败）。 */
+        /* R2-CC2-002：跳转链接表面色改设计令牌（bg-card 在 dark 主题下与浅色前景冲突，WCAG 1.4.3 失败）。 */
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
       >
         {UI_ARIA_LABELS.skipToContent}
       </a>
       {/* 侧边导航栏 */}
       <aside
-        /* R2-CC2-002：侧栏表面色 bg-white→bg-card 令牌（dark 主题下白底浅字不可读）。 */
+        /* R2-CC2-002：侧栏表面色 bg-card→bg-card 令牌（dark 主题下白底浅字不可读）。 */
         className={`fixed inset-y-0 left-0 z-50 flex w-56 flex-col bg-card border-r border-border transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0 ${
           sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
         }`}
@@ -166,8 +165,7 @@ const Layout = () => {
                 外骨骼作业健康监测
               </p>
             </div>
-            {/* NO-13f / ADR-055：手动主题切换（system → dark → light 三态循环，偏好持久化）。 */}
-            <ThemeToggle />
+            {/* 2026-08-18：主题切换已移至指挥地图顶栏（compact icon-only）；此处移除。 */}
             <button
               type="button"
               onClick={handleLogout}
@@ -195,7 +193,7 @@ const Layout = () => {
         tabIndex={-1}
         className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
       >
-        {/* R2-CC2-002：顶栏表面色 bg-white→bg-card 令牌（dark 主题下可读）。 */}
+        {/* R2-CC2-002：顶栏表面色 bg-card→bg-card 令牌（dark 主题下可读）。 */}
         <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <button
             ref={menuButtonRef}

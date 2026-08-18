@@ -111,7 +111,7 @@ const AiAssistant = () => {
         onClick={() => setOpen(true)}
         aria-label="AI 助手"
         title="AI 助手（基于实时数据问答）"
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-risk-conflict bg-white px-2.5 text-sm font-medium text-risk-conflict hover:bg-risk-conflict-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-risk-conflict"
+        className="inline-flex h-8 items-center gap-2 rounded-lg border border-risk-conflict bg-card px-2.5 text-sm font-medium text-risk-conflict hover:bg-risk-conflict-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-risk-conflict"
       >
         <Bot className="h-4 w-4" aria-hidden />
         <span className="hidden sm:inline">AI 助手</span>
@@ -146,7 +146,7 @@ const AiAssistant = () => {
                 className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'self-end bg-primary text-white'
-                    : 'self-start border bg-white text-foreground'
+                    : 'self-start border bg-card text-foreground'
                 }`}
               >
                 {msg.content}
@@ -156,7 +156,7 @@ const AiAssistant = () => {
               </div>
             ))}
             {chatMutation.isPending && messages[messages.length - 1]?.role !== 'assistant' && (
-              <div className="flex items-center gap-2 self-start rounded-lg border bg-white px-3 py-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 self-start rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 正在结合实时数据思考…
               </div>

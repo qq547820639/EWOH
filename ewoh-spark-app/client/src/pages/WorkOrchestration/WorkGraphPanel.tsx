@@ -561,23 +561,23 @@ const WorkGraphPanel = (): React.ReactElement => {
       loadingMessage="正在构建因果图"
       updatedAt={Math.max(graphQuery.dataUpdatedAt, overviewQuery.dataUpdatedAt)}
     >
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[hsl(220_14%_89%)] px-4 py-3">
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
           <GitBranch className="h-4 w-4 text-blue-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">交付因果图</h2>
+          <h2 className="font-semibold text-foreground">交付因果图</h2>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <input
               value={nodeQuery}
               onChange={(event) => setNodeQuery(event.target.value)}
               placeholder="搜索任务/Agent/状态"
               aria-label="搜索因果图节点"
-              className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+              className="h-9 w-56 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
             />
             <select
               value={timeRange}
               onChange={(event) => setTimeRange(event.target.value)}
               aria-label="时间范围"
-              className="h-9 rounded-lg border border-[hsl(220_14%_89%)] px-2 text-xs outline-none focus:border-blue-500"
+              className="h-9 rounded-lg border border-border px-2 text-xs outline-none focus:border-blue-500"
             >
               {TIME_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -594,7 +594,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                 className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                   scopeValue === option.value
                     ? 'bg-blue-600 text-white'
-                    : 'bg-[hsl(220_14%_96%)] text-[hsl(218_10%_42%)]'
+                    : 'bg-muted text-muted-foreground'
                 }`}
               >
                 {option.label}
@@ -605,7 +605,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               onClick={() => setTextView((value) => !value)}
               aria-pressed={textView}
               title={textView ? UI_ARIA_LABELS.graphGraphView : UI_ARIA_LABELS.graphTextView}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
             >
               <FileText className="h-3.5 w-3.5" />
               {textView ? '图形视图' : '文本视图'}
@@ -614,7 +614,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               type="button"
               onClick={saveView}
               title="保存当前视图到本地"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
             >
               <Save className="h-3.5 w-3.5" />
               保存视图
@@ -623,7 +623,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               type="button"
               onClick={restoreView}
               title="从本地恢复已保存视图"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               恢复
@@ -636,7 +636,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
                 stageCollapsed
                   ? 'border-blue-300 bg-blue-50 text-blue-700'
-                  : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                  : 'border-border text-foreground hover:bg-muted'
               }`}
             >
               <Layers className="h-3.5 w-3.5" />
@@ -650,7 +650,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
                 exceptionBackflow
                   ? 'border-red-300 bg-red-50 text-red-700'
-                  : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                  : 'border-border text-foreground hover:bg-muted'
               }`}
             >
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -660,13 +660,13 @@ const WorkGraphPanel = (): React.ReactElement => {
               type="button"
               onClick={focusCritical}
               title="平移/缩放定位到关键路径节点"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted"
             >
               <Focus className="h-3.5 w-3.5" />
               聚焦关键路径
             </button>
             {layout.nodes.length > WINDOW_THRESHOLD && (
-              <span className="text-xs text-[hsl(218_10%_42%)]">
+              <span className="text-xs text-muted-foreground">
                 窗口化渲染 {layout.nodes.length} 节点
               </span>
             )}
@@ -677,10 +677,10 @@ const WorkGraphPanel = (): React.ReactElement => {
             aria-label={UI_ARIA_LABELS.graphSummary}
             className="max-h-[560px] overflow-auto p-4"
           >
-            <h3 className="mb-2 font-semibold text-[hsl(220_14%_14%)]">
+            <h3 className="mb-2 font-semibold text-foreground">
               {UI_ARIA_LABELS.graphSummary}
             </h3>
-            <p className="mb-2 text-sm text-[hsl(218_10%_42%)]">
+            <p className="mb-2 text-sm text-muted-foreground">
               节点数：{graphTextAlt.nodeCount}，依赖边数：{graphTextAlt.edgeCount}
               {graphTextAlt.criticalPath && (
                 <span className="ml-2">
@@ -689,7 +689,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               )}
             </p>
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-border text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">节点</th>
                   <th className="px-3 py-2 font-medium">标题</th>
@@ -699,13 +699,13 @@ const WorkGraphPanel = (): React.ReactElement => {
                   <th className="px-3 py-2 font-medium">关键路径</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+              <tbody className="divide-y divide-border">
                 {graphTextAlt.nodes.map((node) => (
                   <tr key={node.id}>
-                    <td className="px-3 py-2 font-medium text-[hsl(220_14%_14%)]">
+                    <td className="px-3 py-2 font-medium text-foreground">
                       {node.id}
                     </td>
-                    <td className="px-3 py-2 text-[hsl(218_10%_42%)]">{node.title}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{node.title}</td>
                     <td className="px-3 py-2">{node.type}</td>
                     <td className="px-3 py-2">
                       <span
@@ -722,10 +722,10 @@ const WorkGraphPanel = (): React.ReactElement => {
             </table>
             {graphTextAlt.edges.length > 0 && (
               <div className="mt-3">
-                <h4 className="mb-1 text-sm font-semibold text-[hsl(220_14%_14%)]">
+                <h4 className="mb-1 text-sm font-semibold text-foreground">
                   依赖关系
                 </h4>
-                <ul className="space-y-1 text-sm text-[hsl(218_10%_42%)]">
+                <ul className="space-y-1 text-sm text-muted-foreground">
                   {graphTextAlt.edges.map((edge) => (
                     <li key={edge.id}>
                       {edge.from} → {edge.to}
@@ -740,7 +740,7 @@ const WorkGraphPanel = (): React.ReactElement => {
         ) : (
         <div className="grid" style={{ gridTemplateColumns: `${sidebarWidth}px 6px 1fr` }}>
           <div
-            className="max-h-[560px] overflow-y-auto border-r border-[hsl(220_14%_89%)] p-3"
+            className="max-h-[560px] overflow-y-auto border-r border-border p-3"
             // 空状态无 option 子节点，axe 会报 aria-required-children(critical)；
             // 仅在有节点时才声明 listbox 语义，空状态降级为普通 div。
             role={layout.nodes.length > 0 ? 'listbox' : undefined}
@@ -749,7 +749,7 @@ const WorkGraphPanel = (): React.ReactElement => {
             onKeyDown={handleListKeyDown}
           >
             {layout.nodes.length === 0 ? (
-              <p className="p-3 text-sm text-[hsl(218_10%_42%)]">当前范围没有节点。</p>
+              <p className="p-3 text-sm text-muted-foreground">当前范围没有节点。</p>
             ) : (
               <div className="space-y-1.5">
                 {sidebarNodes.map((node) => (
@@ -767,10 +767,10 @@ const WorkGraphPanel = (): React.ReactElement => {
                     className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${
                       selectedNodeId === node.id
                         ? 'border-blue-300 bg-blue-50'
-                        : 'border-[hsl(220_14%_89%)] bg-white hover:bg-[hsl(220_14%_96%)]'
+                        : 'border-border bg-card hover:bg-muted'
                     }`}
                   >
-                    <span className="block font-medium text-[hsl(220_14%_14%)]">
+                    <span className="block font-medium text-foreground">
                       {node.id}
                       {criticalNodeIds.has(node.id) && (
                         <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-700">
@@ -778,7 +778,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                         </span>
                       )}
                     </span>
-                    <span className="mt-0.5 block truncate text-xs text-[hsl(218_10%_42%)]">
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {node.title}
                     </span>
                   </button>
@@ -787,7 +787,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                   <button
                     type="button"
                     onClick={() => setNodeListLimit(nextProgressiveLimit(nodeListLimit))}
-                    className="w-full rounded-lg border border-dashed border-[hsl(220_14%_89%)] px-3 py-2 text-center text-xs font-medium text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]"
+                    className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-center text-xs font-medium text-muted-foreground hover:bg-muted"
                   >
                     加载更多（{sidebarNodes.length} / {layout.nodes.length}）
                   </button>
@@ -842,9 +842,9 @@ const WorkGraphPanel = (): React.ReactElement => {
         </div>
         )}
         {selectedNode && (
-          <div className="border-t border-[hsl(220_14%_89%)] px-4 py-4">
+          <div className="border-t border-border px-4 py-4">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-[hsl(220_14%_14%)]">
+              <h3 className="font-semibold text-foreground">
                 {selectedNode.id} · {selectedNode.title}
               </h3>
               <span
@@ -852,7 +852,7 @@ const WorkGraphPanel = (): React.ReactElement => {
               >
                 {selectedNode.status}
               </span>
-              <span className="text-xs text-[hsl(218_10%_42%)]">
+              <span className="text-xs text-muted-foreground">
                 Owner {selectedNode.owner}
               </span>
             </div>
@@ -864,7 +864,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                 className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
                   tracking === 'upstream'
                     ? 'border-sky-300 bg-sky-50 text-sky-700'
-                    : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                    : 'border-border text-foreground hover:bg-muted'
                 }`}
               >
                 <ArrowUp className="h-3.5 w-3.5" />
@@ -882,7 +882,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                 className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium ${
                   tracking === 'downstream'
                     ? 'border-violet-300 bg-violet-50 text-violet-700'
-                    : 'border-[hsl(220_14%_89%)] text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                    : 'border-border text-foreground hover:bg-muted'
                 }`}
               >
                 <ArrowDown className="h-3.5 w-3.5" />
@@ -894,7 +894,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                 )}
               </button>
               {(tracking === 'upstream' || tracking === 'downstream') && (
-                <span className="text-xs text-[hsl(218_10%_42%)]">
+                <span className="text-xs text-muted-foreground">
                   受影响的节点数：{upstreamIds.size + downstreamIds.size}
                 </span>
               )}
@@ -920,7 +920,7 @@ const WorkGraphPanel = (): React.ReactElement => {
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-[hsl(218_10%_42%)]">
+              <p className="mt-3 text-sm text-muted-foreground">
                 当前节点暂无已关联证据记录。
               </p>
             )}

@@ -33,8 +33,8 @@ const CommandCenter = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">指挥中心</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">指挥中心</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             设备、事件、人员与班次生产态势总览。
           </p>
         </div>

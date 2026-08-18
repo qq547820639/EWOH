@@ -65,14 +65,14 @@ const AiDecision = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">AI 决策中心</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+        <h1 className="text-2xl font-bold text-foreground">AI 决策中心</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           A2 建议与 A3 方案仅在人工触发后生成。
         </p>
       </header>
 
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
-        <label className="block text-sm font-medium text-[hsl(220_14%_14%)]" htmlFor="ai-problem">
+      <div className="rounded-lg border border-border bg-card p-5">
+        <label className="block text-sm font-medium text-foreground" htmlFor="ai-problem">
           问题描述
         </label>
         <textarea
@@ -80,7 +80,7 @@ const AiDecision = (): React.ReactElement => {
           value={problem}
           onChange={(event) => setProblem(event.target.value)}
           disabled={busy}
-          className="mt-2 min-h-24 w-full rounded-lg border border-[hsl(220_14%_89%)] p-3 text-sm outline-none focus:border-[hsl(221_83%_53%)] disabled:opacity-60"
+          className="mt-2 min-h-24 w-full rounded-lg border border-border p-3 text-sm outline-none focus:border-primary disabled:opacity-60"
         />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
@@ -111,7 +111,7 @@ const AiDecision = (): React.ReactElement => {
             {planMutation.isPending ? '推演中...' : '生成调度方案'}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-[hsl(218_10%_42%)]">
+        <p className="mt-3 text-xs text-muted-foreground">
           {snapshotVersionQuery.isSuccess
             ? `快照版本 ${snapshotVersionQuery.data?.version}（真实来源） · 观察窗：页面挂载 → 触发时刻 · 快照记录数：前端无数据源，按 0 上报（不伪造）`
             : snapshotVersionQuery.isError
@@ -142,10 +142,10 @@ const AiDecision = (): React.ReactElement => {
       )}
 
       {suggestion && (
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">建议结果</h2>
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-semibold text-foreground">建议结果</h2>
           <p className="mt-2 text-sm">{suggestion.suggestion}</p>
-          <ul className="mt-3 space-y-1 text-sm text-[hsl(218_10%_42%)]">
+          <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
             {suggestion.confirmItems.map((item, index) => (
               <li key={`${item}-${index}`}>· {item}</li>
             ))}

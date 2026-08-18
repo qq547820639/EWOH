@@ -110,7 +110,7 @@ export function ConflictPreviewPanel({
           type="button"
           onClick={onClose}
           aria-label={UI_ARIA_LABELS.closeConflictPreview}
-          className="rounded px-1.5 text-[10px] text-white/50 hover:bg-white/10"
+          className="rounded px-1.5 text-[10px] text-white/50 hover:bg-card/10"
         >
           ✕
         </button>
@@ -121,9 +121,9 @@ export function ConflictPreviewPanel({
         <div className="text-[9px] text-white/50">根因</div>
         <div className="mt-0.5 text-[10.5px] text-white/85">{conflict.message}</div>
         <div className="mt-1 flex flex-wrap gap-1 text-[8.5px]">
-          <span className="rounded bg-white/10 px-1 py-0.5 text-white/60">{conflict.type}</span>
-          <span className="rounded bg-white/10 px-1 py-0.5 text-white/60">severity={conflict.severity}</span>
-          <span className="rounded bg-white/10 px-1 py-0.5 text-white/60">{conflict.conflictId}</span>
+          <span className="rounded bg-card/10 px-1 py-0.5 text-white/60">{conflict.type}</span>
+          <span className="rounded bg-card/10 px-1 py-0.5 text-white/60">severity={conflict.severity}</span>
+          <span className="rounded bg-card/10 px-1 py-0.5 text-white/60">{conflict.conflictId}</span>
         </div>
       </div>
 
@@ -175,7 +175,7 @@ export function ConflictPreviewPanel({
                 type="button"
                 onClick={() => setMode(m)}
                 className={`flex-1 px-2 py-1 text-[9.5px] font-medium ${
-                  mode === m ? 'bg-cyan-500/25 text-cyan-300' : 'text-white/50 hover:bg-white/5'
+                  mode === m ? 'bg-cyan-500/25 text-cyan-300' : 'text-white/50 hover:bg-card/5'
                 }`}
               >
                 {MODE_LABEL[m]}
@@ -185,9 +185,9 @@ export function ConflictPreviewPanel({
 
           {/* Summary */}
           <div className="flex flex-wrap items-center gap-1 text-[9px] text-white/50">
-            <span className="rounded bg-white/10 px-1 py-0.5">{preview.baselinePlanId?.slice(-8) ?? '—'}</span>
+            <span className="rounded bg-card/10 px-1 py-0.5">{preview.baselinePlanId?.slice(-8) ?? '—'}</span>
             <ArrowRight className="w-2.5 h-2.5" />
-            <span className="rounded bg-white/10 px-1 py-0.5">{preview.candidatePlanId?.slice(-8) ?? '—'}</span>
+            <span className="rounded bg-card/10 px-1 py-0.5">{preview.candidatePlanId?.slice(-8) ?? '—'}</span>
             {diff && (
               <span className="ml-auto text-white/60">
                 换人 {diff.churn} · 变更 {diff.diffByTask.length} · +{diff.added.length} -{diff.removed.length}
@@ -197,7 +197,7 @@ export function ConflictPreviewPanel({
           {Object.keys(changeTypeCounts).length > 0 && (
             <div className="flex flex-wrap gap-1">
               {Object.entries(changeTypeCounts).map(([k, v]) => (
-                <span key={k} className="rounded bg-white/10 px-1 text-[8px] text-white/60">
+                <span key={k} className="rounded bg-card/10 px-1 text-[8px] text-white/60">
                   {CHANGE_LABEL[k] ?? k} {String(v)}
                 </span>
               ))}
@@ -208,7 +208,7 @@ export function ConflictPreviewPanel({
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
             {diffEntries.length > 0 ? (
               diffEntries.map((d) => (
-                <div key={d.taskId} className="rounded border border-white/10 bg-white/5 px-1.5 py-1">
+                <div key={d.taskId} className="rounded border border-white/10 bg-card/5 px-1.5 py-1">
                   <div className="flex items-center justify-between">
                     <span className="truncate text-[9.5px] text-white/80">{d.taskId}</span>
                     <span className="ml-1 flex flex-wrap gap-0.5">

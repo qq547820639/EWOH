@@ -1088,7 +1088,7 @@ const FactoryMap = ({
               {isNearView && (
                 <button
                   onClick={() => resetTransform()}
-                  className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-md bg-card/10 hover:bg-card/20 text-white transition-colors"
                   title="返回整体视图"
                   aria-label={UI_ARIA_LABELS.resetView}
                 >
@@ -1097,7 +1097,7 @@ const FactoryMap = ({
               )}
               <button
                 onClick={() => zoomIn()}
-                className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-md bg-card/10 hover:bg-card/20 text-white transition-colors"
                 title="放大"
                 aria-label={UI_ARIA_LABELS.zoomIn}
               >
@@ -1105,7 +1105,7 @@ const FactoryMap = ({
               </button>
               <button
                 onClick={() => zoomOut()}
-                className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-md bg-card/10 hover:bg-card/20 text-white transition-colors"
                 title="缩小"
                 aria-label={UI_ARIA_LABELS.zoomOut}
               >
@@ -1113,7 +1113,7 @@ const FactoryMap = ({
               </button>
               <button
                 onClick={() => resetTransform()}
-                className="w-8 h-8 flex items-center justify-center rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-md bg-card/10 hover:bg-card/20 text-white transition-colors"
                 title="重置"
                 aria-label={UI_ARIA_LABELS.resetView}
               >
@@ -1128,7 +1128,7 @@ const FactoryMap = ({
       {/* 回放模式提示条 */}
       {replayMode && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[hsl(265_73%_45%)] text-white text-xs font-medium shadow-lg z-10">
-          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-card animate-pulse" />
           回放中:{' '}
           {replayTime
             ? new Date(replayTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })

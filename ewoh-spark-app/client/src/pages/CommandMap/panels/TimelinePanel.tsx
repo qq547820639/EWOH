@@ -224,7 +224,7 @@ export default function TimelinePanel({
               aria-valuetext={replayTime ? dayjs(replayTime).format('MM-DD HH:mm:ss') : '未选择'}
             >
               {/* Axis line */}
-              <div className="absolute left-0 right-0 top-1/2 h-px bg-white/20" />
+              <div className="absolute left-0 right-0 top-1/2 h-px bg-card/20" />
 
               {/* Ticks */}
               {ticks.map((tick, i) => (
@@ -237,7 +237,7 @@ export default function TimelinePanel({
                     transform: 'translateX(-50%)',
                   }}
                 >
-                  <div className="w-px h-1.5 bg-white/30" />
+                  <div className="w-px h-1.5 bg-card/30" />
                   <span className="text-[9px] text-white/60 mt-0.5 whitespace-nowrap">
                     {tick.label}
                   </span>
@@ -302,7 +302,7 @@ export default function TimelinePanel({
                         type="button"
                         aria-label={eventAccessibleLabel(ev.title, ev.severity)}
                         onClick={() => selectEvent({ ts: selectedSnapshot.ts, ...ev })}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 hover:bg-white/10"
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-card/5 hover:bg-card/10"
                       >
                         <span
                           className={cn(

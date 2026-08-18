@@ -38,13 +38,13 @@ export const CommandCenterView = ({
           return (
             <div
               key={kpi.key}
-              className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+              className="rounded-lg border border-border bg-card p-4"
             >
-              <div className="flex items-center gap-2 text-xs text-[hsl(218_10%_42%)]">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Icon className="size-4" />
                 {kpi.label}
               </div>
-              <div className="mt-2 text-2xl font-semibold text-[hsl(220_14%_14%)]">
+              <div className="mt-2 text-2xl font-semibold text-foreground">
                 {kpi.value}
               </div>
             </div>
@@ -52,28 +52,28 @@ export const CommandCenterView = ({
         })}
       </div>
 
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="border-b border-[hsl(220_14%_89%)] px-5 py-4">
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">近期事件</h2>
+      <section className="rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="font-semibold text-foreground">近期事件</h2>
         </div>
         {events.length === 0 ? (
-          <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无事件记录。</div>
+          <div className="p-6 text-sm text-muted-foreground">暂无事件记录。</div>
         ) : (
-          <ul className="divide-y divide-[hsl(220_14%_89%)]">
+          <ul className="divide-y divide-border">
             {events.map((event) => (
               <li
                 key={event.id}
                 className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                  <p className="truncate text-sm font-medium text-foreground">
                     {event.title || event.eventCode}
                   </p>
-                  <p className="truncate text-xs text-[hsl(218_10%_42%)]">
+                  <p className="truncate text-xs text-muted-foreground">
                     {buildEventSubtitle(event)}
                   </p>
                 </div>
-                <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {formatEventTimestamp(event.createdAt)}
                 </span>
               </li>

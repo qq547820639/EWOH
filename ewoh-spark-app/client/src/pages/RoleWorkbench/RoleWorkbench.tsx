@@ -500,10 +500,10 @@ export default function RoleWorkbench(): React.ReactElement {
             <div className="flex min-w-0 items-start gap-3">
               <CircleHelp className="mt-0.5 size-5 shrink-0 text-semantic-info" />
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+                <h2 className="text-sm font-semibold text-foreground">
                   角色化快速上手
                 </h2>
-                <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+                <p className="mt-1 text-xs text-muted-foreground">
                   根据你的角色一步步接入设备、发布模板、安装场景并跑通首个任务。
                 </p>
               </div>
@@ -519,7 +519,7 @@ export default function RoleWorkbench(): React.ReactElement {
               </button>
               <Link
                 to="/scale"
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-4 text-sm font-medium text-[hsl(220_14%_14%)]"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground"
               >
                 <Factory className="size-4" />
                 演示工厂上线

@@ -282,12 +282,12 @@ const Scale = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">规模化运营</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">规模化运营</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             工厂模板、Profile、资产包与兼容目录。
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
           <GitCompareArrows className="h-4 w-4 text-emerald-600" />
           核心版本：{compatibility?.coreVersion ?? '—'}
         </div>
@@ -303,7 +303,7 @@ const Scale = (): React.ReactElement => {
       </header>
 
       {supportBundle && (
-        <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <div className="rounded-lg border border-border bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           诊断包 {supportBundle.bundleId} 已生成，工厂数{' '}
           {supportBundle.factoryCount}，包含敏感信息：
           {supportBundle.includesSecrets ? '是' : '否'}
@@ -330,42 +330,42 @@ const Scale = (): React.ReactElement => {
       >
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="flex items-center gap-4 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
                 <Factory className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-[hsl(218_10%_42%)]">工厂模板</p>
+                <p className="text-sm text-muted-foreground">工厂模板</p>
                 <p className="mt-1 text-3xl font-semibold">{templates.length}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50">
                 <Layers3 className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-sm text-[hsl(218_10%_42%)]">工厂 Profile</p>
+                <p className="text-sm text-muted-foreground">工厂 Profile</p>
                 <p className="mt-1 text-3xl font-semibold">{profiles.length}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50">
                 <Boxes className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <p className="text-sm text-[hsl(218_10%_42%)]">资产包</p>
+                <p className="text-sm text-muted-foreground">资产包</p>
                 <p className="mt-1 text-3xl font-semibold">{assets.length}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-50">
                 <GitCompareArrows className="h-5 w-5 text-violet-600" />
               </div>
               <div>
-                <p className="text-sm text-[hsl(218_10%_42%)]">兼容资产</p>
+                <p className="text-sm text-muted-foreground">兼容资产</p>
                 <p className="mt-1 text-3xl font-semibold">
                   {compatibility?.compatibleCount ?? 0}
-                  <span className="text-sm font-normal text-[hsl(218_10%_42%)]">
+                  <span className="text-sm font-normal text-muted-foreground">
                     {' '}
                     / {compatibility?.incompatibleCount ?? 0} 不兼容
                   </span>
@@ -374,22 +374,22 @@ const Scale = (): React.ReactElement => {
             </div>
           </div>
 
-          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-            <div className="flex flex-wrap items-center gap-3 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
               <Play className="h-4 w-4 text-blue-600" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">工厂上线运行</h2>
+              <h2 className="font-semibold text-foreground">工厂上线运行</h2>
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 <input
                   value={factoryName}
                   onChange={(event) => setFactoryName(event.target.value)}
                   placeholder="输入新工厂名称"
-                  className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                  className="h-9 w-56 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
                 />
                 <button
                   type="button"
                   disabled={!factoryName.trim() || onboarding.isPending}
                   onClick={() => onboarding.mutate()}
-                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-[hsl(221_83%_53%)] px-4 text-sm font-medium text-white disabled:opacity-50"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-white disabled:opacity-50"
                 >
                   <Play className="h-4 w-4" />
                   {onboarding.isPending ? '运行中' : '执行 F0-F6'}
@@ -404,7 +404,7 @@ const Scale = (): React.ReactElement => {
               </div>
             )}
             {lastRun && (
-              <div className="border-b border-[hsl(220_14%_89%)] px-5 py-4">
+              <div className="border-b border-border px-5 py-4">
                 <p className="text-sm">
                   运行 {lastRun.runId}：{' '}
                   <span
@@ -416,7 +416,7 @@ const Scale = (): React.ReactElement => {
                   >
                     {lastRun.overall}
                   </span>
-                  <span className="ml-3 text-xs text-[hsl(218_10%_42%)]">
+                  <span className="ml-3 text-xs text-muted-foreground">
                     Profile {lastRun.profileId}
                   </span>
                 </p>
@@ -437,11 +437,11 @@ const Scale = (): React.ReactElement => {
               </div>
             )}
             {templates.length === 0 && assets.length === 0 ? (
-              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无规模化资产。</div>
+              <div className="p-6 text-sm text-muted-foreground">暂无规模化资产。</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                  <thead className="border-b border-border text-xs text-muted-foreground">
                     <tr>
                       <th className="px-5 py-3 font-medium">资产</th>
                       <th className="px-5 py-3 font-medium">类型</th>
@@ -451,22 +451,22 @@ const Scale = (): React.ReactElement => {
                       <th className="px-5 py-3 font-medium">操作</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                  <tbody className="divide-y divide-border">
                     {assets.map((asset) => {
                       const row = compatibility?.assets.find(
                         (item) => item.packageId === asset.packageId,
                       );
                       return (
-                        <tr key={asset.packageId} className="hover:bg-[hsl(220_14%_96%)]">
+                        <tr key={asset.packageId} className="hover:bg-muted">
                           <td className="px-5 py-3">
-                            <div className="font-medium text-[hsl(220_14%_14%)]">
+                            <div className="font-medium text-foreground">
                               {asset.name}
                             </div>
-                            <div className="font-mono text-xs text-[hsl(218_10%_42%)]">
+                            <div className="font-mono text-xs text-muted-foreground">
                               {asset.packageId}
                             </div>
                           </td>
-                          <td className="px-5 py-3 text-[hsl(218_10%_42%)]">
+                          <td className="px-5 py-3 text-muted-foreground">
                             {asset.packageType}
                           </td>
                           <td className="px-5 py-3 font-mono text-xs">{asset.version}</td>
@@ -511,7 +511,7 @@ const Scale = (): React.ReactElement => {
                                   onClick={() =>
                                     uninstallScenario.mutate(asset.packageId)
                                   }
-                                  className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-40"
                                 >
                                   卸载
                                 </button>
@@ -527,27 +527,27 @@ const Scale = (): React.ReactElement => {
             )}
           </section>
 
-          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <Workflow className="h-4 w-4 text-sky-600" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">Workflow 实例</h2>
-              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+              <h2 className="font-semibold text-foreground">Workflow 实例</h2>
+              <span className="ml-auto text-xs text-muted-foreground">
                 {workflowExampleQuery.data?.workflowId ?? '未加载示例'} ·{' '}
                 {workflowInstances.length} 个实例
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
               <input
                 value={workflowEntityId}
                 onChange={(event) => setWorkflowEntityId(event.target.value)}
                 placeholder="实体 ID"
-                className="h-9 w-52 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-52 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <input
                 value={workflowRoles}
                 onChange={(event) => setWorkflowRoles(event.target.value)}
                 placeholder="角色（逗号分隔）"
-                className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-56 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <button
                 type="button"
@@ -571,11 +571,11 @@ const Scale = (): React.ReactElement => {
               </div>
             )}
             {workflowInstances.length === 0 ? (
-              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无 Workflow 实例。</div>
+              <div className="p-6 text-sm text-muted-foreground">暂无 Workflow 实例。</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                  <thead className="border-b border-border text-xs text-muted-foreground">
                     <tr>
                       <th className="px-5 py-3 font-medium">实例键</th>
                       <th className="px-5 py-3 font-medium">实体</th>
@@ -585,14 +585,14 @@ const Scale = (): React.ReactElement => {
                       <th className="px-5 py-3 font-medium">操作</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                  <tbody className="divide-y divide-border">
                     {workflowInstances.map((instance) => (
-                      <tr key={instance.key} className="hover:bg-[hsl(220_14%_96%)]">
+                      <tr key={instance.key} className="hover:bg-muted">
                         <td className="px-5 py-3 font-mono text-xs">{instance.key}</td>
                         <td className="px-5 py-3">{instance.entityId}</td>
                         <td className="px-5 py-3 font-medium">{instance.currentStep}</td>
                         <td className="px-5 py-3">{instance.status}</td>
-                        <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                        <td className="px-5 py-3 text-xs text-muted-foreground">
                           {formatTime(instance.updatedAt)}
                         </td>
                         <td className="px-5 py-3">
@@ -605,7 +605,7 @@ const Scale = (): React.ReactElement => {
                               !workflowRolesReady(workflowRoles)
                             }
                             onClick={() => advanceWorkflow.mutate(instance.key)}
-                            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-40"
                           >
                             推进
                           </button>
@@ -618,28 +618,28 @@ const Scale = (): React.ReactElement => {
             )}
           </section>
 
-          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <ArrowUpCircle className="h-4 w-4 text-blue-600" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">Fleet 升级环</h2>
-              <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+              <h2 className="font-semibold text-foreground">Fleet 升级环</h2>
+              <span className="ml-auto text-xs text-muted-foreground">
                 工厂 {fleetStatus?.factoryCount ?? 0} · 环分布{' '}
                 {Object.entries(fleetStatus?.ringCounts ?? {})
                   .map(([ring, count]) => `${ring}:${count}`)
                   .join(' / ')}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
               <input
                 value={fleetPackageId}
                 onChange={(event) => setFleetPackageId(event.target.value)}
                 placeholder="资产包 ID"
-                className="h-9 w-56 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-56 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <select
                 value={fleetRing}
                 onChange={(event) => setFleetRing(event.target.value)}
-                className="h-9 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               >
                 <option value="">全部环</option>
                 {/* CLI-208：升级环选项由后端 fleetStatus.ringCounts 派生
@@ -665,7 +665,7 @@ const Scale = (): React.ReactElement => {
                 type="button"
                 disabled={rollbackFleet.isPending}
                 onClick={() => rollbackFleet.mutate()}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] px-4 text-sm font-medium text-[hsl(220_14%_14%)] disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-foreground disabled:opacity-50"
               >
                 <RotateCcw className="h-4 w-4" />
                 回滚
@@ -679,7 +679,7 @@ const Scale = (): React.ReactElement => {
               </div>
             )}
             {fleetResult && (
-              <div className="border-b border-[hsl(220_14%_89%)] px-5 py-3 text-sm text-[hsl(220_14%_14%)]">
+              <div className="border-b border-border px-5 py-3 text-sm text-foreground">
                 {fleetResult && 'updatedProfiles' in fleetResult
                   ? `升级 ${fleetResult.targetRing}：更新 ${fleetResult.updatedProfiles}，跳过 ${fleetResult.skippedProfiles}`
                   : fleetResult && 'rolledBackProfiles' in fleetResult
@@ -692,7 +692,7 @@ const Scale = (): React.ReactElement => {
                 {fleetStatus.profiles.map((profile) => (
                   <span
                     key={profile.profileId}
-                    className="rounded-md bg-[hsl(220_14%_96%)] px-3 py-1.5 text-xs text-[hsl(220_14%_14%)]"
+                    className="rounded-md bg-muted px-3 py-1.5 text-xs text-foreground"
                   >
                     {profile.factoryName} · {profile.upgradeRing} · {profile.status}
                   </span>
@@ -701,17 +701,17 @@ const Scale = (): React.ReactElement => {
             )}
           </section>
 
-          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <Layers3 className="h-4 w-4 text-emerald-600" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">工厂 Profile</h2>
+              <h2 className="font-semibold text-foreground">工厂 Profile</h2>
             </div>
             {profiles.length === 0 ? (
-              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无工厂 Profile。</div>
+              <div className="p-6 text-sm text-muted-foreground">暂无工厂 Profile。</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[800px] text-left text-sm">
-                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                  <thead className="border-b border-border text-xs text-muted-foreground">
                     <tr>
                       <th className="px-5 py-3 font-medium">工厂</th>
                       <th className="px-5 py-3 font-medium">模板</th>
@@ -719,14 +719,14 @@ const Scale = (): React.ReactElement => {
                       <th className="px-5 py-3 font-medium">安装时间</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                  <tbody className="divide-y divide-border">
                     {profiles.map((profile) => (
-                      <tr key={profile.profileId} className="hover:bg-[hsl(220_14%_96%)]">
+                      <tr key={profile.profileId} className="hover:bg-muted">
                         <td className="px-5 py-3">
-                          <div className="font-medium text-[hsl(220_14%_14%)]">
+                          <div className="font-medium text-foreground">
                             {profile.factoryName}
                           </div>
-                          <div className="font-mono text-xs text-[hsl(218_10%_42%)]">
+                          <div className="font-mono text-xs text-muted-foreground">
                             {profile.profileId}
                           </div>
                         </td>
@@ -734,7 +734,7 @@ const Scale = (): React.ReactElement => {
                           {profile.templateId}
                         </td>
                         <td className="px-5 py-3">{profile.status}</td>
-                        <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                        <td className="px-5 py-3 text-xs text-muted-foreground">
                           {formatTime(profile.installedAt)}
                         </td>
                       </tr>
@@ -745,35 +745,35 @@ const Scale = (): React.ReactElement => {
             )}
           </section>
 
-          <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-            <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+          <section className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-2 border-b border-border px-5 py-4">
               <ListChecks className="h-4 w-4 text-violet-600" />
-              <h2 className="font-semibold text-[hsl(220_14%_14%)]">工厂差异</h2>
+              <h2 className="font-semibold text-foreground">工厂差异</h2>
             </div>
-            <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
               <input
                 value={diffFactoryName}
                 onChange={(event) => setDiffFactoryName(event.target.value)}
                 placeholder="工厂名称"
-                className="h-9 w-44 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-44 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <input
                 value={diffKey}
                 onChange={(event) => setDiffKey(event.target.value)}
                 placeholder="差异键"
-                className="h-9 w-44 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-44 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <input
                 value={diffCategory}
                 onChange={(event) => setDiffCategory(event.target.value)}
                 placeholder="分类"
-                className="h-9 w-36 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-36 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <input
                 value={diffValue}
                 onChange={(event) => setDiffValue(event.target.value)}
                 placeholder="值 (JSON)"
-                className="h-9 w-36 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-36 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <button
                 type="button"
@@ -792,11 +792,11 @@ const Scale = (): React.ReactElement => {
               </div>
             )}
             {differences.length === 0 ? (
-              <div className="p-6 text-sm text-[hsl(218_10%_42%)]">暂无工厂差异。</div>
+              <div className="p-6 text-sm text-muted-foreground">暂无工厂差异。</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                  <thead className="border-b border-border text-xs text-muted-foreground">
                     <tr>
                       <th className="px-5 py-3 font-medium">差异键</th>
                       <th className="px-5 py-3 font-medium">工厂</th>
@@ -807,9 +807,9 @@ const Scale = (): React.ReactElement => {
                       <th className="px-5 py-3 font-medium">操作</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                  <tbody className="divide-y divide-border">
                     {differences.map((difference) => (
-                      <tr key={difference.key} className="hover:bg-[hsl(220_14%_96%)]">
+                      <tr key={difference.key} className="hover:bg-muted">
                         <td className="px-5 py-3 font-mono text-xs">{difference.key}</td>
                         <td className="px-5 py-3">{difference.factoryName}</td>
                         <td className="px-5 py-3">{difference.category}</td>
@@ -829,7 +829,7 @@ const Scale = (): React.ReactElement => {
                             {difference.status}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                        <td className="px-5 py-3 text-xs text-muted-foreground">
                           {formatTime(difference.updatedAt)}
                         </td>
                         <td className="px-5 py-3">
@@ -840,7 +840,7 @@ const Scale = (): React.ReactElement => {
                               resolveDiff.isPending
                             }
                             onClick={() => resolveDiff.mutate(difference.key)}
-                            className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-40"
                           >
                             解决
                           </button>

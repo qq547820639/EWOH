@@ -288,13 +288,13 @@ const System = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">系统管理</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">组织化配置与敏感值脱敏展示。</p>
+        <h1 className="text-2xl font-bold text-foreground">系统管理</h1>
+        <p className="mt-1 text-sm text-muted-foreground">组织化配置与敏感值脱敏展示。</p>
       </header>
 
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
-          <FlaskConical className="h-4 w-4 text-[hsl(221_83%_53%)]" />
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <FlaskConical className="h-4 w-4 text-primary" />
           功能开关评估
         </h2>
         <form
@@ -304,21 +304,21 @@ const System = (): React.ReactElement => {
             evaluate.mutate();
           }}
         >
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             开关键（逗号分隔）
             <input
               value={flagKeys}
               onChange={(event) => setFlagKeys(event.target.value)}
               placeholder="feature.scale.canary"
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             升级环
             <select
               value={flagRing}
               onChange={(event) => setFlagRing(event.target.value)}
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm"
             >
               <option value="">默认</option>
               {Object.keys(fleetQuery.data?.ringCounts ?? {}).map((ring) => (
@@ -328,21 +328,21 @@ const System = (): React.ReactElement => {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             工厂 ID
             <input
               value={flagFactory}
               onChange={(event) => setFlagFactory(event.target.value)}
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             角色（逗号分隔）
             <input
               value={flagRoles}
               onChange={(event) => setFlagRoles(event.target.value)}
               placeholder="dispatcher,workshop_lead"
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
           <div className="flex items-end">
@@ -359,7 +359,7 @@ const System = (): React.ReactElement => {
         {evaluation.length > 0 && (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-border text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">开关</th>
                   <th className="px-3 py-2 font-medium">状态</th>
@@ -369,7 +369,7 @@ const System = (): React.ReactElement => {
               </thead>
               <tbody>
                 {evaluation.map((result) => (
-                  <tr key={result.key} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                  <tr key={result.key} className="border-b border-muted last:border-0">
                     <td className="break-all px-3 py-2 font-mono text-xs">{result.key}</td>
                     <td className="px-3 py-2">
                       <span
@@ -394,14 +394,14 @@ const System = (): React.ReactElement => {
         )}
       </div>
 
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
-            <Database className="h-4 w-4 text-[hsl(221_83%_53%)]" />
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Database className="h-4 w-4 text-primary" />
             参数注册中心
           </h2>
-          <div className="flex flex-wrap gap-2 text-xs text-[hsl(218_10%_42%)]">
-            <span className="rounded-md bg-[hsl(220_14%_96%)] px-2 py-1">
+          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-md bg-muted px-2 py-1">
               总数 {parameterSummary?.totalCount ?? 0}
             </span>
             <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-700">
@@ -419,29 +419,29 @@ const System = (): React.ReactElement => {
             addParameter.mutate();
           }}
         >
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             参数键
             <input
               value={paramKey}
               onChange={(event) => setParamKey(event.target.value)}
               placeholder="oee.availability.target"
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             名称
             <input
               value={paramName}
               onChange={(event) => setParamName(event.target.value)}
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             类型
             <select
               value={paramType}
               onChange={(event) => setParamType(event.target.value)}
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm"
             >
               <option value="string">string</option>
               <option value="number">number</option>
@@ -450,15 +450,15 @@ const System = (): React.ReactElement => {
               <option value="json">json</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             当前值
             <input
               value={paramValue}
               onChange={(event) => setParamValue(event.target.value)}
-              className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex items-end gap-2 pb-2 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex items-end gap-2 pb-2 text-xs font-medium text-muted-foreground">
             <input
               type="checkbox"
               checked={paramApproval}
@@ -490,7 +490,7 @@ const System = (): React.ReactElement => {
           >
             <div className="overflow-x-auto">
               <table className="w-full min-w-[960px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 font-medium">参数</th>
                     <th className="px-3 py-2 font-medium">类型</th>
@@ -512,13 +512,13 @@ const System = (): React.ReactElement => {
                     return (
                       <tr
                         key={parameter.key}
-                        className="border-b border-[hsl(220_14%_96%)] last:border-0"
+                        className="border-b border-muted last:border-0"
                       >
                         <td className="px-3 py-2">
-                          <p className="font-medium text-[hsl(220_14%_14%)]">
+                          <p className="font-medium text-foreground">
                             {parameter.name}
                           </p>
-                          <p className="break-all font-mono text-xs text-[hsl(218_10%_42%)]">
+                          <p className="break-all font-mono text-xs text-muted-foreground">
                             {parameter.key}
                           </p>
                         </td>
@@ -533,7 +533,7 @@ const System = (): React.ReactElement => {
                                   [parameter.key]: event.target.value,
                                 }))
                               }
-                              className="h-8 min-w-0 w-32 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs"
+                              className="h-8 min-w-0 w-32 rounded-md border border-border px-2 text-xs"
                             />
                             <button
                               type="button"
@@ -610,24 +610,24 @@ const System = (): React.ReactElement => {
         </div>
       </div>
 
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <BrainCircuit className="h-4 w-4 text-[hsl(262_83%_58%)]" />
             AI 能力接入
           </h2>
-          <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs text-[hsl(218_10%_42%)]">
+          <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
             默认演示：火山方舟视觉理解
           </span>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-[hsl(218_10%_42%)]">
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           在此配置接入大模型的全局密钥（API Key / Base URL / 模型）。保存后，整个系统（AI 决策中心、大脑建议、
           自然语言问答、视觉理解）将统一使用该配置。
           API Key 留空时使用服务端环境变量 <code className="font-mono">EWOH_ARK_API_KEY</code> 配置的演示密钥；
           填入你自己的密钥后点击“保存配置”即可全局生效，点击“测试连接”可验证。
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             API Key
             <input
               value={aiApiKey}
@@ -635,42 +635,42 @@ const System = (): React.ReactElement => {
               type="password"
               autoComplete="off"
               placeholder="留空则用服务端配置的密钥"
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             Base URL
             <input
               value={aiBaseUrl}
               onChange={(event) => setAiBaseUrl(event.target.value)}
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             模型
             <input
               value={aiModel}
               onChange={(event) => setAiModel(event.target.value)}
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
             />
           </label>
-          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             图片 URL（可选，留空用演示图）
             <input
               value={aiImageUrl}
               onChange={(event) => setAiImageUrl(event.target.value)}
               placeholder="https://..."
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 font-mono text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 font-mono text-sm outline-none focus:border-primary"
             />
           </label>
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
             提问
             <input
               value={aiQuestion}
               onChange={(event) => setAiQuestion(event.target.value)}
-              className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+              className="h-9 min-w-0 rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-primary"
             />
           </label>
           <button
@@ -725,13 +725,13 @@ const System = (): React.ReactElement => {
         )}
       </div>
 
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Radar className="h-4 w-4 text-sky-600" />
             请求追踪
           </h2>
-          <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs text-[hsl(218_10%_42%)]">
+          <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
             {traces.length} 条记录
           </span>
         </div>
@@ -746,7 +746,7 @@ const System = (): React.ReactElement => {
         >
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[920px] text-left text-sm">
-              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-border text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">Trace ID</th>
                   <th className="px-3 py-2 font-medium">请求</th>
@@ -758,10 +758,10 @@ const System = (): React.ReactElement => {
               </thead>
               <tbody>
                 {traces.map((trace) => (
-                  <tr key={trace.traceId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                  <tr key={trace.traceId} className="border-b border-muted last:border-0">
                     <td className="break-all px-3 py-2 font-mono text-xs">{trace.traceId}</td>
                     <td className="px-3 py-2">
-                      <span className="rounded bg-[hsl(220_14%_96%)] px-1.5 py-0.5 font-mono text-xs">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                         {trace.method}
                       </span>
                       <span className="ml-2">{trace.path}</span>
@@ -804,20 +804,20 @@ const System = (): React.ReactElement => {
       >
         <div className="grid gap-3 lg:grid-cols-2">
           {rows.map((row) => (
-            <div key={row.id} className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
+            <div key={row.id} className="rounded-lg border border-border bg-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <span className="break-all font-mono text-sm font-medium">{row.configKey}</span>
-                <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {row.updatedAt
                     ? new Date(row.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
                     : '—'}
                 </span>
               </div>
-              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[hsl(220_14%_96%)] p-3 text-xs">
+              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">
                 {/* CLI-210：展示前再脱敏（后端已 mask，此处兜底历史/旁路数据）。 */}
                 {JSON.stringify(redactConfigValue(row.configValue), null, 2)}
               </pre>
-              <p className="mt-2 text-xs text-[hsl(218_10%_42%)]">更新人：{row.updatedBy ?? '—'}</p>
+              <p className="mt-2 text-xs text-muted-foreground">更新人：{row.updatedBy ?? '—'}</p>
             </div>
           ))}
         </div>

@@ -77,7 +77,7 @@ function EventList({
   return (
     <div className="space-y-1">
       {events.map((event) => (
-        <div key={event.eventId} className="rounded bg-white/5 p-2">
+        <div key={event.eventId} className="rounded bg-card/5 p-2">
           <div className="flex items-center justify-between gap-1">
             <span className="truncate text-[11px] text-white/80">{event.title}</span>
             <span className="shrink-0 text-[10px] text-white/50">{event.severity}</span>
@@ -171,14 +171,14 @@ const EntityDetail = ({
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
           <h3 className="text-base font-semibold text-white truncate">{entity.name}</h3>
-          <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[hsl(221_83%_53%)]/20 text-[hsl(217_91%_60%)]">
+          <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-medium bg-primary/20 text-[hsl(217_91%_60%)]">
             {TYPE_LABELS[entity.entityType] ?? entity.entityType}
           </span>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1 rounded text-white/60 hover:text-white hover:bg-card/10 transition-colors"
             aria-label={UI_ARIA_LABELS.closeEntityDetail}
           >
             <X className="w-4 h-4" />

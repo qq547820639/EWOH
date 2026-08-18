@@ -183,11 +183,11 @@ const GitSyncPanel = (): React.ReactElement => {
         {gd(providerData.providerConnected)}
 
         {/* 头部统计 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-          <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
             <GitPullRequest className="h-4 w-4 text-slate-600" />
-            <h2 className="font-semibold text-[hsl(220_14%_14%)]">GitHub Issue/PR 同步</h2>
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <h2 className="font-semibold text-foreground">GitHub Issue/PR 同步</h2>
+            <span className="ml-auto text-xs text-muted-foreground">
               {providerData.mappingSummary.tracked} 已关联 /{' '}
               {providerData.mappingSummary.missing} 待同步
             </span>
@@ -195,7 +195,7 @@ const GitSyncPanel = (): React.ReactElement => {
               type="button"
               onClick={() => gitSyncQuery.refetch()}
               disabled={gitSyncQuery.isFetching}
-              className="inline-flex items-center gap-1 rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)] disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               aria-label="轮询刷新 Git 同步状态"
             >
               {gitSyncQuery.isFetching ? (
@@ -210,7 +210,7 @@ const GitSyncPanel = (): React.ReactElement => {
           {/* 映射表 */}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1000px] text-left text-sm">
-              <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <thead className="border-b border-border text-xs text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3 font-medium">任务</th>
                   <th className="px-5 py-3 font-medium">Issue</th>
@@ -221,17 +221,17 @@ const GitSyncPanel = (): React.ReactElement => {
                   <th className="px-5 py-3 font-medium">状态</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+              <tbody className="divide-y divide-border">
                 {providerData.mapping.map((entry) => {
                   const mapping = buildMappingStatus(entry);
                   const label = MAPPING_LABEL[mapping];
                   return (
-                    <tr key={entry.workItemId} className="hover:bg-[hsl(220_14%_96%)]">
+                    <tr key={entry.workItemId} className="hover:bg-muted">
                       <td className="px-5 py-3">
-                        <div className="font-medium text-[hsl(220_14%_14%)]">
+                        <div className="font-medium text-foreground">
                           {entry.workItemId} · {entry.title}
                         </div>
-                        <div className="text-xs text-[hsl(218_10%_42%)]">
+                        <div className="text-xs text-muted-foreground">
                           {entry.type} · {entry.owner} · {entry.status}
                         </div>
                       </td>
@@ -266,17 +266,17 @@ const GitSyncPanel = (): React.ReactElement => {
         <ConflictSection providerConnected={providerData.providerConnected} conflicts={providerData.conflicts} />
 
         {/* CI 状态回写 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-          <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
             <GitMerge className="h-4 w-4 text-slate-600" />
-            <h3 className="font-semibold text-[hsl(220_14%_14%)]">CI 状态回写</h3>
-            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-[hsl(218_10%_42%)]">
+            <h3 className="font-semibold text-foreground">CI 状态回写</h3>
+            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <CiIcon className={`size-3.5 ${ciClass(ci.status)}`} />
               {(CI_LABEL[ci.status] ?? CI_LABEL.unknown).text} · {ci.total} 项检查
             </span>
           </div>
           {providerData.providerConnected ? (
-            <p className="px-5 py-4 text-sm text-[hsl(218_10%_42%)]">
+            <p className="px-5 py-4 text-sm text-muted-foreground">
               关联 PR/提交的 CI 检查数量：成功 {ci.success} / 失败 {ci.failed} / 进行中 {ci.pending}。
             </p>
           ) : (
@@ -285,11 +285,11 @@ const GitSyncPanel = (): React.ReactElement => {
         </section>
 
         {/* 审批后执行 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-          <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
             <GitFork className="h-4 w-4 text-slate-600" />
-            <h3 className="font-semibold text-[hsl(220_14%_14%)]">审批后执行</h3>
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <h3 className="font-semibold text-foreground">审批后执行</h3>
+            <span className="ml-auto text-xs text-muted-foreground">
               高风险写操作（创建/合并/关闭 PR）须经审批
             </span>
             <button
@@ -307,14 +307,14 @@ const GitSyncPanel = (): React.ReactElement => {
             </button>
           </div>
           {failure && (
-            <div className="flex items-center gap-2 border-t border-[hsl(220_14%_89%)] px-5 py-3 text-sm" role="alert">
+            <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-sm" role="alert">
               <CircleX className="size-4 shrink-0 text-red-500" />
-              <span className="text-[hsl(220_14%_14%)]">{failure.reason}</span>
+              <span className="text-foreground">{failure.reason}</span>
               {failure.retryable && (
                 <button
                   type="button"
                   onClick={handleApply}
-                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-[hsl(220_14%_89%)] bg-white px-2 py-1 text-xs font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
                 >
                   <RotateCcw className="size-3" />
                   重试
@@ -322,31 +322,31 @@ const GitSyncPanel = (): React.ReactElement => {
               )}
             </div>
           )}
-          <p className="px-5 py-4 text-xs text-[hsl(218_10%_42%)]">
+          <p className="px-5 py-4 text-xs text-muted-foreground">
             幂等键：{plan ? createIdempotencyKey('create_issue', plan.branch ?? 'main', plan.headSha ?? '') : '—'}
             （同一操作+目标+ref 生成相同键，避免重复提交）。
           </p>
         </section>
 
         {/* 统一时间线 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-          <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
             <Waypoints className="h-4 w-4 text-slate-600" />
-            <h3 className="font-semibold text-[hsl(220_14%_14%)]">统一时间线</h3>
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <h3 className="font-semibold text-foreground">统一时间线</h3>
+            <span className="ml-auto text-xs text-muted-foreground">
               Agent / PR / 测试 / Evidence / Gate / CI
             </span>
           </div>
           {providerData.timeline.length === 0 ? (
             <Placeholder text="暂无时间线事件。离线模式下仅展示 Git 同步计划事件；Agent/PR/测试/证据/门禁事件随工作图与真实连接器接入后合并展示。" />
           ) : (
-            <ol className="divide-y divide-[hsl(220_14%_89%)] px-5 py-2">
+            <ol className="divide-y divide-border px-5 py-2">
               {providerData.timeline.map((event) => (
                 <li key={event.id} className="flex items-start gap-3 py-3 text-sm">
                   <span className={`mt-1 size-2 shrink-0 rounded-full ${kindDot(event.kind)}`} />
                   <div className="min-w-0">
-                    <p className="text-[hsl(220_14%_14%)]">{event.summary}</p>
-                    <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+                    <p className="text-foreground">{event.summary}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       {event.kind} · {new Date(event.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}
                       {event.workItemId ? ` · ${event.workItemId}` : ''}
                     </p>
@@ -358,12 +358,12 @@ const GitSyncPanel = (): React.ReactElement => {
         </section>
 
         {/* 增量同步提示 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-          <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+        <section className="rounded-lg border border-border bg-card">
+          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
             <ScanLine className="h-4 w-4 text-slate-600" />
-            <h3 className="font-semibold text-[hsl(220_14%_14%)]">增量同步</h3>
+            <h3 className="font-semibold text-foreground">增量同步</h3>
           </div>
-          <p className="px-5 py-4 text-xs text-[hsl(218_10%_42%)]">
+          <p className="px-5 py-4 text-xs text-muted-foreground">
             面板每 30 秒轮询刷新（UX-010.8）。当前为离线文件化模式，未接入真实 Webhook；
             如需推送式增量同步，可在接入真实 GitHub 连接器后启用事件订阅。
           </p>
@@ -399,19 +399,19 @@ const DryRunSection = ({
   providerConnected: boolean;
   preview: { totalFiles: number; totalAdded: number; totalDeleted: number; totalLines: number };
 }): React.ReactElement => (
-  <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-    <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+  <section className="rounded-lg border border-border bg-card">
+    <div className="flex items-center gap-2 border-b border-border px-5 py-4">
       <GitBranch className="h-4 w-4 text-slate-600" />
-      <h3 className="font-semibold text-[hsl(220_14%_14%)]">Dry Run 变更预览</h3>
+      <h3 className="font-semibold text-foreground">Dry Run 变更预览</h3>
       {providerConnected && (
-        <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+        <span className="ml-auto text-xs text-muted-foreground">
           {preview.totalFiles} 文件 · +{preview.totalAdded} / -{preview.totalDeleted} · 共 {preview.totalLines} 行
         </span>
       )}
     </div>
     {providerConnected ? (
       preview.totalFiles > 0 ? (
-        <p className="px-5 py-4 text-sm text-[hsl(218_10%_42%)]">变更预览已就绪。</p>
+        <p className="px-5 py-4 text-sm text-muted-foreground">变更预览已就绪。</p>
       ) : (
         <Placeholder text="本次计划无待推送/合并的文件变更。" />
       )
@@ -428,22 +428,22 @@ const ConflictSection = ({
   providerConnected: boolean;
   conflicts: Array<{ workItemId: string; field: string; local: unknown; server: unknown }>;
 }): React.ReactElement => (
-  <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-    <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+  <section className="rounded-lg border border-border bg-card">
+    <div className="flex items-center gap-2 border-b border-border px-5 py-4">
       <GitMerge className="h-4 w-4 text-slate-600" />
-      <h3 className="font-semibold text-[hsl(220_14%_14%)]">冲突检测</h3>
+      <h3 className="font-semibold text-foreground">冲突检测</h3>
       {providerConnected && conflicts.length > 0 && (
         <span className="ml-auto text-xs font-medium text-red-600">{conflicts.length} 处冲突</span>
       )}
     </div>
     {providerConnected && conflicts.length > 0 ? (
-      <ul className="divide-y divide-[hsl(220_14%_89%)] px-5 py-2">
+      <ul className="divide-y divide-border px-5 py-2">
         {conflicts.map((c, index) => (
           <li key={index} className="py-3 text-sm">
-            <p className="font-medium text-[hsl(220_14%_14%)]">
+            <p className="font-medium text-foreground">
               {c.workItemId} · {c.field}
             </p>
-            <p className="mt-1 font-mono text-xs text-[hsl(218_10%_42%)]">
+            <p className="mt-1 font-mono text-xs text-muted-foreground">
               本地值：{fmt(c.local)} | 服务端值：{fmt(c.server)}
             </p>
           </li>
@@ -458,7 +458,7 @@ const ConflictSection = ({
 );
 
 const Placeholder = ({ text }: { text: string }): React.ReactElement => (
-  <p className="px-5 py-4 text-xs text-[hsl(218_10%_42%)]">{text}</p>
+  <p className="px-5 py-4 text-xs text-muted-foreground">{text}</p>
 );
 
 /* ---------------- 工具 ---------------- */

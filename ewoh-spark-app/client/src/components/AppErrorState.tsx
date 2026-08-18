@@ -204,7 +204,7 @@ const AppErrorState = ({
         </div>
       </div>
 
-      <dl className="grid gap-1 rounded bg-white/60 p-2 text-xs text-muted-foreground sm:grid-cols-2">
+      <dl className="grid gap-1 rounded bg-card/60 p-2 text-xs text-muted-foreground sm:grid-cols-2">
         <div className="min-w-0">
           <dt className="font-medium text-foreground">现象</dt>
           <dd className="break-words">{phenomenonText}</dd>

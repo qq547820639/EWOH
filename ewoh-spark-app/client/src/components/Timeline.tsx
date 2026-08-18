@@ -225,7 +225,7 @@ export default function Timeline({
                 severityClass(ev.severity),
               )}
             />
-            {/* R2-CC2-002：事件卡片表面 bg-white→bg-card 令牌（dark 主题可读）。 */}
+            {/* R2-CC2-002：事件卡片表面 bg-card→bg-card 令牌（dark 主题可读）。 */}
             <div className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

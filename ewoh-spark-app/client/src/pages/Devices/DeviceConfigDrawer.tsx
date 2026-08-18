@@ -316,10 +316,10 @@ const DeviceConfigDrawer = ({
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
       <DrawerContent className="sm:max-w-[560px] w-full">
         <DrawerHeader className="pb-2">
-          <DrawerTitle className="text-base text-[hsl(220_14%_14%)]">
+          <DrawerTitle className="text-base text-foreground">
             {isEdit ? '编辑设备' : '新增设备'}
           </DrawerTitle>
-          <DrawerDescription className="text-xs text-[hsl(218_10%_42%)]">
+          <DrawerDescription className="text-xs text-muted-foreground">
             {isEdit && device
               ? `设备ID：${device.deviceId}`
               : '填写设备基础信息后保存'}
@@ -331,11 +331,11 @@ const DeviceConfigDrawer = ({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">
+                <Label className="text-xs text-muted-foreground">
                   设备ID <span className="text-red-500">*</span>
                 </Label>
                 {isEdit ? (
-                  <div className="h-9 px-3 flex items-center rounded-md border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] text-sm text-[hsl(220_14%_14%)] font-medium">
+                  <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted text-sm text-foreground font-medium">
                     {deviceId}
                   </div>
                 ) : (
@@ -349,7 +349,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">工人姓名</Label>
+                <Label className="text-xs text-muted-foreground">工人姓名</Label>
                 <Input
                   value={workerName}
                   onChange={(e) => setWorkerName(e.target.value)}
@@ -359,7 +359,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">设备型号</Label>
+                <Label className="text-xs text-muted-foreground">设备型号</Label>
                 <Input
                   value={deviceModel}
                   onChange={(e) => setDeviceModel(e.target.value)}
@@ -369,7 +369,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">电量 (%)</Label>
+                <Label className="text-xs text-muted-foreground">电量 (%)</Label>
                 <Input
                   type="number"
                   min={0}
@@ -382,19 +382,19 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">在线状态</Label>
+                <Label className="text-xs text-muted-foreground">在线状态</Label>
                 <div className="h-9 flex items-center gap-2">
                   <Switch checked={online} onCheckedChange={setOnline} />
-                  <span className="text-xs text-[hsl(220_14%_14%)]">
+                  <span className="text-xs text-foreground">
                     {online ? '在线' : '离线'}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">来源类型</Label>
+                <Label className="text-xs text-muted-foreground">来源类型</Label>
                 {isEdit ? (
-                  <div className="h-9 px-3 flex items-center rounded-md border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] text-sm text-[hsl(218_10%_42%)]">
+                  <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted text-sm text-muted-foreground">
                     {sourceLabel(sourceType)}
                   </div>
                 ) : (
@@ -414,7 +414,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">固件版本</Label>
+                <Label className="text-xs text-muted-foreground">固件版本</Label>
                 <Input
                   value={firmwareVersion}
                   onChange={(e) => setFirmwareVersion(e.target.value)}
@@ -424,7 +424,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">硬件版本</Label>
+                <Label className="text-xs text-muted-foreground">硬件版本</Label>
                 <Input
                   value={hardwareVersion}
                   onChange={(e) => setHardwareVersion(e.target.value)}
@@ -434,7 +434,7 @@ const DeviceConfigDrawer = ({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[hsl(218_10%_42%)]">协议版本</Label>
+                <Label className="text-xs text-muted-foreground">协议版本</Label>
                 <Input
                   value={protocolVersion}
                   onChange={(e) => setProtocolVersion(e.target.value)}
@@ -446,7 +446,7 @@ const DeviceConfigDrawer = ({
               {isEdit && (
                 <>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[hsl(218_10%_42%)]">故障码</Label>
+                    <Label className="text-xs text-muted-foreground">故障码</Label>
                     <Input
                       value={faultCode}
                       onChange={(e) => setFaultCode(e.target.value)}
@@ -455,7 +455,7 @@ const DeviceConfigDrawer = ({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[hsl(218_10%_42%)]">温度 (℃)</Label>
+                    <Label className="text-xs text-muted-foreground">温度 (℃)</Label>
                     <Input
                       type="number"
                       value={temperatureC}
@@ -475,44 +475,44 @@ const DeviceConfigDrawer = ({
               <Separator />
               <div className="space-y-3">
                 <div className="flex items-center gap-1.5">
-                  <Link2 className="w-3.5 h-3.5 text-[hsl(218_10%_42%)]" />
-                  <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+                  <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-sm font-semibold text-foreground">
                     绑定关系
                   </span>
                 </div>
 
                 {/* 当前层级路径面包屑 */}
-                <div className="rounded-md border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)] p-3">
-                  <div className="text-[10px] text-[hsl(218_10%_42%)] mb-1">
+                <div className="rounded-md border border-border bg-muted p-3">
+                  <div className="text-[10px] text-muted-foreground mb-1">
                     建筑层级路径
                   </div>
                   {bindingLoading ? (
-                    <div className="text-xs text-[hsl(218_10%_42%)]">加载中...</div>
+                    <div className="text-xs text-muted-foreground">加载中...</div>
                   ) : bindingPath.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-0.5 text-xs text-[hsl(220_14%_14%)]">
+                    <div className="flex flex-wrap items-center gap-0.5 text-xs text-foreground">
                       {bindingPath.map((node, idx) => {
                         const meta = ENTITY_TYPE_META[node.entityType];
                         const Icon = meta?.icon ?? MapPin;
                         return (
                           <span key={node.entityId} className="flex items-center gap-0.5">
                             {idx > 0 && (
-                              <ChevronRight className="w-3 h-3 text-[hsl(218_10%_42%)]" />
+                              <ChevronRight className="w-3 h-3 text-muted-foreground" />
                             )}
-                            <Icon className="w-3 h-3 text-[hsl(218_10%_42%)]" />
+                            <Icon className="w-3 h-3 text-muted-foreground" />
                             <span>{node.name}</span>
                           </span>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="text-xs text-[hsl(218_10%_42%)]">
+                    <div className="text-xs text-muted-foreground">
                       未绑定空间实体
                     </div>
                   )}
                   <div className="mt-2 flex items-center gap-1.5 text-xs">
-                    <User className="w-3 h-3 text-[hsl(218_10%_42%)]" />
-                    <span className="text-[hsl(218_10%_42%)]">绑定人员：</span>
-                    <span className="text-[hsl(220_14%_14%)] font-medium">
+                    <User className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-muted-foreground">绑定人员：</span>
+                    <span className="text-foreground font-medium">
                       {bindingsQuery.data?.boundPersonName ?? '未绑定'}
                     </span>
                   </div>
@@ -544,13 +544,13 @@ const DeviceConfigDrawer = ({
                 </div>
 
                 {showHierarchyPicker && (
-                  <div className="rounded-md border border-[hsl(220_14%_89%)] p-2 space-y-2">
-                    <div className="text-[10px] text-[hsl(218_10%_42%)]">
+                  <div className="rounded-md border border-border p-2 space-y-2">
+                    <div className="text-[10px] text-muted-foreground">
                       仅可选择 工厂/车间/产线/区域/工位 节点
                     </div>
                     <div className="max-h-56 overflow-y-auto pr-1">
                       {hierarchyQuery.isLoading ? (
-                        <div className="text-xs text-[hsl(218_10%_42%)] py-4 text-center">
+                        <div className="text-xs text-muted-foreground py-4 text-center">
                           加载中...
                         </div>
                       ) : hierarchyQuery.data && hierarchyQuery.data.length > 0 ? (
@@ -560,12 +560,12 @@ const DeviceConfigDrawer = ({
                           onSelect={(id) => setSelectedEntityId(id)}
                         />
                       ) : (
-                        <div className="text-xs text-[hsl(218_10%_42%)] py-4 text-center">
+                        <div className="text-xs text-muted-foreground py-4 text-center">
                           暂无可选层级
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-[hsl(220_14%_89%)]">
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
                       <Button
                         size="sm"
                         onClick={handleConfirmBindEntity}
@@ -579,7 +579,7 @@ const DeviceConfigDrawer = ({
 
                 {/* 绑定人员下拉 */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[hsl(218_10%_42%)]">绑定人员</Label>
+                  <Label className="text-xs text-muted-foreground">绑定人员</Label>
                   <Select
                     value={personValue}
                     onValueChange={handlePersonChange}
@@ -608,17 +608,17 @@ const DeviceConfigDrawer = ({
               <Separator />
               <div className="space-y-3">
                 <div className="flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-[hsl(218_10%_42%)]" />
-                  <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+                  <History className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-sm font-semibold text-foreground">
                     状态历史 / 时间线
                   </span>
                 </div>
                 {telemetryQuery.isLoading ? (
-                  <div className="py-4 text-center text-xs text-[hsl(218_10%_42%)]">
+                  <div className="py-4 text-center text-xs text-muted-foreground">
                     加载中...
                   </div>
                 ) : timelineEvents.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-[hsl(220_14%_89%)] py-4 text-center text-xs text-[hsl(218_10%_42%)]">
+                  <div className="rounded-md border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
                     暂无历史记录
                   </div>
                 ) : (
@@ -629,7 +629,7 @@ const DeviceConfigDrawer = ({
           )}
         </div>
 
-        <DrawerFooter className="flex-row justify-end gap-2 border-t border-[hsl(220_14%_89%)]">
+        <DrawerFooter className="flex-row justify-end gap-2 border-t border-border">
           <Button
             variant="outline"
             size="sm"
@@ -666,7 +666,7 @@ function HierarchyTree({
 }): React.ReactElement | null {
   if (!nodes || nodes.length === 0) return null;
   return (
-    <div className={cn('space-y-0.5', depth > 0 && 'ml-3 border-l border-[hsl(220_14%_89%)] pl-2')}>
+    <div className={cn('space-y-0.5', depth > 0 && 'ml-3 border-l border-border pl-2')}>
       {nodes.map((node) => {
         const meta = ENTITY_TYPE_META[node.entity.entityType];
         const Icon = meta?.icon ?? MapPin;
@@ -683,8 +683,8 @@ function HierarchyTree({
                 isSelected
                   ? 'bg-blue-50 text-blue-700 border-blue-300'
                   : selectable
-                    ? 'hover:bg-[hsl(220_14%_96%)] text-[hsl(220_14%_14%)] border-transparent'
-                    : 'text-[hsl(218_10%_42%)] border-transparent cursor-not-allowed opacity-60',
+                    ? 'hover:bg-muted text-foreground border-transparent'
+                    : 'text-muted-foreground border-transparent cursor-not-allowed opacity-60',
               )}
             >
               <Icon className="w-3 h-3 shrink-0" />
@@ -692,7 +692,7 @@ function HierarchyTree({
               {meta && (
                 <Badge
                   variant="outline"
-                  className="ml-auto text-[9px] px-1 py-0 border-[hsl(220_14%_89%)] text-[hsl(218_10%_42%)]"
+                  className="ml-auto text-[9px] px-1 py-0 border-border text-muted-foreground"
                 >
                   {meta.label}
                 </Badge>

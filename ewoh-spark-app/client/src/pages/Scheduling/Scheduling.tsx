@@ -318,8 +318,8 @@ const Scheduling = (): React.ReactElement => {
       <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">生产调度中心</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">生产调度中心</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             方案生成、审批、下发与执行跟踪。
           </p>
         </div>
@@ -378,30 +378,30 @@ const Scheduling = (): React.ReactElement => {
           {filteredRows.map((row) => (
             <div
               key={row.planId}
-              className="min-w-0 rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5"
+              className="min-w-0 rounded-lg border border-border bg-card p-5"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-[hsl(220_14%_14%)]">
+                  <p className="truncate font-semibold text-foreground">
                     {row.planName ?? row.planId}
                   </p>
-                  <p className="mt-1 break-all font-mono text-xs text-[hsl(218_10%_42%)]">
+                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
                     {row.planId}
                   </p>
                 </div>
                 {statusBadge(row.status)}
               </div>
-              <p className="mt-2 text-xs text-[hsl(218_10%_42%)]">
+              <p className="mt-2 text-xs text-muted-foreground">
                 v{row.version} · {TRIGGER_LABELS[row.trigger.type] ?? row.trigger.type} ·{' '}
                 {formatTime(row.createdAt)}
               </p>
-              <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+              <p className="mt-1 text-xs text-muted-foreground">
                 延期 {row.metrics.lateMinutes.toFixed(0)}min · 移动{' '}
                 {row.metrics.walkingMeters.toFixed(0)}m · 等待{' '}
                 {row.metrics.stationWaitMinutes.toFixed(0)}min · 负荷{' '}
                 {(row.metrics.maxWorkload * 100).toFixed(0)}%
               </p>
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-[hsl(220_14%_96%)] p-3 text-xs">
+              <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
                 {JSON.stringify(row.metrics, null, 2)}
               </pre>
 
@@ -507,7 +507,7 @@ const Scheduling = (): React.ReactElement => {
                     <p className="w-full text-xs text-emerald-700">方案已完成</p>
                   )}
                   {row.status === 'superseded' && (
-                    <p className="w-full text-xs text-[hsl(218_10%_42%)]">
+                    <p className="w-full text-xs text-muted-foreground">
                       方案已被替代（superseded）
                     </p>
                   )}
@@ -519,26 +519,26 @@ const Scheduling = (): React.ReactElement => {
       </QueryState>
 
       <div className="mt-6">
-        <h2 className="text-lg font-semibold text-[hsl(220_14%_14%)]">调度运行记录</h2>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+        <h2 className="text-lg font-semibold text-foreground">调度运行记录</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           最近调度运行（以服务端为准）。
         </p>
         <div className="mt-3 space-y-2">
           {recentRuns.length === 0 ? (
-            <p className="text-sm text-[hsl(218_10%_42%)]">暂无运行记录。</p>
+            <p className="text-sm text-muted-foreground">暂无运行记录。</p>
           ) : (
             recentRuns.map((run) => (
               <div
                 key={run.runId}
-                className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+                className="rounded-lg border border-border bg-card p-4"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate font-mono text-xs text-[hsl(220_14%_14%)]">
+                  <p className="truncate font-mono text-xs text-foreground">
                     {run.runId}
                   </p>
                   {runBadge(run.status)}
                 </div>
-                <p className="mt-1 text-xs text-[hsl(218_10%_42%)]">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {TRIGGER_LABELS[run.triggerType] ?? run.triggerType} ·{' '}
                   {formatTime(run.createdAt)} · 方案 {run.planIds.length} 个
                 </p>

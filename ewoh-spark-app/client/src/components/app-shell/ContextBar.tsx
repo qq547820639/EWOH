@@ -25,7 +25,7 @@ const ContextBar = () => {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-white px-4 py-1.5 text-xs">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-1.5 text-xs">
       <OrgEnvSwitcher context={context} onChange={update} />
       <span className="mx-1 hidden h-4 w-px bg-border md:block" aria-hidden />
       <VersionFreshnessBadge context={context} />

@@ -243,7 +243,7 @@ export default function WorkbenchPanel({
   return (
     <div className="h-full flex gap-3 p-3 bg-[hsl(220_14%_14%)] text-white overflow-hidden">
       {/* Card 1: Shift overview (可点击下钻) */}
-      <Card className="flex-1 bg-white/5 border-white/10 min-w-0">
+      <Card className="flex-1 bg-card/5 border-white/10 min-w-0">
         <CardHeader className="p-3 pb-2">
           <CardTitle className="text-xs text-white/80 flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5" />
@@ -262,7 +262,7 @@ export default function WorkbenchPanel({
                 <button
                   key={kpi.label}
                   onClick={kpi.action}
-                  className="flex items-center justify-between rounded px-1 py-0.5 hover:bg-white/5 transition-colors text-left"
+                  className="flex items-center justify-between rounded px-1 py-0.5 hover:bg-card/5 transition-colors text-left"
                 >
                   <div className="flex items-center gap-1.5">
                     <kpi.icon className={cn('w-3 h-3', kpi.color)} />
@@ -277,7 +277,7 @@ export default function WorkbenchPanel({
       </Card>
 
       {/* Card 2: Pending plans (内嵌审批) */}
-      <Card className="flex-1 bg-white/5 border-white/10 flex flex-col min-h-0 min-w-0">
+      <Card className="flex-1 bg-card/5 border-white/10 flex flex-col min-h-0 min-w-0">
         <CardHeader className="p-3 pb-2">
           <CardTitle className="text-xs text-white/80 flex items-center gap-1.5">
             <ListChecks className="w-3.5 h-3.5" />
@@ -296,7 +296,7 @@ export default function WorkbenchPanel({
                 {proposedPlans.map((plan) => (
                   <div
                     key={plan.planId}
-                    className="p-2 rounded bg-white/5 border border-white/5"
+                    className="p-2 rounded bg-card/5 border border-white/5"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[10px] font-medium text-white/90 truncate">
@@ -353,7 +353,7 @@ export default function WorkbenchPanel({
       </Card>
 
       {/* Card 3: Events to watch (内嵌处置) */}
-      <Card className="flex-1 bg-white/5 border-white/10 flex flex-col min-h-0 min-w-0">
+      <Card className="flex-1 bg-card/5 border-white/10 flex flex-col min-h-0 min-w-0">
         <CardHeader className="p-3 pb-2">
           <CardTitle className="text-xs text-white/80 flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5" />
@@ -398,7 +398,7 @@ export default function WorkbenchPanel({
       </Card>
 
       {/* Card 4: Quick actions (真实跳转) */}
-      <Card className="w-40 bg-white/5 border-white/10 shrink-0">
+      <Card className="w-40 bg-card/5 border-white/10 shrink-0">
         <CardHeader className="p-3 pb-2">
           <CardTitle className="text-xs text-white/80 flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5" />
@@ -464,7 +464,7 @@ export default function WorkbenchPanel({
               onChange={(e) => setConfirmReason(e.target.value)}
               placeholder="请输入批准意见，如评估依据、特别说明..."
               required
-              className="bg-white/5 border-white/10 text-white"
+              className="bg-card/5 border-white/10 text-white"
             />
           </div>
           <DialogFooter>
@@ -501,7 +501,7 @@ export default function WorkbenchPanel({
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="请输入驳回理由，便于后续调整..."
               required
-              className="bg-white/5 border-white/10 text-white"
+              className="bg-card/5 border-white/10 text-white"
             />
           </div>
           <DialogFooter>

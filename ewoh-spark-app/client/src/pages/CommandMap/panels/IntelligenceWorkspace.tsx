@@ -119,7 +119,7 @@ export default function IntelligenceWorkspace() {
               onClick={() => setActiveTab(t)}
               className={cn(
                 'rounded px-2 py-0.5 text-[10px]',
-                activeTab === t ? 'bg-violet-500/30 text-violet-200' : 'text-white/50 hover:bg-white/5',
+                activeTab === t ? 'bg-violet-500/30 text-violet-200' : 'text-white/50 hover:bg-card/5',
               )}
             >
               {t === 'kpi' ? 'KPI' : '策略'}
@@ -144,7 +144,7 @@ export default function IntelligenceWorkspace() {
                 value={policyVersion}
                 onChange={(e) => setPolicyVersion(e.target.value)}
                 placeholder="策略版本 (int)"
-                className="w-20 rounded border border-white/15 bg-white/5 px-1.5 py-1 text-[10px]"
+                className="w-20 rounded border border-white/15 bg-card/5 px-1.5 py-1 text-[10px]"
               />
               <Button
                 size="sm"
@@ -204,14 +204,14 @@ export default function IntelligenceWorkspace() {
               value={activationReason}
               onChange={(e) => setActivationReason(e.target.value)}
               placeholder="激活理由（必填，写入审计）"
-              className="w-full rounded border border-white/15 bg-white/5 px-1.5 py-1 text-[10px]"
+              className="w-full rounded border border-white/15 bg-card/5 px-1.5 py-1 text-[10px]"
             />
 
             {gateResult && <GateResultView gate={gateResult} />}
 
             <div className="pt-1 text-[10px] text-white/50 uppercase tracking-wide">Replay 记录</div>
             {replays.data?.slice(0, 4).map((r) => (
-              <div key={r.replayId} className="rounded border border-white/10 bg-white/5 p-1.5 text-[10px]">
+              <div key={r.replayId} className="rounded border border-white/10 bg-card/5 p-1.5 text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-white/80">{r.replayId}</span>
                   <Badge className="text-[8px] px-1 bg-violet-500/20 text-violet-300">
@@ -228,7 +228,7 @@ export default function IntelligenceWorkspace() {
 
             <div className="pt-1 text-[10px] text-white/50 uppercase tracking-wide">激活审计</div>
             {activations.data?.slice(0, 4).map((a: PolicyActivationRecord) => (
-              <div key={a.activationId} className="rounded border border-white/10 bg-white/5 p-1.5 text-[10px]">
+              <div key={a.activationId} className="rounded border border-white/10 bg-card/5 p-1.5 text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-white/80">v{a.policyVersion}</span>
                   <Badge
@@ -296,7 +296,7 @@ function KpiView({ kpi, loading }: { kpi?: SchedulerKpiSnapshot | null; loading:
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-white/10 bg-white/5 px-1.5 py-1">
+    <div className="rounded border border-white/10 bg-card/5 px-1.5 py-1">
       <div className="text-[8px] text-white/40">{label}</div>
       <div className="text-[11px] text-white/90 font-medium">{value}</div>
     </div>
@@ -305,7 +305,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function GateResultView({ gate }: { gate: PolicyGateEvaluation }) {
   return (
-    <div className="rounded border border-white/10 bg-white/5 p-1.5 text-[10px]">
+    <div className="rounded border border-white/10 bg-card/5 p-1.5 text-[10px]">
       <div className="flex items-center gap-1">
         {gate.passed ? (
           <CheckCircle2 className="h-3 w-3 text-emerald-400" />

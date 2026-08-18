@@ -770,7 +770,7 @@ const CommandMapShell = (): React.ReactElement => {
       >
       <a
         href="#command-map-main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[hsl(221_83%_53%)] focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
       >
         跳到地图主体
       </a>
@@ -906,8 +906,8 @@ const CommandMapShell = (): React.ReactElement => {
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
                   active
-                    ? 'bg-white/10 text-white'
-                    : 'text-white/70 hover:text-white/80 hover:bg-white/5',
+                    ? 'bg-card/10 text-white'
+                    : 'text-white/70 hover:text-white/80 hover:bg-card/5',
                 )}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -1106,7 +1106,7 @@ const CommandMapShell = (): React.ReactElement => {
             <div className="space-y-2">
               {HELP_ITEMS.map((item) => (
                 <div key={item.key} className="flex items-center gap-3">
-                  <kbd className="px-2 py-0.5 bg-white/10 rounded text-xs text-white font-mono min-w-[40px] text-center">
+                  <kbd className="px-2 py-0.5 bg-card/10 rounded text-xs text-white font-mono min-w-[40px] text-center">
                     {item.key}
                   </kbd>
                   <span className="text-xs text-white/70">{item.desc}</span>

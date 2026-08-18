@@ -24,7 +24,7 @@ export function OfflineStatusBar({
   return (
     <div
       role="status"
-      className="flex flex-wrap items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-sm"
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm"
     >
       <span
         className={`inline-flex items-center gap-1.5 font-medium ${
@@ -53,11 +53,11 @@ export function OfflineStatusBar({
         </span>
       )}
       <Badge variant="outline">待同步 {pendingCount}</Badge>
-      <span className="text-xs text-[hsl(218_10%_42%)]">
+      <span className="text-xs text-muted-foreground">
         最后同步：{formatLastSync(lastSyncAt)}
       </span>
       {syncing && (
-        <span className="inline-flex items-center gap-1 text-xs text-[hsl(218_10%_42%)]">
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           同步中
         </span>

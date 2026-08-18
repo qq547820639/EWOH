@@ -209,7 +209,7 @@ const AlertToast = ({
               </div>
               <button
                 onClick={handleDismissToast}
-                className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white shrink-0"
+                className="p-1 rounded hover:bg-card/10 text-white/60 hover:text-white shrink-0"
                 aria-label={UI_ARIA_LABELS.dismissAlertToast}
               >
                 <X className="w-3 h-3" />
@@ -275,7 +275,7 @@ const AlertToast = ({
               ) : (
                 <div className="space-y-1.5">
                   {aggregatedL3.map((agg) => (
-                    <div key={agg.latest.eventId} className="rounded bg-white/5">
+                    <div key={agg.latest.eventId} className="rounded bg-card/5">
                       <div className="flex items-center gap-1.5 px-1.5 py-1 text-[9px] text-white/60">
                         <span className="truncate font-medium text-white/80">{agg.deviceLabel}</span>
                         <span>共 {agg.count} 条</span>
@@ -288,7 +288,7 @@ const AlertToast = ({
                           .map((ev) => (
                             <div
                               key={ev.id}
-                              className="flex items-start gap-1.5 px-1.5 py-1 mx-1 rounded bg-white/5 hover:bg-white/10"
+                              className="flex items-start gap-1.5 px-1.5 py-1 mx-1 rounded bg-card/5 hover:bg-card/10"
                             >
                               <div className="w-1 self-stretch rounded-full bg-destructive shrink-0" />
                               <div className="flex-1 min-w-0">
@@ -301,7 +301,7 @@ const AlertToast = ({
                               </div>
                               <div className="flex flex-col gap-0.5">
                                 <button
-                                  className="text-[9px] px-1 py-0.5 rounded bg-white/5 hover:bg-white/10 text-white/70"
+                                  className="text-[9px] px-1 py-0.5 rounded bg-card/5 hover:bg-card/10 text-white/70"
                                   onClick={() => handleView(ev.eventId)}
                                   aria-label={`${UI_ARIA_LABELS.viewAlert}：${ev.title}`}
                                 >
@@ -332,8 +332,8 @@ const AlertToast = ({
         ref={bellButtonRef}
         onClick={toggleExpanded}
         className={cn(
-          'pointer-events-auto relative w-9 h-9 rounded-full border border-white/10 bg-surface-inverse-raised/95 backdrop-blur-sm shadow-md flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors',
-          expanded && 'bg-white/10 text-white',
+          'pointer-events-auto relative w-9 h-9 rounded-full border border-white/10 bg-surface-inverse-raised/95 backdrop-blur-sm shadow-md flex items-center justify-center text-white/70 hover:text-white hover:bg-card/10 transition-colors',
+          expanded && 'bg-card/10 text-white',
         )}
         title={expanded ? '收起告警' : '展开告警'}
         aria-expanded={expanded}

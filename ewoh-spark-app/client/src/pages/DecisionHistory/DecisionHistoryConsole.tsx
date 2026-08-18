@@ -58,15 +58,15 @@ export default function DecisionHistoryConsole(): React.ReactElement {
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <div className="flex items-center gap-2">
-        <History className="size-5 text-[hsl(220_14%_14%)]" />
-        <h1 className="text-lg font-semibold text-[hsl(220_14%_14%)]">决策历史</h1>
-        <span className="text-xs text-[hsl(218_10%_42%)]">
+        <History className="size-5 text-foreground" />
+        <h1 className="text-lg font-semibold text-foreground">决策历史</h1>
+        <span className="text-xs text-muted-foreground">
           Decision Catalog 8 类 kind 统一读面（ADR-065）
         </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-1.5 text-sm text-[hsl(220_14%_14%)]">
+        <label className="flex items-center gap-1.5 text-sm text-foreground">
           类型
           <select
             data-testid="decision-history-kind-filter"
@@ -74,7 +74,7 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             onChange={(e) => {
               setKind(e.target.value);
             }}
-            className="rounded border border-[hsl(220_14%_89%)] px-2 py-1 text-sm"
+            className="rounded border border-border px-2 py-1 text-sm"
           >
             <option value="">全部</option>
             {KIND_OPTIONS.map(([value, label]) => (
@@ -84,7 +84,7 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-[hsl(220_14%_14%)]">
+        <label className="flex items-center gap-1.5 text-sm text-foreground">
           状态
           <select
             data-testid="decision-history-status-filter"
@@ -92,7 +92,7 @@ export default function DecisionHistoryConsole(): React.ReactElement {
             onChange={(e) => {
               setStatus(e.target.value);
             }}
-            className="rounded border border-[hsl(220_14%_89%)] px-2 py-1 text-sm"
+            className="rounded border border-border px-2 py-1 text-sm"
           >
             <option value="">全部</option>
             {STATUS_OPTIONS.map(([value, label]) => (
@@ -124,7 +124,7 @@ export default function DecisionHistoryConsole(): React.ReactElement {
       {query.isLoading ? (
         <div
           data-testid="decision-history-loading"
-          className="flex items-center gap-2 text-sm text-[hsl(218_10%_42%)]"
+          className="flex items-center gap-2 text-sm text-muted-foreground"
         >
           <Loader2 className="size-4 animate-spin" /> 加载中…
         </div>

@@ -72,7 +72,7 @@ const DEFAULT_SAMPLE = JSON.stringify(
 );
 
 const inputClass =
-  'h-9 w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm outline-none focus:border-blue-500';
+  'h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-blue-500';
 
 const SectionCard = ({
   icon: Icon,
@@ -85,12 +85,12 @@ const SectionCard = ({
   badge?: string;
   children: React.ReactNode;
 }): React.ReactElement => (
-  <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-    <div className="flex flex-wrap items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-3">
+  <section className="rounded-lg border border-border bg-card">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
       <Icon className="h-4 w-4 text-blue-600" />
-      <h3 className="font-semibold text-[hsl(220_14%_14%)]">{title}</h3>
+      <h3 className="font-semibold text-foreground">{title}</h3>
       {badge && (
-        <span className="ml-auto rounded-md bg-[hsl(220_14%_96%)] px-2 py-0.5 text-xs text-[hsl(218_10%_42%)]">
+        <span className="ml-auto rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {badge}
         </span>
       )}
@@ -104,13 +104,13 @@ const CheckRow = ({ check }: { check: SiteReadinessCheck }): React.ReactElement 
     {check.passed ? (
       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
     ) : (
-      <Circle className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(218_10%_42%)]" />
+      <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
     )}
     <div className="min-w-0 flex-1">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-[hsl(220_14%_14%)]">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
         <span>{check.label}</span>
         <StatusBadge status={check.status} />
-        <span className="text-xs text-[hsl(218_10%_42%)]">
+        <span className="text-xs text-muted-foreground">
           {check.source === 'backend'
             ? '后端报告'
             : check.source === 'probe'
@@ -118,7 +118,7 @@ const CheckRow = ({ check }: { check: SiteReadinessCheck }): React.ReactElement 
               : '占位'}
         </span>
       </div>
-      {check.note && <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">{check.note}</p>}
+      {check.note && <p className="mt-0.5 text-xs text-muted-foreground">{check.note}</p>}
     </div>
   </div>
 );
@@ -311,14 +311,14 @@ const SiteReadinessWizard = ({
   return (
     <div className="space-y-5">
       {/* 头部 */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-5 py-4">
         <ClipboardCheck className="h-4 w-4 text-emerald-600" />
-        <h2 className="font-semibold text-[hsl(220_14%_14%)]">Site Readiness 实施向导</h2>
+        <h2 className="font-semibold text-foreground">Site Readiness 实施向导</h2>
         <span className="ml-auto flex flex-wrap gap-2">
           <button
             type="button"
             onClick={exportPending}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
           >
             <FileText className="h-4 w-4" />
             导出未决项清单
@@ -335,7 +335,7 @@ const SiteReadinessWizard = ({
       </div>
 
       {/* F0-F6 Stepper */}
-      <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-2">
           {SITE_READINESS_STAGES.map((stage) => {
             const bc = backendChecks[stage.id];
@@ -350,13 +350,13 @@ const SiteReadinessWizard = ({
                 className={`flex min-w-[120px] flex-col gap-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                   active
                     ? 'border-blue-500 bg-blue-50'
-                    : 'border-[hsl(220_14%_89%)] bg-white hover:bg-[hsl(220_14%_96%)]'
+                    : 'border-border bg-card hover:bg-muted'
                 }`}
               >
-                <span className="text-xs font-semibold text-[hsl(218_10%_42%)]">
+                <span className="text-xs font-semibold text-muted-foreground">
                   {stage.id} · {stage.title}
                 </span>
-                <span className="text-xs text-[hsl(218_10%_42%)]">
+                <span className="text-xs text-muted-foreground">
                   {passed}/{total} 通过
                 </span>
               </button>
@@ -365,15 +365,15 @@ const SiteReadinessWizard = ({
         </div>
 
         {/* 当前阶段详情 */}
-        <div className="mt-4 rounded-lg bg-[hsl(220_14%_96%)] p-4">
+        <div className="mt-4 rounded-lg bg-muted p-4">
           <div className="flex items-center gap-2">
             <Signpost className="h-4 w-4 text-blue-600" />
-            <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">
+            <span className="text-sm font-semibold text-foreground">
               {stageDef.id} · {stageDef.title}
             </span>
-            <span className="text-xs text-[hsl(218_10%_42%)]">{stageDef.subtitle}</span>
+            <span className="text-xs text-muted-foreground">{stageDef.subtitle}</span>
           </div>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">{stageDef.description}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{stageDef.description}</p>
           <div className="mt-3 space-y-0.5">
             {stageChecks.map((check) => (
               <CheckRow key={`${activeStage}-${check.id}`} check={check} />
@@ -405,7 +405,7 @@ const SiteReadinessWizard = ({
             {probing ? '探测中…' : '运行环境探测'}
           </button>
           {backendReachable && (
-            <span className="text-xs text-[hsl(218_10%_42%)]">
+            <span className="text-xs text-muted-foreground">
               后端连通：{backendReachable.reachable ? '是' : '否'}
               {backendReachable.latencyMs !== undefined
                 ? ` · ${backendReachable.latencyMs}ms`
@@ -421,7 +421,7 @@ const SiteReadinessWizard = ({
             ))}
           </div>
         )}
-        <p className="mt-3 text-xs text-[hsl(218_10%_42%)]">
+        <p className="mt-3 text-xs text-muted-foreground">
           Docker / K8s / Helm / 对象存储 / 真实设备探测属后端与现场能力：待后端/现场接入，
           当前未启用（本向导不伪造结果）。
         </p>
@@ -432,10 +432,10 @@ const SiteReadinessWizard = ({
         <div className="space-y-1">
           {BACKEND_INFRA_ITEMS.map((item) => (
             <div key={item.id} className="flex items-start gap-2 py-1">
-              <Circle className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(218_10%_42%)]" />
+              <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-sm text-[hsl(220_14%_14%)]">{item.label}</p>
-                <p className="text-xs text-[hsl(218_10%_42%)]">{item.note}</p>
+                <p className="text-sm text-foreground">{item.label}</p>
+                <p className="text-xs text-muted-foreground">{item.note}</p>
               </div>
             </div>
           ))}
@@ -467,7 +467,7 @@ const SiteReadinessWizard = ({
                 placeholder="transform"
                 className={inputClass}
               />
-              <label className="flex items-center gap-1.5 text-sm text-[hsl(220_14%_14%)]">
+              <label className="flex items-center gap-1.5 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={Boolean(rule.required)}
@@ -477,7 +477,7 @@ const SiteReadinessWizard = ({
               </label>
             </div>
           ))}
-          <p className="text-xs text-[hsl(218_10%_42%)]">
+          <p className="text-xs text-muted-foreground">
             映射已保存到 localStorage（key:
             ewoh.siteReadiness.mapping.v1）。字段变换支持 trim/upper/lower/number/string/default。
           </p>
@@ -488,17 +488,17 @@ const SiteReadinessWizard = ({
       <SectionCard icon={Play} title="Mapping Dry Run" badge="F4 · 验证">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-xs text-[hsl(218_10%_42%)]">示例数据（JSON）</span>
+            <span className="text-xs text-muted-foreground">示例数据（JSON）</span>
             <textarea
               value={dryRunSample}
               onChange={(e) => setDryRunSample(e.target.value)}
               rows={4}
-              className="mt-1 w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 font-mono text-xs outline-none focus:border-blue-500"
+              className="mt-1 w-full rounded-lg border border-border bg-card p-3 font-mono text-xs outline-none focus:border-blue-500"
             />
           </label>
           <div className="space-y-2">
             <label className="block">
-              <span className="text-xs text-[hsl(218_10%_42%)]">后端映射 ID（可选）</span>
+              <span className="text-xs text-muted-foreground">后端映射 ID（可选）</span>
               <input
                 value={dryRunMappingId}
                 onChange={(e) => setDryRunMappingId(e.target.value)}
@@ -517,13 +517,13 @@ const SiteReadinessWizard = ({
               <button
                 type="button"
                 onClick={runBackendDryRun}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 <RotateCcw className="h-4 w-4" />
                 后端 Dry Run
               </button>
             </div>
-            <p className="text-xs text-[hsl(218_10%_42%)]">
+            <p className="text-xs text-muted-foreground">
               调用 POST /api/scale/mappings/:id/dry-run。本地示例为非真实映射，仅供演示。
             </p>
           </div>
@@ -534,17 +534,17 @@ const SiteReadinessWizard = ({
           </div>
         )}
         {dryRun && (
-          <div className="mt-3 rounded-md border border-[hsl(220_14%_89%)] p-3">
+          <div className="mt-3 rounded-md border border-border p-3">
             <div className="flex items-center gap-2 text-sm">
               {dryRun.passed ? (
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               ) : (
                 <TriangleAlert className="h-4 w-4 text-amber-500" />
               )}
-              <span className="font-medium text-[hsl(220_14%_14%)]">
+              <span className="font-medium text-foreground">
                 {dryRun.passed ? 'Dry Run 通过' : 'Dry Run 未通过'}
               </span>
-              <span className="text-xs text-[hsl(218_10%_42%)]">
+              <span className="text-xs text-muted-foreground">
                 {dryRun.ruleCount} 条规则 · {dryRun.errors.length} 个错误
               </span>
             </div>
@@ -557,7 +557,7 @@ const SiteReadinessWizard = ({
                 ))}
               </ul>
             )}
-            <pre className="mt-2 overflow-x-auto rounded-md bg-[hsl(220_14%_96%)] p-2 text-xs">
+            <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
               {JSON.stringify(dryRun.mapped, null, 2)}
             </pre>
           </div>
@@ -571,7 +571,7 @@ const SiteReadinessWizard = ({
           onChange={(e) => setImportText(e.target.value)}
           placeholder={'粘贴待导入数据（JSON 对象或数组），例如：\n[{"order_no":"SO-1","device_no":"D-1"}]'}
           rows={4}
-          className="w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white p-3 font-mono text-xs outline-none focus:border-blue-500"
+          className="w-full rounded-lg border border-border bg-card p-3 font-mono text-xs outline-none focus:border-blue-500"
         />
         <div className="mt-2 flex items-center gap-2">
           <button
@@ -582,7 +582,7 @@ const SiteReadinessWizard = ({
             <Play className="h-4 w-4" />
             生成差异预览
           </button>
-          <span className="text-xs text-[hsl(218_10%_42%)]">
+          <span className="text-xs text-muted-foreground">
             对比字段映射前后，存入 localStorage（ewoh.siteReadiness.importPreview.v1）。
           </span>
         </div>
@@ -592,28 +592,28 @@ const SiteReadinessWizard = ({
               <p className="rounded-md bg-red-50 p-3 text-xs text-red-700">{importPreview.error}</p>
             ) : (
               <>
-                <p className="text-xs text-[hsl(218_10%_42%)]">
+                <p className="text-xs text-muted-foreground">
                   {importPreview.recordCount} 条记录 · {importPreview.changedCount} 条发生变化
                 </p>
-                <div className="mt-2 max-h-72 overflow-auto rounded-md border border-[hsl(220_14%_89%)]">
+                <div className="mt-2 max-h-72 overflow-auto rounded-md border border-border">
                   <table className="w-full text-left text-xs">
-                    <thead className="sticky top-0 border-b border-[hsl(220_14%_89%)] bg-[hsl(220_14%_96%)]">
+                    <thead className="sticky top-0 border-b border-border bg-muted">
                       <tr>
                         <th className="px-3 py-2 font-medium">#</th>
                         <th className="px-3 py-2 font-medium">导入前</th>
                         <th className="px-3 py-2 font-medium">导入后</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+                    <tbody className="divide-y divide-border">
                       {importPreview.rows.map((row) => (
                         <tr key={row.index}>
-                          <td className="px-3 py-2 text-[hsl(218_10%_42%)]">{row.index + 1}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{row.index + 1}</td>
                           <td className="px-3 py-2 font-mono">{JSON.stringify(row.before)}</td>
                           <td className="px-3 py-2 font-mono">
                             {row.changed ? (
                               <span className="text-emerald-700">{JSON.stringify(row.after)}</span>
                             ) : (
-                              <span className="text-[hsl(218_10%_42%)]">{JSON.stringify(row.after)}</span>
+                              <span className="text-muted-foreground">{JSON.stringify(row.after)}</span>
                             )}
                           </td>
                         </tr>
@@ -646,13 +646,13 @@ const SiteReadinessWizard = ({
         </div>
         <div className="mt-3 space-y-2">
           {stageTasks.length === 0 && (
-            <p className="text-xs text-[hsl(218_10%_42%)]">当前阶段暂无待办项。</p>
+            <p className="text-xs text-muted-foreground">当前阶段暂无待办项。</p>
           )}
           {stageTasks.map((task) => (
-            <div key={task.id} className="grid gap-2 rounded-md border border-[hsl(220_14%_89%)] p-3 sm:grid-cols-[1fr_140px_150px_auto]">
+            <div key={task.id} className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-[1fr_140px_150px_auto]">
               <div>
-                <p className="text-sm text-[hsl(220_14%_14%)]">{task.label}</p>
-                <p className="text-xs text-[hsl(218_10%_42%)]">{task.stageId}</p>
+                <p className="text-sm text-foreground">{task.label}</p>
+                <p className="text-xs text-muted-foreground">{task.stageId}</p>
               </div>
               <input
                 value={task.owner}
@@ -682,7 +682,7 @@ const SiteReadinessWizard = ({
                 className={`rounded-lg px-3 py-2 text-sm font-medium ${
                   task.status === 'done'
                     ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'border border-[hsl(220_14%_89%)] bg-white text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                    : 'border border-border bg-card text-foreground hover:bg-muted'
                 }`}
               >
                 {task.status === 'done' ? '已完成' : '未完成'}
@@ -695,7 +695,7 @@ const SiteReadinessWizard = ({
       {/* 培训 / 生产批准 / 业务签署 (F5) */}
       <SectionCard icon={Signpost} title="培训 / 生产批准 / 业务签署" badge="F5 · 本地记录">
         <div className="space-y-3">
-          <label className="flex items-center gap-2 text-sm text-[hsl(220_14%_14%)]">
+          <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
               checked={approval.trainingComplete}
@@ -703,7 +703,7 @@ const SiteReadinessWizard = ({
             />
             培训完成
           </label>
-          <label className="flex items-center gap-2 text-sm text-[hsl(220_14%_14%)]">
+          <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
               checked={approval.productionApproved}
@@ -713,7 +713,7 @@ const SiteReadinessWizard = ({
           </label>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
-              <span className="text-xs text-[hsl(218_10%_42%)]">业务签署人</span>
+              <span className="text-xs text-muted-foreground">业务签署人</span>
               <input
                 value={approval.businessSigner}
                 onChange={(e) => setApprovalField({ businessSigner: e.target.value })}
@@ -730,7 +730,7 @@ const SiteReadinessWizard = ({
             </button>
           </div>
           {approval.signedAt && (
-            <p className="text-xs text-[hsl(218_10%_42%)]">
+            <p className="text-xs text-muted-foreground">
               已签署：{approval.businessSigner} · {new Date(approval.signedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}
               （本地签署记录，需现场正式签署）
             </p>

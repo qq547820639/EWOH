@@ -650,8 +650,8 @@ function SchedulePanel({
                   type="button"
                   onClick={() => onSelectPlan?.(p)}
                   className={cn(
-                    'w-full text-left px-3 py-2 border-b border-white/5 hover:bg-white/5 transition-colors',
-                    active && 'bg-white/10',
+                    'w-full text-left px-3 py-2 border-b border-white/5 hover:bg-card/5 transition-colors',
+                    active && 'bg-card/10',
                   )}
                 >
                   <div className="flex items-center gap-1.5">
@@ -744,7 +744,7 @@ function SchedulePanel({
                 {kpis.map((k) => (
                   <div
                     key={k.label}
-                    className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+                    className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5"
                   >
                     <div className="text-[9px] text-white/50">{k.label}</div>
                     <div className="text-sm font-semibold text-white">{k.value}</div>
@@ -772,7 +772,7 @@ function SchedulePanel({
                     onClick={() => setViewMode((v) => (v === 'card' ? 'table' : 'card'))}
                     aria-pressed={viewMode === 'table'}
                     aria-label={viewMode === 'card' ? UI_ARIA_LABELS.switchTableView : UI_ARIA_LABELS.switchCardView}
-                    className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-white/50 hover:bg-white/10"
+                    className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-white/50 hover:bg-card/10"
                   >
                     {viewMode === 'card' ? '表格视图' : '列表视图'}
                   </button>
@@ -805,7 +805,7 @@ function SchedulePanel({
                         .map((a) => (
                     <div
                       key={a.assignmentId}
-                      className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+                      className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5"
                     >
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] text-white/80 font-medium">{a.taskId}</span>

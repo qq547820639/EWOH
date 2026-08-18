@@ -52,13 +52,13 @@ const SectionCard = ({
   return (
     <section
       aria-label={title}
-      className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4"
+      className="rounded-lg border border-border bg-card p-4"
     >
       <div className="mb-3 flex items-center gap-2">
         <span className={`flex h-7 w-7 items-center justify-center rounded-md ${accents[accent]}`}>
           <Icon className="h-4 w-4" />
         </span>
-        <h3 className="font-semibold text-[hsl(220_14%_14%)]">{title}</h3>
+        <h3 className="font-semibold text-foreground">{title}</h3>
       </div>
       {children}
     </section>
@@ -66,7 +66,7 @@ const SectionCard = ({
 };
 
 const EmptySlot = ({ message }: { message: string }): React.ReactElement => (
-  <p className="text-sm text-[hsl(218_10%_42%)]">{message}</p>
+  <p className="text-sm text-muted-foreground">{message}</p>
 );
 
 const WaitingItem = ({ record }: { record: WaitingRecord }): React.ReactElement => {
@@ -74,12 +74,12 @@ const WaitingItem = ({ record }: { record: WaitingRecord }): React.ReactElement 
   const tone =
     record.urgency === 'high' ? 'red' : record.urgency === 'medium' ? 'amber' : 'slate';
   return (
-    <li className="flex items-start justify-between gap-3 border-b border-[hsl(220_14%_96%)] py-2 last:border-0">
+    <li className="flex items-start justify-between gap-3 border-b border-muted py-2 last:border-0">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+        <p className="truncate text-sm font-medium text-foreground">
           {record.item.id} · {record.item.title}
         </p>
-        <p className="text-xs text-[hsl(218_10%_42%)]">Owner {record.item.owner}</p>
+        <p className="text-xs text-muted-foreground">Owner {record.item.owner}</p>
       </div>
       <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[tone]}`}>
         {hours >= 24 ? `${Math.floor(hours / 24)} 天` : `${hours} 小时`}
@@ -159,7 +159,7 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
                 className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium ${
                   active
                     ? 'border-blue-300 bg-blue-600 text-white'
-                    : 'border-[hsl(220_14%_89%)] bg-white text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]'
+                    : 'border-border bg-card text-foreground hover:bg-muted'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -184,17 +184,17 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
                 </p>
                 {overview.nextAction ? (
                   <>
-                    <p className="mt-1 font-semibold text-[hsl(220_14%_14%)]">
+                    <p className="mt-1 font-semibold text-foreground">
                       {overview.nextAction.kind === 'gate'
                         ? `批准门禁 ${overview.nextAction.entity.gateId}`
                         : `推进任务 ${overview.nextAction.entity.id}`}
                     </p>
-                    <p className="mt-0.5 text-sm text-[hsl(218_10%_42%)]">
+                    <p className="mt-0.5 text-sm text-muted-foreground">
                       {overview.nextAction.reason}
                     </p>
                   </>
                 ) : (
-                  <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     全部任务已完成，没有待办行动。
                   </p>
                 )}
@@ -215,18 +215,18 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
                   {overview.currentGate ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-[hsl(220_14%_14%)]">
+                        <p className="text-sm font-medium text-foreground">
                           {overview.currentGate.gateId} · {overview.currentGate.title}
                         </p>
                         <StatusBadge status={overview.currentGate.calculatedStatus} />
                       </div>
                       {overview.currentGate.conditions?.map((condition) => (
-                        <p key={condition} className="text-xs text-[hsl(218_10%_42%)]">
+                        <p key={condition} className="text-xs text-muted-foreground">
                           · {condition}
                         </p>
                       ))}
                       {overview.currentGate.approver && (
-                        <p className="text-xs text-[hsl(218_10%_42%)]">
+                        <p className="text-xs text-muted-foreground">
                           批准人：{overview.currentGate.approver}
                         </p>
                       )}
@@ -240,14 +240,14 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
               {sectionForPreset('blocked') && (
                 <SectionCard icon={AlertTriangle} title="阻塞交付" accent="red">
                   {overview.blockedItems.length > 0 ? (
-                    <ul className="divide-y divide-[hsl(220_14%_96%)]">
+                    <ul className="divide-y divide-muted">
                       {overview.blockedItems.slice(0, 6).map((item) => (
                         <li key={item.id} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                            <p className="truncate text-sm font-medium text-foreground">
                               {item.id} · {item.title}
                             </p>
-                            <p className="text-xs text-[hsl(218_10%_42%)]">Owner {item.owner}</p>
+                            <p className="text-xs text-muted-foreground">Owner {item.owner}</p>
                           </div>
                           <StatusBadge status={item.status} />
                         </li>
@@ -276,7 +276,7 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
               {sectionForPreset('evidence') && (
                 <SectionCard icon={FileClock} title="证据即将过期" accent="violet">
                   {overview.expiringEvidence.length > 0 ? (
-                    <ul className="divide-y divide-[hsl(220_14%_96%)]">
+                    <ul className="divide-y divide-muted">
                       {overview.expiringEvidence.map((entry) => {
                         const expired = Boolean(
                           entry.expiresAt && Date.parse(entry.expiresAt) <= Date.now(),
@@ -284,10 +284,10 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
                         return (
                           <li key={entry.evidenceId} className="flex items-start justify-between gap-3 py-2">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                              <p className="truncate text-sm font-medium text-foreground">
                                 {entry.title || entry.evidenceId}
                               </p>
-                              <p className="truncate text-xs text-[hsl(218_10%_42%)]">
+                              <p className="truncate text-xs text-muted-foreground">
                                 {entry.path} · {entry.commitSha ? entry.commitSha.slice(0, 8) : '—'}
                               </p>
                             </div>
@@ -313,10 +313,10 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
               {sectionForPreset('risk') && (
                 <SectionCard icon={ShieldAlert} title="待人类决策风险" accent="red">
                   {overview.needsHumanDecision.length > 0 ? (
-                    <ul className="divide-y divide-[hsl(220_14%_96%)]">
+                    <ul className="divide-y divide-muted">
                       {overview.needsHumanDecision.map((risk) => (
                         <li key={risk.id} className="flex items-start justify-between gap-3 py-2">
-                          <p className="min-w-0 text-sm font-medium text-[hsl(220_14%_14%)]">
+                          <p className="min-w-0 text-sm font-medium text-foreground">
                             {risk.title}
                           </p>
                           <span className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-800">
@@ -334,14 +334,14 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
               {sectionForPreset('overload') && (
                 <SectionCard icon={Users} title="人力 / Agent 过载" accent="sky">
                   {overview.overloaded.length > 0 ? (
-                    <ul className="divide-y divide-[hsl(220_14%_96%)]">
+                    <ul className="divide-y divide-muted">
                       {overview.overloaded.map((actor) => (
                         <li key={actor.actorId} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                            <p className="truncate text-sm font-medium text-foreground">
                               {actor.name} ({actor.actorId})
                             </p>
-                            <p className="text-xs text-[hsl(218_10%_42%)]">{actor.role}</p>
+                            <p className="text-xs text-muted-foreground">{actor.role}</p>
                           </div>
                           <span className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
                             {actor.load} 项
@@ -358,15 +358,15 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
               {sectionForPreset('conflict') && (
                 <SectionCard icon={Warehouse} title="资源冲突" accent="amber">
                   {overview.resourceConflicts.length > 0 ? (
-                    <ul className="divide-y divide-[hsl(220_14%_96%)]">
+                    <ul className="divide-y divide-muted">
                       {overview.resourceConflicts.map((resource) => (
                         <li key={resource.resourceId} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+                            <p className="truncate text-sm font-medium text-foreground">
                               {resource.name} ({resource.resourceId})
                             </p>
                             {resource.purpose && (
-                              <p className="truncate text-xs text-[hsl(218_10%_42%)]">
+                              <p className="truncate text-xs text-muted-foreground">
                                 {resource.purpose}
                               </p>
                             )}
@@ -383,7 +383,7 @@ const ExecutionOverview = ({ writable }: { writable: boolean }): React.ReactElem
             </div>
 
             {overview.criticalPath && (
-              <p className="text-xs text-[hsl(218_10%_42%)]">
+              <p className="text-xs text-muted-foreground">
                 关键路径：{overview.criticalPath}
               </p>
             )}
@@ -416,8 +416,8 @@ const StatTile = ({
     red: 'text-red-600',
   };
   return (
-    <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-      <p className="text-xs text-[hsl(218_10%_42%)]">{label}</p>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className={`mt-0.5 text-2xl font-semibold ${tones[tone]}`}>{value}</p>
     </div>
   );

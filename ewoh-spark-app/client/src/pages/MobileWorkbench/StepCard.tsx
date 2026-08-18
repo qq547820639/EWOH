@@ -71,26 +71,26 @@ export function StepCard(props: StepCardProps): React.ReactElement {
   };
 
   return (
-    <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_98%)] p-3">
+    <div className="rounded-lg border border-border bg-muted p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-[hsl(220_14%_14%)]">
+          <p className="truncate text-sm font-medium text-foreground">
             {step.stepNo}. {step.name}
           </p>
-          <p className="mt-0.5 font-mono text-xs text-[hsl(218_10%_42%)]">
+          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
             {step.stepId}
           </p>
         </div>
         <Badge variant="outline">{stepStatusLabel(step.status)}</Badge>
       </div>
       {step.instruction && (
-        <p className="mt-2 rounded bg-white p-2 text-xs text-[hsl(218_10%_42%)]">
-          <span className="font-semibold text-[hsl(220_14%_14%)]">SOP：</span>
+        <p className="mt-2 rounded bg-card p-2 text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground">SOP：</span>
           {step.instruction}
         </p>
       )}
       {(exception || quality) && (
-        <div className="mt-2 space-y-1 rounded bg-white p-2 text-xs text-[hsl(218_10%_42%)]">
+        <div className="mt-2 space-y-1 rounded bg-card p-2 text-xs text-muted-foreground">
           {exception && (exception.code || exception.note) && (
             <p>
               异常：
@@ -150,7 +150,7 @@ export function StepCard(props: StepCardProps): React.ReactElement {
         </div>
       )}
       {exceptionOpen && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-white p-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-card p-2">
           <Input
             value={exceptionNote}
             onChange={(event) => onExceptionNoteChange(event.target.value)}
@@ -166,7 +166,7 @@ export function StepCard(props: StepCardProps): React.ReactElement {
             aria-label="异常照片"
           />
           {exceptionFile && (
-            <span className="max-w-[140px] truncate text-[10px] text-[hsl(218_10%_42%)]">
+            <span className="max-w-[140px] truncate text-[10px] text-muted-foreground">
               {exceptionFile.name}
             </span>
           )}
@@ -176,7 +176,7 @@ export function StepCard(props: StepCardProps): React.ReactElement {
         </div>
       )}
       {qcOpen && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-white p-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-card p-2">
           <label htmlFor={`qc-result-${step.stepId}`} className="text-xs">
             结果
           </label>
@@ -190,7 +190,7 @@ export function StepCard(props: StepCardProps): React.ReactElement {
                   : (event.target.value as 'pass' | 'fail' | 'rework'),
               )
             }
-            className="min-h-12 rounded border border-[hsl(220_14%_89%)] bg-white px-2 text-xs"
+            className="min-h-12 rounded border border-border bg-card px-2 text-xs"
           >
             {QUALITY_RESULTS.map((result) => (
               <option key={result} value={result}>

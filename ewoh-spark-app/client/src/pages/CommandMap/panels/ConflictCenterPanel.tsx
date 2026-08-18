@@ -267,7 +267,7 @@ export function ConflictCenterPanel({
         <div className="flex items-center gap-1.5 text-xs text-white/80">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           调度冲突
-          <Badge className="ml-1 bg-white/10 text-white/80 border-white/20">
+          <Badge className="ml-1 bg-card/10 text-white/80 border-white/20">
             {total}
           </Badge>
         </div>
@@ -276,7 +276,7 @@ export function ConflictCenterPanel({
           aria-label="按类型过滤冲突"
           value={typeFilter ?? ''}
           onChange={(e) => setTypeFilter((e.target.value || undefined) as SchedulingConflictType | undefined)}
-          className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white/80 focus:outline-none focus:border-white/30"
+          className="bg-card/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white/80 focus:outline-none focus:border-white/30"
         >
           <option value="">全部类型</option>
           {(Object.keys(TYPE_META) as SchedulingConflictType[]).map((t) => (
@@ -360,7 +360,7 @@ export function ConflictCenterPanel({
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : c.conflictId)}
                     aria-expanded={isExpanded}
-                    className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+                    className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-card/5 transition-colors"
                   >
                     <Icon className="w-4 h-4 mt-0.5 text-white/60 shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -402,7 +402,7 @@ export function ConflictCenterPanel({
                                     size="sm"
                                     variant="outline"
                                     disabled={lifecycleMutation.isPending}
-                                    className="text-xs border-white/20 text-white/80 hover:bg-white/10"
+                                    className="text-xs border-white/20 text-white/80 hover:bg-card/10"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       runLifecycleAction(c, action);
@@ -436,7 +436,7 @@ export function ConflictCenterPanel({
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="text-xs border-white/20 text-white/80 hover:bg-white/10"
+                                className="text-xs border-white/20 text-white/80 hover:bg-card/10"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onReplan(c);
@@ -453,7 +453,7 @@ export function ConflictCenterPanel({
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="text-xs border-white/20 text-white/80 hover:bg-white/10"
+                                className="text-xs border-white/20 text-white/80 hover:bg-card/10"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onLocateEntity(c.resourceId);
@@ -503,7 +503,7 @@ export function ConflictCenterPanel({
               onChange={(e) => setLifecycleReason(e.target.value)}
               placeholder={`请输入${lifecycleTarget ? ACTION_LABEL[lifecycleTarget.action] : ''}原因...`}
               autoFocus
-              className="bg-white/5 border-white/10 text-white"
+              className="bg-card/5 border-white/10 text-white"
             />
           </div>
           <DialogFooter>

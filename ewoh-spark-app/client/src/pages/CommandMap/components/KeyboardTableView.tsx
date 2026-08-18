@@ -109,8 +109,8 @@ export function KeyboardTableView<T>({
                   }
                 }}
                 className={cn(
-                  'cursor-pointer border-b border-white/5 hover:bg-white/5 focus:bg-white/10 focus:outline-none',
-                  selected && 'bg-white/10',
+                  'cursor-pointer border-b border-white/5 hover:bg-card/5 focus:bg-card/10 focus:outline-none',
+                  selected && 'bg-card/10',
                 )}
               >
                 {columns.map((col) => (

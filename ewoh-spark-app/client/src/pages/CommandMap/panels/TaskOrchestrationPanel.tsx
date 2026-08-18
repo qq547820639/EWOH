@@ -250,7 +250,7 @@ const TaskOrchestrationPanel = ({
                   'ml-1 px-1 rounded text-[8px] leading-3',
                   n.taktSource === 'telemetry'
                     ? 'bg-cyan-500/20 text-cyan-300'
-                    : 'bg-white/10 text-white/50',
+                    : 'bg-card/10 text-white/50',
                 )}
                 title={n.taktSource === 'telemetry' ? '由工位实时遥测推算' : '使用默认节拍值'}
               >
@@ -291,18 +291,18 @@ const TaskOrchestrationPanel = ({
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0">
         <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
         <span className="text-xs font-medium text-white/80">任务编排</span>
-        <div className="w-px h-4 bg-white/10" />
+        <div className="w-px h-4 bg-card/10" />
         <Input
           value={orderId}
           onChange={(e) => setOrderId(e.target.value)}
           placeholder="工单ID"
-          className="h-6 w-32 text-[10px] bg-white/5 border-white/10 text-white"
+          className="h-6 w-32 text-[10px] bg-card/5 border-white/10 text-white"
         />
         <Input
           value={productCode}
           onChange={(e) => setProductCode(e.target.value)}
           placeholder="产品编码"
-          className="h-6 w-28 text-[10px] bg-white/5 border-white/10 text-white"
+          className="h-6 w-28 text-[10px] bg-card/5 border-white/10 text-white"
         />
         <Input
           type="number"
@@ -314,7 +314,7 @@ const TaskOrchestrationPanel = ({
             setQuantity(Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
           }}
           placeholder="数量"
-          className="h-6 w-20 text-[10px] bg-white/5 border-white/10 text-white"
+          className="h-6 w-20 text-[10px] bg-card/5 border-white/10 text-white"
         />
         <div className="flex-1" />
         {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
@@ -363,7 +363,7 @@ const TaskOrchestrationPanel = ({
               <div className="flex gap-1">
                 <button
                   type="button"
-                  className="p-1 rounded hover:bg-white/10"
+                  className="p-1 rounded hover:bg-card/10"
                   aria-label={UI_ARIA_LABELS.editProcess}
                   onClick={() => setEditor({ open: true, node: n })}
                 >
@@ -371,7 +371,7 @@ const TaskOrchestrationPanel = ({
                 </button>
                 <button
                   type="button"
-                  className="p-1 rounded hover:bg-white/10"
+                  className="p-1 rounded hover:bg-card/10"
                   aria-label={UI_ARIA_LABELS.deleteProcess}
                   onClick={() => handleDeleteNode(n.nodeId)}
                 >
@@ -452,7 +452,7 @@ const TaskOrchestrationPanel = ({
                 <div
                   key={node.nodeId}
                   className={cn(
-                    'group absolute rounded-lg border bg-white/5 p-2 cursor-pointer transition-colors',
+                    'group absolute rounded-lg border bg-card/5 p-2 cursor-pointer transition-colors',
                     isBottleneck
                       ? 'border-red-500/60 bg-red-500/10'
                       : isSelected
@@ -506,7 +506,7 @@ const TaskOrchestrationPanel = ({
                             'ml-auto px-1 rounded text-[8px] leading-3',
                             node.taktSource === 'telemetry'
                               ? 'bg-cyan-500/20 text-cyan-300'
-                              : 'bg-white/10 text-white/50',
+                              : 'bg-card/10 text-white/50',
                           )}
                           title={
                             node.taktSource === 'telemetry'
@@ -528,7 +528,7 @@ const TaskOrchestrationPanel = ({
 
                   <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                     <button
-                      className="p-0.5 rounded hover:bg-white/10"
+                      className="p-0.5 rounded hover:bg-card/10"
                       aria-label={UI_ARIA_LABELS.editProcess}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -538,7 +538,7 @@ const TaskOrchestrationPanel = ({
                       <Pencil className="w-2.5 h-2.5 text-white/60" />
                     </button>
                     <button
-                      className="p-0.5 rounded hover:bg-white/10"
+                      className="p-0.5 rounded hover:bg-card/10"
                       aria-label={UI_ARIA_LABELS.deleteProcess}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -606,7 +606,7 @@ const TaskOrchestrationPanel = ({
                     'flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border',
                     s.isBottleneck
                       ? 'bg-red-500/15 text-red-300 border-red-500/40'
-                      : 'bg-white/5 text-white/70 border-white/10',
+                      : 'bg-card/5 text-white/70 border-white/10',
                   )}
                 >
                   {s.isBottleneck ? (
@@ -621,7 +621,7 @@ const TaskOrchestrationPanel = ({
                       'px-1 rounded text-[8px] leading-3',
                       s.taktSource === 'telemetry'
                         ? 'bg-cyan-500/20 text-cyan-300'
-                        : 'bg-white/10 text-white/50',
+                        : 'bg-card/10 text-white/50',
                     )}
                     title={
                       s.taktSource === 'telemetry' ? '由工位实时遥测推算' : '使用默认节拍值'
@@ -710,7 +710,7 @@ function NodeEditor({
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-7 text-xs bg-white/5 border-white/10 text-white"
+            className="h-7 text-xs bg-card/5 border-white/10 text-white"
           />
         </div>
         <div>
@@ -724,7 +724,7 @@ function NodeEditor({
               const n = Number(e.target.value);
               setOrder(Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1);
             }}
-            className="h-7 text-xs bg-white/5 border-white/10 text-white"
+            className="h-7 text-xs bg-card/5 border-white/10 text-white"
           />
         </div>
         <div>
@@ -732,7 +732,7 @@ function NodeEditor({
           <select
             value={workstationId}
             onChange={(e) => setWorkstationId(e.target.value)}
-            className="h-7 w-full text-xs bg-white/5 border border-white/10 rounded-md text-white px-2"
+            className="h-7 w-full text-xs bg-card/5 border border-white/10 rounded-md text-white px-2"
           >
             <option value="">未分配</option>
             {workstations.map((w) => (
@@ -747,7 +747,7 @@ function NodeEditor({
           <select
             value={personId}
             onChange={(e) => setPersonId(e.target.value)}
-            className="h-7 w-full text-xs bg-white/5 border border-white/10 rounded-md text-white px-2"
+            className="h-7 w-full text-xs bg-card/5 border border-white/10 rounded-md text-white px-2"
           >
             <option value="">未分配</option>
             {persons.map((p) => (
@@ -768,14 +768,14 @@ function NodeEditor({
               const n = Number(e.target.value);
               setTakt(Number.isFinite(n) && n >= 0 ? n : 0);
             }}
-            className="h-7 text-xs bg-white/5 border-white/10 text-white"
+            className="h-7 text-xs bg-card/5 border-white/10 text-white"
           />
         </div>
       </div>
 
       <div>
         <label className="text-[10px] text-white/70">前置工序依赖</label>
-        <div className="mt-1 max-h-24 overflow-y-auto rounded-md border border-white/10 bg-white/5 p-1.5 space-y-1">
+        <div className="mt-1 max-h-24 overflow-y-auto rounded-md border border-white/10 bg-card/5 p-1.5 space-y-1">
           {candidateDeps.length === 0 ? (
             <div className="text-[10px] text-white/60">无可用前置工序</div>
           ) : (

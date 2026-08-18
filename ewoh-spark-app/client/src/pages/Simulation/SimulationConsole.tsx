@@ -32,13 +32,13 @@ const KIND_ORDER = ['what_if', 'capacity', 'layout', 'material_flow'] as const;
 function ResultPanel({ run }: { run: SimulationRun }): React.ReactElement {
   const summary = run.results ? buildResultSummary(run.kind, run.results) : [];
   return (
-    <div className="mt-4 rounded-lg border border-[hsl(220_14%_89%)] bg-[hsl(220_14%_97%)] p-4" data-testid="simulation-result">
+    <div className="mt-4 rounded-lg border border-border bg-muted p-4" data-testid="simulation-result">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[hsl(220_14%_14%)]">{run.runId}</span>
+        <span className="text-sm font-semibold text-foreground">{run.runId}</span>
         <span className={cn('text-xs', TONE_TEXT[run.status === 'failed' ? 'negative' : run.status === 'completed' ? 'positive' : 'neutral'])}>
           {SIMULATION_STATUS_LABELS[run.status] ?? run.status}
         </span>
-        <span className="text-xs text-[hsl(218_10%_42%)]">引擎 {run.engineVersion}</span>
+        <span className="text-xs text-muted-foreground">引擎 {run.engineVersion}</span>
       </div>
       {run.status === 'failed' && run.failureReason && (
         <div className="mt-2 flex items-start gap-1.5 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
@@ -50,13 +50,13 @@ function ResultPanel({ run }: { run: SimulationRun }): React.ReactElement {
         <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
           {summary.map((row) => (
             <div key={row.label} className="text-sm">
-              <dt className="text-xs text-[hsl(218_10%_42%)]">{row.label}</dt>
+              <dt className="text-xs text-muted-foreground">{row.label}</dt>
               <dd className={cn('font-medium tabular-nums', TONE_TEXT[row.tone])}>{row.value}</dd>
             </div>
           ))}
         </dl>
       )}
-      <div className="mt-2 text-xs text-[hsl(218_10%_42%)]">
+      <div className="mt-2 text-xs text-muted-foreground">
         基准快照 v{typeof run.baseRef?.snapshotVersion === 'number' ? run.baseRef.snapshotVersion : '—'}
         {typeof run.baseRef?.scenarioId === 'string' && run.baseRef.scenarioId !== '' ? ` · 场景 ${run.baseRef.scenarioId}` : ''}
         {' · '}isSimulation={String(run.isSimulation)}
@@ -136,8 +136,8 @@ const SimulationConsole = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">仿真推演</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+        <h1 className="text-2xl font-bold text-foreground">仿真推演</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           L6 确定性仿真（What-if / 产能 / 布局 / 物料流）：结果落权威台账并显式标记
           isSimulation，绝不写生产世界状态（ADR-025 / §13）。
         </p>
@@ -145,17 +145,17 @@ const SimulationConsole = (): React.ReactElement => {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
         {/* 运行面板 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
-          <h2 className="flex items-center gap-1.5 font-semibold text-[hsl(220_14%_14%)]">
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="flex items-center gap-1.5 font-semibold text-foreground">
             <FlaskConical className="size-4" /> 新建仿真运行
           </h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="font-medium text-[hsl(220_14%_14%)]">评估类型</span>
+              <span className="font-medium text-foreground">评估类型</span>
               <select
                 value={kind}
                 onChange={(event) => onKindChange(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-[hsl(220_14%_89%)] bg-white p-2 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+                className="mt-1 w-full rounded-lg border border-border bg-card p-2 text-sm outline-none focus:border-primary"
                 aria-label="评估类型"
               >
                 {KIND_ORDER.map((k) => (
@@ -166,35 +166,35 @@ const SimulationConsole = (): React.ReactElement => {
               </select>
             </label>
             <label className="block text-sm">
-              <span className="font-medium text-[hsl(220_14%_14%)]">基准快照版本</span>
+              <span className="font-medium text-foreground">基准快照版本</span>
               <input
                 type="number"
                 min={0}
                 step={1}
                 value={snapshotVersion}
                 onChange={(event) => setSnapshotVersion(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-[hsl(220_14%_89%)] p-2 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+                className="mt-1 w-full rounded-lg border border-border p-2 text-sm outline-none focus:border-primary"
                 aria-label="基准快照版本"
               />
             </label>
             <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-[hsl(220_14%_14%)]">场景标识（可选）</span>
+              <span className="font-medium text-foreground">场景标识（可选）</span>
               <input
                 type="text"
                 value={scenarioId}
                 onChange={(event) => setScenarioId(event.target.value)}
                 placeholder="如 shift-b-what-if"
-                className="mt-1 w-full rounded-lg border border-[hsl(220_14%_89%)] p-2 text-sm outline-none focus:border-[hsl(221_83%_53%)]"
+                className="mt-1 w-full rounded-lg border border-border p-2 text-sm outline-none focus:border-primary"
                 aria-label="场景标识"
               />
             </label>
             <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-[hsl(220_14%_14%)]">评估参数（JSON，示例可改写）</span>
+              <span className="font-medium text-foreground">评估参数（JSON，示例可改写）</span>
               <textarea
                 value={parametersText}
                 onChange={(event) => setParametersText(event.target.value)}
                 disabled={runMutation.isPending}
-                className="mt-1 min-h-40 w-full rounded-lg border border-[hsl(220_14%_89%)] p-3 font-mono text-xs outline-none focus:border-[hsl(221_83%_53%)] disabled:opacity-60"
+                className="mt-1 min-h-40 w-full rounded-lg border border-border p-3 font-mono text-xs outline-none focus:border-primary disabled:opacity-60"
                 aria-label="评估参数"
               />
             </label>
@@ -224,10 +224,10 @@ const SimulationConsole = (): React.ReactElement => {
         </section>
 
         {/* 运行台账 */}
-        <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5">
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">运行台账（本租户）</h2>
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-semibold text-foreground">运行台账（本租户）</h2>
           {runsQuery.isLoading && (
-            <p className="mt-3 text-sm text-[hsl(218_10%_42%)]">台账加载中…</p>
+            <p className="mt-3 text-sm text-muted-foreground">台账加载中…</p>
           )}
           {runsQuery.isError && (
             <div className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -242,7 +242,7 @@ const SimulationConsole = (): React.ReactElement => {
             </div>
           )}
           {!runsQuery.isLoading && !runsQuery.isError && rows.length === 0 && (
-            <p className="mt-3 text-sm text-[hsl(218_10%_42%)]">暂无仿真运行记录</p>
+            <p className="mt-3 text-sm text-muted-foreground">暂无仿真运行记录</p>
           )}
           <SimulationRunList
             rows={rows}
@@ -251,11 +251,11 @@ const SimulationConsole = (): React.ReactElement => {
           />
           {selectedRun && (
             <div className="mt-4">
-              <h3 className="text-sm font-semibold text-[hsl(220_14%_14%)]">运行详情</h3>
+              <h3 className="text-sm font-semibold text-foreground">运行详情</h3>
               <ResultPanel run={selectedRun} />
-              <details className="mt-2 text-xs text-[hsl(218_10%_42%)]">
+              <details className="mt-2 text-xs text-muted-foreground">
                 <summary className="cursor-pointer">查看原始参数</summary>
-                <pre className="mt-1 overflow-auto rounded bg-[hsl(220_14%_97%)] p-2 font-mono">
+                <pre className="mt-1 overflow-auto rounded bg-muted p-2 font-mono">
                   {JSON.stringify(selectedRun.parameters ?? {}, null, 2)}
                 </pre>
               </details>

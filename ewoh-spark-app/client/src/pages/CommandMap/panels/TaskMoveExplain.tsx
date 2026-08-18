@@ -47,13 +47,13 @@ export function TaskMoveExplain({
 }: TaskMoveExplainProps): React.ReactElement {
   if (!vm) {
     return (
-      <div className={`rounded-md border border-white/10 bg-white/5 px-2 py-2 text-[10px] text-white/50 ${className}`}>
+      <div className={`rounded-md border border-white/10 bg-card/5 px-2 py-2 text-[10px] text-white/50 ${className}`}>
         无任务移动 diff 数据（选择已被重排/对比过的任务后可查看原因链）。
       </div>
     );
   }
   return (
-    <div className={`space-y-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-2 ${className}`}>
+    <div className={`space-y-1.5 rounded-md border border-white/10 bg-card/5 px-2 py-2 ${className}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
         <span className="font-semibold text-white/90">{vm.taskId ?? '任务'}</span>
         <span className="text-white/40">Old:</span>

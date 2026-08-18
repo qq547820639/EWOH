@@ -76,12 +76,12 @@ const SECTION_TONE_CLASS: Record<string, string> = {
 
 const ACTION_META: Array<{ id: DecisionActionId; label: string; icon: LucideIcon; cls?: string }> = [
   { id: 'accept', label: '确认处置', icon: Check, cls: 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10' },
-  { id: 'compare', label: '方案对比', icon: GitCompareArrows, cls: 'text-white/80 border-white/15 hover:bg-white/10' },
+  { id: 'compare', label: '方案对比', icon: GitCompareArrows, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
   { id: 'override', label: '人工覆盖', icon: SlidersHorizontal, cls: 'text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/10' },
-  { id: 'lock', label: '锁定分配', icon: Lock, cls: 'text-white/80 border-white/15 hover:bg-white/10' },
-  { id: 'exclude', label: '排除资源', icon: Ban, cls: 'text-white/80 border-white/15 hover:bg-white/10' },
-  { id: 'locate', label: '定位', icon: MapPin, cls: 'text-white/80 border-white/15 hover:bg-white/10' },
-  { id: 'undo', label: '清除上下文', icon: Undo2, cls: 'text-white/60 border-white/10 hover:bg-white/10' },
+  { id: 'lock', label: '锁定分配', icon: Lock, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
+  { id: 'exclude', label: '排除资源', icon: Ban, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
+  { id: 'locate', label: '定位', icon: MapPin, cls: 'text-white/80 border-white/15 hover:bg-card/10' },
+  { id: 'undo', label: '清除上下文', icon: Undo2, cls: 'text-white/60 border-white/10 hover:bg-card/10' },
 ];
 
 function isOpenConflict(conflict: { status?: string | null } | null): boolean {
@@ -310,8 +310,8 @@ export function DecisionCockpit({
     <div className="h-full overflow-y-auto p-3 text-white">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-xs font-semibold text-white">决策驾驶舱</span>
-        {taskId && <Badge className="border-white/10 bg-white/5 text-[9px] text-white/70">{taskId}</Badge>}
-        <Badge className="border-white/10 bg-white/5 text-[9px] text-white/50">
+        {taskId && <Badge className="border-white/10 bg-card/5 text-[9px] text-white/70">{taskId}</Badge>}
+        <Badge className="border-white/10 bg-card/5 text-[9px] text-white/50">
           {ctl.decisionContext.source ?? 'plan'}
         </Badge>
         <div className="flex-1" />
@@ -335,7 +335,7 @@ export function DecisionCockpit({
           {visibleSections.map((section) => (
             <div
               key={section.id}
-              className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+              className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5"
               data-section={section.id}
             >
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
@@ -367,7 +367,7 @@ export function DecisionCockpit({
           {/* 调度反馈（Phase 4 执行反馈闭环）：真实消费 /api/scheduler/executions，
               派工后展示执行进度与偏差；空态如实说明而非静默透传 null。 */}
           <div
-            className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+            className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5"
             data-section="SCHEDULING_FEEDBACK"
           >
             <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/60">
@@ -424,7 +424,7 @@ export function DecisionCockpit({
 
           {/* ACTIONS：复用 CommandMap 既有行为 */}
           {availableActions.length > 0 && (
-            <div className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5">
+            <div className="rounded-md border border-white/10 bg-card/5 px-2 py-1.5">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
                 操作
               </div>
@@ -436,7 +436,7 @@ export function DecisionCockpit({
                     onClick={() => handleAction(a.id)}
                     className={cn(
                       'flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-[10px] transition-colors',
-                      a.cls ?? 'text-white/80 border-white/15 hover:bg-white/10',
+                      a.cls ?? 'text-white/80 border-white/15 hover:bg-card/10',
                     )}
                   >
                     <a.icon className="h-3 w-3" />

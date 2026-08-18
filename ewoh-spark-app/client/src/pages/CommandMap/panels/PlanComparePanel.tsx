@@ -57,7 +57,7 @@ function ModeTabs({
           className={`flex-1 px-2 py-1 text-[10px] font-medium transition-colors ${
             mode === m
               ? 'bg-cyan-500/25 text-cyan-300'
-              : 'text-white/50 hover:bg-white/5'
+              : 'text-white/50 hover:bg-card/5'
           }`}
         >
           {MODE_LABEL[m]}
@@ -198,9 +198,9 @@ export function PlanComparePanel({
       {result && (
         <div className="space-y-1.5">
           <div className="flex items-center gap-1 text-[9px] text-white/50">
-            <span className="rounded bg-white/10 px-1 py-0.5">{result.baselinePlanId.slice(-8)}</span>
+            <span className="rounded bg-card/10 px-1 py-0.5">{result.baselinePlanId.slice(-8)}</span>
             <span>→</span>
-            <span className="rounded bg-white/10 px-1 py-0.5">{result.candidatePlanId.slice(-8)}</span>
+            <span className="rounded bg-card/10 px-1 py-0.5">{result.candidatePlanId.slice(-8)}</span>
           </div>
           {/* 变更摘要 */}
           <div className="grid grid-cols-3 gap-1 text-center">
@@ -233,13 +233,13 @@ export function PlanComparePanel({
                 className={`flex w-full items-center justify-between rounded border px-1.5 py-1 text-left ${
                   ui.focusedTaskId === d.taskId
                     ? 'border-cyan-500/40 bg-cyan-500/10'
-                    : 'border-white/10 bg-white/5 hover:bg-white/10'
+                    : 'border-white/10 bg-card/5 hover:bg-card/10'
                 }`}
               >
                 <span className="truncate text-[10px] text-white/80">{d.taskId}</span>
                 <span className="ml-1 flex flex-wrap gap-0.5">
                   {d.changeTypes.slice(0, 3).map((ct) => (
-                    <span key={ct} className="rounded bg-white/10 px-1 text-[7.5px] text-white/60">
+                    <span key={ct} className="rounded bg-card/10 px-1 text-[7.5px] text-white/60">
                       {CHANGE_LABEL[ct] ?? ct}
                     </span>
                   ))}

@@ -63,7 +63,7 @@ const ModePanel = ({
               aria-label={`切换到${m.name}模式`}
               className={cn(
                 'relative w-full flex items-start gap-2 px-2.5 py-2 rounded-md text-left transition-colors',
-                active ? 'bg-white/10' : 'hover:bg-white/5',
+                active ? 'bg-card/10' : 'hover:bg-card/5',
               )}
             >
               {active && (
@@ -107,7 +107,7 @@ const ModePanel = ({
                 'flex-1 py-1.5 rounded-md text-xs font-medium transition-colors',
                 level === l
                   ? 'bg-semantic-info text-white'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10',
+                  : 'bg-card/5 text-white/60 hover:bg-card/10',
               )}
             >
               {l}

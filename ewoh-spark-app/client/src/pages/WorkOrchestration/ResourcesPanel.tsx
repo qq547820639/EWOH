@@ -86,12 +86,12 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
       loadingMessage="正在读取资源与锁"
       updatedAt={resourcesQuery.dataUpdatedAt}
     >
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <Database className="h-4 w-4 text-violet-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">资源与锁</h2>
+          <h2 className="font-semibold text-foreground">资源与锁</h2>
           {resources.length > 0 && (
-            <span className="ml-auto text-xs text-[hsl(218_10%_42%)]">
+            <span className="ml-auto text-xs text-muted-foreground">
               共 {resources.length} 条 · 虚拟化渲染 {renderedCount} 行
             </span>
           )}
@@ -101,15 +101,15 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
                 value={resourceId}
                 onChange={(event) => setResourceId(event.target.value)}
                 placeholder="资源 ID"
-                className="h-9 w-48 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-48 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
               <input
                 value={lockPurpose}
                 onChange={(event) => setLockPurpose(event.target.value)}
                 placeholder="占用目的"
-                className="h-9 w-48 rounded-lg border border-[hsl(220_14%_89%)] px-3 text-sm outline-none focus:border-blue-500"
+                className="h-9 w-48 rounded-lg border border-border px-3 text-sm outline-none focus:border-blue-500"
               />
-              <label className="flex items-center gap-2 text-xs text-[hsl(218_10%_42%)]">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={confirmLock}
@@ -137,7 +137,7 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
           data-testid="resources-virtual-scroll"
         >
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="sticky top-0 z-10 border-b border-[hsl(220_14%_89%)] bg-white text-xs text-[hsl(218_10%_42%)]">
+            <thead className="sticky top-0 z-10 border-b border-border bg-card text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">资源</th>
                 <th className="px-5 py-3 font-medium">类型</th>
@@ -147,15 +147,15 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
                 <th className="px-5 py-3 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {range.start > 0 && (
                 <tr aria-hidden style={{ height: range.offsetY }} />
               )}
               {visibleRows.map((resource) => (
-                <tr key={resource.resourceId} className="hover:bg-[hsl(220_14%_96%)]">
+                <tr key={resource.resourceId} className="hover:bg-muted">
                   <td className="px-5 py-3">
-                    <div className="font-medium text-[hsl(220_14%_14%)]">{resource.name}</div>
-                    <div className="font-mono text-xs text-[hsl(218_10%_42%)]">
+                    <div className="font-medium text-foreground">{resource.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">
                       {resource.resourceId}
                     </div>
                   </td>
@@ -167,7 +167,7 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
                   <td className="px-5 py-3 text-xs">
                     {resource.lock ? formatTime(resource.lock.acquiredAt) : '—'}
                     {resource.lock?.expiresAt && (
-                      <div className="mt-0.5 text-[10px] text-[hsl(218_10%_42%)]">
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">
                         剩余 {formatLockRemaining(resource.lock.expiresAt)}
                       </div>
                     )}
@@ -179,13 +179,13 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
                           type="button"
                           disabled={releaseMutation.isPending}
                           onClick={() => setPendingRelease(resource.resourceId)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1.5 text-xs font-medium text-[hsl(220_14%_14%)] disabled:opacity-40"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-40"
                         >
                           <Unlock className="h-3.5 w-3.5" />
                           释放
                         </button>
                       ) : (
-                        <span className="text-xs text-[hsl(218_10%_42%)]">空闲</span>
+                        <span className="text-xs text-muted-foreground">空闲</span>
                       ))}
                   </td>
                 </tr>

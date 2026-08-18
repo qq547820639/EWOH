@@ -125,14 +125,14 @@ function Field({
   placeholder?: string;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+    <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
       {label}
       <input
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 min-w-0 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm text-[hsl(220_14%_14%)] outline-none focus:border-[hsl(221_83%_53%)]"
+        className="h-9 min-w-0 rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
       />
     </label>
   );
@@ -454,8 +454,8 @@ const Operations = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">运营管理</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">运营管理</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             维保、工装、工作中心配置与人员效率。
           </p>
         </div>
@@ -465,7 +465,7 @@ const Operations = (): React.ReactElement => {
             onClick={refreshCurrentTab}
             title="刷新当前 Tab 数据"
             aria-label="刷新当前 Tab 数据"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm font-medium text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground hover:bg-muted"
           >
             <RotateCcw className="size-4" aria-hidden />
             刷新
@@ -476,12 +476,12 @@ const Operations = (): React.ReactElement => {
             return (
               <div
                 key={metric.label}
-                className="flex min-w-[120px] items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 py-2"
+                className="flex min-w-[120px] items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
               >
-                <Icon className="h-4 w-4 text-[hsl(221_83%_53%)]" />
+                <Icon className="h-4 w-4 text-primary" />
                 <div>
-                  <p className="text-xs text-[hsl(218_10%_42%)]">{metric.label}</p>
-                  <p className="text-base font-bold text-[hsl(220_14%_14%)]">
+                  <p className="text-xs text-muted-foreground">{metric.label}</p>
+                  <p className="text-base font-bold text-foreground">
                     {metric.value}
                   </p>
                 </div>
@@ -492,7 +492,7 @@ const Operations = (): React.ReactElement => {
         </div>
       </header>
 
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white p-1">
+      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1">
         {TABS.map((item) => (
           <button
             key={item}
@@ -500,8 +500,8 @@ const Operations = (): React.ReactElement => {
             onClick={() => setTab(item)}
             className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               tab === item
-                ? 'bg-[hsl(221_83%_53%)] text-white'
-                : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)]'
+                ? 'bg-primary text-white'
+                : 'text-muted-foreground hover:bg-muted'
             }`}
           >
             {item}
@@ -527,32 +527,32 @@ const Operations = (): React.ReactElement => {
                 ['工作中心', summary?.workCenterCount ?? 0],
                 ['标准工时', summary?.standardHourCount ?? 0],
               ].map(([label, value]) => (
-                <div key={String(label)} className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-                  <p className="text-xs text-[hsl(218_10%_42%)]">{label}</p>
-                  <p className="mt-1 text-2xl font-bold text-[hsl(220_14%_14%)]">{value}</p>
+                <div key={String(label)} className="rounded-lg border border-border bg-card p-4">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{value}</p>
                 </div>
               ))}
             </div>
           </QueryState>
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[hsl(220_14%_14%)]">
-              <ClipboardList className="h-4 w-4 text-[hsl(221_83%_53%)]" />
+          <div className="rounded-lg border border-border bg-card p-4">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <ClipboardList className="h-4 w-4 text-primary" />
               临近维保
             </h2>
             <div className="mt-3 space-y-2">
               {(summary?.nextMaintenanceDue ?? []).map((item) => (
                 <div
                   key={item.assetId}
-                  className="flex items-center justify-between gap-3 rounded-md bg-[hsl(220_14%_96%)] px-3 py-2 text-sm"
+                  className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm"
                 >
                   <span className="min-w-0 truncate font-medium">{item.name}</span>
-                  <span className="shrink-0 text-xs text-[hsl(218_10%_42%)]">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     {formatTime(item.nextDueAt)}
                   </span>
                 </div>
               ))}
               {(summary?.nextMaintenanceDue ?? []).length === 0 && (
-                <p className="text-sm text-[hsl(218_10%_42%)]">暂无临近维保</p>
+                <p className="text-sm text-muted-foreground">暂无临近维保</p>
               )}
             </div>
           </div>
@@ -561,7 +561,7 @@ const Operations = (): React.ReactElement => {
 
       {tab === '维保资产' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
               onSubmit={(event) => {
@@ -570,12 +570,12 @@ const Operations = (): React.ReactElement => {
               }}
             >
               <Field label="资产名称" value={assetName} onChange={setAssetName} placeholder="CNC-01" />
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 分类
                 <select
                   value={assetCategory}
                   onChange={(event) => setAssetCategory(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="device">设备</option>
                   <option value="tooling">工装</option>
@@ -600,9 +600,9 @@ const Operations = (): React.ReactElement => {
             onRefresh={() => assetsQuery.refetch()}
             emptyMessage="暂无维保资产"
           >
-            <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">资产</th>
                     <th className="px-4 py-3 font-medium">分类</th>
@@ -613,14 +613,14 @@ const Operations = (): React.ReactElement => {
                 </thead>
                 <tbody>
                   {assets.map((asset) => (
-                    <tr key={asset.assetId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <tr key={asset.assetId} className="border-b border-muted last:border-0">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-[hsl(220_14%_14%)]">{asset.name}</p>
-                        <p className="text-xs text-[hsl(218_10%_42%)]">{asset.assetId}</p>
+                        <p className="font-medium text-foreground">{asset.name}</p>
+                        <p className="text-xs text-muted-foreground">{asset.assetId}</p>
                       </td>
-                      <td className="px-4 py-3 text-[hsl(218_10%_42%)]">{asset.category}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{asset.category}</td>
                       <td className="px-4 py-3">
-                        <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs">
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs">
                           {asset.status}
                         </span>
                       </td>
@@ -665,7 +665,7 @@ const Operations = (): React.ReactElement => {
 
       {tab === '维保任务' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
               onSubmit={(event) => {
@@ -674,12 +674,12 @@ const Operations = (): React.ReactElement => {
               }}
             >
               <Field label="任务标题" value={taskTitle} onChange={setTaskTitle} />
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 资产
                 <select
                   value={taskAsset}
                   onChange={(event) => setTaskAsset(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="">未绑定</option>
                   {assets.map((asset) => (
@@ -689,12 +689,12 @@ const Operations = (): React.ReactElement => {
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 类型
                 <select
                   value={taskType}
                   onChange={(event) => setTaskType(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="inspection">点检</option>
                   <option value="preventive">保养</option>
@@ -702,12 +702,12 @@ const Operations = (): React.ReactElement => {
                   <option value="calibration">校准</option>
                 </select>
               </label>
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 优先级
                 <select
                   value={taskPriority}
                   onChange={(event) => setTaskPriority(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="low">低</option>
                   <option value="medium">中</option>
@@ -730,9 +730,9 @@ const Operations = (): React.ReactElement => {
             onRefresh={() => tasksQuery.refetch()}
             emptyMessage="暂无维保任务"
           >
-            <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">任务</th>
                     <th className="px-4 py-3 font-medium">类型</th>
@@ -743,12 +743,12 @@ const Operations = (): React.ReactElement => {
                 </thead>
                 <tbody>
                   {tasks.map((task) => (
-                    <tr key={task.taskId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <tr key={task.taskId} className="border-b border-muted last:border-0">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-[hsl(220_14%_14%)]">{task.title}</p>
-                        <p className="text-xs text-[hsl(218_10%_42%)]">{task.taskId}</p>
+                        <p className="font-medium text-foreground">{task.title}</p>
+                        <p className="text-xs text-muted-foreground">{task.taskId}</p>
                       </td>
-                      <td className="px-4 py-3 text-[hsl(218_10%_42%)]">{task.taskType}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{task.taskType}</td>
                       <td className="px-4 py-3">{task.status}</td>
                       <td className="px-4 py-3 text-xs">{task.result ?? '—'}</td>
                       <td className="px-4 py-3">
@@ -770,7 +770,7 @@ const Operations = (): React.ReactElement => {
                                   }))
                                 }
                                 placeholder="结果"
-                                className="h-8 w-28 rounded-md border border-[hsl(220_14%_89%)] px-2 text-xs"
+                                className="h-8 w-28 rounded-md border border-border px-2 text-xs"
                               />
                               <ActionButton
                                 tone="success"
@@ -806,7 +806,7 @@ const Operations = (): React.ReactElement => {
 
       {tab === '工装校验' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
               onSubmit={(event) => {
@@ -815,12 +815,12 @@ const Operations = (): React.ReactElement => {
               }}
             >
               <Field label="工装名称" value={toolName} onChange={setToolName} />
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 分类
                 <select
                   value={toolCategory}
                   onChange={(event) => setToolCategory(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="tooling">工装</option>
                   <option value="fixture">夹具</option>
@@ -844,9 +844,9 @@ const Operations = (): React.ReactElement => {
             onRefresh={() => toolsQuery.refetch()}
             emptyMessage="暂无工装记录"
           >
-            <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">工装</th>
                     <th className="px-4 py-3 font-medium">状态</th>
@@ -857,10 +857,10 @@ const Operations = (): React.ReactElement => {
                 </thead>
                 <tbody>
                   {tools.map((tool) => (
-                    <tr key={tool.toolId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <tr key={tool.toolId} className="border-b border-muted last:border-0">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-[hsl(220_14%_14%)]">{tool.name}</p>
-                        <p className="text-xs text-[hsl(218_10%_42%)]">{tool.toolId}</p>
+                        <p className="font-medium text-foreground">{tool.name}</p>
+                        <p className="text-xs text-muted-foreground">{tool.toolId}</p>
                       </td>
                       <td className="px-4 py-3">{tool.status}</td>
                       <td className="px-4 py-3 text-xs">{formatTime(tool.lastCalibratedAt)}</td>
@@ -897,7 +897,7 @@ const Operations = (): React.ReactElement => {
 
       {tab === '工作中心' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
               onSubmit={(event) => {
@@ -922,7 +922,7 @@ const Operations = (): React.ReactElement => {
             </form>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {flagLabels.map((flag) => (
-                <label key={flag.key} className="flex items-center gap-2 rounded-md bg-[hsl(220_14%_96%)] px-3 py-2 text-sm">
+                <label key={flag.key} className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
                   <input
                     type="checkbox"
                     checked={wcFlags[flag.key]}
@@ -946,15 +946,15 @@ const Operations = (): React.ReactElement => {
           >
             <div className="grid gap-3 lg:grid-cols-2">
               {workCenters.map((workCenter) => (
-                <div key={workCenter.workCenterId} className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+                <div key={workCenter.workCenterId} className="rounded-lg border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold text-[hsl(220_14%_14%)]">{workCenter.name}</h3>
-                      <p className="mt-0.5 text-xs text-[hsl(218_10%_42%)]">
+                      <h3 className="font-semibold text-foreground">{workCenter.name}</h3>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {workCenter.location ?? '未指定位置'} · {workCenter.workCenterId}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[hsl(220_14%_96%)] px-2 py-1 text-xs">
+                    <span className="rounded-full bg-muted px-2 py-1 text-xs">
                       {workCenter.capabilities.join(' / ') || '—'}
                     </span>
                   </div>
@@ -976,7 +976,7 @@ const Operations = (): React.ReactElement => {
 
       {tab === '标准工时' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
               onSubmit={(event) => {
@@ -984,12 +984,12 @@ const Operations = (): React.ReactElement => {
                 addStandardHour.mutate();
               }}
             >
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 工作中心
                 <select
                   value={shWorkCenter}
                   onChange={(event) => setShWorkCenter(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="">选择</option>
                   {workCenters.map((workCenter) => (
@@ -1021,9 +1021,9 @@ const Operations = (): React.ReactElement => {
             onRefresh={() => standardHoursQuery.refetch()}
             emptyMessage="暂无标准工时"
           >
-            <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">工作中心</th>
                     <th className="px-4 py-3 font-medium">工序</th>
@@ -1034,12 +1034,12 @@ const Operations = (): React.ReactElement => {
                 </thead>
                 <tbody>
                   {standardHours.map((hour) => (
-                    <tr key={hour.standardHourId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <tr key={hour.standardHourId} className="border-b border-muted last:border-0">
                       <td className="px-4 py-3">{hour.workCenterId}</td>
                       <td className="px-4 py-3 font-mono text-xs">{hour.operationCode}</td>
                       <td className="px-4 py-3">{hour.operationName}</td>
                       <td className="px-4 py-3 font-bold">{hour.standardMinutes}</td>
-                      <td className="px-4 py-3 text-[hsl(218_10%_42%)]">{hour.skillLevel}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{hour.skillLevel}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1052,20 +1052,20 @@ const Operations = (): React.ReactElement => {
       {tab === '人员效率' && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-              <p className="text-xs text-[hsl(218_10%_42%)]">记录数</p>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="text-xs text-muted-foreground">记录数</p>
               <p className="mt-1 text-2xl font-bold">{efficiencySummary?.entryCount ?? 0}</p>
             </div>
-            <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-              <p className="text-xs text-[hsl(218_10%_42%)]">人员数</p>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="text-xs text-muted-foreground">人员数</p>
               <p className="mt-1 text-2xl font-bold">{efficiencySummary?.workerCount ?? 0}</p>
             </div>
-            <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
-              <p className="text-xs text-[hsl(218_10%_42%)]">公平性标准差</p>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="text-xs text-muted-foreground">公平性标准差</p>
               <p className="mt-1 text-2xl font-bold">{efficiencySummary?.fairnessStdDev ?? 0}</p>
             </div>
           </div>
-          <div className="rounded-lg border border-[hsl(220_14%_89%)] bg-white p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <form
               className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"
               onSubmit={(event) => {
@@ -1074,12 +1074,12 @@ const Operations = (): React.ReactElement => {
               }}
             >
               <Field label="人员 ID" value={efWorker} onChange={setEfWorker} />
-              <label className="flex flex-col gap-1.5 text-xs font-medium text-[hsl(218_10%_42%)]">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
                 工作中心
                 <select
                   value={efWorkCenter}
                   onChange={(event) => setEfWorkCenter(event.target.value)}
-                  className="h-9 rounded-md border border-[hsl(220_14%_89%)] bg-white px-3 text-sm"
+                  className="h-9 rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="">选择</option>
                   {workCenters.map((workCenter) => (
@@ -1111,9 +1111,9 @@ const Operations = (): React.ReactElement => {
             onRefresh={() => efficiencyQuery.refetch()}
             emptyMessage="暂无效率记录"
           >
-            <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+                <thead className="border-b border-border text-xs text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">人员</th>
                     <th className="px-4 py-3 font-medium">工序</th>
@@ -1125,7 +1125,7 @@ const Operations = (): React.ReactElement => {
                 </thead>
                 <tbody>
                   {efficiency.map((entry) => (
-                    <tr key={entry.entryId} className="border-b border-[hsl(220_14%_96%)] last:border-0">
+                    <tr key={entry.entryId} className="border-b border-muted last:border-0">
                       <td className="px-4 py-3 font-medium">{entry.workerId}</td>
                       <td className="px-4 py-3 font-mono text-xs">{entry.operationCode}</td>
                       <td className="px-4 py-3">
@@ -1143,7 +1143,7 @@ const Operations = (): React.ReactElement => {
                           {entry.efficiencyPercent}%
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-[hsl(218_10%_42%)]">{entry.source}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{entry.source}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -52,8 +52,8 @@ const ModelManagement = (): React.ReactElement => {
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">模型管理</h1>
-        <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">模型注册、评审、影子、激活与退役。</p>
+        <h1 className="text-2xl font-bold text-foreground">模型管理</h1>
+        <p className="mt-1 text-sm text-muted-foreground">模型注册、评审、影子、激活与退役。</p>
       </header>
 
       {transitionMutation.isError && (
@@ -77,9 +77,9 @@ const ModelManagement = (): React.ReactElement => {
         emptyMessage="暂无模型记录。"
         updatedAt={query.dataUpdatedAt}
       >
-        <div className="overflow-x-auto rounded-lg border border-[hsl(220_14%_89%)] bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">模型</th>
                 <th className="px-5 py-3 font-medium">版本</th>
@@ -88,19 +88,19 @@ const ModelManagement = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {rows.map((row) => {
                 const next = actionFor(row.status);
                 const busy =
                   transitionMutation.isPending && transitionMutation.variables?.id === row.id;
                 return (
-                  <tr key={row.id} className="hover:bg-[hsl(220_14%_96%)]">
+                  <tr key={row.id} className="hover:bg-muted">
                     <td className="px-5 py-3">
-                      <p className="font-medium text-[hsl(220_14%_14%)]">{row.modelName}</p>
-                      <p className="font-mono text-xs text-[hsl(218_10%_42%)]">{row.modelId}</p>
+                      <p className="font-medium text-foreground">{row.modelName}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{row.modelId}</p>
                     </td>
                     <td className="px-5 py-3 font-mono text-xs">{row.version}</td>
-                    <td className="px-5 py-3 text-[hsl(218_10%_42%)]">{row.type}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{row.type}</td>
                     <td className="px-5 py-3">{row.status ?? '—'}</td>
                     <td className="px-5 py-3">
                       {next && (

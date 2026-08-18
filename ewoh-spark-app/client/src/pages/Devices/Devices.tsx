@@ -137,12 +137,12 @@ const Devices = (): React.ReactElement => {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">设备态势总览</h1>
-          <p className="text-sm text-[hsl(218_10%_42%)] mt-1">
+          <h1 className="text-2xl font-bold text-foreground">设备态势总览</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             外骨骼设备状态、电量与在线情况
           </p>
           {dataUpdatedAt > 0 && (
-            <p className="mt-1 text-xs text-[hsl(218_10%_50%)]">
+            <p className="mt-1 text-xs text-muted-foreground">
               {isStale ? (
                 <span className="inline-flex items-center gap-1 text-amber-600">
                   <TriangleAlert className="h-3 w-3" />
@@ -163,10 +163,10 @@ const Devices = (): React.ReactElement => {
       </div>
 
       {/* 搜索栏 */}
-      <div className="bg-white rounded-xl border border-[hsl(220_14%_89%)] p-4">
+      <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[220px]">
-            <label className="block text-xs text-[hsl(218_10%_42%)] mb-1">关键字</label>
+            <label className="block text-xs text-muted-foreground mb-1">关键字</label>
             <Input
               placeholder="搜索设备ID/姓名/型号"
               value={keyword}
@@ -176,7 +176,7 @@ const Devices = (): React.ReactElement => {
           </div>
 
           <div className="w-[140px]">
-            <label className="block text-xs text-[hsl(218_10%_42%)] mb-1">在线状态</label>
+            <label className="block text-xs text-muted-foreground mb-1">在线状态</label>
             <Select
               value={onlineFilter}
               onValueChange={(v) => setOnlineFilter(v as OnlineFilter)}
@@ -193,7 +193,7 @@ const Devices = (): React.ReactElement => {
           </div>
 
           <div className="w-[200px]">
-            <label className="block text-xs text-[hsl(218_10%_42%)] mb-1">
+            <label className="block text-xs text-muted-foreground mb-1">
               电量区间 (%)
             </label>
             <div className="flex items-center gap-1">
@@ -204,7 +204,7 @@ const Devices = (): React.ReactElement => {
                 onChange={(e) => setBatteryMin(e.target.value)}
                 className="h-9"
               />
-              <span className="text-xs text-[hsl(218_10%_42%)]">-</span>
+              <span className="text-xs text-muted-foreground">-</span>
               <Input
                 type="number"
                 placeholder="max"
@@ -216,7 +216,7 @@ const Devices = (): React.ReactElement => {
           </div>
 
           <div className="w-[170px]">
-            <label className="block text-xs text-[hsl(218_10%_42%)] mb-1">来源类型</label>
+            <label className="block text-xs text-muted-foreground mb-1">来源类型</label>
             <Select
               value={sourceFilter}
               onValueChange={(v) => setSourceFilter(v as SourceFilter)}
@@ -237,7 +237,7 @@ const Devices = (): React.ReactElement => {
           </div>
 
           <div className="w-[180px]">
-            <label className="block text-xs text-[hsl(218_10%_42%)] mb-1">排序</label>
+            <label className="block text-xs text-muted-foreground mb-1">排序</label>
             <Select value={orderby} onValueChange={(v) => setOrderby(v as OrderBy)}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue />
@@ -255,8 +255,8 @@ const Devices = (): React.ReactElement => {
       </div>
 
       {/* 电量分布图 */}
-      <div className="bg-white rounded-xl border border-[hsl(220_14%_89%)] p-5">
-        <h2 className="font-semibold text-[hsl(220_14%_14%)] mb-4">设备电量分布</h2>
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h2 className="font-semibold text-foreground mb-4">设备电量分布</h2>
         {batteryData.length > 0 ? (
           <>
             <div
@@ -298,21 +298,21 @@ const Devices = (): React.ReactElement => {
             </table>
           </>
         ) : (
-          <div className="h-[240px] flex items-center justify-center text-sm text-[hsl(218_10%_42%)]">
+          <div className="h-[240px] flex items-center justify-center text-sm text-muted-foreground">
             暂无数据
           </div>
         )}
       </div>
 
       {/* 设备列表表格 */}
-      <div className="bg-white rounded-xl border border-[hsl(220_14%_89%)] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[hsl(220_14%_89%)]">
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">设备列表</h2>
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h2 className="font-semibold text-foreground">设备列表</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+              <tr className="border-b border-border text-xs text-muted-foreground">
                 <th className="text-left px-5 py-3 font-medium whitespace-nowrap">设备ID</th>
                 <th className="text-left px-5 py-3 font-medium whitespace-nowrap">工人姓名</th>
                 <th className="text-left px-5 py-3 font-medium whitespace-nowrap">设备型号</th>
@@ -330,7 +330,7 @@ const Devices = (): React.ReactElement => {
                 <tr>
                   <td
                     colSpan={TABLE_COL_COUNT}
-                    className="px-5 py-8 text-center text-sm text-[hsl(218_10%_42%)]"
+                    className="px-5 py-8 text-center text-sm text-muted-foreground"
                   >
                     加载中...
                   </td>
@@ -357,15 +357,15 @@ const Devices = (): React.ReactElement => {
                   return (
                     <tr
                       key={d.id}
-                      className="border-b border-[hsl(220_14%_89%)] hover:bg-[hsl(220_14%_96%)]"
+                      className="border-b border-border hover:bg-muted"
                     >
-                      <td className="px-5 py-3 text-sm font-medium text-[hsl(220_14%_14%)] whitespace-nowrap">
+                      <td className="px-5 py-3 text-sm font-medium text-foreground whitespace-nowrap">
                         {d.deviceId}
                       </td>
-                      <td className="px-5 py-3 text-sm text-[hsl(220_14%_14%)] whitespace-nowrap">
+                      <td className="px-5 py-3 text-sm text-foreground whitespace-nowrap">
                         {d.workerName || '—'}
                       </td>
-                      <td className="px-5 py-3 text-sm text-[hsl(218_10%_42%)] whitespace-nowrap">
+                      <td className="px-5 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {d.deviceModel || '—'}
                       </td>
                       <td className="px-5 py-3">
@@ -385,7 +385,7 @@ const Devices = (): React.ReactElement => {
                               style={{ width: `${d.batteryPct}%` }}
                             />
                           </div>
-                          <span className="text-xs text-[hsl(218_10%_42%)] tabular-nums">
+                          <span className="text-xs text-muted-foreground tabular-nums">
                             {d.batteryPct}%
                           </span>
                         </div>
@@ -406,19 +406,19 @@ const Devices = (): React.ReactElement => {
                       </td>
                       <td className="px-5 py-3 text-sm whitespace-nowrap">
                         {parentName ? (
-                          <span className="text-[hsl(220_14%_14%)]">{parentName}</span>
+                          <span className="text-foreground">{parentName}</span>
                         ) : (
-                          <span className="text-[hsl(218_10%_42%)]">未绑定</span>
+                          <span className="text-muted-foreground">未绑定</span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-sm whitespace-nowrap">
                         {d.boundPersonName ? (
-                          <span className="text-[hsl(220_14%_14%)]">{d.boundPersonName}</span>
+                          <span className="text-foreground">{d.boundPersonName}</span>
                         ) : (
-                          <span className="text-[hsl(218_10%_42%)]">未绑定</span>
+                          <span className="text-muted-foreground">未绑定</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)] whitespace-nowrap">
+                      <td className="px-5 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {d.lastTelemetryAt
                           ? new Date(d.lastTelemetryAt).toLocaleString('zh-CN', {
                               timeZone: 'Asia/Shanghai',
@@ -453,7 +453,7 @@ const Devices = (): React.ReactElement => {
                 <tr>
                   <td
                     colSpan={TABLE_COL_COUNT}
-                    className="px-5 py-8 text-center text-sm text-[hsl(218_10%_42%)]"
+                    className="px-5 py-8 text-center text-sm text-muted-foreground"
                   >
                     未找到匹配的设备
                   </td>

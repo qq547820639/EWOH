@@ -106,11 +106,11 @@ const CommandPalette = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-[hsl(220_14%_89%)] bg-white shadow-xl"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-4 py-3">
-          <Search className="h-4 w-4 text-[hsl(218_10%_42%)]" />
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
           <input
             ref={inputRef}
             value={query}
@@ -118,15 +118,15 @@ const CommandPalette = ({
             onKeyDown={handleKeyDown}
             placeholder="搜索控制台分区…"
             aria-label="搜索控制台分区"
-            className="h-8 flex-1 bg-transparent text-sm outline-none placeholder:text-[hsl(218_10%_42%)]"
+            className="h-8 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs text-[hsl(218_10%_42%)]">
+          <kbd className="rounded border border-border px-1.5 text-xs text-muted-foreground">
             ESC
           </kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto p-2">
           {filtered.length === 0 ? (
-            <li className="px-3 py-4 text-center text-sm text-[hsl(218_10%_42%)]">
+            <li className="px-3 py-4 text-center text-sm text-muted-foreground">
               没有匹配的分区。
             </li>
           ) : (
@@ -140,11 +140,11 @@ const CommandPalette = ({
                       onSelect(tab.key);
                       onClose();
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-[hsl(220_14%_96%)]"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-muted"
                   >
-                    <Icon className="h-4 w-4 text-[hsl(218_10%_42%)]" />
-                    <span className="font-medium text-[hsl(220_14%_14%)]">{tab.label}</span>
-                    <span className="ml-auto font-mono text-xs text-[hsl(218_10%_42%)]">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{tab.label}</span>
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">
                       {tab.key}
                     </span>
                   </button>
@@ -229,8 +229,8 @@ const WorkOrchestration = (): React.ReactElement => {
     <div className="space-y-5 p-4 sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(220_14%_14%)]">执行控制台</h1>
-          <p className="mt-1 text-sm text-[hsl(218_10%_42%)]">
+          <h1 className="text-2xl font-bold text-foreground">执行控制台</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {overview?.phase ?? '读取中'} · 关键路径：{overview?.criticalPath ?? '—'}
           </p>
         </div>
@@ -238,11 +238,11 @@ const WorkOrchestration = (): React.ReactElement => {
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
           >
             <Search className="h-4 w-4" />
             <span className="hidden sm:inline">命令面板</span>
-            <kbd className="rounded border border-[hsl(220_14%_89%)] px-1 text-[10px] text-[hsl(218_10%_42%)]">
+            <kbd className="rounded border border-border px-1 text-[10px] text-muted-foreground">
               ⌘K
             </kbd>
           </button>
@@ -251,11 +251,11 @@ const WorkOrchestration = (): React.ReactElement => {
             onClick={() => setHelpOpen(true)}
             aria-label="快捷键帮助"
             title="快捷键帮助（?）"
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[hsl(220_14%_89%)] bg-white px-3 text-sm font-medium text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
           >
             <Keyboard className="h-4 w-4" />
             <span className="hidden sm:inline">快捷键</span>
-            <kbd className="rounded border border-[hsl(220_14%_89%)] px-1 text-[10px] text-[hsl(218_10%_42%)]">
+            <kbd className="rounded border border-border px-1 text-[10px] text-muted-foreground">
               ?
             </kbd>
           </button>
@@ -297,7 +297,7 @@ const WorkOrchestration = (): React.ReactElement => {
       <div className="flex flex-col gap-0 lg:flex-row lg:gap-5">
         <nav
           aria-label="控制台分区"
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-[hsl(220_14%_89%)] bg-white pb-1 lg:w-44 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:pb-0 lg:pr-2"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-card pb-1 lg:w-44 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:pb-0 lg:pr-2"
         >
           {TABS.map((tabItem) => {
             const Icon = tabItem.icon;
@@ -311,7 +311,7 @@ const WorkOrchestration = (): React.ReactElement => {
                 className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium lg:w-full ${
                   active
                     ? 'bg-blue-600 text-white'
-                    : 'text-[hsl(218_10%_42%)] hover:bg-[hsl(220_14%_96%)] hover:text-[hsl(220_14%_14%)]'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -322,7 +322,7 @@ const WorkOrchestration = (): React.ReactElement => {
         </nav>
 
         <div className="min-w-0 flex-1">
-          <p className="mb-3 text-sm font-semibold text-[hsl(220_14%_14%)] lg:hidden">
+          <p className="mb-3 text-sm font-semibold text-foreground lg:hidden">
             {activeLabel}
           </p>
           {activeTab === 'overview' && <ExecutionOverview writable={writable} />}
@@ -355,35 +355,35 @@ const WorkOrchestration = (): React.ReactElement => {
           onClick={() => setHelpOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-lg border border-[hsl(220_14%_89%)] bg-white p-5 shadow-lg"
+            className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-[hsl(220_14%_14%)]">快捷键</h3>
+              <h3 className="text-lg font-semibold text-foreground">快捷键</h3>
               <button
                 type="button"
                 onClick={() => setHelpOpen(false)}
                 aria-label="关闭"
-                className="rounded-lg border border-[hsl(220_14%_89%)] px-3 py-1 text-sm text-[hsl(220_14%_14%)] hover:bg-[hsl(220_14%_96%)]"
+                className="rounded-lg border border-border px-3 py-1 text-sm text-foreground hover:bg-muted"
               >
                 关闭
               </button>
             </div>
-            <ul className="mt-4 space-y-2 text-sm text-[hsl(220_14%_14%)]">
+            <ul className="mt-4 space-y-2 text-sm text-foreground">
               <li className="flex items-center justify-between">
                 <span>打开命令面板</span>
-                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">⌘K</kbd>
+                <kbd className="rounded border border-border px-1.5 text-xs">⌘K</kbd>
               </li>
               <li className="flex items-center justify-between">
                 <span>切换分区（1-9）</span>
-                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">1-9</kbd>
+                <kbd className="rounded border border-border px-1.5 text-xs">1-9</kbd>
               </li>
               <li className="flex items-center justify-between">
                 <span>快捷键帮助</span>
-                <kbd className="rounded border border-[hsl(220_14%_89%)] px-1.5 text-xs">?</kbd>
+                <kbd className="rounded border border-border px-1.5 text-xs">?</kbd>
               </li>
             </ul>
-            <p className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-[hsl(218_10%_42%)]">
+            <p className="mt-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
               审批类写操作（批准/驳回/撤销/加锁/释放）仍须通过显式确认弹窗，快捷键不会绕过审批。
             </p>
           </div>

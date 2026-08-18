@@ -27,7 +27,7 @@ export function DataCredibility({
 
   return (
     <dl
-      className={`grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border bg-white p-3 text-xs ${className ?? ''}`}
+      className={`grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border bg-card p-3 text-xs ${className ?? ''}`}
     >
       <div className="col-span-2 flex flex-wrap items-center gap-2">
         <dt className="text-muted-foreground">来源</dt>

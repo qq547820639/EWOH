@@ -44,6 +44,6 @@ describe('ThemeToggle 渲染 smoke（NO-13f / ADR-055）', () => {
     const markup = renderToStaticMarkup(<ThemeToggle />);
     expect(markup).toContain('text-muted-foreground');
     expect(markup).not.toContain('text-white/70');
-    expect(markup).not.toContain('hover:bg-white/10');
+    expect(markup).not.toContain('hover:bg-card/10');
   });
 });

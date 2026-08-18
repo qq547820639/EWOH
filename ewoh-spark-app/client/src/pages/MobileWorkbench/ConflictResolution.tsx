@@ -18,23 +18,23 @@ export function ConflictResolution({
   const serverValue = item.conflict?.serverValue;
   const model = buildConflictModel(localValue, serverValue);
   return (
-    <div className="mt-2 w-full rounded bg-white p-2 text-xs">
-      <p className="font-medium text-[hsl(220_14%_14%)]">状态冲突 — 请选择处理方式</p>
+    <div className="mt-2 w-full rounded bg-card p-2 text-xs">
+      <p className="font-medium text-foreground">状态冲突 — 请选择处理方式</p>
       <div className="mt-1 grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[hsl(218_10%_42%)]">本地值</p>
-          <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
+          <p className="text-muted-foreground">本地值</p>
+          <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-muted p-1 font-mono text-[10px] text-foreground">
             {JSON.stringify(localValue ?? null, null, 2) || '—'}
           </pre>
         </div>
         <div>
-          <p className="text-[hsl(218_10%_42%)]">服务端值</p>
+          <p className="text-muted-foreground">服务端值</p>
           {serverValue === undefined ? (
-            <p className="mt-0.5 rounded bg-[hsl(220_14%_96%)] p-1 text-amber-700">
+            <p className="mt-0.5 rounded bg-muted p-1 text-amber-700">
               服务端未返回当前值
             </p>
           ) : (
-            <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-[hsl(220_14%_96%)] p-1 font-mono text-[10px] text-[hsl(220_14%_14%)]">
+            <pre className="mt-0.5 max-h-24 overflow-auto rounded bg-muted p-1 font-mono text-[10px] text-foreground">
               {JSON.stringify(serverValue, null, 2) || '—'}
             </pre>
           )}
@@ -42,12 +42,12 @@ export function ConflictResolution({
       </div>
       {model.diff.length > 0 && (
         <div className="mt-1">
-          <p className="text-[hsl(218_10%_42%)]">差异</p>
+          <p className="text-muted-foreground">差异</p>
           <ul className="mt-0.5 space-y-0.5">
             {model.diff.map((diff, index) => (
               <li
                 key={index}
-                className="rounded bg-[hsl(220_14%_96%)] px-1 py-0.5 font-mono text-[10px]"
+                className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]"
               >
                 {diff.path || '—'}：{JSON.stringify(diff.local)} → {JSON.stringify(diff.server)}
               </li>
@@ -55,7 +55,7 @@ export function ConflictResolution({
           </ul>
         </div>
       )}
-      <p className="mt-1 text-[hsl(218_10%_42%)]">
+      <p className="mt-1 text-muted-foreground">
         推荐：{model.recommended === 'server' ? '采用服务端' : '采用本地'}
       </p>
       <div className="mt-2 flex flex-wrap gap-1">

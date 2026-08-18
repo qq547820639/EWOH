@@ -10,7 +10,7 @@ import { PLAN_STATUS_LABELS, planStatusSteps } from '../vm/planStatusStepVM';
 const STEP_CLS: Record<string, string> = {
   done: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300',
   current: 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300',
-  todo: 'border-white/10 bg-white/5 text-white/40',
+  todo: 'border-white/10 bg-card/5 text-white/40',
 };
 
 export function PlanStatusStepper({ status }: { status: PlanStatus }): React.ReactElement {
@@ -28,7 +28,7 @@ export function PlanStatusStepper({ status }: { status: PlanStatus }): React.Rea
               aria-hidden="true"
               className={cn(
                 'h-px w-4',
-                step.state !== 'todo' ? 'bg-emerald-400/60' : 'bg-white/15',
+                step.state !== 'todo' ? 'bg-emerald-400/60' : 'bg-card/15',
               )}
             />
           )}

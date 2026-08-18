@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { OverviewStats, CurrentWorldState, SpatialEntity } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
+import ThemeToggle from '@client/src/components/app-shell/ThemeToggle';
 
 interface TopBarProps {
   overview: OverviewStats | null;
@@ -92,7 +93,7 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
     <div className="flex min-h-12 flex-wrap items-center gap-2 px-3 py-1.5 bg-[hsl(220_14%_10%)] border-b border-white/10 md:flex-nowrap md:gap-4 md:px-4">
       <button
         onClick={onBack}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-white/80 hover:text-white hover:bg-card/10 transition-colors"
       >
         <ArrowLeft className="w-3.5 h-3.5" />
         返回
@@ -121,7 +122,7 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
               }}
               onFocus={() => setShowSuggestions(true)}
               placeholder="搜索实体 (按 / 聚焦)"
-              className="w-full pl-7 pr-2 py-1 text-xs bg-white/5 border border-white/10 rounded-md text-white placeholder:text-white/60 focus:outline-none focus:border-[hsl(221_83%_53%)]"
+              className="w-full pl-7 pr-2 py-1 text-xs bg-card/5 border border-white/10 rounded-md text-white placeholder:text-white/60 focus:outline-none focus:border-primary"
             />
           </div>
           {showSuggestions && suggestions.length > 0 && (
@@ -130,7 +131,7 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
                 <button
                   key={e.entityId}
                   onClick={() => handleSelect(e.entityId)}
-                  className="w-full text-left px-3 py-1.5 text-xs text-white/80 hover:bg-white/10 flex items-center gap-2"
+                  className="w-full text-left px-3 py-1.5 text-xs text-white/80 hover:bg-card/10 flex items-center gap-2"
                 >
                   <span className="text-white/60 text-[10px] uppercase">{e.entityType.slice(0, 4)}</span>
                   <span className="flex-1 truncate">{e.name}</span>
@@ -145,6 +146,8 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
       <div className="hidden flex-1 md:block" />
 
       <div className="hidden items-center md:flex">
+        {/* 2026-08-18：主题切换移到顶栏（在线状态左侧，icon-only）；侧栏 footer 已移除。 */}
+        <ThemeToggle compact />
         <KpiItem
           icon={Cpu}
           value={`${overview?.deviceOnline ?? '-'}/${overview?.deviceTotal ?? '-'}`}

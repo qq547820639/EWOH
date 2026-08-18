@@ -250,7 +250,7 @@ export default function EventCenterPanel({
               </Button>
             ))}
           </div>
-          <div className="w-px h-4 bg-white/10" />
+          <div className="w-px h-4 bg-card/10" />
           <div className="flex gap-1">
             {SEVERITY_OPTIONS.map((opt) => (
               <Button
@@ -265,7 +265,7 @@ export default function EventCenterPanel({
               </Button>
             ))}
           </div>
-          <div className="w-px h-4 bg-white/10" />
+          <div className="w-px h-4 bg-card/10" />
           {/* Task 12/12.2：表格视图切换（键盘可达语义表格） */}
           <Button
             size="sm"
@@ -316,8 +316,8 @@ export default function EventCenterPanel({
                   onKeyDown={(event) => handleRowKeyDown(event, ev.id)}
                   aria-pressed={selectedId === ev.id}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 transition-colors',
-                    selectedId === ev.id && 'bg-white/10',
+                    'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-card/5 transition-colors',
+                    selectedId === ev.id && 'bg-card/10',
                   )}
                 >
                   <div
@@ -395,7 +395,7 @@ export default function EventCenterPanel({
               回放上下文
             </Button>
             {replayContext && (
-              <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs">
+              <div className="rounded-lg border border-white/10 bg-card/5 p-2 text-xs">
                 <div className="text-[10px] text-white/60 uppercase tracking-wide mb-1">
                   事发前 / 事发时 / 处置后
                 </div>

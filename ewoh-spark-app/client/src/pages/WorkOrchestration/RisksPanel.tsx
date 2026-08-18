@@ -26,14 +26,14 @@ const RisksPanel = (): React.ReactElement => {
       loadingMessage="正在读取风险登记"
       updatedAt={risksQuery.dataUpdatedAt}
     >
-      <section className="rounded-lg border border-[hsl(220_14%_89%)] bg-white">
-        <div className="flex items-center gap-2 border-b border-[hsl(220_14%_89%)] px-5 py-4">
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <ShieldAlert className="h-4 w-4 text-amber-600" />
-          <h2 className="font-semibold text-[hsl(220_14%_14%)]">风险登记</h2>
+          <h2 className="font-semibold text-foreground">风险登记</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-[hsl(220_14%_89%)] text-xs text-[hsl(218_10%_42%)]">
+            <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">ID</th>
                 <th className="px-5 py-3 font-medium">风险</th>
@@ -42,20 +42,20 @@ const RisksPanel = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">状态</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[hsl(220_14%_89%)]">
+            <tbody className="divide-y divide-border">
               {(risksQuery.data ?? []).map((risk) => (
-                <tr key={risk.id} className="hover:bg-[hsl(220_14%_96%)]">
+                <tr key={risk.id} className="hover:bg-muted">
                   <td className="px-5 py-3 font-mono text-xs">{risk.id}</td>
                   <td className="px-5 py-3">
-                    <div className="font-medium text-[hsl(220_14%_14%)]">{risk.title}</div>
+                    <div className="font-medium text-foreground">{risk.title}</div>
                     {risk.trigger && (
-                      <div className="text-xs text-[hsl(218_10%_42%)]">{risk.trigger}</div>
+                      <div className="text-xs text-muted-foreground">{risk.trigger}</div>
                     )}
                   </td>
                   <td className="px-5 py-3">
                     <StatusBadge status={risk.severity} />
                   </td>
-                  <td className="px-5 py-3 text-xs text-[hsl(218_10%_42%)]">
+                  <td className="px-5 py-3 text-xs text-muted-foreground">
                     {risk.mitigation ?? '—'}
                   </td>
                   <td className="px-5 py-3 text-xs">{risk.status}</td>
