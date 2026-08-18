@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, Sparkles, TriangleAlert } from 'lucide-react';
 import {
   createPlan,
-  createSuggestion,
+  createSuggestionStream,
   getAiSnapshotVersion,
   type AiPlan,
   type AiSuggestion,
@@ -15,6 +15,9 @@ const AiDecision = (): React.ReactElement => {
   const [problem, setProblem] = useState('工位积压与人员负荷建议');
   const [suggestion, setSuggestion] = useState<AiSuggestion | null>(null);
   const [plan, setPlan] = useState<AiPlan | null>(null);
+  // AI 接入优化（2026-08-18）：流式生成状态——骨架即时可见 + LLM 原始 JSON 打字机。
+  const [basis, setBasis] = useState<AiSuggestion | null>(null);
+  const [llmRaw, setLlmRaw] = useState('');
 
   // CLI-001：快照元信息改为真实来源——版本号读后端 /api/ai/snapshot-version；
   // 观察窗为「页面挂载 → 触发时刻」的真实区间；records 前端无数据源，
@@ -27,17 +30,28 @@ const AiDecision = (): React.ReactElement => {
   });
 
   const suggestionMutation = useMutation({
-    mutationFn: () =>
-      createSuggestion({
-        triggeredBy: getCurrentOperator(),
-        problem,
-        snapshot: {
-          version: snapshotVersionQuery.data?.version ?? 0,
-          from: mountedAtRef.current.toISOString(),
-          to: new Date().toISOString(),
-          records: 0,
+    mutationFn: async () => {
+      setBasis(null);
+      setLlmRaw('');
+      setSuggestion(null);
+      setPlan(null);
+      const snapshot = {
+        version: snapshotVersionQuery.data?.version ?? 0,
+        from: mountedAtRef.current.toISOString(),
+        to: new Date().toISOString(),
+        records: 0,
+      };
+      const result = await createSuggestionStream(
+        { triggeredBy: getCurrentOperator(), problem, snapshot },
+        (evt) => {
+          if (evt.phase === 'basis' && evt.suggestion) setBasis(evt.suggestion);
+          if (evt.phase === 'delta' && evt.delta) setLlmRaw((t) => t + evt.delta);
+          if (evt.phase === 'done' && evt.suggestion) setSuggestion(evt.suggestion);
         },
-      }),
+      );
+      if (!result) throw new Error('建议生成失败（流中断）');
+      return result;
+    },
     onSuccess: (result) => {
       setSuggestion(result);
       setPlan(null);
@@ -67,7 +81,7 @@ const AiDecision = (): React.ReactElement => {
       <header>
         <h1 className="text-2xl font-bold text-foreground">AI 决策中心</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A2 建议与 A3 方案仅在人工触发后生成。
+          A2 建议与 A3 方案仅在人工触发后生成。建议由规则骨架即时呈现，AI 分析流式生成。
         </p>
       </header>
 
@@ -94,7 +108,7 @@ const AiDecision = (): React.ReactElement => {
             ) : (
               <Sparkles className="size-4" />
             )}
-            {suggestionMutation.isPending ? '生成中...' : '生成 AI 建议'}
+            {suggestionMutation.isPending ? 'AI 分析中...' : '生成 AI 建议'}
           </Button>
           <Button
             type="button"
@@ -141,7 +155,27 @@ const AiDecision = (): React.ReactElement => {
         </div>
       )}
 
-      {suggestion && (
+      {suggestionMutation.isPending && basis && (
+        <section className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin text-primary" />
+            <h2 className="font-semibold text-foreground">AI 分析中（规则骨架已就绪，AI 增量流式生成中）</h2>
+          </div>
+          <p className="mt-2 text-sm">{basis.suggestion}</p>
+          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+            {basis.basis.map((item, index) => (
+              <li key={`${item}-${index}`}>· {item}</li>
+            ))}
+          </ul>
+          {llmRaw && (
+            <pre className="mt-3 max-h-40 overflow-auto rounded-md bg-muted p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {llmRaw}
+            </pre>
+          )}
+        </section>
+      )}
+
+      {suggestion && !suggestionMutation.isPending && (
         <section className="rounded-lg border border-border bg-card p-5">
           <h2 className="font-semibold text-foreground">建议结果</h2>
           <p className="mt-2 text-sm">{suggestion.suggestion}</p>

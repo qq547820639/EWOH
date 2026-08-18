@@ -655,7 +655,7 @@ const System = (): React.ReactElement => {
             />
           </label>
           <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            图片 URL（可选，留空用演示图）
+            图片 URL（可选，留空用演示图；仅支持边缘平台/白名单域）
             <input
               value={aiImageUrl}
               onChange={(event) => setAiImageUrl(event.target.value)}

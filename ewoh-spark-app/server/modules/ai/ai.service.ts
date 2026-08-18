@@ -68,7 +68,9 @@ function buildSuggestion(input: {
     id: input.id ?? nextId('sug'),
     triggeredBy: input.triggeredBy,
     frozenAt: new Date().toISOString(),
-    snapshotVersion: input.snapshot.version,
+    // 22P02 修复（2026-08-18）：snapshotVersion 强制数值化——历史曾写入
+    // 对象（{}）导致快照版本查询 ::bigint 崩溃、api 进程 crash。
+    snapshotVersion: Number(input.snapshot.version) || 0,
     problem: input.problem,
     dataRange: { from: input.snapshot.from, to: input.snapshot.to },
     completeness: Math.min(1, input.snapshot.records / 100),
@@ -99,8 +101,13 @@ export class AiService {
       return this.snapshotVersion;
     }
     // ADR-078：drizzle 类型安全 + 可选 org 过滤（跨租户版本号混读关闭）。
+    // 22P02 修复（2026-08-18）：jsonb_typeof 防御——历史坏数据 snapshotVersion 为
+    // 对象（{}）时 `->>'…'::bigint` 抛 invalid input syntax 导致查询崩溃、进程 crash；
+    // 现仅对数字类型取值，非数字行视为 NULL 参与聚合。
     const rows = await this.db
-      .select({ version: sql`coalesce(max((content::jsonb->>'snapshotVersion')::bigint), 0)::int` })
+      .select({
+        version: sql`coalesce(max((CASE WHEN jsonb_typeof(content::jsonb->'snapshotVersion') = 'number' THEN (content::jsonb->>'snapshotVersion')::bigint END)), 0)::int`,
+      })
       .from(ewohAiSuggestion)
       .where(orgId ? eq(ewohAiSuggestion.orgId, orgId) : undefined);
     return Number((rows[0] as { version: number } | undefined)?.version ?? 0);
@@ -122,12 +129,84 @@ export class AiService {
     // NO-08a（ADR-019）：把确定性规则基础记录为 L1 InferenceResult 台账
     // （与 LLM 文本增强的 ReasoningResult 分工——统计确定 vs 文本生成）。
     suggestion = await this.attachRuleBasisInference(suggestion, input);
+    return this.persistSuggestion(suggestion, input);
+  }
+
+  /** AI 接入优化（2026-08-18）：建议生成流式化——骨架先出 → LLM 打字机 → 完成落库。
+   * 分阶段产出：basis（规则模板骨架）→ delta（LLM JSON 文本增量）→ done（最终建议）。
+   * LLM 失败时直接 done + 规则模板兜底（与 createSuggestion 语义一致）。 */
+  async *streamSuggestion(input: {
+    triggeredBy: string;
+    problem: string;
+    snapshot: { version: number; from: string; to: string; records: number };
+    orgId?: string;
+  }): AsyncGenerator<
+    { phase: 'basis' | 'delta' | 'done'; suggestion?: AiSuggestion; delta?: string; error?: string },
+    void,
+    undefined
+  > {
+    const base = buildSuggestion(input);
+    yield { phase: 'basis', suggestion: base };
+    let final: AiSuggestion = base;
+    if (this.ark) {
+      const systemPrompt =
+        '你是工厂具身操作系统的智能调度助手。基于给定的问题与数据快照，给出结构化、可执行的调度建议。' +
+        '仅输出 JSON，字段：suggestion(建议正文), basis(依据数组), risk(风险数组), uncertainty(不确定性数组), confirmItems(人工确认项数组)。' +
+        '不要输出 markdown 代码块或其他文字。';
+      const userPrompt = [
+        `问题：${input.problem}`,
+        `触发人：${input.triggeredBy}`,
+        `数据快照：version=${input.snapshot.version}, from=${input.snapshot.from}, to=${input.snapshot.to}, records=${input.snapshot.records}`,
+      ].join('\n');
+      const parts: string[] = [];
+      try {
+        for await (const delta of this.ark.chatStream(
+          [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          { temperature: 0.4 },
+        )) {
+          parts.push(delta);
+          yield { phase: 'delta', delta };
+        }
+        const text = parts.join('');
+        try {
+          const parsed = JSON.parse(text) as Partial<AiSuggestion>;
+          final = {
+            ...base,
+            suggestion: parsed.suggestion || base.suggestion,
+            basis: Array.isArray(parsed.basis) && parsed.basis.length ? parsed.basis : base.basis,
+            risk: Array.isArray(parsed.risk) && parsed.risk.length ? parsed.risk : base.risk,
+            uncertainty:
+              Array.isArray(parsed.uncertainty) && parsed.uncertainty.length ? parsed.uncertainty : base.uncertainty,
+            confirmItems:
+              Array.isArray(parsed.confirmItems) && parsed.confirmItems.length ? parsed.confirmItems : base.confirmItems,
+          };
+        } catch {
+          final = { ...base, suggestion: `${base.suggestion}\n（LLM 原始输出：${text.slice(0, 500)}）` };
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        final = { ...base, basis: [...base.basis, `LLM 不可用：${message}`] };
+      }
+    }
+    final = await this.attachRuleBasisInference(final, input);
+    const persisted = await this.persistSuggestion(final, input);
+    yield { phase: 'done', suggestion: persisted };
+  }
+
+  /** A2 建议落库（createSuggestion / streamSuggestion 共用；await 保持落库确认语义）。 */
+  private async persistSuggestion(
+    suggestion: AiSuggestion,
+    input: { snapshot: { version: number }; triggeredBy: string; problem: string; orgId?: string },
+  ): Promise<AiSuggestion> {
     if (!this.db) {
       this.snapshotVersion = input.snapshot.version;
       this.suggestions.set(suggestion.id, suggestion);
       return suggestion;
     }
-    // ADR-078：drizzle 类型安全（消除 public. 硬编码）+ org 归属注入。
+    this.snapshotVersion = input.snapshot.version;
     const [row] = await this.db
       .insert(ewohAiSuggestion)
       .values({
@@ -143,7 +222,9 @@ export class AiService {
         ...(input.orgId ? { orgId: input.orgId } : {}),
       })
       .returning({ content: ewohAiSuggestion.content });
-    return JSON.parse(String(row?.content)) as AiSuggestion;
+    const persisted = row ? (JSON.parse(String(row.content)) as AiSuggestion) : suggestion;
+    this.suggestions.set(suggestion.id, persisted);
+    return persisted;
   }
 
   /**

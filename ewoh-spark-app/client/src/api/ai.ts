@@ -38,6 +38,70 @@ export async function createSuggestion(input: {
   return res.data;
 }
 
+export interface SuggestionStreamEvent {
+  phase: 'basis' | 'delta' | 'done';
+  suggestion?: AiSuggestion;
+  delta?: string;
+  error?: string;
+}
+
+/** AI 接入优化（2026-08-18）：建议生成流式版（SSE）——骨架先出 → LLM 打字机 → done。
+ * 返回最终建议；出错返回 null（错误经 onEvent 透传）。 */
+export async function createSuggestionStream(
+  input: {
+    triggeredBy: string;
+    problem: string;
+    snapshot: { version: number; from: string; to: string; records: number };
+  },
+  onEvent: (evt: SuggestionStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<AiSuggestion | null> {
+  const res = await fetch('/api/ai/suggestions/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getAccessToken() ?? ''}`,
+    },
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    onEvent({ phase: 'done', error: `HTTP ${res.status}: ${text.slice(0, 200)}` });
+    return null;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let final: AiSuggestion | null = null;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload) continue;
+        let evt: SuggestionStreamEvent;
+        try {
+          evt = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        onEvent(evt);
+        if (evt.phase === 'done' && evt.suggestion) final = evt.suggestion;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return final;
+}
+
 export async function createPlan(suggestionId: string, content: Record<string, unknown>): Promise<AiPlan> {
   const res = await axiosForBackend({
     url: '/api/ai/plans',
