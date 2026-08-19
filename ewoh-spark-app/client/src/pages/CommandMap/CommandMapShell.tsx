@@ -696,7 +696,14 @@ const CommandMapShell = (): React.ReactElement => {
     setActiveTab('schedule');
     toast.info(`冲突 ${conflict.conflictId} 已确认处置，请在方案面板审批新方案`);
   }, []);
-  const handleOpenCompare = useCallback(() => setShowCompare(true), []);
+  // 方案对比（2026-08-20 可用性修复）：PlanCompareWorkspace 面板仅在调度模式
+  // （mode === 'scheduling'）渲染——非调度模式下点击决策驾驶舱「方案对比」
+  // 时原实现只 setShowCompare(true)，面板不出现，用户感知"点了没反应"。
+  // 改为：先切到智能调度模式再打开对比面板。
+  const handleOpenCompare = useCallback(() => {
+    if (mode !== 'scheduling') setMode('scheduling');
+    setShowCompare(true);
+  }, [mode, setMode]);
   const handleOpenOverride = useCallback((kind?: PlanOverrideKind) => {
     setOverrideInitialKind(kind ?? null);
     setActiveTab('override');

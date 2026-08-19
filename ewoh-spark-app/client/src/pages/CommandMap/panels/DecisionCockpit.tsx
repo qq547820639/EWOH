@@ -301,7 +301,11 @@ export function DecisionCockpit({
         break;
       }
       case 'undo':
+        // 2026-08-20 可用性修复：原先只清 decisionContext（冲突预览/重排来源），
+        // 但九段上下文主要由「选中任务 + 活跃方案」驱动——任务不清则面板内容
+        // 纹丝不动，用户感知"点了没反应"。改为同时清除任务选中，面板回到空态。
         ctl.clearDecisionContext();
+        ctl.selectTask(null);
         break;
     }
   };
