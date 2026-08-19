@@ -40,6 +40,14 @@ const ACTIVE_PLAN_STATUSES = [
 /** 系统操作者标识（自动 RESOLVED / reopen 审计用）。 */
 const SYSTEM_ACTOR = 'system';
 
+/**
+ * stale plan 检查上限（2026-08-19 平台加载故障）：isPlanStale 每次全量读取
+ * 快照表 snapshot_json（历史行可达 21MB），无上限时 31 个 shadow 方案把
+ * conflicts 接口拖到 90s+。取最近 N 个活跃方案（按创建时间倒序）——
+ * 陈旧方案批量归档后活跃集正常远小于该值，行为无感。
+ */
+const MAX_STALE_PLAN_CHECKS = 10;
+
 /** 系统上下文（推导归并触发的审计默认）。 */
 const SYSTEM_CTX: OrgContext = {
   userId: SYSTEM_ACTOR,
@@ -660,6 +668,11 @@ export class ConflictService {
 
     // 11. stale plan：活跃方案基于已过期的快照。
     //    NEST-042/159 配套：活跃方案 org 过滤 + 单次 current 复用（N+1 消除）。
+    //    性能加固（2026-08-19 平台加载故障）：① 相同 snapshotVersion 只读一次
+    //    快照（版本去重缓存——历史上多次生成常引用同一版本）；② 最多检查
+    //    最近 MAX_STALE_PLAN_CHECKS 个活跃方案（按创建时间倒序）——快照
+    //    snapshot_json 单行可达数十 MB（事件全量时代遗留），31 个 shadow 方案
+    //    × 21MB 全量拉取解析曾把 conflicts 拖到 90s+，全平台 15s 超时。
     const activePlans = await this.db
       .select()
       .from(ewohSchedulePlan)
@@ -673,14 +686,21 @@ export class ConflictService {
               )
             : undefined,
         ),
-      );
+      )
+      .orderBy(desc(ewohSchedulePlan.createdAt))
+      .limit(MAX_STALE_PLAN_CHECKS);
+    const staleBySnapshotVersion = new Map<string, boolean>();
     for (const p of activePlans) {
       if (!p.snapshotVersion) continue;
-      const stale = await this.worldStateSnapshotService.isPlanStale(
-        p.snapshotVersion,
-        ctx,
-        state,
-      );
+      let stale = staleBySnapshotVersion.get(p.snapshotVersion);
+      if (stale === undefined) {
+        stale = await this.worldStateSnapshotService.isPlanStale(
+          p.snapshotVersion,
+          ctx,
+          state,
+        );
+        staleBySnapshotVersion.set(p.snapshotVersion, stale);
+      }
       if (stale) {
         conflicts.push(
           this.mkConflict(`stale_plan:${p.planId}`, {

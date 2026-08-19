@@ -32,6 +32,8 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
 
   private static readonly CLEAN_INTERVAL_MS = 60 * 60 * 1000; // 每小时
   private static readonly BATCH = 5000;
+  /** 模拟告警 open 自动过期时长（真实上报事件不受影响）。 */
+  private static readonly SIM_EVENT_EXPIRY_MS = 2 * 3_600_000;
 
   constructor() {
     const url =
@@ -72,6 +74,10 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
       { table: 'ewoh_telemetry', tsColumn: 'ts', keepMs: 24 * 3_600_000 },
       { table: 'ewoh_event', tsColumn: 'created_at', keepMs: 7 * 24 * 3_600_000 },
       { table: 'ewoh_event_chain', tsColumn: 'created_at', keepMs: 7 * 24 * 3_600_000 },
+      // 快照表（2026-08-19 续）：snapshot_json 单行可达数十 MB（事件全量时代
+      // 遗留，实测 21MB/行）——conflicts 的 stale plan 检查全量读取曾拖垮
+      // 平台。48h 保留覆盖活跃方案引用窗口，历史快照归零。
+      { table: 'ewoh_world_state_snapshot', tsColumn: 'created_at', keepMs: 48 * 3_600_000 },
     ];
     for (const job of jobs) {
       const cutoff = new Date(now - job.keepMs).toISOString();
@@ -96,6 +102,48 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
           `retention: ${job.table} cleaned ${total} rows (keep ${job.keepMs / 3_600_000}h)`,
         );
       }
+    }
+    await this.expireStaleSimulatedEvents(now);
+  }
+
+  /**
+   * 模拟告警自动过期（2026-08-19 平台加载故障治本）。
+   *
+   * SimulatorService 持续生成告警（WorkerHighLoad/低电量/离线等），而演示/
+   * 生产环境无人逐条处理 → status 永远停在 'open'，36h 实测累积 6.3 万条。
+   * collectState（世界快照）全量消费 open 事件，曾把 conflicts 接口拖到
+   * 104s、全平台 15s 超时。语义上超过 2h 无人处理的模拟告警也不应继续
+   * 触发安全封锁/事件影响——分批置为 'expired'（不删除，7d 行留存档）。
+   *
+   * 仅限 source_type='simulated'（真实上报事件保留人工处置语义，不自动关闭）。
+   */
+  private async expireStaleSimulatedEvents(now: number): Promise<void> {
+    if (!this.ownerClient) return;
+    const cutoff = new Date(
+      now - RetentionService.SIM_EVENT_EXPIRY_MS,
+    ).toISOString();
+    let total = 0;
+    for (;;) {
+      const pending = await this.ownerClient.unsafe<Array<{ id: string }>>(
+        `SELECT id FROM ewoh_event
+         WHERE status = 'open'
+           AND source_type = 'simulated'
+           AND created_at < '${cutoff}'::timestamptz
+         LIMIT ${RetentionService.BATCH}`,
+      );
+      if (pending.length === 0) break;
+      const idList = pending.map((row) => `'${row.id}'`).join(',');
+      await this.ownerClient.unsafe(
+        `UPDATE ewoh_event
+         SET status = 'expired', _updated_at = now()
+         WHERE id IN (${idList})`,
+      );
+      total += pending.length;
+    }
+    if (total > 0) {
+      this.logger.log(
+        `retention: expired ${total} stale simulated events (open > ${RetentionService.SIM_EVENT_EXPIRY_MS / 3_600_000}h)`,
+      );
     }
   }
 }

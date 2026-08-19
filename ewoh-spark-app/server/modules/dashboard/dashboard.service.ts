@@ -428,14 +428,33 @@ export class DashboardService {
     }));
   }
 
-  async getEvents(limit: number = 50, status?: string, actor?: OrgContext): Promise<EventInfo[]> {
+  /**
+   * 事件列表（时间窗滚动查询，2026-08-19）。
+   * hours：查询最近 N 小时事件（默认 24h，1~168 clamp）——事件表高写入量
+   * （模拟器持续生成），无时间窗的全表 ORDER BY 在峰值时拖垮平台；演示/
+   * 运营语义也只需要近期事件，历史事件走 7d 留存的归档查询。
+   */
+  async getEvents(
+    limit: number = 50,
+    status?: string,
+    actor?: OrgContext,
+    hours?: number,
+  ): Promise<EventInfo[]> {
     try {
       // NEST-347：limit 上限（防 parseInt('1e9') 全表拉取）。
       const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
+      // 时间窗：默认 24h，显式传入则 clamp 到 [1, 168]（7 天）。
+      const safeHours = Math.min(
+        Math.max(hours != null && Number.isFinite(hours) ? Math.trunc(hours) : 24, 1),
+        168,
+      );
       const conditions: SQL[] = [];
       const orgCond = this.orgCondition(ewohEvent.orgId, actor);
       if (orgCond) conditions.push(orgCond);
       if (status) conditions.push(eq(ewohEvent.status, status));
+      conditions.push(
+        gte(ewohEvent.createdAt, new Date(Date.now() - safeHours * 3_600_000)),
+      );
       const rows = await this.db
         .select()
         .from(ewohEvent)

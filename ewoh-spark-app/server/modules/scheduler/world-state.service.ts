@@ -15,7 +15,7 @@ import {
   ewohResourceReservation,
   ewohDeviceBinding,
 } from '@server/database/schema';
-import { eq, and, or, sql, isNull, type AnyColumn, type SQL } from 'drizzle-orm';
+import { eq, and, or, sql, isNull, gte, desc, type AnyColumn, type SQL } from 'drizzle-orm';
 import { validateCloudWorldSnapshot } from '@shared/world-contract';
 import { isEventSeverityRisky } from '@shared/risk';
 import type {
@@ -45,6 +45,21 @@ export class WorldStateSnapshotService {
   private static readonly LOCKED_TASK_STATUSES: ReadonlySet<string> = new Set(
     TASK_LOCKED_STATUSES,
   );
+
+  /**
+   * 快照事件采集窗口（2026-08-19 平台加载故障）：模拟器持续生成告警而无人
+   * 处理时 open 事件无限累积（实测 36h 达 6.3 万条），collectState 全量拉取
+   * + eventImpacts（事件×任务嵌套传播）+ 大 JSON 序列化会把 Node 事件循环
+   * 阻塞数十秒——conflicts 接口实测 104s，前端 15s 超时 → 指挥地图/调度生成/
+   * 全平台加载失败。三层防御：
+   * ① RetentionService 自动过期模拟 open 事件（2h，治本）；
+   * ② SimulatorService 去重窗口 30s→120s（降生成速率）；
+   * ③ 本查询时间窗 + 限量（纵深防御——即使前两层失效，快照构建也有界）。
+   * 语义：安全封锁/事件影响只看近 24h 且最新 500 条 open 事件；更早的陈旧
+   * 事件不应永久封锁资源（retention 已将其过期，此处为一致性兜底）。
+   */
+  private static readonly SNAPSHOT_EVENT_WINDOW_MS = 24 * 3_600_000;
+  private static readonly SNAPSHOT_EVENT_LIMIT = 500;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -269,12 +284,22 @@ export class WorldStateSnapshotService {
       // 前端回放标记）均只消费开放事件，而事件表以万计存量已结事件逐轮全量
       // 进内存（实测 29,405 行/次）是 collectState 的最大内存/延迟项。
       // 契约字段（events[].status: string）不变，仅收窄采集范围。
-      eventsQuery.where(
-        and(
-          eq(ewohEvent.status, 'open'),
-          this.orgCondition(ewohEvent.orgId, ctx),
-        ) as SQL,
-      ),
+      // 性能加固（2026-08-19 平台加载故障）：再加 24h 时间窗 + 最新 500 条
+      // 限量（见 SNAPSHOT_EVENT_WINDOW_MS 注释）——open 事件无处理时无限累积
+      // （36h 实测 6.3 万条）曾把 conflicts 拖到 104s、全平台超时。
+      eventsQuery
+        .where(
+          and(
+            eq(ewohEvent.status, 'open'),
+            gte(
+              ewohEvent.createdAt,
+              new Date(Date.now() - WorldStateSnapshotService.SNAPSHOT_EVENT_WINDOW_MS),
+            ),
+            this.orgCondition(ewohEvent.orgId, ctx),
+          ) as SQL,
+        )
+        .orderBy(desc(ewohEvent.createdAt))
+        .limit(WorldStateSnapshotService.SNAPSHOT_EVENT_LIMIT),
       ctx?.primaryOrgId
         ? routeNodesQuery.where(
             this.orgCondition(ewohRouteNode.orgId, ctx) as SQL,

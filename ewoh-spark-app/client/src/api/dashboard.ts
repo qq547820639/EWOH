@@ -78,9 +78,21 @@ export async function unbindDevice(deviceId: string): Promise<void> {
 /** CLI-714：事件列表单次拉取上限——防止调用方传超大 limit 拖垮后端。 */
 const MAX_EVENTS_LIMIT = 500;
 
-export async function getEvents(limit = 50, status?: string): Promise<EventInfo[]> {
+/**
+ * 事件列表（时间窗滚动查询，2026-08-19）。
+ * hours：查询最近 N 小时（默认 24h）——默认只看一天内的滚动窗口，超出后
+ * 数据自动滚出视野；调用方可让用户选择时间范围（1/6/24/168h）。
+ */
+export async function getEvents(
+  limit = 50,
+  status?: string,
+  hours = 24,
+): Promise<EventInfo[]> {
   const bounded = Math.min(Math.max(1, limit), MAX_EVENTS_LIMIT);
-  const params: Record<string, string> = { limit: String(bounded) };
+  const params: Record<string, string> = {
+    limit: String(bounded),
+    hours: String(hours),
+  };
   if (status) params.status = status;
   const res = await axiosForBackend({ url: '/api/dashboard/events', method: 'GET', params });
   return res.data;

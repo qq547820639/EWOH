@@ -64,7 +64,12 @@ interface Bounds {
 // 配合 RetentionService（每小时清理超期数据）封顶表体积。
 const MAIN_TICK_MS = 10000;
 const ENV_TICK_MS = 10000;
-const EVENT_DEDUP_MS = 30_000;
+// 事件去重窗口 30s→120s（2026-08-19 数据增长治理续）：每实体每类型 30s 即可
+// 重复触发，36h 累积 6.3 万条 open 事件（无人处理永不关闭）——世界快照
+// collectState 全量消费 open 事件，曾把 conflicts 接口拖到 104s、全平台超时。
+// 120s 窗口生成速率降 4 倍（~440 条/h），配合 RetentionService 2h 自动过期，
+// 稳态 open 事件 ~900 条，演示新鲜度不受影响。
+const EVENT_DEDUP_MS = 120_000;
 const OFFLINE_PROB = 0.02;
 const RESTRICTED_PROB = 0.005;
 const MOVE_STEP = 25;

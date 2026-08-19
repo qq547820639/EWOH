@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohEvent } from '@server/database/schema';
-import { eq, desc, and, type SQL } from 'drizzle-orm';
+import { eq, desc, and, gte, type SQL } from 'drizzle-orm';
 import type { TimelineEvent } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { buildTimelineEvents } from './timeline.projection';
@@ -23,9 +23,16 @@ export class TimelineService {
     limit = 100,
     status?: string,
     actor?: OrgContext,
+    hours?: number,
   ): Promise<TimelineEvent[]> {
     try {
       const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 500);
+      // 时间窗滚动查询（2026-08-19，与 dashboard/events 同语义）：默认 24h，
+      // clamp [1,168]——事件表高写入量，无窗全表扫描在峰值时拖垮平台。
+      const safeHours = Math.min(
+        Math.max(hours != null && Number.isFinite(hours) ? Math.trunc(hours) : 24, 1),
+        168,
+      );
       const conditions: SQL[] = [];
       if (!actor?.isGlobalAdmin) {
         const orgId = actor?.primaryOrgId?.trim();
@@ -37,6 +44,9 @@ export class TimelineService {
         conditions.push(eq(ewohEvent.orgId, orgId));
       }
       if (status) conditions.push(eq(ewohEvent.status, status));
+      conditions.push(
+        gte(ewohEvent.createdAt, new Date(Date.now() - safeHours * 3_600_000)),
+      );
       const rows = await this.db
         .select()
         .from(ewohEvent)

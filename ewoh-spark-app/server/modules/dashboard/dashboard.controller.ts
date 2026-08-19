@@ -144,10 +144,18 @@ export class DashboardController {
   async getEvents(
     @Query('limit') limit?: string,
     @Query('status') status?: string,
+    /** 时间窗（小时）：默认 24，1~168；前端时间范围选择器（1h/6h/24h/7d）消费。 */
+    @Query('hours') hours?: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
     const limitNum = parseLimitParam(limit, 50);
-    return this.dashboardService.getEvents(limitNum, status, request?.userContext);
+    const hoursNum = hours != null && hours !== '' ? Number(hours) : undefined;
+    return this.dashboardService.getEvents(
+      limitNum,
+      status,
+      request?.userContext,
+      Number.isFinite(hoursNum) ? hoursNum : undefined,
+    );
   }
 
   @Get('events/stats')

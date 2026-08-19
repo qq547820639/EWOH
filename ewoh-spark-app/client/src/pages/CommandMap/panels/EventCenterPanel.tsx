@@ -34,6 +34,18 @@ const SEVERITY_OPTIONS: { label: string; value: string | undefined }[] = [
   { label: '低', value: 'low' },
 ];
 
+/**
+ * 时间范围选择（2026-08-19 数据增长治理）：默认只看最近 24h 的滚动窗口，
+ * 超出窗口的数据自动滚出视野；用户可切换 1h/6h/24h/7d。
+ */
+const TIME_RANGE_OPTIONS: { label: string; hours: number }[] = [
+  { label: '1小时', hours: 1 },
+  { label: '6小时', hours: 6 },
+  { label: '24小时', hours: 24 },
+  { label: '7天', hours: 168 },
+];
+const DEFAULT_TIME_RANGE_HOURS = 24;
+
 /** R2-CP1-2：时间展示统一 Asia/Shanghai 时区（不依赖浏览器本地时区）。 */
 function formatShortTime(iso: string): string {
   return new Date(iso).toLocaleString('zh-CN', {
@@ -104,6 +116,7 @@ export default function EventCenterPanel({
 }: EventCenterPanelProps) {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
+  const [timeRangeHours, setTimeRangeHours] = useState<number>(DEFAULT_TIME_RANGE_HOURS);
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
   const [replayContext, setReplayContext] = useState<ReplayContextSummary | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
@@ -137,8 +150,8 @@ export default function EventCenterPanel({
   }, []);
 
   const { data: events, isLoading, isError } = useQuery<EventInfo[]>({
-    queryKey: queryKeys.events(statusFilter),
-    queryFn: () => getEvents(50, statusFilter),
+    queryKey: [...queryKeys.events(statusFilter), 'range', timeRangeHours],
+    queryFn: () => getEvents(50, statusFilter, timeRangeHours),
     refetchInterval: 5000,
   });
 
@@ -260,6 +273,22 @@ export default function EventCenterPanel({
                 className="h-6 text-[10px] px-2"
                 onClick={() => setSeverityFilter(opt.value)}
                 aria-pressed={severityFilter === opt.value}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-card/10" />
+          {/* 时间范围选择（默认 24h 滚动窗口，可选 1h/6h/24h/7d） */}
+          <div className="flex gap-1" role="group" aria-label="时间范围">
+            {TIME_RANGE_OPTIONS.map((opt) => (
+              <Button
+                key={opt.label}
+                variant={timeRangeHours === opt.hours ? 'default' : 'outline'}
+                size="sm"
+                className="h-6 text-[10px] px-2"
+                onClick={() => setTimeRangeHours(opt.hours)}
+                aria-pressed={timeRangeHours === opt.hours}
               >
                 {opt.label}
               </Button>

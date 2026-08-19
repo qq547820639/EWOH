@@ -70,7 +70,7 @@ export class AlertService {
    */
   async listAlerts(
     actor?: OrgContext,
-    options?: { limit?: number; since?: string },
+    options?: { limit?: number; since?: string; hours?: number },
   ) {
     const orgId = actor?.primaryOrgId?.trim();
     if (!orgId) {
@@ -82,10 +82,23 @@ export class AlertService {
       Math.max(Number(options?.limit) || 100, 1),
       500,
     );
-    const sinceFilter =
+    // 时间窗滚动查询（2026-08-19，与 dashboard/events 同语义）：默认 24h
+    // （since 显式传入时以其为准）；clamp [1,168]。事件表高写入量，无窗
+    // 全表扫描在峰值时拖垮平台。
+    const safeHours = Math.min(
+      Math.max(
+        options?.hours != null && Number.isFinite(options.hours)
+          ? Math.trunc(options.hours)
+          : 24,
+        1,
+      ),
+      168,
+    );
+    const sinceDate =
       options?.since && !Number.isNaN(Date.parse(options.since))
-        ? [gte(ewohEvent.createdAt, new Date(options.since))]
-        : [];
+        ? new Date(options.since)
+        : new Date(Date.now() - safeHours * 3_600_000);
+    const sinceFilter = [gte(ewohEvent.createdAt, sinceDate)];
     if (actor?.isGlobalAdmin) {
       return this.db
         .select()

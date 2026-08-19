@@ -70,6 +70,8 @@ describe('SimulatorService background org context', () => {
       db,
       ruleEngine as never,
       context as never,
+      // RetentionService 注入 mock（构造第 4 参——服务本体不被本 spec 触达）。
+      {} as never,
     );
     (service as unknown as { running: boolean }).running = true;
     (service as unknown as { mainTicking: boolean }).mainTicking = false;
@@ -98,6 +100,8 @@ describe('SimulatorService background org context', () => {
       db,
       ruleEngine as never,
       context as never,
+      // RetentionService 注入 mock（构造第 4 参——服务本体不被本 spec 触达）。
+      {} as never,
     );
     (service as unknown as { running: boolean }).running = true;
     (service as unknown as { mainTicking: boolean }).mainTicking = false;
@@ -161,6 +165,8 @@ describe('SimulatorService background org context', () => {
       db,
       ruleEngine as never,
       context as never,
+      // RetentionService 注入 mock（构造第 4 参——服务本体不被本 spec 触达）。
+      {} as never,
     );
     (service as unknown as { running: boolean }).running = true;
     (service as unknown as { envTicking: boolean }).envTicking = false;
@@ -196,6 +202,8 @@ describe('SimulatorService background org context', () => {
       db,
       ruleEngine as never,
       context as never,
+      // RetentionService 注入 mock（构造第 4 参——服务本体不被本 spec 触达）。
+      {} as never,
     );
 
     await (
