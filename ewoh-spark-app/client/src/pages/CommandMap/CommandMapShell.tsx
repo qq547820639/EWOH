@@ -242,6 +242,7 @@ const CommandMapShell = (): React.ReactElement => {
   const setReplayPaused = ctl.setReplayPaused;
   const setReplaySpeed = ctl.setReplaySpeed;
   const setReplayTime = ctl.setReplayTime;
+  const setReplayTimestamp = ctl.setReplayTimestamp;
   const [activeTab, setActiveTab] = useState<string>('timeline');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [focusPlanId, setFocusPlanId] = useState<string | null>(null);
@@ -427,24 +428,23 @@ const CommandMapShell = (): React.ReactElement => {
     }
   }, [mode, level, replayMode, replayPaused]);
 
-  // 真实回放播放循环：按倍速逐快照推进
+  // 真实回放播放循环：按倍速逐快照推进。
+  // 2026-08-20 二修：推进必须用 setReplayTimestamp（只更新时间戳、不置 paused）。
+  // 旧实现复用了 setReplayTime（拖动时间轴语义，设时间即 paused:true）→ 每推进
+  // 一帧 paused 被置 true → effect 因 paused 变化清理 interval → 永远只动一帧
+  // 就「自动暂停」；且起点分支 return 后依赖数组无变化，interval 根本不会被创建。
+  // 现改为单一 interval：首 tick 用 advanceReplayTime(null) 取最旧帧为起点，
+  // 后续 tick 逐帧推进，到最新帧循环回开头连续播放。
   useEffect(() => {
     if (!replayMode || replayPaused || !replaySnapshots?.length) return;
-    if (!replayTimeRef.current) {
-      // 起点取最旧快照（advanceReplayTime(null) 内部按时间升序取首帧——
-      // 服务端快照为倒序，直接取 [0] 会从最新帧起播并卡死，2026-08-20 修复）。
-      const firstTs = advanceReplayTime(replaySnapshots, null);
-      replayTimeRef.current = firstTs;
-      setReplayTime(firstTs);
-      return;
-    }
     const timer = window.setInterval(() => {
       const next = advanceReplayTime(replaySnapshots, replayTimeRef.current);
+      if (next === replayTimeRef.current) return; // 单帧数据时避免无意义更新
       replayTimeRef.current = next;
-      setReplayTime(next);
+      setReplayTimestamp(next);
     }, Math.max(200, 1000 / replaySpeed));
     return () => window.clearInterval(timer);
-  }, [replayMode, replayPaused, replaySpeed, replaySnapshots, setReplayTime]);
+  }, [replayMode, replayPaused, replaySpeed, replaySnapshots, setReplayTimestamp]);
 
   // 聚焦事件：打开事件中心并选中事件，同时尝试定位关联设备
   const focusEventEntity = useCallback(

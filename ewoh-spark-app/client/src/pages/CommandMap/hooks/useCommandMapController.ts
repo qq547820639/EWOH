@@ -53,6 +53,12 @@ export interface CommandMapController {
   setReplayPaused: (paused: boolean) => void;
   setReplaySpeed: (speed: number) => void;
   setReplayTime: (time: string | null) => void;
+  /**
+   * 播放循环专用：只更新回放时间戳，不触碰 paused。
+   * setReplayTime 是「用户手动拖动时间轴」语义（拖动即暂停）；播放循环若复用它
+   * 推进帧，每推进一帧 paused 都会被置 true → 回放永远只动一帧就「自动暂停」。
+   */
+  setReplayTimestamp: (time: string | null) => void;
   toggleReplay: () => void;
   toggleReplayPause: () => void;
 
@@ -219,6 +225,13 @@ export function useCommandMapController(): CommandMapController {
     },
     [actions],
   );
+  // 播放循环专用（见接口注释）：不置 paused。
+  const setReplayTimestamp = useCallback(
+    (time: string | null) => {
+      actions.setReplay(time ? { timestamp: time } : { timestamp: null });
+    },
+    [actions],
+  );
   const toggleReplay = useCallback(() => {
     const { active } = useCommandMapStore.getState().replay;
     if (active) actions.setReplay({ active: false });
@@ -274,6 +287,7 @@ export function useCommandMapController(): CommandMapController {
     setReplayPaused,
     setReplaySpeed,
     setReplayTime,
+    setReplayTimestamp,
     toggleReplay,
     toggleReplayPause,
 

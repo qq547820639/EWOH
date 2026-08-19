@@ -172,6 +172,16 @@ describe('useCommandMapController（controller 动作 → store 唯一真源）'
     ctl!.setReplayTime('2026-08-10T00:00:00.000Z');
     expect(useCommandMapStore.getState().replay.timestamp).toBe('2026-08-10T00:00:00.000Z');
     expect(useCommandMapStore.getState().replay.paused).toBe(true);
+    // 播放循环专用：setReplayTimestamp 只更新时间戳，绝不触碰 paused
+    // （2026-08-20 回放自动暂停二修：复用 setReplayTime 推进帧会把 paused
+    //  置 true 导致每推进一帧就暂停）。
+    ctl!.setReplayTimestamp('2026-08-10T00:01:00.000Z');
+    expect(useCommandMapStore.getState().replay.timestamp).toBe('2026-08-10T00:01:00.000Z');
+    expect(useCommandMapStore.getState().replay.paused).toBe(true);
+    ctl!.toggleReplayPause();
+    expect(useCommandMapStore.getState().replay.paused).toBe(false);
+    ctl!.setReplayTimestamp('2026-08-10T00:02:00.000Z');
+    expect(useCommandMapStore.getState().replay.paused).toBe(false);
     ctl!.setReplayMode(false);
     expect(useCommandMapStore.getState().replay.active).toBe(false);
   });
