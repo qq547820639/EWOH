@@ -20,6 +20,7 @@
 - 速率限制器为进程内内存实现，适用于单机边缘部署；不持久化、不跨进程。
 """
 
+import threading
 import time
 from collections import deque
 from typing import Callable
@@ -76,6 +77,9 @@ class _RateLimiter:
     超限；未超限则记录本次请求时间戳。
     EDGE-016（2026-08-17 审计整改）：非活跃 IP 的空/全过期桶周期性淘汰
     （超过 ``_MAX_BUCKETS`` 个桶时清扫），字典不再按 IP 无界增长。
+    P2（2026-08-19 审计）：加锁——消费方为 ThreadingHTTPServer 多线程
+    handler 并发调 ``check``，原无锁的 dict/deque 读改写存在计数丢失与
+    迭代期间变更（_sweep 遍历时另一线程插桶）风险。
     """
 
     # 桶数量软上限：超过后触发一次清扫（淘汰空桶与全过期桶）
@@ -85,9 +89,10 @@ class _RateLimiter:
         self.max = int(max_per_minute)
         self.window_sec = float(window_sec)
         self._buckets: dict[str, deque] = {}
+        self._lock = threading.Lock()
 
     def _sweep(self, now: float) -> None:
-        """淘汰空桶与窗口外全过期桶（调用方需已持有桶字典操作权）。"""
+        """淘汰空桶与窗口外全过期桶（调用方需已持有 _lock）。"""
         cutoff = now - self.window_sec
         stale = [
             ip
@@ -102,26 +107,28 @@ class _RateLimiter:
         if not ip:
             ip = "unknown"
         now = time.monotonic()
-        if len(self._buckets) > self._MAX_BUCKETS:
-            self._sweep(now)
-        bucket = self._buckets.get(ip)
-        if bucket is None:
-            bucket = deque()
-            self._buckets[ip] = bucket
-        cutoff = now - self.window_sec
-        while bucket and bucket[0] < cutoff:
-            bucket.popleft()
-        if len(bucket) >= self.max:
-            return False
-        bucket.append(now)
-        return True
+        with self._lock:
+            if len(self._buckets) > self._MAX_BUCKETS:
+                self._sweep(now)
+            bucket = self._buckets.get(ip)
+            if bucket is None:
+                bucket = deque()
+                self._buckets[ip] = bucket
+            cutoff = now - self.window_sec
+            while bucket and bucket[0] < cutoff:
+                bucket.popleft()
+            if len(bucket) >= self.max:
+                return False
+            bucket.append(now)
+            return True
 
     def reset(self, ip: str = None) -> None:
         """清除指定 IP（或全部）的计数（测试与运维用途）。"""
-        if ip is None:
-            self._buckets.clear()
-        else:
-            self._buckets.pop(ip, None)
+        with self._lock:
+            if ip is None:
+                self._buckets.clear()
+            else:
+                self._buckets.pop(ip, None)
 
 
 def rate_limiter(max_per_minute: int = 60) -> Callable[[type], type]:

@@ -220,7 +220,9 @@ class EventUplink:
         """P1（2026-08-19 审计）：毒信封转死信——反复失败/被云端 4xx 拒绝的
         队头批次追加到 <queue_path>.dead-letter.jsonl（人工重放载体；云端按
         (org,source,eventId) 幂等去重，重放安全），不再永久阻塞队头。"""
-        self._stats["dead_lettered"] += len(batch)
+        # P2（2026-08-19 审计）：stats 修改统一进锁（与 _enqueue/_loop 同纪律）。
+        with self._lock:
+            self._stats["dead_lettered"] += len(batch)
         if not self._queue_path:
             logger.error(
                 "event uplink: 批次转 dead-letter（无队列路径，仅计数）: %d 条，原因: %s",
@@ -260,12 +262,17 @@ class EventUplink:
         """STREAM_EVENTS 回调：契约校验后入缓冲（fail-closed，非法计数不发送）。"""
         envelope = evt.get("envelope") if isinstance(evt, dict) else None
         if not isinstance(envelope, dict):
-            self._stats["dropped_invalid"] += 1
+            # P2（2026-08-19 审计）stats 竞态：本回调在 bus 发布方线程执行、
+            # _loop 在独立线程读写同批计数器——Python 整数 += 非原子，
+            # 全部 stats 修改统一进锁（对齐 metrics_uplink 的锁纪律）。
+            with self._lock:
+                self._stats["dropped_invalid"] += 1
             return
         errors = envelope_contract.validate_envelope(envelope, CATALOG_TYPES)
         if errors:
             logger.warning("event uplink: 信封契约校验失败（不发送）: %s", errors)
-            self._stats["dropped_invalid"] += 1
+            with self._lock:
+                self._stats["dropped_invalid"] += 1
             return
         with self._lock:
             if len(self._buffer) >= MAX_BUFFER:
@@ -286,13 +293,15 @@ class EventUplink:
             if batch:
                 outcome = self._post_batch(batch)
                 if outcome == "ok":
-                    self._stats["sent"] += len(batch)
+                    with self._lock:  # P2：stats 修改统一进锁（跨线程计数）
+                        self._stats["sent"] += len(batch)
                     self._consecutive_failures = 0
                     self._batch_attempts = 0
                     with self._lock:
                         self._persist()  # 成功即截断队列文件
                 else:
-                    self._stats["failures"] += 1
+                    with self._lock:  # P2：同上
+                        self._stats["failures"] += 1
                     self._consecutive_failures += 1
                     self._batch_attempts += 1
                     if outcome == "dead_letter" or self._batch_attempts >= MAX_BATCH_ATTEMPTS:

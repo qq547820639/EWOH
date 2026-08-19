@@ -223,11 +223,11 @@ def main():
         # 启动即输出每适配器 health（E-03 防"真实模式空转"无感）
         try:
             for entry in manager.health() or []:
+                # P2（2026-08-19 审计）：原 print(fmt, a, b, c) 把 %s 占位符
+                # 原样输出、参数追加在后（print 不做 % 格式化）——改 f-string。
                 print(
-                    "[EWOH] adapter health: device=%s type=%s status=%s",
-                    entry.get("device_id"),
-                    entry.get("type"),
-                    entry.get("status"),
+                    f"[EWOH] adapter health: device={entry.get('device_id')} "
+                    f"type={entry.get('type')} status={entry.get('status')}"
                 )
         except Exception:
             print("[EWOH] adapter health 汇总失败（详见日志）")

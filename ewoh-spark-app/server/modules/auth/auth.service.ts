@@ -109,6 +109,17 @@ export class AuthService {
   private readonly redis: RedisService;
   private readonly logger = new Logger(AuthService.name);
 
+  /** P2（2026-08-19 审计 #13）：verifyToken 停用复核的短 TTL 缓存（每请求查库
+   *  → 活跃用户缓存；停用传播延迟以 TTL 为上限，TTL=0 直查保持旧行为）。 */
+  private static readonly ACTIVE_CACHE_TTL_MS = Number(
+    process.env.EWOH_AUTH_ACTIVE_CACHE_TTL_MS ?? 30_000,
+  );
+  private static readonly ACTIVE_CACHE_LIMIT = 1_000;
+  private readonly activeUserCache = new Map<
+    string,
+    { userId: string | null; expiresAt: number }
+  >();
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: any,
     @Optional() redis?: RedisService,
@@ -256,12 +267,36 @@ export class AuthService {
         throw new UnauthorizedException('Access token has been revoked');
       }
     }
-    // 停用用户存量 token 立即失效：按 token 内 username 复核 active 状态。
-    const activeUser = await this.findUser(payload.username);
-    if (!activeUser || activeUser.userId !== payload.sub) {
+    // 停用用户存量 token 立即失效：按 token 内 username 复核 active 状态
+    // （P2：经短 TTL 缓存，见 activeUserCache 注释——每请求 DB 往返消除，
+    // 停用传播延迟以 TTL 为上限）。
+    const activeUserId = await this.findActiveUserIdCached(payload.username);
+    if (!activeUserId || activeUserId !== payload.sub) {
       throw new UnauthorizedException('User is inactive or no longer exists');
     }
     return payload;
+  }
+
+  /** 停用复核的 TTL 缓存包装（TTL=0 时直查，保持旧行为）。 */
+  private async findActiveUserIdCached(username: string): Promise<string | null> {
+    const ttl = AuthService.ACTIVE_CACHE_TTL_MS;
+    if (!(ttl > 0)) {
+      return (await this.findUser(username))?.userId ?? null;
+    }
+    const now = Date.now();
+    const hit = this.activeUserCache.get(username);
+    if (hit && hit.expiresAt > now) {
+      return hit.userId;
+    }
+    const user = await this.findUser(username);
+    if (this.activeUserCache.size >= AuthService.ACTIVE_CACHE_LIMIT) {
+      this.activeUserCache.clear();
+    }
+    this.activeUserCache.set(username, {
+      userId: user?.userId ?? null,
+      expiresAt: now + ttl,
+    });
+    return user?.userId ?? null;
   }
 
   private async issue(user: AuthUser): Promise<AuthTokens> {

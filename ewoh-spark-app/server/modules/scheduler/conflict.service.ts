@@ -774,6 +774,12 @@ export class ConflictService {
    *   RESOLVED 复现 → reopen OPEN + audit + SSE。
    * - 消失：OPEN/ACKNOWLEDGED → 自动 RESOLVED（resolution=auto_cleared）+ audit + SSE。
    * 返回合并后的冲突视图（含生命周期字段）。
+   *
+   * P2（2026-08-19 审计）写放大收敛：新冲突 N 次逐条 INSERT 改单语句批量
+   * INSERT（onConflictDoNothing 幂等——并发 reconcile 同批冲突时后到者静默
+   * 跳过，与归并语义一致）；SSE/audit 由逐条串行 await（3N 次顺序往返）改
+   * 并发扇出单点汇合（事件数不变、互不依赖——emitSse/writeAudit 各自容错，
+   * 单条失败不影响其余）。CAS 状态转移更新保持逐行（源状态谓词语义要求）。
    */
   async reconcile(
     derived: SchedulingConflict[],
@@ -788,20 +794,33 @@ export class ConflictService {
     const now = new Date();
     const nowMs = now.getTime();
     const result: SchedulingConflict[] = [];
+    // 待批量落库的新冲突。
+    const pendingInserts: SchedulingConflict[] = [];
+    // 待并发扇出的通知（SSE + audit）。
+    const pendingNotifications: Array<{
+      sseType: string;
+      auditAction: string;
+      conflict: SchedulingConflict;
+      auditReason: string;
+    }> = [];
 
     for (const c of derived) {
       const row = byId.get(c.conflictId);
       if (!row) {
-        // 新冲突 → 落库 OPEN + SSE + audit。
-        await this.insertRow(c, ctx.primaryOrgId || null, now);
+        // 新冲突 → 批量落库 OPEN + SSE + audit（通知延后到批量 INSERT 后）。
         const enriched: SchedulingConflict = {
           ...c,
           status: 'OPEN',
           detectedAt: now.toISOString(),
         };
         result.push(enriched);
-        await this.emitSse('conflict.detected', enriched, ctx.primaryOrgId || null);
-        await this.writeAudit('conflict.detected', enriched, SYSTEM_ACTOR, 'derived', ctx);
+        pendingInserts.push(enriched);
+        pendingNotifications.push({
+          sseType: 'conflict.detected',
+          auditAction: 'conflict.detected',
+          conflict: enriched,
+          auditReason: 'derived',
+        });
         continue;
       }
 
@@ -844,18 +863,22 @@ export class ConflictService {
           );
           continue;
         }
-        await this.emitSse('conflict.detected', merged, ctx.primaryOrgId || null);
-        await this.writeAudit(
-          'conflict.reopen',
-          merged,
-          SYSTEM_ACTOR,
-          transition === 'reopen_suppress_expired'
-            ? 'suppress_until expired'
-            : 'conflict reappeared after RESOLVED',
-          ctx,
-        );
+        pendingNotifications.push({
+          sseType: 'conflict.detected',
+          auditAction: 'conflict.reopen',
+          conflict: merged,
+          auditReason:
+            transition === 'reopen_suppress_expired'
+              ? 'suppress_until expired'
+              : 'conflict reappeared after RESOLVED',
+        });
       }
       result.push(merged);
+    }
+
+    // 新冲突批量落库（单语句；与逐条 insertRow 同款容错——失败留痕不阻断归并）。
+    if (pendingInserts.length > 0) {
+      await this.insertRows(pendingInserts, ctx.primaryOrgId || null, now);
     }
 
     // 消失 → 自动 RESOLVED（仅 OPEN/ACKNOWLEDGED；SUPPRESSED/RESOLVED 保持）。
@@ -888,16 +911,22 @@ export class ConflictService {
           resolvedAt: now.toISOString(),
           resolution: 'auto_cleared',
         };
-        await this.emitSse('conflict.resolved', resolvedView, ctx.primaryOrgId || null);
-        await this.writeAudit(
-          'conflict.resolve',
-          resolvedView,
-          SYSTEM_ACTOR,
-          'auto_cleared',
-          ctx,
-        );
+        pendingNotifications.push({
+          sseType: 'conflict.resolved',
+          auditAction: 'conflict.resolve',
+          conflict: resolvedView,
+          auditReason: 'auto_cleared',
+        });
       }
     }
+
+    // 并发扇出全部 SSE + audit（各自容错，单条失败不阻断其余）。
+    await Promise.all(
+      pendingNotifications.flatMap((n) => [
+        this.emitSse(n.sseType, n.conflict, ctx.primaryOrgId || null),
+        this.writeAudit(n.auditAction, n.conflict, SYSTEM_ACTOR, n.auditReason, ctx),
+      ]),
+    );
 
     return result;
   }
@@ -942,33 +971,49 @@ export class ConflictService {
     return rows[0] ?? null;
   }
 
-  private async insertRow(
-    c: SchedulingConflict,
+  /**
+   * 批量落库新冲突（P2 2026-08-19 审计：替代逐条 insertRow 的 N 次往返）。
+   * onConflictDoNothing 按 (org_id, conflict_id) 幂等——并发 reconcile 同批
+   * 冲突时后到者静默跳过（与"无落库行才 INSERT"的归并语义一致）；失败
+   * 整批留痕不阻断归并（同原逐条 insertRow 的容错口径）。
+   */
+  private async insertRows(
+    conflicts: SchedulingConflict[],
     orgId: string | null,
     detectedAt: Date,
   ): Promise<void> {
     try {
-      await this.db.insert(ewohSchedulingConflict).values({
-        conflictId: c.conflictId,
-        type: c.type,
-        severity: c.severity,
-        scope: c.scope,
-        status: 'OPEN',
-        taskIds: c.taskIds,
-        resourceIds: c.resourceId ? [c.resourceId] : [],
-        resourceId: c.resourceId,
-        resourceType: c.resourceType,
-        planId: c.planId ?? null,
-        snapshotVersion: c.snapshotVersion,
-        message: c.message,
-        resolution: c.resolution,
-        data: c.data ?? null,
-        detectedAt,
-        orgId,
-      });
+      await this.db
+        .insert(ewohSchedulingConflict)
+        .values(
+          conflicts.map((c) => ({
+            conflictId: c.conflictId,
+            type: c.type,
+            severity: c.severity,
+            scope: c.scope,
+            status: 'OPEN',
+            taskIds: c.taskIds,
+            resourceIds: c.resourceId ? [c.resourceId] : [],
+            resourceId: c.resourceId,
+            resourceType: c.resourceType,
+            planId: c.planId ?? null,
+            snapshotVersion: c.snapshotVersion,
+            message: c.message,
+            resolution: c.resolution,
+            data: c.data ?? null,
+            detectedAt,
+            orgId,
+          })),
+        )
+        .onConflictDoNothing({
+          target: [
+            ewohSchedulingConflict.orgId,
+            ewohSchedulingConflict.conflictId,
+          ],
+        });
     } catch (err) {
       this.logger.warn(
-        `conflict insert failed (${c.conflictId}): ${(err as Error)?.message ?? err}`,
+        `conflict batch insert failed (${conflicts.length} rows): ${(err as Error)?.message ?? err}`,
       );
     }
   }

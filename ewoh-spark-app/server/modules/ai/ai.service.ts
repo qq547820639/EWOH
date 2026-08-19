@@ -142,6 +142,8 @@ export class AiService {
     problem: string;
     snapshot: { version: number; from: string; to: string; records: number };
     orgId?: string;
+    /** P2（2026-08-19 审计）：客户端断开取消（透传至出站 LLM fetch）。 */
+    signal?: AbortSignal;
   }): AsyncGenerator<
     { phase: 'basis' | 'delta' | 'reasoning' | 'done'; suggestion?: AiSuggestion; delta?: string; error?: string },
     void,
@@ -167,7 +169,7 @@ export class AiService {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
-          { temperature: 0.4 },
+          { temperature: 0.4, signal: input.signal },
         )) {
           if (chunk.reasoning) {
             yield { phase: 'reasoning', delta: chunk.reasoning };
@@ -501,10 +503,12 @@ export class AiService {
   /**
    * 自然语言问答（流式）：采集系统实时上下文后调用 Ark（stream:true），
    * 逐增量产出回答文本。错误以 throw 抛出（首个 yield 前）。
+   * P2（2026-08-19 审计）：signal 支持客户端断开取消（透传至出站 fetch）。
    */
   async *chatWithContextStream(
     question: string,
     orgId?: string | null,
+    signal?: AbortSignal,
   ): AsyncGenerator<{ delta: string; reasoning?: string }, void, undefined> {
     const context = await this.collectSystemContext(orgId ?? null);
     if (!this.ark) {
@@ -519,7 +523,7 @@ export class AiService {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { temperature: 0.3 },
+      { temperature: 0.3, signal },
     )) {
       // AI 助手增强（2026-08-19）：thinking 模型的思考链与正文分离透传。
       if (chunk.reasoning) yield { delta: '', reasoning: chunk.reasoning };

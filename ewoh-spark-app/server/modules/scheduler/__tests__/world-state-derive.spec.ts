@@ -89,8 +89,10 @@ function projectFromRows(rowsByTable: Partial<Record<string, unknown[]>>) {
     type: string, x: number | null, y: number | null, floorId: string | null,
   ) => {
     if (type === 'WGS84') {
-      const lat = y ?? x;
-      const lng = x ?? y;
+      // P1（2026-08-19 审计）：与源码 toCoordinateFromSpatial 同步——契约
+      // x 承载 lat、y 承载 lng（原 mock 旧语义 lat=y 掩盖源码互换 bug）。
+      const lat = x;
+      const lng = y;
       if (lat == null || lng == null) return { type: 'UNKNOWN' };
       return { type: 'WGS84', lat, lng };
     }
@@ -833,8 +835,11 @@ describe('T02 / P0-1: world-state 消费 ResourceProjectionService（双源一�
         { id: 'd2', deviceId: 'D-002', online: true, batteryPct: 80, locationLat: 500, locationLng: 600, locationCoordinateType: 'FACTORY_CARTESIAN', lastTelemetryAt: new Date() },
       ],
       spatial: [
-        // WGS84 工位（约定 x=lng, y=lat；仅 coordinate 承载，不进笛卡尔距离）。
-        { entityId: 'S-W', entityType: 'station', name: 'S-W', parentId: 'Z-1', x: 121.47, y: 31.23, coordinateType: 'WGS84', floorId: null, extra: null },
+        // WGS84 工位（契约约定 x=lat∈[-90,90]、y=lng∈[-180,180]——
+        // shared/location.ts + contracts/location Python 同款；仅 coordinate
+        // 承载，不进笛卡尔距离。P1 2026-08-19 审计：种子里曾用与契约相反的
+        // x=lng/y=lat 掩盖 toCoordinateFromSpatial 的 lat/lng 互换 bug）。
+        { entityId: 'S-W', entityType: 'station', name: 'S-W', parentId: 'Z-1', x: 31.23, y: 121.47, coordinateType: 'WGS84', floorId: null, extra: null },
         // 笛卡尔工位。
         { entityId: 'S-C', entityType: 'station', name: 'S-C', parentId: 'Z-1', x: 10, y: 20, coordinateType: 'FACTORY_CARTESIAN', floorId: 'F1', extra: null },
       ],

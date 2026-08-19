@@ -4,7 +4,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, or, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, or, isNull } from 'drizzle-orm';
 import { ewohSchedulingExecution } from '@server/database/schema';
 import type {
   ExecutionListResponse,
@@ -251,14 +251,26 @@ export class ExecutionService {
       );
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
-    const rows = await this.db
-      .select()
-      .from(ewohSchedulingExecution)
-      .where(where)
-      .orderBy(desc(ewohSchedulingExecution.createdAt))
-      .limit(opts.limit ?? 100)
-      .offset(opts.offset ?? 0);
-    return { executions: rows.map((r) => this.toExecution(r)), total: rows.length };
+    // P2（2026-08-19 审计）分页 total 语义：原 total 取当前页 rows.length
+    // （≤limit），翻页/前端分页控件全部失真——改为独立 count(*) 查询满足
+    // where 条件的总数（与 dashboard.service 分页同款正确实现）。
+    const [rows, totalRow] = await Promise.all([
+      this.db
+        .select()
+        .from(ewohSchedulingExecution)
+        .where(where)
+        .orderBy(desc(ewohSchedulingExecution.createdAt))
+        .limit(opts.limit ?? 100)
+        .offset(opts.offset ?? 0),
+      this.db
+        .select({ value: count() })
+        .from(ewohSchedulingExecution)
+        .where(where),
+    ]);
+    return {
+      executions: rows.map((r) => this.toExecution(r)),
+      total: totalRow[0]?.value ?? rows.length,
+    };
   }
 
   /** 按 assignmentId 查。NEST-012（2026-08-17）：orgId 提供时按 org 过滤。 */

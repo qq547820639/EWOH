@@ -606,7 +606,9 @@ export class SchedulerPlanApplicationService {
       entityType: 'schedule_plan',
       entityId: planId,
       before: { status: plan.status, version: plan.version },
-      after: { overrideCount: constraints.length, supersededBy: `${planId}-R${(plan.version ?? 1) + 1}` },
+      // P2（2026-08-19 审计）：supersededBy 此前二次推导 `${planId}-R${n}`——
+      // 与 replan 内部派生重复且在嵌套剥离修复后口径漂移，改用真实结果 ID。
+      after: { overrideCount: constraints.length, supersededBy: after?.planId ?? null },
       reason: body.reason,
     });
 

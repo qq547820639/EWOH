@@ -821,7 +821,12 @@ export class PlanService {
 
     const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
     const newVersion = (plan.version ?? 1) + 1;
-    const newPlanId = `${planId}-R${newVersion}`;
+    // P2（2026-08-19 审计）planId 嵌套增长：原 `${planId}-R${n}` 以父方案
+    // 全串为前缀，逐代重排线性增长（PLAN-a → PLAN-a-R2 → PLAN-a-R2-R3…，
+    // 落库列宽/日志/引用链全部膨胀）。改为剥离历代 -R 后缀后按根 ID 重编：
+    // 第 n 代恒为 <root>-Rn（version 单调递增保证代际唯一）。
+    const rootPlanId = planId.replace(/-R\d+$/, '');
+    const newPlanId = `${rootPlanId}-R${newVersion}`;
 
     // 继承原方案的策略与时间窗；旧数据/缺失时回退生效策略或默认。
     let policy:

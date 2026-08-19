@@ -273,8 +273,13 @@ class SparkBridge:
                     continue
                 self._buffer.append(frame)
                 self._persist()  # L2：入队即落盘（跨重启断点续传）
-                # 达到批量上限或单帧模式直接发送
-                if len(self._buffer) >= 1:
+                # P2（2026-08-19 审计）批量化修复：原阈值写死 1（"达到批量上限
+                # 或单帧模式直接发送"的残尾），每入一帧立即 flush——缓冲恒为 1，
+                # BATCH_SIZE=100 名存实亡（等价死代码），洪泛时逐帧 POST 打爆
+                # 云端。恢复真实批量语义：攒满 BATCH_SIZE 才主动批量发送；
+                # 低速率流由上方 read 超时（frame=None）分支兜底 flush——
+                # 正常演示（1 帧/秒）行为不变，洪泛时 100 帧合一批。
+                if len(self._buffer) >= self.BATCH_SIZE:
                     self._flush_batch()
         except KeyboardInterrupt:
             print("\n[bridge] 收到中断信号，退出...")

@@ -290,6 +290,10 @@ export class ArkService {
    * 流式聊天：调用 Ark Chat Completions（stream:true），逐增量产出文本。
    * 返回 AsyncGenerator<string>，每次 yield 一段新增文本。
    * 错误（未配置/网络/HTTP）在首个 yield 前以 throw 抛出，由调用方处理。
+   *
+   * P2（2026-08-19 审计）：opts.signal 支持调用方取消（客户端 SSE 断开时
+   * 中止出站 fetch——此前 LLM 调用持续跑到自然结束，白白消耗配额与连接）。
+   * abort 后在途 read 以 AbortError 结束，生成器正常收尾（不向上抛）。
    */
   async *chatStream(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -297,6 +301,7 @@ export class ArkService {
       temperature?: number;
       maxTokens?: number;
       timeoutMs?: number;
+      signal?: AbortSignal;
     } = {},
   ): AsyncGenerator<{ text?: string; reasoning?: string }, void, undefined> {
     const cfg = await this.getConfig();
@@ -304,6 +309,9 @@ export class ArkService {
       throw new Error(
         '未配置 Ark API Key（可在 系统管理 → AI 能力接入 中配置，或设置 EWOH_ARK_API_KEY）。',
       );
+    }
+    if (opts.signal?.aborted) {
+      return; // 调用方已取消（连接未建立前零成本退出）
     }
     const url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
     const body: Record<string, unknown> = {
@@ -314,6 +322,12 @@ export class ArkService {
     if (opts.temperature !== undefined) body.temperature = opts.temperature;
     if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
 
+    // 超时 + 调用方取消合并为同一中止源。
+    const timeoutSignal = AbortSignal.timeout(opts.timeoutMs ?? 300000);
+    const signal = opts.signal
+      ? AbortSignal.any([timeoutSignal, opts.signal])
+      : timeoutSignal;
+
     let res: Response;
     try {
       res = await fetch(url, {
@@ -323,9 +337,10 @@ export class ArkService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 300000),
+        signal,
       });
     } catch (e) {
+      if (opts.signal?.aborted) return; // 调用方取消：静默收尾
       throw new Error(`请求失败: ${String(e)}`);
     }
     if (!res.ok) {
@@ -357,6 +372,7 @@ export class ArkService {
           } catch {
             continue; // 忽略无法解析的分片
           }
+          if (opts.signal?.aborted) return; // 取消：不再解析产出
           const choiceDelta = chunk.choices?.[0]?.delta;
           // AI 助手增强（2026-08-19）：thinking 模型（deepseek-v4-flash 等）在
           // delta.reasoning_content 输出思考链——与正文分开流式透传，前端展示思考区。
@@ -369,7 +385,12 @@ export class ArkService {
           if (text) yield { text };
         }
       }
+    } catch (e) {
+      // 取消导致的在途 read 中止：静默收尾（调用方已断开，无消费者）。
+      if (opts.signal?.aborted) return;
+      throw e;
     } finally {
+      // fetch signal 已随 abort 撕断下载流，这里只需释放 reader 锁。
       reader.releaseLock();
     }
   }

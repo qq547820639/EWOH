@@ -218,7 +218,7 @@ export class AiController {
       snapshot: { version: number; from: string; to: string; records: number };
     },
     @Res() res: Response,
-    @Req() request: { userContext?: OrgContext },
+    @Req() request: { userContext?: OrgContext; on?: (event: string, listener: () => void) => void },
   ) {
     if (!body.triggeredBy?.trim() || !body.problem?.trim()) {
       res.status(400).json({ phase: 'done', error: 'triggeredBy and problem are required' });
@@ -229,14 +229,21 @@ export class AiController {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+    // P2（2026-08-19 审计）：客户端断开取消（同 /chat，透传至出站 fetch）。
+    const abort = new AbortController();
+    const onClientClose = () => abort.abort();
+    request?.on?.('close', onClientClose);
     try {
       for await (const evt of this.aiService.streamSuggestion({
         ...body,
         orgId: request.userContext?.primaryOrgId?.trim() || '',
+        signal: abort.signal,
       })) {
+        if (abort.signal.aborted) break;
         res.write(`data: ${JSON.stringify(evt)}\n\n`);
       }
     } catch (error) {
+      if (abort.signal.aborted) return;
       const message = error instanceof Error ? error.message : String(error);
       res.write(`data: ${JSON.stringify({ phase: 'done', error: message })}\n\n`);
     } finally {

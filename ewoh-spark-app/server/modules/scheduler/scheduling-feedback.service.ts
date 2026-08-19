@@ -152,6 +152,34 @@ export class SchedulingFeedbackService {
     let written = 0;
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
       const targets = assignments.length > 0 ? assignments : [null];
+
+      // P2（2026-08-19 审计）advisory lock N+1：原循环内对每个 assignment
+      // 单独 execute 一次 pg_advisory_xact_lock（N 次往返）。xact 级锁在
+      // 事务结束前持续持有，循环前单语句批量预取全部锁与逐条获取的串行化
+      // 语义完全等价（同一锁集覆盖整个事务），往返从 N 次降为 1 次。
+      // NEST-127 原语义保持：键=plan|assignment；无 execute 能力的测试替身
+      // 跳过锁（单进程测试无并发）。
+      const lockAssignmentIds = [
+        ...new Set(
+          targets
+            .map((a) => a?.assignmentId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      if (lockAssignmentIds.length > 0) {
+        try {
+          const lockCalls = lockAssignmentIds.map(
+            (id) =>
+              sql`pg_advisory_xact_lock(hashtext(${planId} || '|' || ${id}))`,
+          );
+          await this.db.execute(
+            sql`SELECT ${sql.join(lockCalls, sql`, `)}`,
+          );
+        } catch {
+          // 测试替身/无 execute 环境：跳过锁（单进程测试无并发）
+        }
+      }
+
       for (const a of targets) {
         const assignmentId = a?.assignmentId ?? null;
         const taskId = a?.taskId ?? null;
@@ -171,19 +199,6 @@ export class SchedulingFeedbackService {
         const plannedWait = assignmentId ? waitByAssignment.get(assignmentId) ?? null : null;
 
         // 幂等：同一 assignment 已存在则回填 planned 基线，否则新增。
-        // NEST-127 修复（2026-08-17）：check-then-insert 竞态（并发同 assignment
-        // 双插入）——feedback 表无 (plan, assignment) 唯一约束可作 ON CONFLICT
-        // target，改为事务内 advisory lock（键=plan|assignment）串行化同一
-        // assignment 的基线写入；无 execute 能力的测试替身跳过锁（保持旧行为）。
-        if (assignmentId) {
-          try {
-            await this.db.execute(
-              sql`SELECT pg_advisory_xact_lock(hashtext(${planId} || '|' || ${assignmentId}))`,
-            );
-          } catch {
-            // 测试替身/无 execute 环境：跳过锁（单进程测试无并发）
-          }
-        }
         const [existing] = assignmentId
           ? await this.db
               .select()

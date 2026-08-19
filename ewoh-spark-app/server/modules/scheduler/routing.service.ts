@@ -436,11 +436,25 @@ export class RoutingService {
     return best;
   }
 
-  /** 从 spatial entity 行提取坐标；无坐标时返回 null。 */
+  /**
+   * 从 spatial entity 行提取坐标；无坐标时返回 null。
+   *
+   * P1（2026-08-19 审计）坐标混载防御：x/y 字段在 WGS84 行承载
+   * lat/lng（度，契约 location.ts：x=lat∈[-90,90]、y=lng∈[-180,180]），
+   * 在 FACTORY_CARTESIAN 行承载米制坐标。此前不校验 coordinateType——
+   * WGS84 行的经纬度"度"会被当"米"做最近节点匹配/欧氏距离（数值上
+   * 恰在合法有限数区间，静默通过）。消费侧强制：仅笛卡尔坐标进入
+   * 路由运算；WGS84 行按"无坐标"处理（coords_unknown 兜底，绝不伪造）。
+   */
   private pointFromEntity(
-    row?: { x?: number | null; y?: number | null },
+    row?: {
+      x?: number | null;
+      y?: number | null;
+      coordinateType?: string | null;
+    },
   ): Point | null {
     if (!row) return null;
+    if (row.coordinateType === 'WGS84') return null;
     const x = row.x;
     const y = row.y;
     if (

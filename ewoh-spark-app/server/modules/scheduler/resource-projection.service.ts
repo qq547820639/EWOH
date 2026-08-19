@@ -924,8 +924,13 @@ export class ResourceProjectionService {
       return { type: 'UNKNOWN' };
     }
     if (se.coordinateType === 'WGS84') {
-      const lat = se.y ?? se.x;
-      const lng = se.x ?? se.y;
+      // P1（2026-08-19 审计）坐标混载修正：契约（shared/location.ts +
+      // contracts/location/location.schema.json + Python 契约）明确 WGS84
+      // 行 x 轴承载 lat∈[-90,90]、y 轴承载 lng∈[-180,180]。原实现
+      // `lat = se.y ?? se.x` 与契约相反——同一组 x/y 在不同消费点被解释
+      // 为不同语义（这正是混载病灶的实物证据）。
+      const lat = se.x;
+      const lng = se.y;
       if (lat == null || lng == null) return { type: 'UNKNOWN' };
       return { type: 'WGS84', lat, lng };
     }

@@ -351,10 +351,17 @@ def make_handler(ctx):
                 except Exception as e:  # L3：排空失败（连接可能已断），记录后继续抛 413
                     print(f"[EWOH] drain oversized body failed: {e!r}")
                 raise ValueError("请求体超过 1MB 限制")
+            raw = self.rfile.read(n).decode("utf-8") or "{}"
             try:
-                return json.loads(self.rfile.read(n).decode("utf-8") or "{}")
-            except ValueError:
-                return {}
+                return json.loads(raw)
+            except ValueError as e:
+                # P2（2026-08-19 审计）畸形 JSON：原 `except: return {}` 把非法
+                # body 静默降级为空 dict——调用方拿 {} 继续处理（字段缺失 400
+                # 或误当无参调用），真实原因（JSON 语法错误）被吞。改为显式
+                # 抛错由 do_POST/do_PATCH 统一映射 400 bad_json（错误细节只进
+                # 服务端日志，不回显原始 body 片段）。
+                print(f"[EWOH] malformed JSON body ({n} bytes): {e!r}")
+                raise ValueError("请求体不是合法 JSON") from None
 
         def qs(self):
             return parse_qs(urlparse(self.path).query)
@@ -568,7 +575,10 @@ def make_handler(ctx):
             try:
                 payload = self.read_json()
             except ValueError as e:
-                return self._new_error("body_too_large", str(e), 400)
+                # P2（2026-08-19 审计）：与 do_POST 同款 code 区分（1MB/畸形 JSON）。
+                msg = str(e)
+                code = "body_too_large" if "1MB" in msg else "bad_json"
+                return self._new_error(code, msg, 400)
             # 路径校验与原 do_PATCH 语义一致（/api/tasks/{id}，多余段忽略）：
             # 非 /api/tasks/ 前缀或尾部斜杠 → 404 {"error":"not found"}；
             # task_id 为空 → 404 {"error":"not found"}；其余交由路由域处理。
