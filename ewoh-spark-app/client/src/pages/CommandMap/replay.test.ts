@@ -63,6 +63,22 @@ describe('replay helpers', () => {
     expect(advanceReplayTime(snapshots, null)).toBe('2026-08-03T00:00:00.000Z');
   });
 
+  it('2026-08-20 回放卡死修复：倒序快照（服务端实际返回顺序）也能连续推进', () => {
+    // 服务端 /api/world/replay 返回倒序（最新在前）。原实现在倒序输入下
+    // 从 [0]（最新帧）起找不到更晚快照 → 时间指针卡死 = 「回放自动暂停」。
+    const reversed = [...snapshots].reverse();
+    // 起点取最旧帧（而非数组 [0] 的最新帧）。
+    expect(advanceReplayTime(reversed, null)).toBe('2026-08-03T00:00:00.000Z');
+    // 从最旧帧连续推进到下一帧。
+    expect(advanceReplayTime(reversed, '2026-08-03T00:00:00.000Z')).toBe(
+      '2026-08-03T00:01:00.000Z',
+    );
+    // 最新帧后循环回最旧（连续播放不卡死）。
+    expect(advanceReplayTime(reversed, '2026-08-03T00:02:00.000Z')).toBe(
+      '2026-08-03T00:00:00.000Z',
+    );
+  });
+
   it('projects a replay snapshot into a renderable world state', () => {
     const base: CurrentWorldState = {
       ts: '2026-08-03T00:03:00.000Z',

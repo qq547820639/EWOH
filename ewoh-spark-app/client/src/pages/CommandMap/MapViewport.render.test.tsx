@@ -61,12 +61,16 @@ const baseProps = {
 };
 
 describe('MapViewport 页面级渲染 smoke（NO-13e / ADR-054）', () => {
-  it('非调度模式：渲染地图 svg（FactoryMap），不渲染调度叠加层', () => {
+  it('非调度模式：渲染地图 svg（FactoryMap），叠加层按图层开关渲染（空开关=空叠加层）', () => {
     const markup = renderToStaticMarkup(<MapViewport {...baseProps} />);
     expect(markup).toContain('<svg');
-    // 审计 A1（2026-08-19）：叠加层移入 FactoryMap 基础 svg 内（不再有独立
-    // 绝对定位 svg 容器）；调度叠加层以 data-scheduler-overlay 标识。
-    expect(markup).not.toContain('data-scheduler-overlay');
+    // 可用性修复（2026-08-20）：叠加层不再受地图模式门控——图层显隐唯一权威
+    // 是 activeLayers 开关（原"非调度模式不渲染叠加层"导致图层按钮切换无效果）。
+    // 空 activeLayers（baseProps）→ 叠加层容器存在但内部无任何 data-layer 图层。
+    expect(markup).toContain('data-scheduler-overlay');
+    expect(markup).not.toContain('data-layer="task"');
+    expect(markup).not.toContain('data-layer="conflict"');
+    expect(markup).not.toContain('data-layer="route"');
   });
 
   it('scheduling 模式：叠加层渲染进基础 svg（同 viewBox/变换）', () => {

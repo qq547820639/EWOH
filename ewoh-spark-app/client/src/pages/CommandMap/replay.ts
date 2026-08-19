@@ -23,10 +23,18 @@ export function advanceReplayTime(
   currentTime: string | null,
 ): string | null {
   if (snapshots.length === 0) return null;
-  if (!currentTime) return snapshots[0].ts;
+  // 顺序无关化（2026-08-20 回放卡死修复）：服务端 /api/world/replay 返回
+  // 倒序快照（最新在前），本函数原实现假设正序——倒序输入下从 snapshots[0]
+  //（最新帧）起永远找不到更晚的快照，时间指针卡死 = 「回放自动暂停」。
+  // 统一按时间升序推进：null 起点取最旧帧（回放从最早开始），逐帧前进到
+  // 最新后循环回开头（连续播放）。
+  const ordered = [...snapshots].sort(
+    (a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime(),
+  );
+  if (!currentTime) return ordered[0].ts;
   const current = new Date(currentTime).getTime();
-  const next = snapshots.find((snap) => new Date(snap.ts).getTime() > current + 250);
-  return next ? next.ts : snapshots[0].ts;
+  const next = ordered.find((snap) => new Date(snap.ts).getTime() > current + 250);
+  return next ? next.ts : ordered[0].ts;
 }
 
 export function snapshotToWorldState(

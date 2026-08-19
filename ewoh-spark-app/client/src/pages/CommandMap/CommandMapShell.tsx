@@ -431,7 +431,9 @@ const CommandMapShell = (): React.ReactElement => {
   useEffect(() => {
     if (!replayMode || replayPaused || !replaySnapshots?.length) return;
     if (!replayTimeRef.current) {
-      const firstTs = replaySnapshots[0].ts;
+      // 起点取最旧快照（advanceReplayTime(null) 内部按时间升序取首帧——
+      // 服务端快照为倒序，直接取 [0] 会从最新帧起播并卡死，2026-08-20 修复）。
+      const firstTs = advanceReplayTime(replaySnapshots, null);
       replayTimeRef.current = firstTs;
       setReplayTime(firstTs);
       return;
