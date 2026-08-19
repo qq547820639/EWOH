@@ -60,29 +60,50 @@ ON CONFLICT (org_id, entity_id) DO UPDATE
   SET x = EXCLUDED.x, y = EXCLUDED.y, bbox_w = EXCLUDED.bbox_w, bbox_h = EXCLUDED.bbox_h,
       name = EXCLUDED.name, extra = EXCLUDED.extra, _updated_at = now();
 
--- ===== B. 摄像头朝向：指向工厂中心 (450,300)，扇形展开联合覆盖 =====
--- yaw = atan2(300-cy, 450-cx)（度，0=朝右，逆时针为正的屏幕坐标系）。
--- fov_deg=90 + range=220（前端像素半径）→ 四向视锥联合覆盖车间主体。
+-- ===== B. 摄像头：每台覆盖所在车间，统一型号（fov=120/range=300）=====
+-- 语义（2026-08-20 定稿）：一车间一摄像头（布置在车间左上角），视锥朝本车间
+-- 中心（yaw = atan2(车间中心y-cy, 车间中心x-cx)，屏幕坐标系 0=朝右 90=朝下），
+-- fov=120（半角 60°）≥ 车间矩形从角落的 90° 视角 → 车间 100% 落在视锥内；
+-- range=300 ≥ 最大车间（总装 220×180）对角线 284 → 最远角可达。
+-- 质检车间原无监控，补 CAM-05（左上角同构布置）。
+--   CAM-01 冲压 (62,382)→中心(150,450) yaw=38；CAM-02 总装 (502,362)→(610,450) yaw=39
+--   CAM-03 焊接 (282,382)→(370,450) yaw=38；CAM-04 物流 (502,182)→(610,245) yaw=30
+--   CAM-05 质检 (62,182)→(150,245) yaw=36
 UPDATE public.ewoh_spatial_entity
-  SET yaw = 348, extra = jsonb_build_object('fov_deg', 90, 'range', 220, 'height_m', 3.5, 'floor', 1),
+  SET yaw = 38, extra = jsonb_build_object('fov_deg', 120, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
 WHERE entity_id = 'CAM-01' AND entity_type = 'camera';
 
 UPDATE public.ewoh_spatial_entity
-  SET yaw = 230, extra = jsonb_build_object('fov_deg', 90, 'range', 220, 'height_m', 3.5, 'floor', 1),
+  SET yaw = 39, extra = jsonb_build_object('fov_deg', 120, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
 WHERE entity_id = 'CAM-02' AND entity_type = 'camera';
 
 UPDATE public.ewoh_spatial_entity
-  SET yaw = 334, extra = jsonb_build_object('fov_deg', 90, 'range', 220, 'height_m', 3.5, 'floor', 1),
+  SET yaw = 38, extra = jsonb_build_object('fov_deg', 120, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
 WHERE entity_id = 'CAM-03' AND entity_type = 'camera';
 
 UPDATE public.ewoh_spatial_entity
-  SET yaw = 113, extra = jsonb_build_object('fov_deg', 90, 'range', 220, 'height_m', 3.5, 'floor', 1),
+  SET yaw = 30, extra = jsonb_build_object('fov_deg', 120, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
 WHERE entity_id = 'CAM-04' AND entity_type = 'camera';
 
+-- 质检车间补装 CAM-05（车间左上角，与其它车间摄像头同构）
+INSERT INTO public.ewoh_spatial_entity
+  (entity_id, entity_type, parent_id, name, x, y, yaw, bbox_w, bbox_h,
+   status, source_type, confidence, version, extra, org_id)
+VALUES
+  ('CAM-05', 'camera', 'hy-quality', '质检车间监控 CAM-05', 62, 182, 36, 12, 12,
+   'online', 'seed', 1.0, 1,
+   '{"fov_deg":120,"range":300,"height_m":3.5,"floor":1}'::jsonb,
+   '00000000-0000-4000-8000-000000000001')
+ON CONFLICT (org_id, entity_id) DO UPDATE
+  SET x = EXCLUDED.x, y = EXCLUDED.y, yaw = EXCLUDED.yaw, extra = EXCLUDED.extra,
+      name = EXCLUDED.name, _updated_at = now();
+
 -- ===== 可验证输出：通道数量/位置 + 摄像头朝向 =====
 -- SELECT entity_id, name, x, y, bbox_w, bbox_h FROM ewoh_spatial_entity WHERE entity_type='corridor' ORDER BY entity_id;
--- SELECT entity_id, x, y, yaw, extra->>'fov_deg' AS fov, extra->>'range' AS range_px FROM ewoh_spatial_entity WHERE entity_type='camera' ORDER BY entity_id;
+-- SELECT c.entity_id, c.name, c.yaw, c.extra->>'fov_deg' AS fov, c.extra->>'range' AS rng, p.name AS workshop
+--   FROM ewoh_spatial_entity c LEFT JOIN ewoh_spatial_entity p ON c.parent_id = p.entity_id
+--   WHERE c.entity_type='camera' ORDER BY c.entity_id;
