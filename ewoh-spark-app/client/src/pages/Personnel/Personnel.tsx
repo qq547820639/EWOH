@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Search } from 'lucide-react';
+import { Link2, Loader2, Plus, Search, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPersonnel, listOrganizations, listPersonnel } from '../../api/organization';
-import type { PersonnelInfo } from '@shared/api.interface';
+import { getDevices, bindDevice, unbindDevice } from '../../api/dashboard';
+import type { DeviceInfo, PersonnelInfo } from '@shared/api.interface';
 import { queryKeys } from '../../hooks/queryKeys';
 import {
   OPERATIONAL_REFETCH_INTERVAL_MS,
@@ -75,6 +76,86 @@ const Personnel = (): React.ReactElement => {
   const rows = query.data ?? [];
   const orgOptions = orgQuery.data ?? [];
 
+  // ===== 设备绑定（双入口：人员侧绑定外骨骼，2026-08-20）=====
+  // 设备列表含 boundPersonId（人员 extra.device_id 反查），既是绑定列展示数据源，
+  // 也是绑定弹窗的设备候选；60s 轮询与设备中心一致。
+  const devicesQuery = useQuery<DeviceInfo[]>({
+    queryKey: queryKeys.devices({}),
+    queryFn: () => getDevices(),
+    refetchInterval: 60000,
+    staleTime: QUERY_STALE_TIME_MS,
+  });
+  const devices = devicesQuery.data ?? [];
+  /** personId → 当前绑定设备（一人一设备：person.extra.device_id 反查）。 */
+  const deviceByPerson = useMemo(() => {
+    const m = new Map<string, DeviceInfo>();
+    for (const d of devices) {
+      if (d.boundPersonId) m.set(d.boundPersonId, d);
+    }
+    return m;
+  }, [devices]);
+
+  const [bindOpen, setBindOpen] = useState(false);
+  const [bindTarget, setBindTarget] = useState<PersonnelInfo | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+
+  const openBindDialog = (person: PersonnelInfo) => {
+    setBindTarget(person);
+    setSelectedDeviceId(deviceByPerson.get(person.id)?.deviceId ?? 'none');
+    setBindOpen(true);
+  };
+
+  /**
+   * 绑定/换绑/解绑（人员侧）。
+   * 语义：一人一设备、一设备一人。bindDevice 直接覆盖 person.extra.device_id，
+   * 但不清旧设备 extra.worker_id —— 换绑前先 unbind 旧设备（含目标设备被他人
+   * 占用时的释放），保证 extra 双向引用干净。
+   */
+  const bindMutation = useMutation({
+    mutationFn: async ({
+      person,
+      deviceId,
+    }: {
+      person: PersonnelInfo;
+      deviceId: string | null;
+    }) => {
+      const currentDevice = deviceByPerson.get(person.id);
+      const targetDevice = deviceId ? devices.find((d) => d.deviceId === deviceId) : null;
+      // 1) 人员原绑定设备 → 先解绑（换绑/解绑场景）。
+      if (currentDevice && currentDevice.deviceId !== deviceId) {
+        await unbindDevice(currentDevice.deviceId);
+      }
+      // 2) 目标设备被他人占用 → 释放（换人占用设备的场景）。
+      if (
+        targetDevice &&
+        targetDevice.boundPersonId &&
+        targetDevice.boundPersonId !== person.id
+      ) {
+        await unbindDevice(targetDevice.deviceId);
+      }
+      // 3) 绑定目标设备（deviceId=null 表示仅解绑）。
+      if (targetDevice) {
+        await bindDevice(targetDevice.deviceId, { personEntityId: person.id });
+      }
+    },
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.deviceId
+          ? `已为 ${variables.person.name} 绑定外骨骼 ${variables.deviceId}`
+          : `已解绑 ${variables.person.name} 的外骨骼`,
+      );
+      setBindOpen(false);
+      setBindTarget(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.devices({}) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.personnel({}) });
+    },
+    onError: (error) => {
+      toast.error('绑定操作失败', {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: () =>
       createPersonnel({
@@ -118,7 +199,7 @@ const Personnel = (): React.ReactElement => {
         <div>
           <h1 className="text-2xl font-bold text-foreground">人员与外骨骼</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            人员档案、组织归属、技能与健康风险概览（实施配置：录入甲方人员；绑定在外骨骼设备中操作）。
+            人员档案、组织归属、技能与健康风险概览（实施配置：录入甲方人员并绑定外骨骼设备；也可在「设备中心 → 设备详情」中反向绑定）。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -161,10 +242,14 @@ const Personnel = (): React.ReactElement => {
                 <th className="px-5 py-3 font-medium">岗位</th>
                 <th className="px-5 py-3 font-medium">状态</th>
                 <th className="px-5 py-3 font-medium">风险</th>
+                <th className="px-5 py-3 font-medium">绑定外骨骼</th>
+                <th className="px-5 py-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((person) => (
+              {rows.map((person) => {
+                const boundDevice = deviceByPerson.get(person.id);
+                return (
                 <tr key={person.id} className="hover:bg-muted">
                   <td className="px-5 py-3 font-medium text-foreground">{person.name}</td>
                   <td className="px-5 py-3 font-mono text-xs">{person.employeeNo}</td>
@@ -185,8 +270,31 @@ const Personnel = (): React.ReactElement => {
                       {riskLabel[person.riskLevel ?? 'low'] ?? `未知(${person.riskLevel ?? '—'})`}
                     </span>
                   </td>
+                  <td className="px-5 py-3">
+                    {boundDevice ? (
+                      <span className="inline-flex items-center gap-1 font-mono text-xs text-foreground">
+                        <Link2 className="size-3 text-primary" aria-hidden />
+                        {boundDevice.deviceId}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">未绑定</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => openBindDialog(person)}
+                      aria-label={`绑定外骨骼：${person.name}`}
+                    >
+                      {boundDevice ? '换绑' : '绑定'}
+                    </Button>
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -291,6 +399,83 @@ const Personnel = (): React.ReactElement => {
               <Button type="button" onClick={submit} disabled={!canSubmit} className="inline-flex items-center gap-2">
                 {createMutation.isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
                 创建
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* 绑定外骨骼弹窗（人员侧双入口，2026-08-20） */}
+      <Dialog open={bindOpen} onOpenChange={setBindOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>绑定外骨骼</DialogTitle>
+            <DialogDescription>
+              为 {bindTarget?.name}（{bindTarget?.employeeNo}）分配外骨骼设备。
+              一人一设备：换绑会自动释放原设备；所选设备若已被他人占用，将先解绑再绑定。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="bind-device" className="text-sm font-medium">
+                外骨骼设备
+              </label>
+              <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                <SelectTrigger id="bind-device">
+                  <SelectValue placeholder="选择设备" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                      <Unlink className="size-3" aria-hidden />
+                      不绑定（解绑当前设备）
+                    </span>
+                  </SelectItem>
+                  {devices.map((d) => {
+                    const occupied =
+                      d.boundPersonId && d.boundPersonId !== bindTarget?.id
+                        ? d.boundPersonName ?? d.boundPersonId
+                        : null;
+                    return (
+                      <SelectItem key={d.deviceId} value={d.deviceId}>
+                        {d.deviceId}
+                        {d.deviceModel ? `（${d.deviceModel}）` : ''}
+                        {occupied ? ` · 已绑定：${occupied}` : ''}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {devicesQuery.isLoading && (
+              <p className="text-xs text-muted-foreground">正在加载设备列表…</p>
+            )}
+            {devicesQuery.isError && (
+              <p className="text-xs text-red-500">设备列表加载失败，请稍后重试。</p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={() => setBindOpen(false)}>
+                取消
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  !bindTarget ||
+                  bindMutation.isPending ||
+                  (selectedDeviceId ===
+                    (deviceByPerson.get(bindTarget?.id ?? '')?.deviceId ?? 'none') &&
+                    selectedDeviceId !== 'none')
+                }
+                onClick={() => {
+                  if (!bindTarget) return;
+                  bindMutation.mutate({
+                    person: bindTarget,
+                    deviceId: selectedDeviceId === 'none' ? null : selectedDeviceId,
+                  });
+                }}
+                className="inline-flex items-center gap-2"
+              >
+                {bindMutation.isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                {selectedDeviceId === 'none' ? '确认解绑' : '确认绑定'}
               </Button>
             </div>
           </div>
