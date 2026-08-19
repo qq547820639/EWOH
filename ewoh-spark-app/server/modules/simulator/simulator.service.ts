@@ -22,6 +22,7 @@ import {
 import { eq, gte, sql } from 'drizzle-orm';
 import type { SimulatorStatus } from '@shared/api.interface';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
+import { RetentionService } from './retention.service';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 
 /** 设备运行态 */
@@ -105,6 +106,9 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly ruleEngine: RuleEngineService,
     private readonly requestDatabaseContext: RequestDatabaseContext,
+    // 注入以确保 RetentionService 被实例化（Nest provider 懒加载——无消费者
+    // 注入时 OnModuleInit 不触发，数据保留清理永不启动；2026-08-19 实锤）。
+    private readonly retention: RetentionService,
   ) {}
 
   async onModuleInit(): Promise<void> {
