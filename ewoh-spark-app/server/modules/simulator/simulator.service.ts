@@ -30,6 +30,8 @@ interface DeviceRuntime {
   entityId: string; // EXO-001
   deviceId: string; // EXO-001
   workerId: string; // W-001 (从 extra.worker_id 取)
+  x: number; // 位置（spatial entity 初始坐标；设备固定/微动）
+  y: number;
   battery: number; // 0-100
   online: boolean;
   pitchDeg: number; // 姿态角
@@ -333,6 +335,9 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
           entityId: e.entityId,
           deviceId: e.entityId,
           workerId,
+          // 设备位置（spatial 初始坐标；回放设备帧数据源，2026-08-20 补）。
+          x: e.x ?? 0,
+          y: e.y ?? 0,
           battery: deviceBatteryMap.get(e.entityId) ?? 100,
           online: true,
           pitchDeg: 0,
@@ -480,6 +485,24 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
 
       // 更新 ewoh_device（upsert）
       await this.upsertDevice(device, now);
+
+      // 设备位置帧（2026-08-20 补）：回放（/api/world/replay）设备轨跡数据源。
+      // 原实现只写遥测不写 world_state——retention 清光历史帧后回放设备恒空。
+      // 离线设备不写帧（无上报语义，与真实设备行为一致）。
+      worldStateRows.push({
+        entityId: device.deviceId,
+        stateJson: {
+          x: Math.round(device.x),
+          y: Math.round(device.y),
+          status: device.qualityStatus,
+          battery: Math.round(device.battery),
+          loadScore: Number(device.loadScore.toFixed(3)),
+          worker_id: device.workerId,
+          source_type: 'simulated',
+        },
+        ts: now,
+        orgId: this.simulatorOrgId(),
+      });
     }
 
     // 批量写入遥测
