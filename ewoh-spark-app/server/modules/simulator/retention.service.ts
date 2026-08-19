@@ -60,15 +60,20 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     for (const job of jobs) {
       const cutoff = new Date(now - job.keepMs).toISOString();
       let total = 0;
-      // 分批删除：drizzle 0.45 execute 返回 RowList（数组），用长度判批次边界。
+      // 分批删除：DELETE 的 RETURNING 与 LIMIT 不能同用（PG 语法），
+      // 用 CTE 包装（DELETE...LIMIT...RETURNING 在 CTE 内合法）取删除数。
+      // drizzle 0.45 execute 返回 RowList（数组），用长度判批次边界。
       for (;;) {
         const rows = (await this.db.execute(
-          sql`DELETE FROM ${sql.raw(job.table)}
-              WHERE ${sql.raw(job.tsColumn)} < ${cutoff}::timestamptz
-              RETURNING id
-              LIMIT ${RetentionService.BATCH}`,
-        )) as unknown as Array<{ id?: unknown }>;
-        const n = rows.length;
+          sql`WITH del AS (
+                DELETE FROM ${sql.raw(job.table)}
+                WHERE ${sql.raw(job.tsColumn)} < ${cutoff}::timestamptz
+                LIMIT ${RetentionService.BATCH}
+                RETURNING id
+              )
+              SELECT count(*)::int AS n FROM del`,
+        )) as unknown as Array<{ n?: number }>;
+        const n = Number(rows[0]?.n ?? 0);
         total += n;
         if (n < RetentionService.BATCH) break;
       }
