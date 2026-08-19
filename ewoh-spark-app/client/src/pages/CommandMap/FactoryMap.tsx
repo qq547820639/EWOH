@@ -411,9 +411,12 @@ const FactoryMap = ({
         {showPerception && (
           <>
             {cameras.map((c) => {
-              const extra = c.extra as { fov_deg?: number; range?: number } | null;
+              // range 键名兼容（2026-08-20）：deepen-schema 旧种子用 range_m
+              //（米），新种子用 range（像素半径）——旧键优先换算展示，避免
+              // 旧数据静默落到默认 200 导致视锥长度失真。
+              const extra = c.extra as { fov_deg?: number; range?: number; range_m?: number } | null;
               const fov = extra?.fov_deg ?? 90;
-              const range = extra?.range ?? 200;
+              const range = extra?.range ?? extra?.range_m ?? 200;
               return (
                 <polygon
                   key={`fov-${c.entityId}`}

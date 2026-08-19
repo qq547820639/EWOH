@@ -49,6 +49,10 @@ export function getStaticStyle(type: string): StaticStyle {
       return { fill: 'rgba(168,85,247,0.10)', stroke: 'rgba(168,85,247,0.4)' };
     case 'route':
       return { fill: 'rgba(148,163,184,0.06)', stroke: 'rgba(148,163,184,0.3)' };
+    // 通道（corridor，2026-08-20）：青绿色带状走廊 + 虚线描边——与车间蓝/
+    // 产线紫明确区分，肉眼可辨；dash 虚线呼应"通行语义"。
+    case 'corridor':
+      return { fill: 'rgba(45,212,191,0.16)', stroke: 'rgba(45,212,191,0.65)', dash: '6 4' };
     case 'restricted_zone':
       return { fill: 'rgba(239,68,68,0.12)', stroke: 'rgba(239,68,68,0.6)', dash: '4 4' };
     case 'zone':
@@ -133,7 +137,10 @@ export function mergeDevices(
   return Array.from(map.values());
 }
 
-export const STATIC_ORDER = ['route', 'zone', 'production_line', 'workshop', 'restricted_zone'];
+// 静态层渲染顺序（底层 → 上层）。corridor 通道排最前（车间底层之上、
+// 其余实体之下）；2026-08-20 前「通道生成未生效/显示不完整」的渲染侧根因
+// 之一：白名单不含 corridor——即使数据层有通道实体，本过滤也会丢弃。
+export const STATIC_ORDER = ['corridor', 'route', 'zone', 'production_line', 'workshop', 'restricted_zone'];
 
 export interface ViewBox {
   minX: number;
