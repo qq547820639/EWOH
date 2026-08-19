@@ -344,6 +344,17 @@ const CommandMapShell = (): React.ReactElement => {
       setShowIntelligence(false);
     }
   }, [mode, ctl.selectedTaskId, ctl.selectTask]);
+  // 默认方案采用（2026-08-20 决策驾驶舱可用性修复）：用户点选任务但从未选择
+  // 方案时 selectedPlanId 恒 null → activePlan 恒 null → 下方"无方案清任务"
+  // effect 会立即清掉刚选的任务 → 决策驾驶舱永远空态（无任何互动元素）。
+  // 改为：存在活跃方案且未显式选择时，默认采用最新一个（API 按 createdAt DESC
+  // 返回，plans[0] 即最新）。显式选择/冲突预览/对比流程不受影响（planId 非空
+  // 跳过）；真正无任何活跃方案时保留原清任务语义。
+  useEffect(() => {
+    if (!ctl.selectedPlanId && ctl.scheduler.plans.length > 0) {
+      ctl.selectPlan(ctl.scheduler.plans[0].planId);
+    }
+  }, [ctl.selectedPlanId, ctl.scheduler.plans, ctl.selectPlan]);
   useEffect(() => {
     if (!activePlan && ctl.selectedTaskId) ctl.selectTask(null);
   }, [activePlan, ctl.selectedTaskId, ctl.selectTask]);
