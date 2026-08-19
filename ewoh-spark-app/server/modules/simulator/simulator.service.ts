@@ -58,7 +58,10 @@ interface Bounds {
   maxY: number;
 }
 
-const MAIN_TICK_MS = 4000;
+// 数据增长治理（2026-08-19）：主 tick 4s → 10s——位置帧/遥测写入速率降 2.5 倍
+// （人/设备位置 10s 更新一次，演示视觉几乎无感；与 ENV_TICK 同频简化节奏）。
+// 配合 RetentionService（每小时清理超期数据）封顶表体积。
+const MAIN_TICK_MS = 10000;
 const ENV_TICK_MS = 10000;
 const EVENT_DEDUP_MS = 30_000;
 const OFFLINE_PROB = 0.02;
