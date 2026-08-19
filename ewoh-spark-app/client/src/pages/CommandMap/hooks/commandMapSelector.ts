@@ -83,7 +83,11 @@ export const DEFAULT_UI_STATE: CommandMapUIState = {
   selectedPlanId: null,
   // 2026-08-18：路线网默认开启——指挥地图打开即显示车间间连接（原默认全关，
   // 只看到 base 静态层，路线边需手动在左上角图层开关点"路线"）。
-  activeLayers: ['route'],
+  // 2026-08-20 默认图层扩充（可用性发现）：仅开 route 时地图只有底图+路线，
+  // 无任务节点/资源/冲突标记可点——决策驾驶舱因无决策上下文显示空态，
+  // 用户以为功能不可用。task/resource/conflict 为指挥高频图层，默认开启；
+  // availability/reservation/plan/risk 等分析图层仍按需手动开。
+  activeLayers: ['route', 'task', 'resource', 'conflict'],
   panelMode: 'none',
   viewport: { x: 0, y: 0, scale: 1 },
 };
