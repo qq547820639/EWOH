@@ -52,6 +52,7 @@ const TYPE_LABELS: Record<string, string> = {
   camera: '摄像头',
   uwb_station: 'UWB基站',
   route: '通道',
+  corridor: '通道',
   restricted_zone: '禁区',
 };
 

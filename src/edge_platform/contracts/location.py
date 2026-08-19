@@ -4,7 +4,7 @@
 锁定注册表必须与 schema 一致，由 scripts/audit-domain-contracts.js 门禁强制。
 
 语义：
-- 空间类型封闭注册表（v1 21 类）；
+- 空间类型封闭注册表（v1.1 22 类，2026-08-20 增 corridor）；
 - 坐标类型 FACTORY_CARTESIAN|WGS84|UNKNOWN；UNKNOWN=无坐标可用（禁止携带坐标值）；
 - FACTORY_CARTESIAN 约定：米制、+X 东 +Y 北 +Z 上、yaw 自北顺时针 [0,360)；
 - WGS84 约束 lat∈[-90,90]（x 轴）、lng∈[-180,180]（y 轴）；越界拒绝。
@@ -31,6 +31,8 @@ SPATIAL_KINDS: frozenset = frozenset(
         "station",
         "dock",
         "warehouse_location",
+        # corridor（通道，2026-08-20 v1.1）：车间间连接走廊；与 TS/JSON 契约同步注册。
+        "corridor",
         "route",
         "restricted_zone",
         "device",

@@ -2,7 +2,7 @@
  *
  * 权威契约：contracts/location/location.schema.json + contracts/location/test-vectors.json。
  * 语义与 src/edge_platform/contracts/location.py 逐项一致（共享向量约束）：
- * 空间类型封闭注册表（v1 21 类）；FACTORY_CARTESIAN（米制 +X 东 +Y 北 +Z 上，
+ * 空间类型封闭注册表（v1.1 22 类，2026-08-20 增 corridor）；FACTORY_CARTESIAN（米制 +X 东 +Y 北 +Z 上，
  * yaw 自北顺时针 [0,360)）；WGS84 lat∈[-90,90]/lng∈[-180,180]；
  * UNKNOWN=无坐标可用（禁止携带坐标值）。
  */
@@ -19,6 +19,10 @@ export const SPATIAL_KINDS = [
   'station',
   'dock',
   'warehouse_location',
+  // corridor（通道，2026-08-20 v1.1）：车间间连接走廊（带状区域实体）。
+  // 注册背景：通道实体长期"生成未生效"的根因即本封闭注册表缺 corridor——
+  // mapEntity fail-closed 抛 DomainContractError，实体接口整体 500。
+  'corridor',
   'route',
   'restricted_zone',
   'device',

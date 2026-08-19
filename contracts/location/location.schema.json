@@ -104,6 +104,7 @@
     "station",
     "dock",
     "warehouse_location",
+    "corridor",
     "route",
     "restricted_zone",
     "device",
