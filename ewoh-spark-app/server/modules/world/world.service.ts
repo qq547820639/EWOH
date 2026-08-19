@@ -441,6 +441,22 @@ export class WorldService {
         .sort()
         .reverse()
         .slice(0, safeLimit);
+      // 回放分类修复（2026-08-20）：state_json 实际键为 loadScore（无下划线），
+      // 且不含 entity_type 键（原分类恒落空 → 回放 persons/devices 全空，
+      // 地图回放看不到任何实体）。实体类型改由空间实体表映射（entityId →
+      // entityType，批量一次）；负载键名兼容 load_score / loadScore 双写。
+      const stateEntityIds = Array.from(
+        new Set(states.map((s) => s.entityId)),
+      );
+      const entityTypeById = new Map<string, string>();
+      if (stateEntityIds.length > 0) {
+        const typeRows = await this.db
+          .select({ entityId: ewohSpatialEntity.entityId, entityType: ewohSpatialEntity.entityType })
+          .from(ewohSpatialEntity)
+          .where(inArray(ewohSpatialEntity.entityId, stateEntityIds));
+        for (const r of typeRows)
+          entityTypeById.set(r.entityId, r.entityType ?? '');
+      }
       const snapshots: ReplaySnapshot[] = [];
       for (const key of minuteKeys) {
         const groupStates = byMinute.get(key) ?? [];
@@ -448,7 +464,10 @@ export class WorldService {
         const devices: ReplaySnapshot['devices'] = [];
         for (const s of groupStates) {
           const state = (s.stateJson ?? {}) as Record<string, unknown>;
-          const entityType = state.entity_type as string | undefined;
+          const entityType =
+            (state.entity_type as string | undefined) ??
+            entityTypeById.get(s.entityId);
+          const rawLoad = state.load_score ?? state.loadScore;
           const entry = {
             entityId: s.entityId,
             x: state.x != null ? Number(state.x) : 0,
@@ -458,8 +477,7 @@ export class WorldService {
           if (entityType === 'person') {
             persons.push({
               ...entry,
-              loadScore:
-                state.load_score != null ? Number(state.load_score) : undefined,
+              loadScore: rawLoad != null ? Number(rawLoad) : undefined,
             });
           } else if (entityType === 'device') {
             devices.push(entry);

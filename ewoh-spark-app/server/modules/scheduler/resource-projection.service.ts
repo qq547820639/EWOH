@@ -7,10 +7,11 @@ import {
   ewohPersonnel,
   ewohDevice,
   ewohSpatialEntity,
+  ewohWorldState,
   ewohMaintenanceCondition,
   ewohQualityFinding,
 } from '@server/database/schema';
-import { eq, isNull, or, type AnyColumn, type SQL } from 'drizzle-orm';
+import { eq, isNull, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   CoordinateReference,
@@ -128,6 +129,39 @@ export class ResourceProjectionService {
       `resource projection: personnel=${personnelRows.length} device=${deviceRows.length} spatial=${spatialRows.length} reservations=${reservations.length}`,
     );
 
+    // 负载水合（2026-08-20 修复"资源池人员负载恒 0"）：ewoh_personnel.currentLoad
+    // 在模拟器场景无人写入（恒 null），而模拟器持续把 loadScore 写进
+    // ewoh_world_state 最新帧——按人员空间实体批量取最新帧负载做 fallback。
+    // LATERAL 索引查询（idx_ewoh_world_state_entity_ts），24 实体毫秒级。
+    const personEntityIds = personnelRows
+      .map((p) => p.spatialEntityId)
+      .filter((id): id is string => Boolean(id));
+    const wsLoadByEntityId = new Map<string, number>();
+    if (personEntityIds.length > 0) {
+      const idLiteral = personEntityIds
+        .map((id) => `'${String(id).replace(/'/g, "''")}'`)
+        .join(', ');
+      const wsRows = (await this.db.execute(sql`
+        SELECT ws."entity_id" AS "entityId", ws."state_json" AS "stateJson"
+        FROM unnest(ARRAY[${sql.raw(idLiteral)}]::text[]) AS ids(e)
+        JOIN LATERAL (
+          SELECT "entity_id", "state_json" FROM ${ewohWorldState}
+          WHERE "entity_id" = ids.e
+          ORDER BY "ts" DESC
+          LIMIT 1
+        ) ws ON true
+      `)) as unknown as Array<{
+        entityId: string;
+        stateJson: Record<string, unknown> | null;
+      }>;
+      for (const r of wsRows) {
+        const raw = r.stateJson?.load_score ?? r.stateJson?.loadScore;
+        if (raw != null && Number.isFinite(Number(raw))) {
+          wsLoadByEntityId.set(r.entityId, Number(raw));
+        }
+      }
+    }
+
     // 按 (resourceType, resourceId) 索引活跃预占，用于逐资源水合。
     const reservationsByKey = new Map<string, ReservationResult[]>();
     for (const r of reservations) {
@@ -183,7 +217,13 @@ export class ResourceProjectionService {
         })),
         telemetry: {
           batteryPct: null,
-          loadLevel: load?.loadLevel ?? null,
+          // 负载水合：personnel.currentLoad 优先，缺失回落 world_state 最新帧
+          // loadScore（模拟器数据源，2026-08-20 修复恒 0）。
+          loadLevel:
+            load?.loadLevel ??
+            (p.spatialEntityId
+              ? (wsLoadByEntityId.get(p.spatialEntityId) ?? null)
+              : null),
           fatigueLevel: load?.fatigueLevel ?? null,
           healthStatus: p.healthStatus ?? null,
         },

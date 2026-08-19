@@ -184,19 +184,23 @@ const MapViewport = ({
 
   // ---- 叠加层内容（审计 A1：经 FactoryMap overlay prop 渲染进 TransformComponent
   // 内的基础 svg——与底图同 viewBox、同 pan/zoom 变换，消除缩放/平移错位）----
-  const overlay =
-    mode === 'scheduling' ? (
-      <>
-        {/* 调度纯视觉图层：保持原有的 pointer-events:none（不拦截底图点击）。 */}
-        <g data-scheduler-overlay="1" pointerEvents="none" aria-hidden="true">
-          <SchedulerLayersOverlay
-            state={alignedSchedulerState}
-            // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：store.selectedPlanId）。
-            selectedPlanId={selectedPlanId}
-            // 审计 C12：REPLAN 预览接线——changed-by-replan 图层不再恒空。
-            replanPreview={replanPreview}
-          />
-        </g>
+  // 可用性修复（2026-08-20）：原 overlay 仅 mode==='scheduling' 渲染，而图层
+  // 开关（LAYER_ITEMS）在所有模式常显——非调度模式下切换图层开关地图毫无
+  // 变化（"选中与未选中显示相同"）。图层显隐的唯一权威是 activeLayers 开关
+  // 本身（SchedulerLayersOverlay 内部逐层判断），不再受地图模式限制；
+  // compare/preview 层各自有 showCompare/previewConflict 状态门控。
+  const overlay = (
+    <>
+      {/* 调度纯视觉图层：保持原有的 pointer-events:none（不拦截底图点击）。 */}
+      <g data-scheduler-overlay="1" pointerEvents="none" aria-hidden="true">
+        <SchedulerLayersOverlay
+          state={alignedSchedulerState}
+          // P0-8：Plan 层与 SchedulePanel 共享同一选中方案（selection owner：store.selectedPlanId）。
+          selectedPlanId={selectedPlanId}
+          // 审计 C12：REPLAN 预览接线——changed-by-replan 图层不再恒空。
+          replanPreview={replanPreview}
+        />
+      </g>
         {showCompare && alignedCompareVm && (
           <PlanCompareLayer
             vm={alignedCompareVm}
@@ -215,7 +219,7 @@ const MapViewport = ({
           />
         )}
       </>
-    ) : null;
+  );
 
   return (
   <>
