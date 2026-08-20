@@ -64,14 +64,17 @@ interface Bounds {
 // 数据增长治理（2026-08-19）：主 tick 4s → 10s——位置帧/遥测写入速率降 2.5 倍
 // （人/设备位置 10s 更新一次，演示视觉几乎无感；与 ENV_TICK 同频简化节奏）。
 // 配合 RetentionService（每小时清理超期数据）封顶表体积。
-const MAIN_TICK_MS = 10000;
-const ENV_TICK_MS = 10000;
+// 2026-08-20 演示定档降频：10s → 30s（主）/60s（环境），去重 120s → 600s——
+// 演示平台数据已足够，位置帧 ~1700/h、事件 ~200/h 仍保持实时动效但积累放缓；
+// 全部支持 EWOH_SIM_*_MS 环境变量覆盖（运维无需重建镜像即可调回高频）。
+const MAIN_TICK_MS = Number(process.env.EWOH_SIM_MAIN_TICK_MS) || 30_000;
+const ENV_TICK_MS = Number(process.env.EWOH_SIM_ENV_TICK_MS) || 60_000;
 // 事件去重窗口 30s→120s（2026-08-19 数据增长治理续）：每实体每类型 30s 即可
 // 重复触发，36h 累积 6.3 万条 open 事件（无人处理永不关闭）——世界快照
 // collectState 全量消费 open 事件，曾把 conflicts 接口拖到 104s、全平台超时。
 // 120s 窗口生成速率降 4 倍（~440 条/h），配合 RetentionService 2h 自动过期，
-// 稳态 open 事件 ~900 条，演示新鲜度不受影响。
-const EVENT_DEDUP_MS = 120_000;
+// 稳态 open 事件 ~900 条，演示新鲜度不受影响。2026-08-20 演示定档再降 5 倍。
+const EVENT_DEDUP_MS = Number(process.env.EWOH_SIM_EVENT_DEDUP_MS) || 600_000;
 const OFFLINE_PROB = 0.02;
 const RESTRICTED_PROB = 0.005;
 const MOVE_STEP = 25;
