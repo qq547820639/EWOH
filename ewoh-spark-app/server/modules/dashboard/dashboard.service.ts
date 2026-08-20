@@ -860,7 +860,11 @@ export class DashboardService {
     actor?: OrgContext,
   ): Promise<DeviceBinding> {
     try {
-      const orgId = this.orgParam(actor) ?? undefined;
+      // NEST-331 + 2026-08-20：orgParam 对 global_admin 返回 null（原意「跨租户
+      // 全局可见」），但绑定写操作必须落定 org 归属——global_admin 回退其
+      // primaryOrgId，否则 admin 用户在设备中心/人员页的绑定操作恒报
+      // org context missing（存量 bug：此前结构化绑定从未经 API 写通过）。
+      const orgId = this.orgParam(actor) ?? actor?.primaryOrgId?.trim() ?? undefined;
       if (!orgId) {
         throw new BadRequestException(
           'org context missing: device binding requires tenant context',
