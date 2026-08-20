@@ -1187,6 +1187,11 @@ export interface SchedulingPlanV2 {
   metrics: SchedulingPlanMetrics;
   /** 方案级目标评分分解（可解释）。 */
   scoreBreakdown?: ScoreBreakdown;
+  // --- AI 调度说明层（2026-08-21）：LLM/规则模板生成的自然语言方案说明 ---
+  /** AI（LLM）或规则模板生成的自然语言调度说明（面向班组长/调度员解读）。 */
+  aiNarration?: string | null;
+  /** 说明来源：llm | rule_fallback。 */
+  narrationSource?: 'llm' | 'rule_fallback' | null;
   /** 目标权重快照（Phase 2 / P2-T2）：persistPlan 落库实际使用的 8 权重，保证确定性 replay。 */
   weights?: ObjectiveWeights;
   // --- Command Map 增量（Phase 1 / P1-C，§六）：版本化目标 Profile（可审计/确定性 replay） ---

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { AiModule } from '../ai/ai.module';
 import { SchedulerController } from './scheduler.controller';
 import { SchedulerService } from './scheduler.service';
+import { SchedulingNarratorService } from './narration/scheduling-narrator.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { TriggerService } from './trigger.service';
 import { EligibilityService } from './eligibility.service';
@@ -68,7 +70,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
   : [];
 
 @Module({
-  imports: [TaskModule, HealthModule, SimulationModule],
+  imports: [TaskModule, HealthModule, SimulationModule, AiModule],
   controllers: [SchedulerController, SchedulerMetricsController],
   providers: [
     SchedulerMetricsService,
@@ -104,6 +106,8 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     OverridePreviewService,
     ReplanPreviewService,
     ShadowEvaluatorService,
+    // AI 调度说明层（2026-08-21）：方案落库后异步生成自然语言说明。
+    SchedulingNarratorService,
     // Task 5 / PredictionProvider（shadow only）：预测只是优化器输入，
     // 绝不写生产调度、绝不替代 hard constraints。消费者应将其视为可选。
     // NO-13g / ADR-056：经验时长模型优先（真实统计，训练自执行反馈；

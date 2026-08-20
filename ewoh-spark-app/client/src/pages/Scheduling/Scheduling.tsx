@@ -401,6 +401,18 @@ const Scheduling = (): React.ReactElement => {
                 {row.metrics.stationWaitMinutes.toFixed(0)}min · 负荷{' '}
                 {(row.metrics.maxWorkload * 100).toFixed(0)}%
               </p>
+              {/* AI 调度说明层（2026-08-21）：LLM/规则模板生成的自然语言方案解读 */}
+              {row.aiNarration && (
+                <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-primary">
+                    <Sparkles className="size-3" />
+                    {row.narrationSource === 'llm' ? 'AI 方案解读' : '规则摘要'}
+                  </p>
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                    {row.aiNarration}
+                  </p>
+                </div>
+              )}
               <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
                 {JSON.stringify(row.metrics, null, 2)}
               </pre>

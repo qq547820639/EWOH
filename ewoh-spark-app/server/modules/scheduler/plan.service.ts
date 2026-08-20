@@ -1098,6 +1098,10 @@ export class PlanService {
       effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
       violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
+      // AI 调度说明层（2026-08-21）：透传 LLM/规则模板生成的自然语言说明。
+      aiNarration: plan.aiNarration ?? null,
+      narrationSource:
+        (plan.narrationSource as SchedulingPlanV2['narrationSource']) ?? null,
       // NO-12y / ADR-048：决策记录读回（契约形态；NULL=存量未投影行）。
       decisionRecords: (plan.decisionRecordsJson ?? undefined) as SchedulingPlanV2['decisionRecords'],
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),

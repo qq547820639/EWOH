@@ -34,6 +34,7 @@ import { SolverService } from './solver.service';
 import { PlanService } from './plan.service';
 import { ConstraintLoaderService } from './constraint-loader.service';
 import { SchedulingContextService } from './scheduling-context.service';
+import { SchedulingNarratorService } from './narration/scheduling-narrator.service';
 import { toOrgContext } from './scheduler-run-context';
 import {
   compileConstraints,
@@ -55,6 +56,8 @@ export class SchedulerRunOrchestrator {
     private readonly schedulingContextService: SchedulingContextService,
     /** 惰性读取 facade 上的 constraintLoaderService（兼容旧单测构造后注入）。 */
     private readonly getConstraintLoader: () => ConstraintLoaderService | undefined,
+    /** AI 调度说明层（2026-08-21）：方案落库后异步生成自然语言说明（fire-and-forget）。 */
+    private readonly narratorService?: SchedulingNarratorService,
   ) {}
 
   async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
@@ -224,6 +227,20 @@ export class SchedulerRunOrchestrator {
         this.schedulingContextService?.invalidate(ctx.primaryOrgId);
       },
     );
+
+    // AI 调度说明层（2026-08-21）：事务外异步生成（不阻塞 createRun 响应；
+    // 失败仅告警，不影响方案状态与审批）。LLM 不可用自动规则回退。
+    if (!isShadow) {
+      for (const plan of plans) {
+        this.narratorService?.generateForPlan(plan.planId).catch((error) => {
+          this.logger.warn(
+            `plan narration 生成失败 planId=${plan.planId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+      }
+    }
 
     return { run, plans, debounced: false };
   }

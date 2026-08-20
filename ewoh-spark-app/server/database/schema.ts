@@ -712,6 +712,11 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   isShadow: boolean("is_shadow").notNull().default(false),
   /** 生成该 Shadow Plan 的策略版本。 */
   shadowPolicyVersion: integer("shadow_policy_version"),
+  // --- AI 调度说明层 (standalone_064, 2026-08-21) ---
+  /** AI（LLM）或规则模板生成的自然语言调度说明（面向班组长/调度员解读方案）。 */
+  aiNarration: text("ai_narration"),
+  /** 说明来源：llm | rule_fallback（LLM 不可用/超时/失败时规则模板兜底）。 */
+  narrationSource: varchar("narration_source", { length: 32 }),
   // --- Command Map 增量 (standalone_023, Phase 0 / P0-2) ---
   /**
    * 求解所用 effective constraints 快照（确定性 replay + 审计）。
