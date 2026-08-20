@@ -126,6 +126,13 @@ export class TracingInterceptor implements NestInterceptor {
       requestUser,
     };
     this.tracingService.record(entry);
+    // 2026-08-20：无租户上下文的请求（/health/ready 等探活、公开端点）在 RLS
+    // （ewoh_org_visible）下必然拒写 org_id=null 行——每 10s 探活刷一条
+    // 'trace span 持久化失败' WARN（日志膨胀/噪音）。此类请求无业务追踪价值，
+    // 跳过 DB 持久化（内存环形缓冲仍记录，供服务内查询）。
+    if (!orgId) {
+      return;
+    }
     // DATA-FLOW-L1 修复（2026-08-18）：span 持久化改为在请求事务内同步等待完成。
     // 原实现 fire-and-forget（void persistSpan）在响应 Observable 完成后异步执行，
     // 此时 OrgContextInterceptor 的事务已提交，transaction-local GUC
