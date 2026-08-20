@@ -146,15 +146,19 @@ export class DashboardController {
     @Query('status') status?: string,
     /** 时间窗（小时）：默认 24，1~168；前端时间范围选择器（1h/6h/24h/7d）消费。 */
     @Query('hours') hours?: string,
+    /** 分页偏移（配合 limit 翻页；默认 0）。 */
+    @Query('offset') offset?: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
     const limitNum = parseLimitParam(limit, 50);
     const hoursNum = hours != null && hours !== '' ? Number(hours) : undefined;
+    const offsetNum = offset != null && offset !== '' ? Number(offset) : undefined;
     return this.dashboardService.getEvents(
       limitNum,
       status,
       request?.userContext,
       Number.isFinite(hoursNum) ? hoursNum : undefined,
+      Number.isFinite(offsetNum) ? offsetNum : undefined,
     );
   }
 

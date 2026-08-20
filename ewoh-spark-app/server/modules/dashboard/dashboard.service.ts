@@ -439,10 +439,12 @@ export class DashboardService {
     status?: string,
     actor?: OrgContext,
     hours?: number,
-  ): Promise<EventInfo[]> {
+    offset?: number,
+  ): Promise<{ items: EventInfo[]; total: number }> {
     try {
       // NEST-347：limit 上限（防 parseInt('1e9') 全表拉取）。
       const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
+      const safeOffset = Math.max(0, Math.trunc(offset ?? 0));
       // 时间窗：默认 24h，显式传入则 clamp 到 [1, 168]（7 天）。
       const safeHours = Math.min(
         Math.max(hours != null && Number.isFinite(hours) ? Math.trunc(hours) : 24, 1),
@@ -455,24 +457,36 @@ export class DashboardService {
       conditions.push(
         gte(ewohEvent.createdAt, new Date(Date.now() - safeHours * 3_600_000)),
       );
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      // 2026-08-20 分页：count + 数据两条查询（事件表无复合分页索引场景下
+      // count 走 status/created_at 组合过滤，成本可控；offset 分页供工作台
+      // 翻页浏览全部 open 事件）。
+      const [countRow] = await this.db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(ewohEvent)
+        .where(where);
       const rows = await this.db
         .select()
         .from(ewohEvent)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .where(where)
         .orderBy(desc(ewohEvent.createdAt))
-        .limit(safeLimit);
-      return rows.map((r) => ({
-        id: r.id,
-        eventId: r.eventId,
-        deviceId: r.deviceId ?? '',
-        eventCode: r.eventCode ?? '',
-        eventType: r.eventType ?? '',
-        severity: r.severity ?? '',
-        title: r.title ?? '',
-        status: r.status ?? 'open',
-        createdAt: r.createdAt ? r.createdAt.toISOString() : null,
-        handlerAction: r.handlerAction ?? null,
-      }));
+        .limit(safeLimit)
+        .offset(safeOffset);
+      return {
+        total: countRow?.total ?? 0,
+        items: rows.map((r) => ({
+          id: r.id,
+          eventId: r.eventId,
+          deviceId: r.deviceId ?? '',
+          eventCode: r.eventCode ?? '',
+          eventType: r.eventType ?? '',
+          severity: r.severity ?? '',
+          title: r.title ?? '',
+          status: r.status ?? 'open',
+          createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+          handlerAction: r.handlerAction ?? null,
+        })),
+      };
     } catch (error) {
       this.logger.error('getEvents 失败', error);
       throw error;

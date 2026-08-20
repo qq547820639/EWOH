@@ -12,9 +12,13 @@ import {
   Check,
   X,
   Gauge,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getOverview, getEvents, handleEvent } from '@client/src/api/dashboard';
+import { getOverview, getEventsPage, handleEvent } from '@client/src/api/dashboard';
 import { getActivePlans, approvePlan, rejectPlanV2 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import type {
@@ -34,6 +38,13 @@ import { Button } from '@client/src/components/ui/button';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
 import { Textarea } from '@client/src/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@client/src/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -41,6 +52,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@client/src/components/ui/dialog';
+
+/** 需关注事件分页大小选项（默认 20；工作台卡片内滚动查看）。 */
+const EVENT_PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 500] as const;
 
 interface WorkbenchPanelProps {
   onNavigate?: (tab: string) => void;
@@ -97,11 +111,30 @@ export default function WorkbenchPanel({
     refetchInterval: 5000,
   });
 
-  const { data: openEvents } = useQuery<EventInfo[]>({
-    queryKey: ['workbench-events-open'],
-    queryFn: () => getEvents(10, 'open'),
+  // 需关注事件：分页查询（2026-08-20）。
+  // 默认 20 条/页；pageSize 切换重置到第 1 页；offset=(page-1)*pageSize。
+  const [eventPage, setEventPage] = useState(1);
+  const [eventPageSize, setEventPageSize] = useState<number>(20);
+  const { data: openEventsPage } = useQuery<{
+    items: EventInfo[];
+    total: number;
+  }>({
+    queryKey: ['workbench-events-open', eventPage, eventPageSize],
+    queryFn: () =>
+      getEventsPage(eventPageSize, 'open', 24, (eventPage - 1) * eventPageSize),
     refetchInterval: 5000,
+    placeholderData: (prev) => prev, // 翻页时保留上一页数据避免闪烁
   });
+  const openEvents = openEventsPage?.items ?? [];
+  const openEventsTotal = openEventsPage?.total ?? 0;
+  const openTotalPages = Math.max(1, Math.ceil(openEventsTotal / eventPageSize));
+  const changeEventPageSize = (size: number) => {
+    setEventPageSize(size);
+    setEventPage(1);
+  };
+  const goEventPage = (page: number) => {
+    setEventPage(Math.min(Math.max(1, page), openTotalPages));
+  };
 
   // P1-CMAP-001：正式写链仅走 Scheduler V2。V2 待审批方案 = shadow 状态
   // （createRun 生成），approve/reject 均走 V2 端点。
@@ -352,17 +385,20 @@ export default function WorkbenchPanel({
         </CardContent>
       </Card>
 
-      {/* Card 3: Events to watch (内嵌处置) */}
-      <Card className="flex-1 bg-card/5 border-white/10 flex flex-col min-h-0 min-w-0">
+      {/* Card 3: Events to watch (内嵌处置 + 分页) */}
+      <Card className="flex-1 bg-card/5 border-white/10 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <CardHeader className="p-3 pb-2">
           <CardTitle className="text-xs text-white/80 flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5" />
             需关注事件
+            <span className="ml-auto text-[9px] text-white/40 font-normal">
+              共 {openEventsTotal} 条
+            </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-3 pt-0 flex-1 min-h-0">
+        <CardContent className="p-3 pt-0 flex-1 min-h-0 overflow-hidden">
           <ScrollArea className="h-full">
-            {openEvents && openEvents.length > 0 ? (
+            {openEvents.length > 0 ? (
               <div className="space-y-1">
                 {openEvents.map((ev) => (
                   <div key={ev.id} className="flex items-center gap-2">
@@ -394,6 +430,88 @@ export default function WorkbenchPanel({
               <div className="text-xs text-white/70 text-center py-4">暂无未结事件</div>
             )}
           </ScrollArea>
+          {/* 分页控件（2026-08-20）：上一页/下一页/页码跳转 + 每页条数 */}
+          <div className="pt-2 mt-2 border-t border-white/10 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <Select
+                value={String(eventPageSize)}
+                onValueChange={(v) => changeEventPageSize(Number(v))}
+              >
+                <SelectTrigger className="h-6 text-[10px] px-2 w-[84px] bg-white/5 border-white/10 text-white/80">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EVENT_PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size} 条/页
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-[9px] text-white/50">
+                第 {eventPage}/{openTotalPages} 页
+              </span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-white/70 hover:text-white"
+                disabled={eventPage <= 1}
+                onClick={() => goEventPage(1)}
+                aria-label="首页"
+              >
+                <ChevronsLeft className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-white/70 hover:text-white"
+                disabled={eventPage <= 1}
+                onClick={() => goEventPage(eventPage - 1)}
+                aria-label="上一页"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </Button>
+              <span className="text-[9px] text-white/50 px-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={openTotalPages}
+                  value={eventPage}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 1) goEventPage(v);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') goEventPage(Number((e.target as HTMLInputElement).value));
+                  }}
+                  className="w-10 h-6 rounded border border-white/10 bg-white/5 text-[10px] text-white/90 text-center outline-none focus:border-white/30"
+                  aria-label="页码跳转"
+                />
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-white/70 hover:text-white"
+                disabled={eventPage >= openTotalPages}
+                onClick={() => goEventPage(eventPage + 1)}
+                aria-label="下一页"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-white/70 hover:text-white"
+                disabled={eventPage >= openTotalPages}
+                onClick={() => goEventPage(openTotalPages)}
+                aria-label="末页"
+              >
+                <ChevronsRight className="w-3 h-3" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

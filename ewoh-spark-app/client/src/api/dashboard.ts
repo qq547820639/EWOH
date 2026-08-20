@@ -79,9 +79,11 @@ export async function unbindDevice(deviceId: string): Promise<void> {
 const MAX_EVENTS_LIMIT = 500;
 
 /**
- * 事件列表（时间窗滚动查询，2026-08-19）。
+ * 事件列表（时间窗滚动查询，2026-08-19；2026-08-20 分页化）。
  * hours：查询最近 N 小时（默认 24h）——默认只看一天内的滚动窗口，超出后
  * 数据自动滚出视野；调用方可让用户选择时间范围（1/6/24/168h）。
+ * 服务端返回 { items, total }，本函数解包返回 items（兼容既有调用方）。
+ * 需要 total/翻页的调用方请用 getEventsPage。
  */
 export async function getEvents(
   limit = 50,
@@ -92,6 +94,24 @@ export async function getEvents(
   const params: Record<string, string> = {
     limit: String(bounded),
     hours: String(hours),
+  };
+  if (status) params.status = status;
+  const res = await axiosForBackend({ url: '/api/dashboard/events', method: 'GET', params });
+  return res.data.items;
+}
+
+/** 分页事件查询：返回 { items, total } 供翻页控件消费（offset = (page-1)*limit）。 */
+export async function getEventsPage(
+  limit = 20,
+  status?: string,
+  hours = 24,
+  offset = 0,
+): Promise<{ items: EventInfo[]; total: number }> {
+  const bounded = Math.min(Math.max(1, limit), MAX_EVENTS_LIMIT);
+  const params: Record<string, string> = {
+    limit: String(bounded),
+    hours: String(hours),
+    offset: String(Math.max(0, Math.trunc(offset))),
   };
   if (status) params.status = status;
   const res = await axiosForBackend({ url: '/api/dashboard/events', method: 'GET', params });
