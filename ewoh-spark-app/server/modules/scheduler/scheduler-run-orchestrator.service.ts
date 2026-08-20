@@ -232,7 +232,7 @@ export class SchedulerRunOrchestrator {
     // 失败仅告警，不影响方案状态与审批）。LLM 不可用自动规则回退。
     if (!isShadow) {
       for (const plan of plans) {
-        this.narratorService?.generateForPlan(plan.planId).catch((error) => {
+        this.narratorService?.generateForPlan(plan.planId, ctx).catch((error) => {
           this.logger.warn(
             `plan narration 生成失败 planId=${plan.planId}: ${
               error instanceof Error ? error.message : String(error)

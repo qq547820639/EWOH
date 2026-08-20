@@ -19,6 +19,9 @@ import {
   ewohSchedulingPlanAssignment,
   ewohSpatialEntity,
 } from '@server/database/schema';
+import { RequestDatabaseContext } from '../../../database/request-database-context';
+import { buildGucSettings } from '../../shared/org-context.interceptor';
+import type { OrgContext } from '../../shared/org-context.interceptor';
 import { ArkService } from '../../ai/ark.service';
 
 export type NarrationSource = 'llm' | 'rule_fallback';
@@ -42,67 +45,82 @@ export class SchedulingNarratorService {
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly requestDatabaseContext: RequestDatabaseContext,
     @Optional() private readonly ark?: ArkService,
   ) {}
 
   /**
    * 幂等生成说明。返回 null 表示 plan 不存在；返回 { source, narration }。
-   * LLM 路径失败自动降级规则回退；两者都产出后落库并返回。
+   * 查询与落库在 org GUC 事务内执行（异步调用无 HTTP 事务上下文，RLS 需显式
+   * 设置 GUC——否则 plan 读取被 RLS 拒（NEST-504 fail-closed），narration 落库失败）。
+   * LLM 路径失败自动降级规则回退。
    */
   async generateForPlan(
     planId: string,
+    ctx?: OrgContext,
   ): Promise<{ source: NarrationSource; narration: string } | null> {
-    const [plan] = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(eq(ewohSchedulePlan.planId, planId))
-      .limit(1);
-    if (!plan) return null;
-    // 幂等：已有说明直接返回（不覆盖）。
-    if (plan.aiNarration) {
-      return {
-        source: (plan.narrationSource as NarrationSource | null) ?? 'llm',
-        narration: plan.aiNarration,
-      };
-    }
-
-    const assignments = await this.db
-      .select()
-      .from(ewohSchedulingPlanAssignment)
-      .where(eq(ewohSchedulingPlanAssignment.planId, planId));
-
-    // ---- LLM 路径（Ark 可用时） ----
-    if (this.ark) {
-      try {
-        const input = await this.buildLlmInput(plan, assignments);
-        const result = await this.ark.ask(NARRATION_SYSTEM_PROMPT, input, {
-          temperature: 0.3,
-          kind: 'analysis',
-          inputVersion: 'plan-narration-v1',
-        });
-        if (result.ok && result.text && result.text.trim().length >= 20) {
-          const cleaned = this.sanitize(result.text);
-          if (cleaned.length >= 20) {
-            await this.persist(planId, cleaned, 'llm');
-            return { source: 'llm', narration: cleaned };
-          }
-        }
-        this.logger.warn(
-          `plan narration LLM 输出不合格 planId=${planId}: ${result.error ?? 'empty'}`,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `plan narration LLM 失败 planId=${planId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+    const gucSettings = buildGucSettings(
+      ctx ?? {
+        userId: 'system',
+        primaryOrgId: null,
+        roles: [],
+        accessibleOrgIds: [],
+        isGlobalAdmin: true,
+      },
+    );
+    return this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
+      const [plan] = await this.db
+        .select()
+        .from(ewohSchedulePlan)
+        .where(eq(ewohSchedulePlan.planId, planId))
+        .limit(1);
+      if (!plan) return null;
+      // 幂等：已有说明直接返回（不覆盖）。
+      if (plan.aiNarration) {
+        return {
+          source: (plan.narrationSource as NarrationSource | null) ?? 'llm',
+          narration: plan.aiNarration,
+        };
       }
-    }
 
-    // ---- 规则回退（LLM 不可用/失败/不合格时保底，事实锚定） ----
-    const fallback = await this.buildRuleFallback(plan, assignments);
-    await this.persist(planId, fallback, 'rule_fallback');
-    return { source: 'rule_fallback', narration: fallback };
+      const assignments = await this.db
+        .select()
+        .from(ewohSchedulingPlanAssignment)
+        .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+
+      // ---- LLM 路径（Ark 可用时） ----
+      if (this.ark) {
+        try {
+          const input = await this.buildLlmInput(plan, assignments);
+          const result = await this.ark.ask(NARRATION_SYSTEM_PROMPT, input, {
+            temperature: 0.3,
+            kind: 'analysis',
+            inputVersion: 'plan-narration-v1',
+          });
+          if (result.ok && result.text && result.text.trim().length >= 20) {
+            const cleaned = this.sanitize(result.text);
+            if (cleaned.length >= 20) {
+              await this.persist(planId, cleaned, 'llm');
+              return { source: 'llm', narration: cleaned };
+            }
+          }
+          this.logger.warn(
+            `plan narration LLM 输出不合格 planId=${planId}: ${result.error ?? 'empty'}`,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `plan narration LLM 失败 planId=${planId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+
+      // ---- 规则回退（LLM 不可用/失败/不合格时保底，事实锚定） ----
+      const fallback = await this.buildRuleFallback(plan, assignments);
+      await this.persist(planId, fallback, 'rule_fallback');
+      return { source: 'rule_fallback', narration: fallback };
+    });
   }
 
   private async persist(

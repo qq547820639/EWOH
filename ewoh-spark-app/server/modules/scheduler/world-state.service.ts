@@ -342,7 +342,43 @@ export class WorldStateSnapshotService {
     // NEST-102（2026-08-17）：资源投影同 ctx 透传（org 过滤同源一致）。
     const resourceView = await this.resourceProjectionService.projectForSnapshot(ctx);
     const persons = resourceView.persons;
-    const stations = resourceView.stations;
+    // 2026-08-21 修复：任务 spatial_entity_id 采用 route node 工位（NODE-*，
+    // route_node 权威坐标）；资源投影只收 workstation/station 空间实体（st-*），
+    // 任务引用的 route node 工位缺失 → stationById 查不到 → 候选空 → 求解
+    // 0 分配 → 方案 metrics 全 0。此处将任务引用且缺失的 route node 派生为
+    // station（坐标取 route node，capacity 默认 1，source=DERIVED 显式标记）。
+    const baseStations = resourceView.stations;
+    const taskStationIds = new Set<string>();
+    for (const t of tasks) {
+      if (t.spatialEntityId) taskStationIds.add(t.spatialEntityId);
+    }
+    const baseStationIdSet = new Set(baseStations.map((s) => s.id));
+    const derivedRouteStations = (routeNodes ?? [])
+      .filter((rn) => taskStationIds.has(rn.nodeId) && !baseStationIdSet.has(rn.nodeId))
+      .map((rn) => ({
+        id: rn.nodeId,
+        entityId: `station:${rn.nodeId}`,
+        name: rn.nodeId,
+        x: rn.x ?? null,
+        y: rn.y ?? null,
+        capacity: 1,
+        queue: [] as string[],
+        availableWindows: null,
+        capabilities: [] as string[],
+        maintenance: null,
+        qualityFindings: null,
+        source: 'DERIVED' as const,
+        coordinate:
+          rn.x != null && rn.y != null
+            ? {
+                type: 'FACTORY_CARTESIAN' as const,
+                x: rn.x,
+                y: rn.y,
+                floorId: rn.floor ?? null,
+              }
+            : { type: 'UNKNOWN' as const },
+      }));
+    const stations = [...baseStations, ...derivedRouteStations];
     const deviceList = resourceView.devices;
 
     // NO-12u / ADR-044：能力投影接线（Canonical CapabilityRecord，ADR-043）。
