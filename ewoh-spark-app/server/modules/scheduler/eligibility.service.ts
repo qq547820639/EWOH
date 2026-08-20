@@ -293,7 +293,15 @@ export class EligibilityService {
     }
 
     // 3) 在岗状态（人员可用）
-    if (person.status !== 'AVAILABLE') reasons.push('person_unavailable');
+    // 2026-08-21 修复：状态大小写不敏感 + 兼容 active——数据侧 spatial person
+    // status 为小写 available/active（seed 事实源），原硬编码 'AVAILABLE' 大写
+    // 导致全员 person_unavailable → 候选空 → 方案 metrics 全 0。
+    // 仅 offline/absent 等明确不可用状态排除；active（在岗执行中）由时间冲突
+    // /锁定槽位判定拦截，不在此处误伤。
+    const personStatus = (person.status ?? '').trim().toUpperCase();
+    if (personStatus !== 'AVAILABLE' && personStatus !== 'ACTIVE') {
+      reasons.push('person_unavailable');
+    }
 
     // 4) 时间冲突（人员不被双重预订，用候选时间区间判定）
     //    NEST-136：倒排索引查询（同一 ctx 只构建一次索引，见 slotIndexFor）。
