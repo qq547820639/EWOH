@@ -59,8 +59,10 @@ export const CommandCenterView = ({
 }: CommandCenterViewProps): React.ReactElement => {
   const kpis = buildCommandCenterKpis(overview);
   return (
-    <div className="space-y-6" data-testid="command-center-view">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+    // 2026-08-21 响应式：撑满父容器（flex-col），KPI 固定、事件列表
+    // flex-1 自适应剩余高度内部滚动——大屏列表更长、小屏更短，无底部空白。
+    <div className="flex h-full min-h-0 flex-col gap-6" data-testid="command-center-view">
+      <div className="grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {kpis.map((kpi) => {
           const Icon = KPI_ICONS[kpi.key];
           return (
@@ -80,8 +82,8 @@ export const CommandCenterView = ({
         })}
       </div>
 
-      <section className="rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
+      <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-card">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
           <h2 className="font-semibold text-foreground">
             近期事件
             {totalEvents > 0 && (
@@ -107,8 +109,8 @@ export const CommandCenterView = ({
             </SelectContent>
           </Select>
         </div>
-        {/* 列表容器：高度约束 + 内部滚动（避免整页被长列表撑开不可控）。 */}
-        <div className="max-h-[420px] overflow-y-auto">
+        {/* 列表容器：自适应剩余高度 + 内部滚动（响应式，无固定高度）。 */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {isEventsLoading && events.length === 0 ? (
             <div className="p-6 text-sm text-muted-foreground">正在加载事件…</div>
           ) : events.length === 0 ? (
@@ -136,8 +138,8 @@ export const CommandCenterView = ({
             </ul>
           )}
         </div>
-        {/* 翻页控件 */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+        {/* 翻页控件（固定底部，不随列表滚动） */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
           <span className="text-xs text-muted-foreground">
             第 {page}/{totalPages} 页
           </span>

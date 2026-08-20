@@ -56,8 +56,10 @@ const CommandCenter = (): React.ReactElement => {
   };
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    // 2026-08-21 响应式：根容器撑满 main（flex-1 flex-col），内部 flex 布局
+    // 管理滚动，避免内容不足时底部大片空白。
+    <div className="flex h-full min-h-0 flex-col gap-6 overflow-hidden p-4 sm:p-6">
+      <header className="flex flex-wrap items-end justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-foreground">指挥中心</h1>
           <p className="mt-1 text-sm text-muted-foreground">
