@@ -949,6 +949,13 @@ export class WorldStateSnapshotService {
     allSpatialEntities: Array<{ entityId: string; entityType: string | null; parentId: string | null }>,
   ): string[] {
     if (!spatialEntityId) return [];
+    // 2026-08-21 修复：任务工位在 stations（含 route node 派生的 NODE-* 工位）
+    // 中时**直接可用**——原实现先查 spatialByEntityId（route node 不在 spatial 表）
+    // 命中 `if (!se) return []` 致 candidateStations 恒空 → 求解 0 分配。
+    // 兜底检查提升到最前（stations 是权威可排工位集，含 DERIVED 派生项）。
+    if (stations.some((s) => s.id === spatialEntityId)) {
+      return [spatialEntityId];
+    }
     const se = spatialByEntityId.get(spatialEntityId);
     if (!se) return [];
     // 任务绑定工位本身就是 station → 直接回退。
@@ -965,10 +972,6 @@ export class WorldStateSnapshotService {
       .filter((s) => ['workstation', 'station'].includes(s.entityType))
       .map((s) => s.entityId);
     if (inZone.length > 0) return inZone;
-    // 兜底：绑定工位自身（若在 stations 中）。
-    if (stations.some((s) => s.id === spatialEntityId)) {
-      return [spatialEntityId];
-    }
     return [];
   }
 
