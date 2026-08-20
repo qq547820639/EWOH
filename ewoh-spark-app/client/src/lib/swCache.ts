@@ -10,7 +10,9 @@
  */
 
 export const SW_CACHE_BASE = 'ewoh-shell';
-export const SW_CACHE_VERSION = 'v2';
+// v2 → v3（2026-08-20）：工作台分页改版后旧 shell 被 SW 缓存（无 skipWaiting），
+// 用户刷新仍命中旧 app shell/资源——bump 版本强制缓存名切换全量拉新。
+export const SW_CACHE_VERSION = 'v3';
 
 /** Joins base + version into a cache name, e.g. `ewoh-shell-v2`. */
 export function cacheName(
