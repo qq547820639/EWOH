@@ -43,7 +43,8 @@ describe('swCache (pure cache-versioning helpers)', () => {
       'other-app-v9',
       'index',
     ];
-    expect(staleCacheNames(keys)).toEqual(['ewoh-shell-v1']);
+    // 2026-08-21：SW_CACHE_VERSION v2→v3，v1/v2 均为 stale。
+    expect(staleCacheNames(keys)).toEqual(['ewoh-shell-v1', 'ewoh-shell-v2']);
   });
 
   it('returns no stale caches when only the current version exists', () => {

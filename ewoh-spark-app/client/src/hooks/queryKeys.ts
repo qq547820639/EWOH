@@ -89,6 +89,8 @@ export const queryKeys = {
   /** 候选策略版本 vs 生效版本的 shadow 对比（Task 6）。 */
   schedulerPolicyComparison: (version: number) => ['scheduler-policy', 'compare', version] as const,
   commandCenter: ['command-center'] as const,
+  commandCenterOverview: ['command-center', 'overview'] as const,
+  commandCenterEvents: ['command-center', 'events'] as const,
   digitalWorld: ['digital-world'] as const,
   personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,
   alerts: ['alerts'] as const,
