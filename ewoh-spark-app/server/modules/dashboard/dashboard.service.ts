@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
   ewohDevice,
@@ -925,14 +925,39 @@ export class DashboardService {
             ),
           )
           .limit(1);
-        if (personEntity) {
-          const personExtra = (personEntity.extra as Record<string, unknown> | null) ?? {};
-          await this.db
-            .update(ewohSpatialEntity)
-            .set({ extra: { ...personExtra, device_id: deviceId } })
-            .where(eq(ewohSpatialEntity.id, personEntity.id));
+        if (!personEntity) {
+          throw new NotFoundException(
+            `Person entity ${req.personEntityId} not found`,
+          );
         }
-        const deviceExtra = (deviceEntity.extra as Record<string, unknown> | null) ?? {};
+        if (personEntity.entityType !== 'person') {
+          throw new BadRequestException(
+            `Entity ${req.personEntityId} is not a person`,
+          );
+        }
+        // 2026-08-20 防重复硬校验（设备中心下拉绑定需求）：
+        // 一人一设备、一设备一人。服务端兜底，杜绝前端绕过产生 extra 脏引用。
+        const personExtra =
+          (personEntity.extra as Record<string, unknown> | null) ?? {};
+        const personBoundDevice = personExtra.device_id as string | undefined;
+        if (personBoundDevice && personBoundDevice !== deviceId) {
+          throw new ConflictException(
+            `人员已被设备 ${personBoundDevice} 绑定，请先解绑（换绑走先解后绑流程）`,
+          );
+        }
+        const deviceExtra =
+          (deviceEntity.extra as Record<string, unknown> | null) ?? {};
+        const deviceWorker = deviceExtra.worker_id as string | undefined;
+        if (deviceWorker && deviceWorker !== req.personEntityId) {
+          throw new ConflictException(
+            `设备已被人员占用，请先解绑当前绑定人再绑定`,
+          );
+        }
+        // 双向写 extra（person.device_id ↔ device.worker_id）。
+        await this.db
+          .update(ewohSpatialEntity)
+          .set({ extra: { ...personExtra, device_id: deviceId } })
+          .where(eq(ewohSpatialEntity.id, personEntity.id));
         await this.db
           .update(ewohSpatialEntity)
           .set({ extra: { ...deviceExtra, worker_id: req.personEntityId } })

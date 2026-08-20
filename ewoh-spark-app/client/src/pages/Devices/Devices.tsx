@@ -363,7 +363,9 @@ const Devices = (): React.ReactElement => {
                         {d.deviceId}
                       </td>
                       <td className="px-5 py-3 text-sm text-foreground whitespace-nowrap">
-                        {d.workerName || '—'}
+                        {/* 2026-08-20：统一显示结构化绑定人员（boundPersonName）；
+                            存量 worker_name 文本仅在尚未迁移时兜底显示。 */}
+                        {d.boundPersonName || d.workerName || '—'}
                       </td>
                       <td className="px-5 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {d.deviceModel || '—'}

@@ -15,6 +15,8 @@ import {
   Save,
   X,
   History,
+  Check,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -23,6 +25,7 @@ import type {
   UpdateDeviceDto,
   BindDeviceRequest,
   SpatialHierarchyNode,
+  PersonnelInfo,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
@@ -47,14 +50,29 @@ import {
   SelectValue,
 } from '@client/src/components/ui/select';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@client/src/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@client/src/components/ui/command';
+import {
   createDevice,
   updateDevice,
+  getDevices,
   getDeviceBindings,
   bindDevice,
   unbindDevice,
   getTelemetry,
 } from '@client/src/api/dashboard';
 import { getHierarchy, getEntities } from '@client/src/api/spatial';
+import { listPersonnel } from '@client/src/api/organization';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import Timeline from '@client/src/components/Timeline';
 import { normalizeTimelineEvent } from '@client/src/lib/timelineModel';
@@ -101,7 +119,7 @@ const DeviceConfigDrawer = ({
 
   // ===== 表单状态 =====
   const [deviceId, setDeviceId] = useState('');
-  const [workerName, setWorkerName] = useState('');
+  // 2026-08-20 移除 workerName（手动输入姓名已废弃，统一走结构化人员绑定下拉）。
   const [deviceModel, setDeviceModel] = useState('');
   const [batteryPct, setBatteryPct] = useState<string>('');
   const [online, setOnline] = useState(false);
@@ -123,7 +141,6 @@ const DeviceConfigDrawer = ({
     setSelectedEntityId(null);
     if (isEdit && device) {
       setDeviceId(device.deviceId);
-      setWorkerName(device.workerName ?? '');
       setDeviceModel(device.deviceModel ?? '');
       setBatteryPct(device.batteryPct != null ? String(device.batteryPct) : '');
       setOnline(device.online ?? false);
@@ -135,7 +152,6 @@ const DeviceConfigDrawer = ({
       setTemperatureC(device.temperatureC != null ? String(device.temperatureC) : '');
     } else {
       setDeviceId('');
-      setWorkerName('');
       setDeviceModel('');
       setBatteryPct('');
       setOnline(false);
@@ -155,7 +171,6 @@ const DeviceConfigDrawer = ({
       const temp = temperatureC === '' ? undefined : Number(temperatureC);
       if (isEdit && device) {
         const body: UpdateDeviceDto = {
-          workerName: workerName || undefined,
           deviceModel: deviceModel || undefined,
           batteryPct: battery,
           online,
@@ -169,7 +184,6 @@ const DeviceConfigDrawer = ({
       }
       const body: CreateDeviceDto = {
         deviceId: deviceId.trim(),
-        workerName: workerName || undefined,
         deviceModel: deviceModel || undefined,
         batteryPct: battery,
         online,
@@ -214,6 +228,91 @@ const DeviceConfigDrawer = ({
     enabled: isEdit && open,
     select: (items) => items.filter((item) => item.entityType === 'person'),
   });
+
+  // ===== 绑定人员下拉（2026-08-20：替代手动输入 workerName）=====
+  // 主数据源：人员与外骨骼档案（含姓名/工号，按档案实时同步）；
+  // 空间身份映射：存量人员 spatial person 为 P0xx（地图/绑定原生身份），
+  // 新增人员由 createPersonnel 同步建 UUID spatial 实体——绑定时 person 端
+  // 一律取 spatial person id，保证 bindDevice 与 boundPersonName 反查可通。
+  const personnelQuery = useQuery({
+    queryKey: queryKeys.personnel({}),
+    queryFn: () => listPersonnel({}),
+    enabled: isEdit && open,
+    refetchOnWindowFocus: true,
+  });
+  // 全部设备（boundPersonId 反查：某人员已被哪台设备占用）。
+  const allDevicesQuery = useQuery({
+    queryKey: queryKeys.devices({}),
+    queryFn: () => getDevices(),
+    enabled: isEdit && open,
+    refetchOnWindowFocus: true,
+  });
+  const spatialPersons = personsQuery.data ?? [];
+  /** name → spatial person entityId（存量 P0xx 映射；无映射者直接用档案 UUID）。 */
+  const nameToSpatialId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sp of spatialPersons) {
+      if (!m.has(sp.name)) m.set(sp.name, sp.entityId);
+    }
+    return m;
+  }, [spatialPersons]);
+  const personSpatialId = (p: PersonnelInfo): string =>
+    nameToSpatialId.get(p.name) ?? p.id;
+  /** spatialId → 占用该人员的设备（一人一设备）。 */
+  const deviceByPerson = useMemo(() => {
+    const m = new Map<string, DeviceInfo>();
+    for (const d of allDevicesQuery.data ?? []) {
+      if (d.boundPersonId) m.set(d.boundPersonId, d);
+    }
+    return m;
+  }, [allDevicesQuery.data]);
+  const [personSearch, setPersonSearch] = useState('');
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const boundPersonId = bindingsQuery.data?.boundPersonId ?? null;
+  const boundPersonName = bindingsQuery.data?.boundPersonName ?? null;
+  const filteredPersons = useMemo(() => {
+    const kw = personSearch.trim().toLowerCase();
+    const base = personnelQuery.data ?? [];
+    if (!kw) return base;
+    return base.filter(
+      (p) =>
+        p.name.toLowerCase().includes(kw) ||
+        p.employeeNo.toLowerCase().includes(kw),
+    );
+  }, [personSearch, personnelQuery.data]);
+  /** 本设备当前绑定人的 spatialId 若被其他设备占用——理论上不应发生，防御性提示。 */
+  const bindPerson = (p: PersonnelInfo) => {
+    if (!device) return;
+    const spatialId = personSpatialId(p);
+    // 防重复（前端拦截，服务端另有 409 硬校验兜底）：
+    // 1) 该人员已被其他设备绑定 → 提示先解绑。
+    const occupiedBy = deviceByPerson.get(spatialId);
+    if (occupiedBy && occupiedBy.deviceId !== device.deviceId) {
+      toast.error('绑定失败：该人员已被设备占用', {
+        description: `${p.name} 已绑定 ${occupiedBy.deviceId}，请先在「人员与外骨骼」或该设备中解绑。`,
+      });
+      return;
+    }
+    // 2) 本设备已绑定其他人员 → 先解绑旧人员再绑定（换绑语义）。
+    const doBind = () =>
+      bindMutation.mutate({
+        // spatialEntityId 传 undefined（服务端 !==undefined 才校验，null 会 404）。
+        ...(bindingsQuery.data?.spatialEntityId
+          ? { spatialEntityId: bindingsQuery.data.spatialEntityId }
+          : {}),
+        personEntityId: spatialId,
+      });
+    if (boundPersonId && boundPersonId !== spatialId) {
+      unbindMutation.mutate(undefined, {
+        onSuccess: doBind,
+        onError: () => {
+          toast.error('换绑失败：旧绑定解绑未成功');
+        },
+      });
+      return;
+    }
+    doBind();
+  };
 
   const hierarchyQuery = useQuery({
     queryKey: queryKeys.spatialHierarchy,
@@ -301,14 +400,6 @@ const DeviceConfigDrawer = ({
     });
   };
 
-  const handlePersonChange = (val: string) => {
-    bindMutation.mutate({
-      spatialEntityId: bindingsQuery.data?.spatialEntityId ?? null,
-      personEntityId: val === 'none' ? null : val,
-    });
-  };
-
-  const personValue = bindingsQuery.data?.boundPersonId ?? 'none';
   const bindingPath = bindingsQuery.data?.hierarchyPath ?? [];
   const bindingLoading = bindingsQuery.isLoading;
 
@@ -348,17 +439,7 @@ const DeviceConfigDrawer = ({
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">工人姓名</Label>
-                <Input
-                  value={workerName}
-                  onChange={(e) => setWorkerName(e.target.value)}
-                  placeholder="姓名"
-                  className="h-9"
-                />
-              </div>
-
-              <div className="space-y-1.5">
+              <div className="col-span-2 space-y-1.5">
                 <Label className="text-xs text-muted-foreground">设备型号</Label>
                 <Input
                   value={deviceModel}
@@ -509,12 +590,108 @@ const DeviceConfigDrawer = ({
                       未绑定空间实体
                     </div>
                   )}
-                  <div className="mt-2 flex items-center gap-1.5 text-xs">
-                    <User className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">绑定人员：</span>
-                    <span className="text-foreground font-medium">
-                      {bindingsQuery.data?.boundPersonName ?? '未绑定'}
-                    </span>
+                  {/* 绑定人员：档案下拉（姓名/工号搜索，2026-08-20 替代手动输入） */}
+                  <div className="mt-3 space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">
+                      绑定人员（从已录入人员中选择）
+                    </Label>
+                    <Popover
+                      open={personPickerOpen}
+                      onOpenChange={setPersonPickerOpen}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={personPickerOpen}
+                          className="w-full h-9 justify-between font-normal"
+                          disabled={!isEdit}
+                        >
+                          <span className="inline-flex items-center gap-1.5 truncate">
+                            <User className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                            {boundPersonName
+                              ? boundPersonName
+                              : '选择人员…'}
+                          </span>
+                          <Search className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[320px] p-0"
+                        align="start"
+                        side="bottom"
+                      >
+                        <Command>
+                          <CommandInput
+                            placeholder="搜索姓名 / 工号…"
+                            value={personSearch}
+                            onValueChange={setPersonSearch}
+                            className="h-9"
+                          />
+                          <CommandList>
+                            <CommandEmpty>
+                              {personnelQuery.isLoading
+                                ? '正在加载人员…'
+                                : '未找到匹配人员'}
+                            </CommandEmpty>
+                            <CommandGroup heading="人员档案">
+                              {filteredPersons.map((p) => {
+                                const spatialId = personSpatialId(p);
+                                const occupiedBy =
+                                  deviceByPerson.get(spatialId);
+                                const isSelf =
+                                  occupiedBy?.deviceId === device?.deviceId;
+                                const isCurrent = boundPersonId === spatialId;
+                                const disabledItem =
+                                  !!occupiedBy && !isSelf && !isCurrent;
+                                return (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={`${p.name} ${p.employeeNo}`}
+                                    disabled={disabledItem}
+                                    onSelect={() => {
+                                      bindPerson(p);
+                                      setPersonPickerOpen(false);
+                                      setPersonSearch('');
+                                    }}
+                                    className="flex items-center justify-between gap-2"
+                                  >
+                                    <span className="flex items-center gap-2 min-w-0">
+                                      <span className="truncate font-medium">
+                                        {p.name}
+                                      </span>
+                                      <span className="shrink-0 text-xs text-muted-foreground">
+                                        {p.employeeNo}
+                                      </span>
+                                    </span>
+                                    <span className="flex items-center gap-1.5 shrink-0">
+                                      {occupiedBy && !isSelf && (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[10px] text-red-600 border-red-200 bg-red-50"
+                                        >
+                                          已绑定 {occupiedBy.deviceId}
+                                        </Badge>
+                                      )}
+                                      {isCurrent && (
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      )}
+                                    </span>
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {boundPersonName && (
+                      <p className="text-[11px] text-muted-foreground">
+                        当前绑定：{boundPersonName}。更换人员将自动解绑旧绑定；
+                        选中已被他人占用的设备会提示先解绑。
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -577,27 +754,8 @@ const DeviceConfigDrawer = ({
                   </div>
                 )}
 
-                {/* 绑定人员下拉 */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">绑定人员</Label>
-                  <Select
-                    value={personValue}
-                    onValueChange={handlePersonChange}
-                    disabled={bindMutation.isPending}
-                  >
-                    <SelectTrigger className="h-9 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">未绑定</SelectItem>
-                      {(personsQuery.data ?? []).map((p) => (
-                        <SelectItem key={p.entityId} value={p.entityId}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* 绑定人员下拉（2026-08-20：已上移至「绑定关系」区块的
+                    可搜索档案下拉，此处旧 Select 废弃移除） */}
               </div>
             </>
           )}

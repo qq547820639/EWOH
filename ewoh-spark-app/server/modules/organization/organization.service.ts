@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
@@ -6,6 +6,7 @@ import {
   ewohOrganization,
   ewohPersonnel,
   ewohDeviceBinding,
+  ewohSpatialEntity,
 } from '@server/database/schema';
 import { isValidUuid } from '@server/common/uuid';
 import { AuditService } from '../shared/audit.service';
@@ -77,6 +78,7 @@ export function coarseHealthRisk(currentLoad: unknown): HealthRiskLevel {
 
 @Injectable()
 export class OrganizationService {
+  private readonly logger = new Logger(OrganizationService.name);
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() private readonly auditService?: AuditService,
@@ -306,6 +308,37 @@ export class OrganizationService {
         status: body.status ?? 'available',
       })
       .returning();
+    // 2026-08-20 设备中心下拉绑定需求：人员档案必须同步建 spatial person 实体，
+    // 否则新增人员在「设备中心→绑定人员」与指挥地图中不可见、绑定链路不可写
+    // （bindDevice 以 spatial person entity_id 为 person 身份主键）。
+    // entity_id = personnel UUID（与档案同源）；extra.employee_no 供前端按工号搜索。
+    if (personnelOrgId) {
+      try {
+        await this.db
+          .insert(ewohSpatialEntity)
+          .values({
+            entityId: String(row.id),
+            entityType: 'person',
+            name: row.name,
+            orgId: personnelOrgId,
+            status: row.status ?? 'active',
+            sourceType: 'seed',
+            confidence: 1,
+            version: 1,
+            extra: { employee_no: row.employeeNo },
+          })
+          .onConflictDoNothing({
+            target: [ewohSpatialEntity.orgId, ewohSpatialEntity.entityId],
+          });
+      } catch (error) {
+        // spatial 同步失败不回滚人员档案（档案为权威数据源），仅告警。
+        this.logger.warn(
+          `createPersonnel: spatial person 同步失败 id=${row.id}：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     await this.recordAudit({
       action: 'personnel.create',
       entityType: 'personnel',
