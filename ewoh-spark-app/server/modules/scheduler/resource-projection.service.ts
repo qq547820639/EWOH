@@ -179,6 +179,18 @@ export class ResourceProjectionService {
     const now = Date.now();
     const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
     for (const se of spatialRows) spatialByEntityId.set(se.entityId, se);
+    // 2026-08-21：person master 新鲜度回退——personnel._updated_at 为 seed 时间
+    // （静态档案），模拟器持续更新同名 spatial person（P0xx）的 updatedAt；
+    // 投影按姓名回退 spatial person 时间戳，保证 master 信号 FRESH
+    // （否则 status 归一化 UNKNOWN → 求解全员 person_unavailable，metrics 全 0）。
+    const spatialPersonUpdatedAtByName = new Map<string, number | null>();
+    for (const se of spatialRows) {
+      if (se.entityType !== 'person' || !se.name) continue;
+      spatialPersonUpdatedAtByName.set(
+        se.name,
+        se.updatedAt ? se.updatedAt.getTime() : null,
+      );
+    }
 
     const persons: ResourceState[] = personnelRows.map((p) => {
       const se = p.spatialEntityId
@@ -190,7 +202,17 @@ export class ResourceProjectionService {
         fatigueLevel?: number;
       } | null);
       const pRes = resFor('person', p.id);
-      const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      // 2026-08-21：master 新鲜度取 personnel._updated_at 与同名 spatial person
+      //（模拟器 tick 更新 P0xx 实体 updatedAt）的较新者——任一信号新鲜即 FRESH，
+      // 避免静态档案（seed 时间戳）把在岗人员误判 STALE → UNKNOWN。
+      const personnelTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      const spatialTs = spatialPersonUpdatedAtByName.get(p.name) ?? null;
+      const sourceTs =
+        personnelTs == null
+          ? (spatialTs ?? null)
+          : spatialTs == null
+            ? personnelTs
+            : Math.max(personnelTs, spatialTs);
       const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
       return {
         id: p.id,
