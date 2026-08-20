@@ -555,9 +555,16 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
       }
 
       // 更新空间实体 x/y（不改 sourceType）
+      // 2026-08-21：同步 _updated_at——资源投影按 master 新鲜度（默认 5min）
+      // 判定 person 状态，位置不更新时间戳会恒 STALE → 归一化 UNKNOWN →
+      // eligibility 全员 person_unavailable → 方案 0 分配（metrics 全 0 根因之五）。
       await this.db
         .update(ewohSpatialEntity)
-        .set({ x: Math.round(person.x), y: Math.round(person.y) })
+        .set({
+          x: Math.round(person.x),
+          y: Math.round(person.y),
+          updatedAt: new Date(),
+        })
         .where(eq(ewohSpatialEntity.entityId, person.entityId));
 
       worldStateRows.push({

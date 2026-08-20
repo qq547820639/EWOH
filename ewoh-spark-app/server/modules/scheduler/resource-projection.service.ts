@@ -46,15 +46,18 @@ export const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
  * STALE/UNKNOWN 资源绝不被视为 AVAILABLE（fail-closed）。
  */
 export const DEFAULT_FRESHNESS_POLICY: FreshnessPolicy = {
-  policyVersion: 1,
+  policyVersion: 2,
   thresholdsMs: {
     'person:location': 60 * 1000,
     'person:telemetry': 120 * 1000,
-    'person:master': DEFAULT_FRESHNESS_MS,
+    // 2026-08-21：master（档案/实体主数据）5min → 24h——seed 档案低频更新，
+    // 5min 窗口下恒 STALE → 状态归一化 UNKNOWN → 求解全员 person_unavailable
+    // （metrics 全 0 根因之五；模拟器已同步更新 _updated_at 保证活跃时 FRESH）。
+    'person:master': 24 * 60 * 60 * 1000,
     'device:telemetry': 60 * 1000,
     'device:location': 120 * 1000,
-    'device:master': DEFAULT_FRESHNESS_MS,
-    'station:master': DEFAULT_FRESHNESS_MS,
+    'device:master': 24 * 60 * 60 * 1000,
+    'station:master': 24 * 60 * 60 * 1000,
   },
   defaultThresholdMs: DEFAULT_FRESHNESS_MS,
 };
