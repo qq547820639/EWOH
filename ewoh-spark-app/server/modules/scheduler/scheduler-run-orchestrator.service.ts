@@ -12,6 +12,7 @@ import {
   Injectable,
   Inject,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -57,6 +58,7 @@ export class SchedulerRunOrchestrator {
     /** 惰性读取 facade 上的 constraintLoaderService（兼容旧单测构造后注入）。 */
     private readonly getConstraintLoader: () => ConstraintLoaderService | undefined,
     /** AI 调度说明层（2026-08-21）：方案落库后异步生成自然语言说明（fire-and-forget）。 */
+    @Optional()
     private readonly narratorService?: SchedulingNarratorService,
   ) {}
 
