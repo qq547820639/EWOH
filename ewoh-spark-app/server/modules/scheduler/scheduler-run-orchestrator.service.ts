@@ -269,16 +269,17 @@ export class SchedulerRunOrchestrator {
 
     // 剥离重量级字段（decisionTrace ~36KB/assignment、alternatives、scoreBreakdown 等），
     // 将响应体从 ~2.3MB 压缩到 ~50KB。前端按需通过 GET /plans/:planId 获取完整数据。
-    const summaryPlans = plans.map((p) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const summaryPlans = plans.map((p: any) => ({
       ...p,
-      assignments: p.assignments.map((a) => {
-        const { decisionTrace, alternatives, scoreBreakdown, ...rest } = a as Record<string, unknown>;
+      assignments: p.assignments.map((a: any) => {
+        const { decisionTrace: _dt, alternatives: _alt, scoreBreakdown: _sb, ...rest } = a;
         return rest;
       }),
       decisionRecords: undefined,
       decisionProjectionIssues: undefined,
       weights: undefined,
-    }));
+    })) as typeof plans;
 
     return { run, plans: summaryPlans, debounced: false };
   }
