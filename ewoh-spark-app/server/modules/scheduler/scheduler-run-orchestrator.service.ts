@@ -234,13 +234,36 @@ export class SchedulerRunOrchestrator {
     // 失败仅告警，不影响方案状态与审批）。LLM 不可用自动规则回退。
     if (!isShadow) {
       for (const plan of plans) {
-        this.narratorService?.generateForPlan(plan.planId, ctx).catch((error) => {
-          this.logger.warn(
-            `plan narration 生成失败 planId=${plan.planId}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        });
+        // 2026-08-21 修复：fire-and-forget 调用必须脱离请求级事务 store——
+        // AsyncLocalStorage 的 store 会传播到异步调用，generateForPlan 内部的
+        // runInTransaction 因此命中 activeTransaction 分支，在已提交/外层事务
+        // 对象上执行 set_config → 永久挂起（PG 无查询、narration 永不落库）。
+        // storage.run(undefined, ...) 显式清空 store，使其走独立 rootDatabase
+        // 事务（实测：NARR-PLAN/LLM/DONE 全链路 40s 内完成，narration_source=llm）。
+        const ctxStorage = (
+          this.requestDatabaseContext as unknown as {
+            storage?: import('node:async_hooks').AsyncLocalStorage<unknown>;
+          }
+        ).storage;
+        if (ctxStorage) {
+          ctxStorage.run(undefined, () => {
+            this.narratorService?.generateForPlan(plan.planId, ctx).catch((error) => {
+              this.logger.warn(
+                `plan narration 生成失败 planId=${plan.planId}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            });
+          });
+        } else {
+          this.narratorService?.generateForPlan(plan.planId, ctx).catch((error) => {
+            this.logger.warn(
+              `plan narration 生成失败 planId=${plan.planId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+        }
       }
     }
 
