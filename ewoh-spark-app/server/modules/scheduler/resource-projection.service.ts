@@ -796,6 +796,19 @@ export class ResourceProjectionService {
     const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
     for (const se of spatialRows) spatialByEntityId.set(se.entityId, se);
 
+    // 2026-08-21（与 project() 同口径）：person master 新鲜度回退同名 spatial
+    // person（模拟器 tick 更新 P0xx 实体 updatedAt）——调度快照 persons 来自
+    // 静态档案（seed 时间戳），无此回退则恒 STALE → UNKNOWN → 求解全员
+    // person_unavailable → metrics 全 0。
+    const spatialPersonUpdatedAtByName = new Map<string, number | null>();
+    for (const se of spatialRows) {
+      if (se.entityType !== 'person' || !se.name) continue;
+      spatialPersonUpdatedAtByName.set(
+        se.name,
+        se.updatedAt ? se.updatedAt.getTime() : null,
+      );
+    }
+
     // 人员下一次可用时间：取该人员未来 reservation 的最大结束时间（真实占用）。
     const personReservationEnd = new Map<string, number>();
     for (const r of reservations) {
@@ -828,7 +841,16 @@ export class ResourceProjectionService {
       // P0-3：WGS84 坐标不进笛卡尔 x/y（仅 coordinate 承载 lat/lng）。
       const isWgs84 = (se?.coordinateType ?? 'FACTORY_CARTESIAN') === 'WGS84';
       const load = (p.currentLoad as { loadLevel?: number; fatigueLevel?: number } | null) ?? {};
-      const sourceTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      // 2026-08-21（与 project() 同口径）：master 新鲜度取档案与同名 spatial
+      // person 的较新者——模拟器运行期间恒 FRESH，status 归一化为真实值。
+      const personnelTs = p.updatedAt ? p.updatedAt.getTime() : null;
+      const spatialTs = spatialPersonUpdatedAtByName.get(p.name) ?? null;
+      const sourceTs =
+        personnelTs == null
+          ? (spatialTs ?? null)
+          : spatialTs == null
+            ? personnelTs
+            : Math.max(personnelTs, spatialTs);
       const dataQuality = this.classifyFreshness(sourceTs, now, 'person', 'master');
       const maintenance = maintenanceFor(`person:${p.id}`);
       const qualityFindings = qualityFor(`person:${p.id}`);
