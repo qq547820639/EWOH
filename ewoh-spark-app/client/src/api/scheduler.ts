@@ -47,10 +47,13 @@ import type {
 export async function createRun(
   body?: CreateRunRequest,
 ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
+  // 调度求解器 + 快照构建 + 候选枚举耗时较长（典型 30-90s），前端全局 15s 超时会必然失败。
+  // 单独设置 120s 超时与后端实际处理时间匹配。
   const res = await axiosForBackend({
     url: '/api/scheduler/runs',
     method: 'POST',
     data: body ?? {},
+    timeout: 120_000,
   });
   return res.data;
 }
@@ -63,10 +66,12 @@ export async function createRun(
 export async function injectSchedulingEvent(
   body: SchedulingEventRequest,
 ): Promise<{ run: SchedulingRun | null; plans: SchedulingPlanV2[]; debounced: boolean }> {
+  // 事件驱动重排同样需要较长处理时间。
   const res = await axiosForBackend({
     url: '/api/scheduler/events',
     method: 'POST',
     data: body,
+    timeout: 120_000,
   });
   return res.data;
 }
