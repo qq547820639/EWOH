@@ -14,6 +14,7 @@ import {
   Injectable,
   Inject,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -74,6 +75,7 @@ import { CandidateEngineService } from './candidate-engine.service';
 import { ReplanPreviewService } from './replan-preview.service';
 import { SchedulerQueryService } from './scheduler-query.service';
 import { SchedulerRunOrchestrator } from './scheduler-run-orchestrator.service';
+import { SchedulingNarratorService } from './narration/scheduling-narrator.service';
 import { SchedulerPlanApplicationService } from './scheduler-plan-application.service';
 import { SchedulerReplanApplicationService } from './scheduler-replan-application.service';
 import { SchedulerConstraintApplicationService } from './scheduler-constraint-application.service';
@@ -118,6 +120,8 @@ export class SchedulerService {
     replanPreviewService?: ReplanPreviewService,
     /** context 短缓存失效（run 成功后新快照立即对前端可见；可选兼容旧单测）。 */
     private readonly schedulingContextService?: SchedulingContextService,
+    /** AI 调度说明层（2026-08-21）：orchestrator 为手动 new，必须在此注入后透传。 */
+    @Optional() private readonly narratorService?: SchedulingNarratorService,
   ) {
     this.queryService = new SchedulerQueryService(
       db,
@@ -143,6 +147,7 @@ export class SchedulerService {
       planService,
       this.schedulingContextService,
       () => this.constraintLoaderService,
+      this.narratorService,
     );
     this.planApplication = new SchedulerPlanApplicationService(
       db,
