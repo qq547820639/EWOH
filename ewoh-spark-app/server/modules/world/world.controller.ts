@@ -9,8 +9,18 @@ export class WorldController {
   constructor(private readonly worldService: WorldService) {}
 
   @Get('state')
-  async getCurrentState(@Req() request?: { userContext?: OrgContext }) {
-    return this.worldService.getCurrentState(request?.userContext);
+  async getCurrentState(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+    return this.worldService.getCurrentState(
+      request?.userContext,
+      Number.isFinite(pageNum) ? pageNum : undefined,
+      Number.isFinite(pageSizeNum) ? pageSizeNum : undefined,
+    );
   }
 
   @Get('events/chain/:eventId')

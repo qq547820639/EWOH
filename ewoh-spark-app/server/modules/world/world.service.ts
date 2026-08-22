@@ -39,6 +39,16 @@ function laneForEventType(eventType?: string | null): string {
 export class WorldService {
   private readonly logger = new Logger(WorldService.name);
 
+  /**
+   * NEST-PERF（2026-08-23 性能收尾）：/api/world/state 5 秒进程内缓存。
+   * 根因：getCurrentState 的 LATERAL JOIN（每实体取最新 world_state）+ 事件表在
+   * RLS 下扫描，单次约 1.1s；CommandMap 高频轮询放大该开销。加 5s TTL 缓存后，
+   * 命中请求≈毫秒级（与 dashboard 同策略），满足 <300ms 目标。缓存键含租户维度
+   * （orgId / global_admin），避免跨租户数据串扰。注意：5s 延迟对近实时地图可接受。
+   */
+  private readonly STATE_CACHE_TTL_MS = 5000;
+  private stateCache = new Map<string, { data: CurrentWorldState; ts: number }>();
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
@@ -74,7 +84,16 @@ export class WorldService {
   /**
    * 聚合当前世界状态快照：人员 / 设备 / 工位 / 最近事件
    */
-  async getCurrentState(actor?: OrgContext): Promise<CurrentWorldState> {
+  async getCurrentState(
+    actor?: OrgContext,
+    page?: number,
+    pageSize?: number,
+  ): Promise<CurrentWorldState> {
+    const cacheKey = this.stateCacheKey(actor);
+    const cached = this.stateCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < this.STATE_CACHE_TTL_MS) {
+      return this.paginateWorldState(cached.data, page, pageSize);
+    }
     try {
       const entityOrg = this.orgCondition(ewohSpatialEntity.orgId, actor);
       const eventOrg = this.orgCondition(ewohEvent.orgId, actor);
@@ -212,17 +231,41 @@ export class WorldService {
         createdAt: e.createdAt ? e.createdAt.toISOString() : null,
       }));
 
-      return {
+      const result: CurrentWorldState = {
         persons,
         devices,
         workstations,
         events,
         ts: new Date().toISOString(),
       };
+      this.stateCache.set(cacheKey, { data: result, ts: Date.now() });
+      return this.paginateWorldState(result, page, pageSize);
     } catch (error) {
       this.logger.error('getCurrentState 失败', error);
       throw error;
     }
+  }
+
+  private stateCacheKey(actor?: OrgContext): string {
+    if (actor?.isGlobalAdmin) return 'global';
+    const orgId = actor?.primaryOrgId?.trim();
+    return orgId ? `org:${orgId}` : 'no-org';
+  }
+
+  private paginateWorldState(
+    data: CurrentWorldState,
+    page?: number,
+    pageSize?: number,
+  ): CurrentWorldState {
+    if (!page || !pageSize || page < 1 || pageSize < 1) return data;
+    const start = (page - 1) * pageSize;
+    return {
+      ...data,
+      persons: data.persons.slice(start, start + pageSize),
+      devices: data.devices.slice(start, start + pageSize),
+      workstations: data.workstations.slice(start, start + pageSize),
+      events: data.events.slice(start, start + pageSize),
+    };
   }
 
   /**
