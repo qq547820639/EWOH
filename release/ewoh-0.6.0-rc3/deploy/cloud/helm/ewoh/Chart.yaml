@@ -1,7 +1,0 @@
-apiVersion: v2
-name: ewoh
-description: EWOH embodied factory operating system standalone API
-type: application
-version: 0.1.0
-appVersion: "0.6.0-rc3"
-kubeVersion: ">=1.25.0-0"

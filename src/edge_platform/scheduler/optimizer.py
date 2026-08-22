@@ -79,10 +79,12 @@ class GreedyOptimizer(Optimizer):
 
     def _rank_tasks(self, tasks):
         """按有效优先级降序排序任务。"""
+        # 性能优化：now_iso() 在循环外计算一次，避免每个任务重复调用
+        now_str = now_iso()
         ranked = []
         for task in tasks:
             task = task or {}
-            info = self.effective_priority_calc.compute(task, now_iso())
+            info = self.effective_priority_calc.compute(task, now_str)
             ranked.append((task, info.get("effective_priority", 0.0)))
         ranked.sort(key=lambda t: -t[1])
         return ranked

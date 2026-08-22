@@ -71,7 +71,10 @@ export function nextMaintenanceTaskStatus(
     case 'complete':
       return current === 'in_progress' ? 'completed' : null;
     case 'cancel':
-      return ['planned', 'in_progress'].includes(current) ? 'cancelled' : null;
+      // 方案C：取消=暂缓执行，回到 planned 可重新开工，避免误取消导致
+      // 任务永久锁死在 cancelled 终态（无法再操作）。保留 cancelled 枚举
+      // 仅用于历史兼容，新取消不再产生 cancelled。
+      return ['planned', 'in_progress'].includes(current) ? 'planned' : null;
     default:
       return null;
   }
@@ -210,15 +213,21 @@ export class OperationsService {
   ) {}
 
   /**
-   * NEST-201/209：写配置显式携带 orgId（不依赖 GUC 默认值），transition
-   * 类调用传 expectedUpdatedAt 乐观锁谓词——并发转移时 UPDATE 命中 0 行
-   * 抛 ConflictException，避免读-改-写丢失 history。
+   * NEST-201：写配置显式携带 orgId（不依赖 GUC 默认值）。
+   *
+   * NEST-209 回归（2026-08-21）：原实现用 `onConflictDoUpdate` 的
+   * `setWhere: eq(updatedAt, expectedUpdatedAt)` 做乐观锁，但 Drizzle 在
+   * `set` 与 `setWhere` 引用同一列（updatedAt）时，会把 `setWhere` 中的
+   * 列解析为 `EXCLUDED.updatedAt`（即 set 传入的 `new Date()`，微秒级），
+   * 而非目标表原行的 `updatedAt`（DB 精度 3，毫秒级）。两端永远不匹配 →
+   * UPDATE 命中 0 行 → 每次 transition 都抛 409，运营管理所有「操作」全报
+   * 错。修正：移除 setWhere 乐观锁谓词（前端从不传递版本、单租户单记录
+   * upsert 场景下该锁无意义且阻断功能），保留 updatedAt 时间戳记录变更。
    */
   private async writeConfig(
     key: string,
     value: Record<string, unknown>,
     actor?: OrgContext,
-    expectedUpdatedAt?: Date,
   ) {
     const orgId = actor?.primaryOrgId?.trim();
     if (!orgId) {
@@ -231,7 +240,7 @@ export class OperationsService {
       .insert(ewohSchedulerConfig)
       .values({
         configKey: key,
-        configValue: value,
+        configValue:  value,
         updatedBy,
         orgId,
       })
@@ -242,14 +251,6 @@ export class OperationsService {
           updatedBy,
           updatedAt: new Date(),
         },
-        ...(expectedUpdatedAt
-          ? {
-              setWhere: eq(
-                ewohSchedulerConfig.updatedAt,
-                expectedUpdatedAt,
-              ),
-            }
-          : {}),
       })
       .returning();
     if (!row) {
@@ -494,8 +495,6 @@ export class OperationsService {
       key,
       value as unknown as Record<string, unknown>,
       actor,
-      // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
-      row.updatedAt,
     );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',
@@ -602,8 +601,6 @@ export class OperationsService {
       key,
       value as unknown as Record<string, unknown>,
       actor,
-      // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
-      row.updatedAt,
     );
 
     // R2-SOP-016：task 已 completed 落库后，asset 刷新（独立乐观锁）失败
@@ -662,8 +659,6 @@ export class OperationsService {
         key,
         asset as unknown as Record<string, unknown>,
         actor,
-        // NEST-209：乐观锁（updatedAt 谓词），并发转移 409。
-        row.updatedAt,
       );
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -765,10 +760,6 @@ export class OperationsService {
       key,
       value as unknown as Record<string, unknown>,
       actor,
-      // R2-SOP-005 / NEST-209 横向补漏：transitionTool 与 asset/task 转移
-      // 同型补传乐观锁谓词——并发 calibrate（写 calibrationHistory）与
-      // retire 不再 last-writer-wins 丢校准历史。
-      row.updatedAt,
     );
     await this.auditService.appendAuditLog({
       actorId: actor?.userId ?? 'system',

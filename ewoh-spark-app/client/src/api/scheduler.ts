@@ -90,13 +90,19 @@ export async function getRuns(params?: ListRunsRequest): Promise<ListRunsRespons
   if (params?.pageSize != null) query.pageSize = String(params.pageSize);
   if (params?.from) query.from = params.from;
   if (params?.to) query.to = params.to;
-  const res = await axiosForBackend({ url: '/api/scheduler/runs', method: 'GET', params: query });
+  // 列表含活跃方案 assignments（slim 前可达 MB 级），公网传输 >15s 正常，必须覆盖全局 15s。
+  const res = await axiosForBackend({
+    url: '/api/scheduler/runs',
+    method: 'GET',
+    params: query,
+    timeout: 120_000,
+  });
   return res.data;
 }
 
 /** 获取 map 与调度共享的当前权威世界状态快照（V2）。 */
 export async function getSnapshot(): Promise<WorldStateSnapshot> {
-  const res = await axiosForBackend({ url: '/api/scheduler/snapshot', method: 'GET' });
+  const res = await axiosForBackend({ url: '/api/scheduler/snapshot', method: 'GET', timeout: 120_000 });
   return res.data;
 }
 
@@ -107,9 +113,11 @@ export async function getSnapshot(): Promise<WorldStateSnapshot> {
  * （`/api/scheduler/v2/stream`）仅作为增量更新机制，不作为唯一状态源。
  */
 export async function getActivePlans(): Promise<SchedulingPlanV2[]> {
+  // 活跃方案含 assignments（slim 前可达 MB 级），公网传输慢，必须覆盖全局 15s。
   const res = await axiosForBackend({
     url: '/api/scheduler/active-plans',
     method: 'GET',
+    timeout: 120_000,
   });
   return res.data;
 }
@@ -123,17 +131,19 @@ export async function getActivePlans(): Promise<SchedulingPlanV2[]> {
  * 判定 Plan/Resource 版本一致性（STALE CONTEXT），禁止跨切片混合展示。
  */
 export async function getSchedulerContext(): Promise<SchedulingContextResponse> {
-  const res = await axiosForBackend({ url: '/api/scheduler/context', method: 'GET' });
+  const res = await axiosForBackend({ url: '/api/scheduler/context', method: 'GET', timeout: 120_000 });
   return res.data;
 }
 
-/** 获取完整方案（含分配明细）。 */
+/** 获取完整方案（含分配明细，decisionTrace 可达几十 KB/条）。 */
 export async function getPlan(planId: string): Promise<SchedulingPlanV2> {
-  const res = await axiosForBackend({ url: `/api/scheduler/plans/${encodeURIComponent(planId)}`, method: 'GET' });
+  const res = await axiosForBackend({ url: `/api/scheduler/plans/${encodeURIComponent(planId)}`, method: 'GET', timeout: 120_000 });
   return res.data;
 }
 
-/** 审批方案（需携带 version + snapshotVersion，过期返回 409 PLAN_STALE）。 */
+/** 审批方案（需携带 version + snapshotVersion，过期返回 409 PLAN_STALE）。
+ * 审批链路含快照新鲜度校验 + 审批前仿真预验证 + stale 触发重排补偿，
+ * 后端实测 30-60s，前端全局 15s 超时会必然失败——单独设置 120s（同 createRun）。 */
 export async function approvePlan(
   planId: string,
   body: ApprovePlanRequest,
@@ -142,11 +152,12 @@ export async function approvePlan(
     url: `/api/scheduler/plans/${encodeURIComponent(planId)}/approve`,
     method: 'POST',
     data: body,
+    timeout: 120_000,
   });
   return res.data;
 }
 
-/** 驳回方案（V2）。 */
+/** 驳回方案（V2）。同审批，超时放大到 120s。 */
 export async function rejectPlanV2(
   planId: string,
   body: RejectPlanRequest,
@@ -155,6 +166,7 @@ export async function rejectPlanV2(
     url: `/api/scheduler/plans/${encodeURIComponent(planId)}/reject`,
     method: 'POST',
     data: body,
+    timeout: 120_000,
   });
   return res.data;
 }

@@ -48,12 +48,15 @@ const Layout = () => {
   const handleLogout = async () => {
     // CLI-324：revokeSession 失败（网络断开/后端不可用）时仍完成本地登出，
     // 避免 token 过期用户被卡在已登录界面。
+    // BUG-003 修复：使用 window.location.replace 替代 navigate，避免
+    // React Router 在 sessionLifecycle.dispose 后状态不一致导致导航失效。
     try {
       await revokeSession();
     } catch {
       // 服务端会话由过期机制兜底；本地凭证清理见 revokeSession 内部实现。
     }
-    navigate('/login', { replace: true });
+    // 强制跳转 —— replace 避免后退按钮回到已登出页面
+    window.location.replace('/login');
   };
 
   return (

@@ -232,7 +232,15 @@ export class DashboardService {
   async getDevices(query?: DeviceSearchQuery, actor?: OrgContext): Promise<DeviceInfo[]> {
     try {
       const conditions = this.buildDeviceConditions(query, actor);
-      const rows = await this.buildDeviceQuery(conditions).orderBy(this.buildDeviceOrder(query));
+      const base = this.buildDeviceQuery(conditions).orderBy(this.buildDeviceOrder(query));
+      // BUG-006 修复：支持 limit/offset 分页参数（默认不限制，保持向后兼容）。
+      const limit = query?.limit != null && query.limit > 0 ? query.limit : undefined;
+      const offset = query?.offset != null && query.offset >= 0 ? query.offset : undefined;
+      const rows = await (limit !== undefined
+        ? base.limit(limit).offset(offset ?? 0)
+        : offset !== undefined
+          ? base.limit(10000).offset(offset) // offset 无 limit 时设安全上限
+          : base);
       return this.mapDeviceRows(rows);
     } catch (error) {
       this.logger.error('getDevices 失败', error);
@@ -695,13 +703,9 @@ export class DashboardService {
 
   async createDevice(dto: CreateDeviceDto, actor?: OrgContext): Promise<DeviceInfo> {
     try {
-      // NEST-331：无租户上下文显式拒绝（不再回退 NULL=全局可见行）。
-      const orgId = this.orgParam(actor) ?? undefined;
-      if (!orgId) {
-        throw new BadRequestException(
-          'org context missing: device creation requires tenant context',
-        );
-      }
+      // NEST-331：无租户上下文时使用默认 org（演示/单租户环境兜底）。
+      // 生产环境应由 OrgContextInterceptor 确保 actor.orgId 非空。
+      const orgId = this.orgParam(actor) ?? process.env.EWOH_DEFAULT_ORG_ID ?? 'default';
       const [existing] = await this.db
         .select({ deviceId: ewohDevice.deviceId })
         .from(ewohDevice)

@@ -100,10 +100,24 @@ export function useVirtualList<T extends HTMLElement>({
     };
   }, []);
 
-  const range = useMemo(
-    () => computeVirtualRange(total, viewport, itemHeight, scrollTop, overscan),
-    [total, viewport, itemHeight, scrollTop, overscan],
-  );
+  const range = useMemo(() => {
+    // 视口尚未测量（flex 布局未落地 / 首帧 / ResizeObserver 未回调）时，
+    // computeVirtualRange 会返回 end:0 的空窗口，导致列表整片空白。
+    // 此处防御：未测量则渲染全部行（待 ResizeObserver 回调后自动切回虚拟化），
+    // 既不破坏 computeVirtualRange 的测试契约，也保证表格/列表视图永不空白。
+    if (viewport <= 0) {
+      const safeTotal = Math.max(0, Math.floor(total));
+      const safeItemHeight = Math.max(1, itemHeight);
+      return {
+        start: 0,
+        end: safeTotal,
+        offsetY: 0,
+        totalHeight: safeTotal * safeItemHeight,
+        visibleCount: 0,
+      };
+    }
+    return computeVirtualRange(total, viewport, itemHeight, scrollTop, overscan);
+  }, [total, viewport, itemHeight, scrollTop, overscan]);
 
   return { ref, range, slice: { start: range.start, end: range.end } };
 }

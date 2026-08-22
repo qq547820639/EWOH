@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   AlertCircle,
@@ -75,6 +75,7 @@ import { useQuery as useQueryCompare } from '@tanstack/react-query';
 import { comparePlansV2 } from '@client/src/api/scheduler';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { retryAll } from './queryState';
+import { getBrainSuggestions } from '@client/src/api/gamification';
 import MapViewport from './MapViewport';
 import ReplayWorkspace from './ReplayWorkspace';
 import SchedulerWorkspace from './SchedulerWorkspace';
@@ -305,6 +306,14 @@ const CommandMapShell = (): React.ReactElement => {
   const helpDialogRef = useRef<HTMLDivElement>(null);
   const helpPreviousFocusRef = useRef<HTMLElement | null>(null);
   const queryClient = useQueryClient();
+
+  // 大脑建议数量（供面板区提示「N 条 AI 建议待查看」，与 BrainPanel 同源缓存）。
+  const { data: brainSuggestions } = useQuery({
+    queryKey: ['brain-suggestions'],
+    queryFn: getBrainSuggestions,
+    refetchInterval: 10000,
+  });
+  const brainCount = (brainSuggestions ?? []).length;
 
   // CLI-004 拆分：全部事实源查询移至 hooks/useCommandMapQueries（机械提取）。
   const {
@@ -944,6 +953,18 @@ const CommandMapShell = (): React.ReactElement => {
               </button>
             );
           })}
+          {/* 大脑建议快捷入口：非 brain 面板且有建议时提示，点击直达 */}
+          {activeTab !== 'brain' && brainCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('brain')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium text-violet-200 bg-violet-500/15 border border-violet-400/30 hover:bg-violet-500/25 transition-colors whitespace-nowrap"
+              title="查看并采纳 AI 生成的调度建议"
+            >
+              <Brain className="w-3 h-3 text-violet-300" />
+              {brainCount} 条 AI 建议待查看
+            </button>
+          )}
           <div className="flex-1" />
           <button
             type="button"

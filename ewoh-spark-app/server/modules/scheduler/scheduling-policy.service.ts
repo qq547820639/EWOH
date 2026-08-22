@@ -153,6 +153,20 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
 export class SchedulingPolicyService {
   private readonly logger = new Logger(SchedulingPolicyService.name);
 
+  /**
+   * 性能优化（2026-08-21）：active policy 内存缓存 + TTL。
+   * 每次调度请求 10-20+ 次 getActivePolicy/getConfig 调用全部命中同一行，
+   * 30s TTL 覆盖单次请求生命周期且与策略变更频率（人工操作）一致。
+   * savePolicy/activatePolicyVersion 时主动失效缓存。
+   */
+  private static readonly CACHE_TTL_MS = Number(
+    process.env.EWOH_POLICY_CACHE_TTL_MS || 30_000,
+  );
+  private activeRowCache = new Map<
+    string,
+    { row: Awaited<ReturnType<SchedulingPolicyService['findActiveRow']>>; expiresAt: number }
+  >();
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
@@ -339,6 +353,7 @@ export class SchedulingPolicyService {
         ...(decisionJson ? { decisionJson } : {}),
       });
 
+      this.invalidateActiveRowCache(orgId);
       this.logger.log(
         `saved scheduling policy v${nextVersion} by ${updatedBy}`,
       );
@@ -465,6 +480,7 @@ export class SchedulingPolicyService {
           targetScope,
         ),
       );
+    this.invalidateActiveRowCache(orgId);
     this.logger.log(`activated scheduling policy v${configVersion} by ${updatedBy}`);
     const config = this.parseConfig(row.configJson);
     return { ...config, configVersion };
@@ -514,8 +530,14 @@ export class SchedulingPolicyService {
       : undefined;
   }
 
-  /** 查询当前生效行（active=true 最新一条）。NEST-105：orgId 过滤。 */
+  /** 查询当前生效行（active=true 最新一条）。NEST-105：orgId 过滤。带 30s 内存缓存。 */
   private async findActiveRow(orgId?: string | null) {
+    const cacheKey = orgId ?? '__global__';
+    const now = Date.now();
+    const cached = this.activeRowCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.row;
+    }
     // NEST-105：无 orgId 时保持原查询形状 eq(active)（不过度包装 and()，
     // 兼容按形状解析 SQL 的测试替身）；有 orgId 时叠加 org 可见性条件。
     const orgCond = this.orgVisibilityCondition(orgId);
@@ -529,7 +551,19 @@ export class SchedulingPolicyService {
       )
       .orderBy(desc(ewohSchedulingPolicy.configVersion))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    this.activeRowCache.set(cacheKey, {
+      row,
+      expiresAt: now + SchedulingPolicyService.CACHE_TTL_MS,
+    });
+    return row;
+  }
+
+  /** 主动失效 active policy 缓存（策略写入/激活时调用）。 */
+  private invalidateActiveRowCache(orgId?: string | null): void {
+    // 失效指定 org + 全局（NULL）两条缓存
+    if (orgId) this.activeRowCache.delete(orgId);
+    this.activeRowCache.delete('__global__');
   }
 
   /**

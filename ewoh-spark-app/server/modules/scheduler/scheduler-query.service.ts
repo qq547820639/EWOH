@@ -253,8 +253,11 @@ export class SchedulerQueryService {
 
     const runs = runRows.map((r) => this.mapRun(r));
     // R-5 N+1 修复：活跃方案批量加载（原逐方案 getPlan → 每方案 2 次查询）。
+    // slim=true：列表接口剥离 decisionTrace/alternatives/scoreBreakdown 等重量级
+    // 字段（90 方案 × 16 分配 × 36KB ≈ 50MB 响应 → 47-60s），前端按需 GET /plans/:planId。
     const plans = await this.planService.listPlansBatched(
       activePlanRows.map((p) => p.planId),
+      { slim: true },
     );
 
     return {
@@ -290,7 +293,8 @@ export class SchedulerQueryService {
       .where(and(...conditions))
       .orderBy(desc(ewohSchedulePlan.createdAt));
     // R-5 N+1 修复：批量加载（保留 per-plan 失败跳过语义——listPlansBatched 内部跳过损坏方案）。
-    return this.planService.listPlansBatched(rows.map((p) => p.planId));
+    // slim=true：列表场景剥离重量级字段（同 listRuns）。
+    return this.planService.listPlansBatched(rows.map((p) => p.planId), { slim: true });
   }
 
   /**

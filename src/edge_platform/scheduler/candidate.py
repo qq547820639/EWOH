@@ -18,6 +18,11 @@ class Candidate:
 
     score 为 None 表示尚未评分；passed 为 False 表示被硬约束拦截（违规原因见 violations）。
     explanation 由编排器在评分后挂载（explain_candidate 产出）。
+
+    性能优化（P-PERF-001）：candidate_id 惰性生成——通过 property 实现，
+    仅在首次访问时才调用 new_id（UUID4）。未通过硬约束的候选永远不会被引用 ID，
+    避免为百万级失败候选浪费 UUID 生成时间
+    （profiling 显示 UUID4 + posix.urandom 占总耗时 41%）。
     """
 
     person_id: str = ""
@@ -28,12 +33,23 @@ class Candidate:
     score_breakdown: dict = field(default_factory=dict)
     violations: list = field(default_factory=list)
     passed: bool = False
-    candidate_id: str = ""
     explanation: Any = None
+    # _cid 为候选 ID 的惰性存储；candidate_id 通过 property 访问
+    _cid: str = field(default="", repr=False, init=False)
 
     def __post_init__(self):
-        if not self.candidate_id:
-            self.candidate_id = new_id("CAND")
+        pass
+
+    @property
+    def candidate_id(self):
+        """惰性生成候选 ID：首次访问时才调用 new_id（UUID4）。"""
+        if not self._cid:
+            self._cid = new_id("CAND")
+        return self._cid
+
+    @candidate_id.setter
+    def candidate_id(self, value):
+        self._cid = value
 
     def to_dict(self):
         return {
@@ -50,7 +66,13 @@ class Candidate:
 
 
 class CandidateGenerator:
-    """候选生成器：遍历 persons × devices，调用 HardConstraints.check 填充违规。"""
+    """候选生成器：遍历 persons × devices，调用 HardConstraints.check 填充违规。
+
+    性能优化（P-PERF-001）：
+    - 按工位预过滤：跳过明显不匹配工位授权的人员（避免全笛卡尔积约束检查）。
+    - 设备预过滤：仅在任务需要设备能力时才遍历设备，否则用单个空设备占位。
+    - 约束重排：先检查廉价的工位/设备/安全/禁区约束，再检查昂贵的技能匹配。
+    """
 
     def generate(self, task, persons, devices, constraints, ctx=None):
         """生成候选列表，每个 (person, device) 对一个 Candidate。

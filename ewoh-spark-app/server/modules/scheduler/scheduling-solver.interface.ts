@@ -4,6 +4,7 @@ import type {
   SchedulingPolicy,
   WorldStateSnapshot,
 } from '@shared/api.interface';
+import type { RouteCostMemo } from './route-cost-memo';
 
 /** 求解器入参选项。 */
 export interface SolveOptions {
@@ -48,6 +49,12 @@ export interface SolveOptions {
     string,
     { personId: string; deviceId: string | null; stationId: string | null }
   >;
+  /**
+   * 性能优化（2026-08-21）：跨变体共享 routeCostMemo。
+   * solveVariants 创建一次，3 个变体共享——同几何坐标对的结果跨变体复用，
+   * 避免 3x 重复 A* / euclidean 计算。缺省时 heuristic solver 自建 per-call memo。
+   */
+  sharedRouteCostMemo?: RouteCostMemo;
 }
 
 /**

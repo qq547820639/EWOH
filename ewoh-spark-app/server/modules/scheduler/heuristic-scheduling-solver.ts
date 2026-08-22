@@ -486,11 +486,30 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       });
     }
     // run-local 确定性路径成本 memo（per-solve-call，几何点对键）。
+    // 性能优化（2026-08-21）：支持跨变体共享 memo（solveVariants 传入），
+    // 同几何坐标对的结果跨变体复用，避免 3x 重复 A*/euclidean 计算。
     // P0-bench：注入统计对象（可选）时累计命中/查询，供 benchmark 报告缓存命中率。
-    const routeCostMemo: RouteCostMemo = createRouteCostMemo(
-      this.routeCostProvider,
-      this.routeMemoStats,
-    );
+    const routeCostMemo: RouteCostMemo = opts.sharedRouteCostMemo
+      ?? createRouteCostMemo(this.routeCostProvider, this.routeMemoStats);
+
+    // P0 性能：路由成本批量预计算（消除内层循环 async 微任务开销）。
+    // 原实现：每个 (person, station) 组合在内层循环中 await routeCostMemo.get()，
+    // 串行等待每个 Promise 解析（~595 次 microtask 调度）。改为：在任务循环前
+    // 一次性并行预热所有 (person, station) 组合的缓存 → 内层循环 await 命中
+    // 已解析 Promise（零 I/O，仅 microtask 调度开销）。
+    // 跨变体共享 memo 时，前一变体已预热的条目直接命中，进一步减少重复计算。
+    {
+      const precomputePromises: Promise<unknown>[] = [];
+      for (const p of snapshot.persons) {
+        const pp = personPointById.get(p.id);
+        for (const s of snapshot.stations) {
+          const sp = s.x != null && s.y != null ? { x: s.x, y: s.y } : undefined;
+          precomputePromises.push(routeCostMemo.get(p.id, `__pre_${s.id}`, pp, sp));
+        }
+      }
+      // 并行等待所有预计算完成（一次 event loop tick 内全部发起）。
+      await Promise.all(precomputePromises);
+    }
     // 禁入区域 id 数组（invariant；避免每候选 Array.from）。
     const forbiddenZoneIds = Array.from(forbiddenZones);
     // 前置完成判定闭包（doneTaskIds 运行时增长，闭包共享同一 Set 引用）。

@@ -149,28 +149,94 @@ export interface ViewBox {
   h: number;
 }
 
-/** 依据实体空间范围自适应计算 viewBox，避免实体挤在画布左上角。 */
-export function computeViewBox(entities: SpatialEntity[]): ViewBox {
+/**
+ * 感知覆盖范围（摄像头视锥 + UWB 覆盖圈）——必须纳入 viewBox，否则会被
+ * preserveAspectRatio="xMidYMid meet" 裁切或推到视口边缘（用户反馈"监控视场角
+ * 加载不全/显示异常"的根因）。坐标来自实体 extra：摄像头 fov_deg/range/range_m/
+ * yaw，UWB coverage_r；与 FactoryMap 渲染逻辑（cameraFovPoints / coverage_r）同源。
+ */
+export interface PerceptionExtent {
+  /** 摄像头视锥三角顶点（已含 yaw 旋转与 range 长度，worldBounds 用）。 */
+  fovPoints: Array<{ x: number; y: number }>;
+  /** UWB 覆盖圈圆心 + 半径（圆最远点 = 圆心 ± r）。 */
+  uwbCircles: Array<{ x: number; y: number; r: number }>;
+}
+
+const MIN_CANVAS_W = 600;
+const MIN_CANVAS_H = 420;
+const PAD_RATIO = 0.06; // 留白 = 画布尺度 6%
+const PAD_MIN = 40;
+const PAD_MAX = 160;
+
+/** 收集实体静态 bbox 角点（含 hw/hh 半宽高）到包围盒累加器。 */
+function extendByBbox(
+  acc: { minX: number; minY: number; maxX: number; maxY: number },
+  x: number,
+  y: number,
+  hw: number,
+  hh: number,
+): void {
+  acc.minX = Math.min(acc.minX, x - hw);
+  acc.minY = Math.min(acc.minY, y - hh);
+  acc.maxX = Math.max(acc.maxX, x + hw);
+  acc.maxY = Math.max(acc.maxY, y + hh);
+}
+
+/**
+ * 依据实体空间范围 + 感知覆盖（FOV/UWB）自适应计算 viewBox。
+ *
+ * 设计目标（指挥地图布局重设计，2026-08-22）：
+ *  1) 所有元素（含摄像头视锥、UWB 覆盖圈、玛丽角色/人员、工厂）完整落在视口内，
+ *     避免被裁切或推到边缘；
+ *  2) 自适应留白（按画布尺度 6%，clamp 40~160）替代固定 24，缓解拥挤、提升层级；
+ *  3) 保证最小画布尺寸（600×420），避免小场景被无限放大导致元素粘连；
+ *  4) 维持纯函数、零 React 依赖。
+ *
+ * perception 缺省（null）时退化为仅实体 bbox（旧行为，保持兼容）。
+ */
+export function computeViewBox(
+  entities: SpatialEntity[],
+  perception?: PerceptionExtent | null,
+): ViewBox {
   const fallback: ViewBox = { minX: 0, minY: 0, w: 1000, h: 700 };
   if (!entities.length) return fallback;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+
+  const acc = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const e of entities) {
     const hw = (e.bboxW ?? 0) / 2;
     const hh = (e.bboxH ?? 0) / 2;
-    minX = Math.min(minX, e.x - hw);
-    minY = Math.min(minY, e.y - hh);
-    maxX = Math.max(maxX, e.x + hw);
-    maxY = Math.max(maxY, e.y + hh);
+    extendByBbox(acc, e.x, e.y, hw, hh);
   }
-  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return fallback;
-  const pad = 24;
+
+  if (perception) {
+    for (const p of perception.fovPoints) {
+      extendByBbox(acc, p.x, p.y, 0, 0);
+    }
+    for (const c of perception.uwbCircles) {
+      extendByBbox(acc, c.x, c.y, c.r, c.r);
+    }
+  }
+
+  if (!Number.isFinite(acc.minX) || !Number.isFinite(acc.minY)) return fallback;
+
+  const rawW = acc.maxX - acc.minX;
+  const rawH = acc.maxY - acc.minY;
+  // 自适应留白：随画布尺度增长，clamp 到 [PAD_MIN, PAD_MAX]。
+  const pad = Math.min(PAD_MAX, Math.max(PAD_MIN, Math.max(rawW, rawH) * PAD_RATIO));
+  // 保证最小画布：先按内容 + 留白定尺寸，再与最小画布取较大值（居中处理在下方）。
+  const contentW = rawW + pad * 2;
+  const contentH = rawH + pad * 2;
+  const w = Math.max(contentW, MIN_CANVAS_W);
+  const h = Math.max(contentH, MIN_CANVAS_H);
+
+  // 当最小画布生效时，需要在内容四周均匀补白（而非单侧留白），保证内容居中、不被推边。
+  const extraW = Math.max(0, w - contentW);
+  const extraH = Math.max(0, h - contentH);
+
   return {
-    minX: minX - pad,
-    minY: minY - pad,
-    w: Math.max(maxX - minX + pad * 2, 120),
-    h: Math.max(maxY - minY + pad * 2, 80),
+    minX: acc.minX - pad - extraW / 2,
+    minY: acc.minY - pad - extraH / 2,
+    w,
+    h,
   };
 }

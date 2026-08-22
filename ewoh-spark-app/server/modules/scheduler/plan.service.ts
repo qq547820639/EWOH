@@ -261,8 +261,16 @@ export class PlanService {
   /**
    * R-5 N+1 修复：批量加载一组方案（含分配明细），供 listRuns 等列表端点使用
    * （原实现逐方案调 getPlan → 每方案 2 次查询）。
+   *
+   * slim=true 时剥离重量级字段（decisionTrace ~36KB/assignment、alternatives、
+   * scoreBreakdown、weights、decisionRecords），把响应体从几十 MB 压到 KB 级——
+   * 与 createRun 响应瘦身（scheduler-run-orchestrator）同款策略；
+   * 前端列表页按需 GET /plans/:planId 获取完整数据。
    */
-  async listPlansBatched(planIds: string[]): Promise<SchedulingPlanV2[]> {
+  async listPlansBatched(
+    planIds: string[],
+    opts: { slim?: boolean } = {},
+  ): Promise<SchedulingPlanV2[]> {
     if (planIds.length === 0) return [];
     const rows = await this.db
       .select()
@@ -275,7 +283,11 @@ export class PlanService {
     for (const row of rows) {
       try {
         plans.push(
-          await this.toPlanV2(row, assignmentsByPlan.get(row.planId) ?? []),
+          await this.toPlanV2(
+            row,
+            assignmentsByPlan.get(row.planId) ?? [],
+            opts.slim === true,
+          ),
         );
       } catch (err) {
         this.logger.warn(
@@ -531,7 +543,18 @@ export class PlanService {
           occurredAt: new Date().toISOString(),
         },
       );
-      await this.replanCoordinator.handleTrigger('PLAN_STALE', planId, ctx);
+      // 2026-08-21 修复：stale 审批路径不得同步等待 scoped replan——
+      // handleTrigger 会跑完整调度（快照+求解，实测 30-60s），阻塞审批响应导致
+      // 前端 15s 超时（"approve timeout"）。改为 fire-and-forget：
+      // PLAN_STALE 拒绝语义不受影响，outbox stale_plan 事件已入队，
+      // 重排由 outbox 消费者异步执行（P1-6 补偿闭环保持）。
+      void this.replanCoordinator
+        .handleTrigger('PLAN_STALE', planId, ctx)
+        .catch((err) => {
+          this.logger.warn(
+            `async replan after stale approve failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
     } catch (err) {
       this.logger.warn(
         `stale plan notification failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -1037,6 +1060,7 @@ export class PlanService {
   private async toPlanV2(
     plan: typeof ewohSchedulePlan.$inferSelect,
     assignmentRows: Array<typeof ewohSchedulingPlanAssignment.$inferSelect>,
+    slim = false,
   ): Promise<SchedulingPlanV2> {
     const metrics = (plan.metricsJson ?? {}) as Partial<SchedulingPlanV2['metrics']>;
     const assignments: SchedulingAssignment[] = assignmentRows.map((a) => {
@@ -1044,6 +1068,29 @@ export class PlanService {
         reasons?: string[];
         alternatives?: Array<Record<string, unknown>>;
       };
+      // slim（列表）模式：剥离重量级字段（decisionTrace ~36KB/assignment、
+      // alternatives、scoreBreakdown），与 createRun 响应瘦身同款——列表页
+      // 不需要这些明细，按需 GET /plans/:planId 获取完整数据。
+      if (slim) {
+        return {
+          assignmentId: a.assignmentId,
+          taskId: a.taskId ?? '',
+          personId: a.personId ?? null,
+          deviceId: a.deviceId ?? null,
+          stationId: a.stationId ?? null,
+          zoneId: a.zoneId ?? null,
+          plannedStart: a.plannedStart ? a.plannedStart.toISOString() : null,
+          plannedEnd: a.plannedEnd ? a.plannedEnd.toISOString() : null,
+          routeId: a.routeId ?? null,
+          status: (a.status ?? 'proposed') as SchedulingAssignment['status'],
+          reasons: explanation.reasons ?? [],
+          // 契约必填字段：列表模式不返回明细，置空数组（不返回 36KB alternatives）。
+          alternatives: [],
+          etaSeconds: a.etaSeconds ?? undefined,
+          distanceMeters: a.distanceMeters ?? undefined,
+          riskLevel: a.riskLevel ?? undefined,
+        };
+      }
       return {
         assignmentId: a.assignmentId,
         taskId: a.taskId ?? '',
@@ -1091,19 +1138,29 @@ export class PlanService {
         maxWorkload: metrics.maxWorkload ?? 0,
         changeCost: metrics.changeCost ?? 0,
       },
-      scoreBreakdown: (plan.scoreBreakdownJson ?? undefined) as SchedulingPlanV2['scoreBreakdown'],
-      weights: (plan.weightsJson ?? undefined) as SchedulingPlanV2['weights'],
+      scoreBreakdown: slim
+        ? undefined
+        : (plan.scoreBreakdownJson ?? undefined) as SchedulingPlanV2['scoreBreakdown'],
+      weights: slim
+        ? undefined
+        : (plan.weightsJson ?? undefined) as SchedulingPlanV2['weights'],
       // T02 / P0-2：计划约束快照（确定性 replay + 审计）。
-      constraints: (plan.constraintsJson ?? []) as SchedulingPlanV2['constraints'],
+      constraints: slim
+        ? undefined
+        : (plan.constraintsJson ?? []) as SchedulingPlanV2['constraints'],
       effectiveConstraintsHash: plan.effectiveConstraintsHash ?? null,
       baselineDelta: (plan.baselineDeltaJson ?? {}) as Record<string, unknown>,
-      violations: (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
+      violations: slim
+        ? undefined
+        : (plan.violationsJson ?? []) as Array<Record<string, unknown>>,
       // AI 调度说明层（2026-08-21）：透传 LLM/规则模板生成的自然语言说明。
       aiNarration: plan.aiNarration ?? null,
       narrationSource:
         (plan.narrationSource as SchedulingPlanV2['narrationSource']) ?? null,
       // NO-12y / ADR-048：决策记录读回（契约形态；NULL=存量未投影行）。
-      decisionRecords: (plan.decisionRecordsJson ?? undefined) as SchedulingPlanV2['decisionRecords'],
+      decisionRecords: slim
+        ? undefined
+        : (plan.decisionRecordsJson ?? undefined) as SchedulingPlanV2['decisionRecords'],
       createdAt: plan.createdAt ? plan.createdAt.toISOString() : new Date().toISOString(),
     };
   }

@@ -26,6 +26,7 @@ import {
 } from '../../hooks/queryConfig';
 import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
 import { getCurrentOperator } from '../../lib/auth';
+import { LazyPlanList } from '../../components/LazyPlanList';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
@@ -118,6 +119,191 @@ function isPlanStaleError(err: unknown): boolean {
   const dataMsg = (e.response?.data as { message?: string } | undefined)?.message;
   const msg = dataMsg ?? e.message ?? '';
   return status === 409 && msg.includes('PLAN_STALE');
+}
+
+/** 单个方案卡片（LazyPlanList 的 renderItem 渲染体）。 */
+interface PlanCardProps {
+  row: SchedulingPlanV2;
+  actionFor: string | null;
+  actionMode: 'approve' | 'reject';
+  actionReason: string;
+  approvePending: boolean;
+  rejectPending: boolean;
+  dispatchPending: boolean;
+  replanPending: boolean;
+  onStartAction: (planId: string, mode: 'approve' | 'reject') => void;
+  onCancelAction: () => void;
+  onActionReasonChange: (value: string) => void;
+  onHandleAction: (row: SchedulingPlanV2) => void;
+  onDispatch: (row: SchedulingPlanV2) => void;
+  onReplan: (row: SchedulingPlanV2) => void;
+}
+
+function PlanCard({
+  row,
+  actionFor,
+  actionMode,
+  actionReason,
+  approvePending,
+  rejectPending,
+  dispatchPending,
+  replanPending,
+  onStartAction,
+  onCancelAction,
+  onActionReasonChange,
+  onHandleAction,
+  onDispatch,
+  onReplan,
+}: PlanCardProps): React.ReactElement {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-card p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-foreground">
+            {row.planName ?? row.planId}
+          </p>
+          <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+            {row.planId}
+          </p>
+        </div>
+        {statusBadge(row.status)}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        v{row.version} · {TRIGGER_LABELS[row.trigger.type] ?? row.trigger.type} ·{' '}
+        {formatTime(row.createdAt)}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        延期 {row.metrics.lateMinutes.toFixed(0)}min · 移动{' '}
+        {row.metrics.walkingMeters.toFixed(0)}m · 等待{' '}
+        {row.metrics.stationWaitMinutes.toFixed(0)}min · 负荷{' '}
+        {(row.metrics.maxWorkload * 100).toFixed(0)}%
+      </p>
+      {/* AI 调度说明层（2026-08-21）：LLM/规则模板生成的自然语言方案解读 */}
+      {row.aiNarration && (
+        <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-primary">
+            <Sparkles className="size-3" />
+            {row.narrationSource === 'llm' ? 'AI 方案解读' : '规则摘要'}
+          </p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+            {row.aiNarration}
+          </p>
+        </div>
+      )}
+      <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
+        {JSON.stringify(row.metrics, null, 2)}
+      </pre>
+
+      {actionFor === row.planId ? (
+        <div className="mt-3 space-y-2">
+          <Input
+            value={actionReason}
+            onChange={(e) => onActionReasonChange(e.target.value)}
+            placeholder={
+              actionMode === 'reject' ? '驳回理由（必填）' : '审批理由（可选）'
+            }
+            className="h-8 text-xs"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              disabled={
+                approvePending ||
+                rejectPending ||
+                (actionMode === 'reject' && !actionReason.trim())
+              }
+              onClick={() => onHandleAction(row)}
+            >
+              {approvePending || rejectPending ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : actionMode === 'reject' ? (
+                <X className="size-3" />
+              ) : (
+                <CheckCircle2 className="size-3" />
+              )}
+              {approvePending || rejectPending
+                ? actionMode === 'reject'
+                  ? '驳回中...'
+                  : '审批中...'
+                : actionMode === 'reject'
+                  ? '确认驳回'
+                  : '确认审批'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onCancelAction}>
+              <X className="size-3" />
+              取消
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {isPendingStatus(row.status) && (
+            <>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => onStartAction(row.planId, 'approve')}
+                disabled={approvePending}
+              >
+                <CheckCircle2 className="size-3" />
+                审批通过
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onStartAction(row.planId, 'reject')}
+                disabled={rejectPending}
+              >
+                <X className="size-3" />
+                驳回
+              </Button>
+            </>
+          )}
+          {row.status === 'approved' && (
+            <>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => onDispatch(row)}
+                disabled={dispatchPending}
+              >
+                {dispatchPending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Send className="size-3" />
+                )}
+                {dispatchPending ? '下发中...' : '下发执行'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onReplan(row)}
+                disabled={replanPending}
+              >
+                <RotateCcw className="size-3" />
+                重新排程
+              </Button>
+            </>
+          )}
+          {(row.status === 'dispatched' || row.status === 'executing') && (
+            <p className="w-full text-xs text-cyan-700">方案已下发执行</p>
+          )}
+          {row.status === 'rejected' && (
+            <p className="w-full text-xs text-red-600">方案已驳回</p>
+          )}
+          {row.status === 'completed' && (
+            <p className="w-full text-xs text-emerald-700">方案已完成</p>
+          )}
+          {row.status === 'superseded' && (
+            <p className="w-full text-xs text-muted-foreground">
+              方案已被替代（superseded）
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const Scheduling = (): React.ReactElement => {
@@ -374,160 +560,30 @@ const Scheduling = (): React.ReactElement => {
         emptyMessage="暂无调度方案，点击「生成方案」创建。"
         updatedAt={plansQuery.dataUpdatedAt}
       >
-        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-          {filteredRows.map((row) => (
-            <div
-              key={row.planId}
-              className="min-w-0 rounded-lg border border-border bg-card p-5"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-foreground">
-                    {row.planName ?? row.planId}
-                  </p>
-                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                    {row.planId}
-                  </p>
-                </div>
-                {statusBadge(row.status)}
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                v{row.version} · {TRIGGER_LABELS[row.trigger.type] ?? row.trigger.type} ·{' '}
-                {formatTime(row.createdAt)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                延期 {row.metrics.lateMinutes.toFixed(0)}min · 移动{' '}
-                {row.metrics.walkingMeters.toFixed(0)}m · 等待{' '}
-                {row.metrics.stationWaitMinutes.toFixed(0)}min · 负荷{' '}
-                {(row.metrics.maxWorkload * 100).toFixed(0)}%
-              </p>
-              {/* AI 调度说明层（2026-08-21）：LLM/规则模板生成的自然语言方案解读 */}
-              {row.aiNarration && (
-                <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                  <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-primary">
-                    <Sparkles className="size-3" />
-                    {row.narrationSource === 'llm' ? 'AI 方案解读' : '规则摘要'}
-                  </p>
-                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
-                    {row.aiNarration}
-                  </p>
-                </div>
-              )}
-              <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
-                {JSON.stringify(row.metrics, null, 2)}
-              </pre>
-
-              {actionFor === row.planId ? (
-                <div className="mt-3 space-y-2">
-                  <Input
-                    value={actionReason}
-                    onChange={(e) => setActionReason(e.target.value)}
-                    placeholder={
-                      actionMode === 'reject' ? '驳回理由（必填）' : '审批理由（可选）'
-                    }
-                    className="h-8 text-xs"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      disabled={
-                        approveMutation.isPending ||
-                        rejectMutation.isPending ||
-                        (actionMode === 'reject' && !actionReason.trim())
-                      }
-                      onClick={() => handleAction(row)}
-                    >
-                      {approveMutation.isPending || rejectMutation.isPending ? (
-                        <Loader2 className="size-3 animate-spin" />
-                      ) : actionMode === 'reject' ? (
-                        <X className="size-3" />
-                      ) : (
-                        <CheckCircle2 className="size-3" />
-                      )}
-                      {approveMutation.isPending || rejectMutation.isPending
-                        ? actionMode === 'reject'
-                          ? '驳回中...'
-                          : '审批中...'
-                        : actionMode === 'reject'
-                          ? '确认驳回'
-                          : '确认审批'}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={cancelAction}>
-                      <X className="size-3" />
-                      取消
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {isPendingStatus(row.status) && (
-                    <>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => startAction(row.planId, 'approve')}
-                        disabled={approveMutation.isPending}
-                      >
-                        <CheckCircle2 className="size-3" />
-                        审批通过
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => startAction(row.planId, 'reject')}
-                        disabled={rejectMutation.isPending}
-                      >
-                        <X className="size-3" />
-                        驳回
-                      </Button>
-                    </>
-                  )}
-                  {row.status === 'approved' && (
-                    <>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => dispatchMutation.mutate(row)}
-                        disabled={dispatchMutation.isPending}
-                      >
-                        {dispatchMutation.isPending ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <Send className="size-3" />
-                        )}
-                        {dispatchMutation.isPending ? '下发中...' : '下发执行'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => replanMutation.mutate(row)}
-                        disabled={replanMutation.isPending}
-                      >
-                        <RotateCcw className="size-3" />
-                        重新排程
-                      </Button>
-                    </>
-                  )}
-                  {(row.status === 'dispatched' || row.status === 'executing') && (
-                    <p className="w-full text-xs text-cyan-700">方案已下发执行</p>
-                  )}
-                  {row.status === 'rejected' && (
-                    <p className="w-full text-xs text-red-600">方案已驳回</p>
-                  )}
-                  {row.status === 'completed' && (
-                    <p className="w-full text-xs text-emerald-700">方案已完成</p>
-                  )}
-                  {row.status === 'superseded' && (
-                    <p className="w-full text-xs text-muted-foreground">
-                      方案已被替代（superseded）
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <LazyPlanList<SchedulingPlanV2>
+          items={filteredRows}
+          itemKey={(row) => row.planId}
+          renderItem={(row) => (
+            <PlanCard
+              row={row}
+              actionFor={actionFor}
+              actionMode={actionMode}
+              actionReason={actionReason}
+              approvePending={approveMutation.isPending}
+              rejectPending={rejectMutation.isPending}
+              dispatchPending={dispatchMutation.isPending}
+              replanPending={replanMutation.isPending}
+              onStartAction={startAction}
+              onCancelAction={cancelAction}
+              onActionReasonChange={setActionReason}
+              onHandleAction={handleAction}
+              onDispatch={(r) => dispatchMutation.mutate(r)}
+              onReplan={(r) => replanMutation.mutate(r)}
+            />
+          )}
+          className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3"
+          itemClassName="min-w-0"
+        />
       </QueryState>
 
       <div className="mt-6">

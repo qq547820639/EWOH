@@ -66,3 +66,9 @@ build/
 
 # 部署专用（含 SSH 私钥，禁止入库）
 .deploy/
+
+# 部署脚本（含生产明文凭据，禁止入库）
+scripts/ecs-exec.sh
+
+# 测试覆盖率产物
+.coverage

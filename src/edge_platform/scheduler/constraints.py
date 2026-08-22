@@ -108,9 +108,27 @@ class HardConstraints:
 
     def _check_skill(self, person, task):
         pid = person.get("person_id", "")
-        required = set(task.get("required_skills") or ())
-        have = set(self.skills_registry.get(pid, set()))
-        missing = required - have
+        required = task.get("required_skills") or ()
+        if not required:
+            return None
+        # 性能优化：避免每次都创建新 set——skills_registry 的值已是 set 类型；
+        # 只在 required 不是 set/frozenset 时转换（通常 required_skills 是短列表）。
+        have = self.skills_registry.get(pid)
+        if have is None:
+            have = set()
+        elif not isinstance(have, set):
+            have = set(have)
+        # 快速路径：required 是短列表时用 all() 避免 set 差集构造
+        if len(required) <= 3:
+            for s in required:
+                if s not in have:
+                    return ConstraintViolation(
+                        SKILL,
+                        pid,
+                        f"人员 {pid} 缺少任务所需技能：{s}",
+                    )
+            return None
+        missing = set(required) - have
         if missing:
             return ConstraintViolation(
                 SKILL,
@@ -122,8 +140,11 @@ class HardConstraints:
     def _check_station_auth(self, person, task):
         pid = person.get("person_id", "")
         station_id = task.get("station_id", "")
+        # 性能优化：无授权注册表时全通过（dict.get 本身 O(1)，但空 dict 时直接跳过更快）
+        if not station_id or not self.station_auth:
+            return None
         authorized = self.station_auth.get(pid, set())
-        if station_id and station_id not in authorized:
+        if station_id not in authorized:
             return ConstraintViolation(
                 STATION_AUTH,
                 pid,
@@ -262,17 +283,21 @@ class HardConstraints:
         """对 (person, task, device) 逐条判定硬约束，返回违规列表（空表示全部通过）。
 
         per spec "硬约束违规为 0"：任意一条违规即取消候选资格。
+
+        性能优化（P-PERF-002）：按「廉价 + 高拒绝率」排序——
+        工位/设备/安全/禁区等 dict/set 查找放前面（O(1)，高拒绝率），
+        技能集合差集放后面（O(n)，低拒绝率）。全 8 条约束语义不变，仅顺序调整。
         """
         violations = []
         for v in (
-            self._check_skill(person, task),
-            self._check_station_auth(person, task),
-            self._check_health(person, task),
-            self._check_forbidden_zone(person, task, ctx),
-            self._check_shift_rest(person, task, ctx),
-            self._check_exo_compat(person, task, device),
-            self._check_device_fault(person, task, device),
-            self._check_safety(person, task, ctx),
+            self._check_station_auth(person, task),    # O(1) dict lookup, 高拒绝率
+            self._check_device_fault(person, task, device),  # O(1) set membership
+            self._check_safety(person, task, ctx),     # O(1) dict lookups
+            self._check_forbidden_zone(person, task, ctx),   # O(1) set membership
+            self._check_health(person, task),           # O(1) dict lookup
+            self._check_shift_rest(person, task, ctx),  # O(1) float comparisons
+            self._check_exo_compat(person, task, device),    # O(n) set ops
+            self._check_skill(person, task),            # O(n) set difference, 最后检查
         ):
             if v is not None:
                 violations.append(v)

@@ -45,6 +45,7 @@ const FILES = {
   standalone_scheduling_rollback: path.join(root, 'db/migrations/standalone_006_scheduling.rollback.sql'),
   standalone_scheduling_verify: path.join(root, 'db/verify/standalone_006_verify.sql'),
   standalone_scheduling_seed: path.join(root, 'db/seed/standalone_006_scheduling_seed.sql'),
+  standalone_workbench_data: path.join(root, 'db/seed/standalone_007_workbench_data.sql'),
   standalone_reservation_conflict: path.join(root, 'db/migrations/standalone_009_reservation_conflict.sql'),
   standalone_reservation_conflict_rollback: path.join(root, 'db/migrations/standalone_009_reservation_conflict.rollback.sql'),
   standalone_reservation_conflict_verify: path.join(root, 'db/verify/standalone_009_verify.sql'),
@@ -302,6 +303,7 @@ const EXECUTE_COMMANDS = new Set([
   '--rollback-standalone-scheduling',
   '--verify-standalone-scheduling',
   '--seed-standalone-scheduling',
+  '--seed-standalone-workbench-data',
   '--apply-standalone-scheduling-persistence',
   '--rollback-standalone-scheduling-persistence',
   '--apply-standalone-phase2-realtime',
@@ -714,6 +716,7 @@ function usage() {
   console.error('       run_migrations.js --apply-standalone-domain | --rollback-standalone-domain | --verify-standalone-domain');
   console.error('       run_migrations.js --apply-standalone-workbench-prod | --rollback-standalone-workbench-prod | --verify-standalone-workbench-prod');
   console.error('       run_migrations.js --apply-standalone-scheduling | --rollback-standalone-scheduling | --verify-standalone-scheduling | --seed-standalone-scheduling');
+  console.error('       run_migrations.js --seed-standalone-workbench-data  (角色工作台演示数据补齐：工序/质量事件/物料绑定)');
   console.error('       run_migrations.js --apply-standalone-reservation-conflict | --rollback-standalone-reservation-conflict | --verify-standalone-reservation-conflict');
   console.error('       run_migrations.js --apply-standalone-scheduling-feedback | --rollback-standalone-scheduling-feedback | --verify-standalone-scheduling-feedback');
   console.error('       run_migrations.js --apply-standalone-outbox-sequence | --rollback-standalone-outbox-sequence | --verify-standalone-outbox-sequence');
@@ -1350,6 +1353,7 @@ function main() {
       '--rollback-standalone-scheduling': 'standalone_scheduling_rollback',
       '--seed-standalone-admin': 'standalone_admin',
       '--seed-standalone-scheduling': 'standalone_scheduling_seed',
+      '--seed-standalone-workbench-data': 'standalone_workbench_data',
       '--apply-standalone-scheduling-persistence': 'standalone_scheduling_persistence',
       '--rollback-standalone-scheduling-persistence': 'standalone_scheduling_persistence_rollback',
       '--apply-standalone-phase2-realtime': 'standalone_phase2_realtime',

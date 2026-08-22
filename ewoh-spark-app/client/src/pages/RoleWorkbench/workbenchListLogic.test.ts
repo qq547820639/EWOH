@@ -48,9 +48,23 @@ describe('workbenchListLogic (TR-9.3 列表行为)', () => {
   });
 
   describe('resolveRowPath (行点击跳转到具体实体路径)', () => {
-    it('deep-links to the specific entity, not one static path', () => {
-      expect(resolveRowPath(deviceList, { entityId: 'D-7' })).toBe('/devices/D-7');
-      expect(resolveRowPath(deviceList, { entityId: 'D-42' })).toBe('/devices/D-42');
+    it('jumps to the module route when the link has no valueKey (avoids 404 on exact-match routes)', () => {
+      // /devices 等目标路由为精确匹配，无 :id 子路由；无 valueKey 时跳静态 to，
+      // 不再拼出 /devices/D-7 这类未定义深层路径（原 bug → 404）。
+      expect(resolveRowPath(deviceList, { entityId: 'D-7' })).toBe('/devices');
+      expect(resolveRowPath(deviceList, { entityId: 'D-42' })).toBe('/devices');
+    });
+
+    it('still deep-links when the link explicitly declares a valueKey', () => {
+      const drillList: ListDefinition = {
+        ...deviceList,
+        columns: [
+          { key: 'name', label: '设备' },
+          { key: 'status', label: '状态' },
+          { key: 'entityId', label: '设备 ID', link: { to: '/devices', valueKey: 'entityId' } },
+        ],
+      };
+      expect(resolveRowPath(drillList, { entityId: 'D-7' })).toBe('/devices/D-7');
     });
 
     it('falls back to the static rowTo when no entity id is present', () => {

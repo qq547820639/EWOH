@@ -66,6 +66,9 @@ export function KeyboardTableView<T>({
     );
   }
 
+  // 占位行需含 <td colSpan>，否则浏览器忽略 <tr> 的 height，虚拟化偏移/滚动失效。
+  const colCount = columns.length + (renderActions ? 1 : 0);
+
   const visible = rows.slice(list.slice.start, list.slice.end);
   const spacerTop = list.range.offsetY;
   const spacerBottom = Math.max(0, list.range.totalHeight - spacerTop - visible.length * itemHeight);
@@ -91,7 +94,9 @@ export function KeyboardTableView<T>({
         </thead>
         <tbody>
           {spacerTop > 0 && (
-            <tr aria-hidden="true" style={{ height: spacerTop }} />
+            <tr aria-hidden="true">
+              <td colSpan={colCount} style={{ height: spacerTop, padding: 0, border: 0 }} />
+            </tr>
           )}
           {visible.map((row) => {
             const key = rowKey(row);
@@ -127,7 +132,9 @@ export function KeyboardTableView<T>({
             );
           })}
           {spacerBottom > 0 && (
-            <tr aria-hidden="true" style={{ height: spacerBottom }} />
+            <tr aria-hidden="true">
+              <td colSpan={colCount} style={{ height: spacerBottom, padding: 0, border: 0 }} />
+            </tr>
           )}
         </tbody>
       </table>

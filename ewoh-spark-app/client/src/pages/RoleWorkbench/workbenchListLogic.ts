@@ -89,11 +89,16 @@ export function resolveRowPath(
 ): string | null {
   const linkColumn = list.columns.find((column) => column.link);
   if (linkColumn?.link) {
-    const valueKey = linkColumn.link.valueKey ?? linkColumn.key;
-    const value = row[valueKey];
-    if (value !== undefined && value !== null && String(value).length > 0) {
-      return `${linkColumn.link.to}/${encodeURIComponent(String(value))}`;
+    // 仅当显式声明 valueKey 时才拼实体 id 下钻路径（如 /alerts/POROSITY）。
+    // 否则跳转到模块首页（静态 to），避免拼出目标页未定义的深层路由导致 404
+    // （/alerts、/scheduling、/devices 等均为精确路由，无 :id 子路由）。
+    if (linkColumn.link.valueKey) {
+      const value = row[linkColumn.link.valueKey];
+      if (value !== undefined && value !== null && String(value).length > 0) {
+        return `${linkColumn.link.to}/${encodeURIComponent(String(value))}`;
+      }
     }
+    return linkColumn.link.to;
   }
   return list.rowTo ?? null;
 }

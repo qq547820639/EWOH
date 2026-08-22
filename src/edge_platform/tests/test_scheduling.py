@@ -777,5 +777,108 @@ class APITests(unittest.TestCase):
         self.assertNotEqual(new_plan.plan_id, pid)
 
 
+# ---------------------------------------------------------------------------
+# 7. 性能回归测试（P-PERF-003）
+#    防止 UUID 生成瓶颈复发：验证 Candidate 惰性 ID 机制
+# ---------------------------------------------------------------------------
+
+class PerformanceRegressionTests(unittest.TestCase):
+    """防止求解器性能退化的回归测试。
+
+    P-PERF-003：验证 Candidate.__post_init__ 不再无条件生成 UUID，
+    确保失败候选（passed=False）不触发 new_id 调用。
+    """
+
+    def test_candidate_lazy_id_no_uuid_for_failed(self):
+        """失败候选的 _cid 内部存储初始为空（未触发生成）。"""
+        from edge_platform.scheduler.candidate import Candidate
+        c = Candidate(person_id="P1", device_id="D1", task_id="T1",
+                      station_id="S1", violations=["test"], passed=False)
+        # _cid 内部存储应为空（未触发生成）
+        self.assertEqual(c._cid, "")
+        # 访问 candidate_id 属性应触发惰性生成
+        cid = c.candidate_id
+        self.assertTrue(cid.startswith("CAND-"))
+        self.assertEqual(len(cid), 17)  # "CAND-" + 12 hex
+        # 再次访问返回同一 ID
+        self.assertEqual(c.candidate_id, cid)
+
+    def test_candidate_lazy_id_reuse_on_second_access(self):
+        """多次访问返回同一 ID（不重复生成）。"""
+        from edge_platform.scheduler.candidate import Candidate
+        c = Candidate(person_id="P1", device_id="D1", task_id="T1",
+                      station_id="S1", passed=True)
+        cid1 = c.candidate_id
+        cid2 = c.candidate_id
+        self.assertEqual(cid1, cid2)
+
+    def test_candidate_explicit_id_preserved(self):
+        """通过 setter 显式设置的 candidate_id 不被覆盖。"""
+        from edge_platform.scheduler.candidate import Candidate
+        c = Candidate(person_id="P1", device_id="D1", task_id="T1",
+                      station_id="S1")
+        c.candidate_id = "CAND-explicit1234"
+        self.assertEqual(c.candidate_id, "CAND-explicit1234")
+        # 再次访问不改变
+        self.assertEqual(c.candidate_id, "CAND-explicit1234")
+
+    def test_solve_does_not_generate_ids_for_violations(self):
+        """求解过程中失败候选不按候选数生成 UUID（端到端验证）。
+
+        对比：旧代码为每个 Candidate 无条件生成 UUID（N persons × M devices 次）；
+        新代码仅在 candidate_id 被实际访问时才生成（常数次，不随候选数增长）。
+        """
+        import uuid as _uuid
+        original_uuid4 = _uuid.uuid4
+        call_count = [0]
+        def counting_uuid4():
+            call_count[0] += 1
+            return original_uuid4()
+        _uuid.uuid4 = counting_uuid4
+        try:
+            ws = _make_world_state(
+                [_person(f"P{i}") for i in range(20)],
+                [_device(f"D{i}") for i in range(10)],
+            )
+            # 所有人都只有"焊接"技能，任务要求"搬运"→全部失败
+            hc = HardConstraints(skills_registry={f"P{i}": {"焊接"} for i in range(20)})
+            opt = _make_optimizer(constraints=hc)
+            call_count[0] = 0
+            plan = opt.solve(ws, [_task("T1")], None, {})
+            # 20 persons × 10 devices = 200 个候选全部失败
+            # 旧代码会生成 200 个 UUID；新代码应远少于此
+            self.assertLess(call_count[0], 200,
+                f"UUID 生成次数 {call_count[0]} 应远少于候选数 200（惰性 ID 保证）")
+        finally:
+            _uuid.uuid4 = original_uuid4
+
+    def test_constraint_check_order_preserves_correctness(self):
+        """约束重排不改变判定结果（8 条约束全覆盖）。"""
+        hc = HardConstraints(
+            skills_registry={"P1": {"搬运"}},
+            station_auth={"P1": {"S1"}},
+            health_restrictions={"P1": {"重负荷"}},
+            forbidden_zones={"DANGER"},
+            shift_rules={"S1": {"max_continuous_minutes": 120, "rest_minutes_per_hour": 10}},
+            exo_compat={"EXO-A1": {"标准"}},
+            device_faults={"D_FAULT"},
+        )
+        # 正常通过
+        v = hc.check(_person("P1"), _task("T1", station_id="S1"), _device("D1"))
+        self.assertEqual(len(v), 0)
+        # 技能缺失
+        v = hc.check(_person("P2"), _task("T1", required_skills=["不存在技能"]), _device("D1"))
+        types = {x.constraint_type for x in v}
+        self.assertIn("SKILL", types)
+        # 工位未授权
+        v = hc.check(_person("P2"), _task("T1", station_id="S1"), _device("D1"))
+        types = {x.constraint_type for x in v}
+        self.assertIn("STATION_AUTH", types)
+        # 设备故障
+        v = hc.check(_person("P1"), _task("T1", station_id="S1"), _device("D_FAULT"))
+        types = {x.constraint_type for x in v}
+        self.assertIn("DEVICE_FAULT", types)
+
+
 if __name__ == "__main__":
     unittest.main()

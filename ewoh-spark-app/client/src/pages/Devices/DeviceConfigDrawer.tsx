@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -36,6 +36,7 @@ import { Badge } from '@client/src/components/ui/badge';
 import { Separator } from '@client/src/components/ui/separator';
 import {
   Drawer,
+  DrawerClose,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
@@ -116,6 +117,24 @@ const DeviceConfigDrawer = ({
 }: DeviceConfigDrawerProps): React.ReactElement => {
   const isEdit = mode === 'edit';
   const queryClient = useQueryClient();
+
+  // BUG-004 修复：vaul direction="right" 在某些版本中 ESC 键处理有缺陷，
+  // 添加显式 keydown 监听作为后备关闭机制。
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        e.preventDefault();
+        onOpenChange(false);
+      }
+    },
+    [open, onOpenChange],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, handleKeyDown]);
 
   // ===== 表单状态 =====
   const [deviceId, setDeviceId] = useState('');
@@ -788,14 +807,17 @@ const DeviceConfigDrawer = ({
         </div>
 
         <DrawerFooter className="flex-row justify-end gap-2 border-t border-border">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="w-3.5 h-3.5" />
-            取消
-          </Button>
+          {/* BUG-004 修复：用 DrawerClose 包裹取消按钮，确保 vaul 原生关闭机制生效 */}
+          <DrawerClose asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="w-3.5 h-3.5" />
+              取消
+            </Button>
+          </DrawerClose>
           <Button
             size="sm"
             onClick={handleSave}

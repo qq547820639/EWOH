@@ -45,6 +45,31 @@ testpaths = ["src/edge_platform/tests"]
 testpaths = ["src/edge_platform/tests", "tests"]
 python_files = ["test_*.py"]
 
+# 覆盖率配置
+[tool.coverage.run]
+source = ["src/edge_platform"]
+branch = true
+omit = [
+    "src/edge_platform/tests/*",
+    "src/edge_platform/demo*",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+
+[tool.coverage.html]
+directory = "output/coverage-html"
+
+[tool.coverage.xml]
+output = "output/coverage.xml"
+
 # Ruff 配置：代码风格与静态检查
 [tool.ruff]
 line-length = 120

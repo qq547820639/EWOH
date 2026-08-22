@@ -47,6 +47,13 @@ function nextAlertStatusForActor(
 ): string | null {
   const target = alertActionToState(action);
   if (!target) return null;
+  // ADR-031 / SH-004 配套修复：global_admin 作为超级管理员放行所有告警处置
+  // 转移（确认/处置/关闭/重开）。与 model/task 状态机的 isGlobalAdmin override 一致，
+  // 否则纯 global_admin 账号（如演示 admin）因不含 handler 角色被 fail-closed 拒绝，
+  // 导致风险告警页「确认」按钮必报 400「Transition ... not allowed」。
+  if (actor?.isGlobalAdmin) {
+    return target.to;
+  }
   const roles = actor?.roles ?? [];
   for (const role of roles) {
     if (alertStateTransitionAllowed(current, target.to, role)) {

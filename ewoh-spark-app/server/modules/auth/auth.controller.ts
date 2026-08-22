@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { REFRESH_TOKEN_COOKIE, AuthService } from './auth.service';
 import { Public } from '../shared/public.decorator';
 import { Roles, ANY_AUTHENTICATED_ROLES } from '../shared/roles.decorator';
+import { LoginRateLimitGuard } from './login-rate-limit.guard';
 
 /** CLI-501/701：refresh token 不再进入响应体/localStorage，改为 httpOnly cookie。 */
 interface CookieCapableResponse {
@@ -56,6 +57,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @UseGuards(LoginRateLimitGuard)
   async login(
     @Body() body: { username?: string; password?: string },
     @Res({ passthrough: true }) res?: CookieCapableResponse,

@@ -213,8 +213,46 @@ const FactoryMap = ({
   const strokeFor = (id: string, base: string) => (isSelected(id) ? '#fbbf24' : base);
   const strokeWidthFor = (id: string, base: number) => (isSelected(id) ? 3 : base);
 
-  // 自适应 viewBox：依据实体实际空间范围
-  const viewBox = useMemo(() => computeViewBox(entities), [entities]);
+  // 自适应 viewBox：依据实体实际空间范围 + 感知覆盖（摄像头视锥 / UWB 覆盖圈）。
+  // 感知覆盖须纳入包围盒（2026-08-22 布局重设计）：否则 FOV polygon / UWB circle
+  // 超出实体 bbox 部分会被 preserveAspectRatio 裁切，表现为"监控视场角加载不全"。
+  const viewBox = useMemo(() => {
+    const fovPoints: Array<{ x: number; y: number }> = [];
+    const uwbCircles: Array<{ x: number; y: number; r: number }> = [];
+    for (const e of entities) {
+      if (e.entityType === 'camera') {
+        const extra = e.extra as { fov_deg?: number; range?: number; range_m?: number } | null;
+        const fov = extra?.fov_deg ?? 90;
+        const range = extra?.range ?? extra?.range_m ?? 200;
+        const yaw = e.yaw ?? 0; // 与渲染侧 cameraFovPoints(c.x,c.y,c.yaw,...) 同源
+        // 与渲染侧 cameraFovPoints 同源：收集视锥三顶点（apex + 两翼）。
+        const yawRad = (yaw * Math.PI) / 180;
+        const halfFov = (fov * Math.PI) / 360;
+        const pts = [
+          { x: e.x, y: e.y },
+          {
+            x: e.x + range * Math.cos(yawRad - halfFov),
+            y: e.y + range * Math.sin(yawRad - halfFov),
+          },
+          {
+            x: e.x + range * Math.cos(yawRad + halfFov),
+            y: e.y + range * Math.sin(yawRad + halfFov),
+          },
+        ];
+        fovPoints.push(...pts);
+      } else if (e.entityType === 'uwb_station') {
+        const extra = e.extra as { coverage_r?: number } | null;
+        const r = extra?.coverage_r ?? 150;
+        uwbCircles.push({ x: e.x, y: e.y, r });
+      }
+    }
+    return computeViewBox(
+      entities,
+      fovPoints.length || uwbCircles.length
+        ? { fovPoints, uwbCircles }
+        : null,
+    );
+  }, [entities]);
 
   // 层级 = 同一张地图上的信息密度：
   //   L0 基础结构（仅静态元素，无动态人员/设备）

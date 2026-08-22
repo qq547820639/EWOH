@@ -61,6 +61,9 @@ export interface DeviceSearchQuery {
   bindingStatus?: 'bound' | 'unbound';
   page?: number;
   pageSize?: number;
+  /** BUG-006 修复：简单分页（limit/offset），用于 /api/devices 等契约面端点 */
+  limit?: number;
+  offset?: number;
   orderby?: string; // battery / batteryDesc / lastTelemetryAt / lastTelemetryAtDesc / deviceId / deviceIdDesc
 }
 

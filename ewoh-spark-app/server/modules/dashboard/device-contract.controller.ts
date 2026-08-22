@@ -4,6 +4,7 @@ import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import type {
   DeviceSearchQuery,
+  CreateDeviceDto,
   BindDeviceRequest,
 } from '@shared/api.interface';
 
@@ -28,6 +29,9 @@ export class DeviceContractController {
     @Query('sourceType') sourceType?: string,
     @Query('model') model?: string,
     @Query('orderby') orderby?: string,
+    /** BUG-006 修复：分页参数 */
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
     const query: DeviceSearchQuery = {};
@@ -40,12 +44,30 @@ export class DeviceContractController {
     if (sourceType) query.sourceType = sourceType;
     if (model) query.model = model;
     if (orderby) query.orderby = orderby;
+    // BUG-006 修复：解析并应用 limit/offset 分页
+    if (limit !== undefined && limit !== '') {
+      const limitNum = Number.parseInt(limit, 10);
+      if (Number.isFinite(limitNum) && limitNum > 0) query.limit = limitNum;
+    }
+    if (offset !== undefined && offset !== '') {
+      const offsetNum = Number.parseInt(offset, 10);
+      if (Number.isFinite(offsetNum) && offsetNum >= 0) query.offset = offsetNum;
+    }
     return this.dashboardService.getDevices(query, request?.userContext);
   }
 
   @Get(':id')
   detail(@Param('id') id: string, @Req() request?: { userContext?: OrgContext }) {
     return this.dashboardService.getDeviceDetail(id, request?.userContext);
+  }
+
+  /** BUG-008 修复：为 /api/devices 添加 POST 创建端点（与 /api/dashboard/devices 共享同一 Service）。 */
+  @Post()
+  async create(
+    @Body() body: CreateDeviceDto,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.createDevice(body, request?.userContext);
   }
 
   @Post(':id/bindings')

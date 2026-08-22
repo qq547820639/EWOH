@@ -5,3 +5,5 @@
 ruff      # 代码风格、import 排序与静态检查（替代 flake8/isort 的统一工具）
 bandit==1.8.6  # Python AST 静态安全扫描，CI 中以 -ll（低噪音）级别运行；版本固定以锁定扫描行为（Task 7）
 pytest    # 可选集成测试框架；主测试仍使用标准库 unittest，pytest 仅在需要时启用
+coverage  # 代码覆盖率测量（行覆盖/分支覆盖/函数覆盖）
+pytest-cov  # pytest 覆盖率插件，与 pytest 集成
