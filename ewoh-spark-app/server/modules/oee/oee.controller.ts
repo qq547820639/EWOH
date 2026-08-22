@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { OeeService } from './oee.service';
 import { Roles } from '../shared/roles.decorator';
@@ -97,6 +98,16 @@ export class OeeController {
     @Query('end') end: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
+    // BUG-014 修复：必需参数缺失时返回400而非500。
+    if (!deviceId?.trim()) {
+      throw new BadRequestException('deviceId query parameter is required');
+    }
+    if (!start?.trim()) {
+      throw new BadRequestException('start query parameter is required');
+    }
+    if (!end?.trim()) {
+      throw new BadRequestException('end query parameter is required');
+    }
     return this.oeeService.getSummary(deviceId, start, end, request?.userContext);
   }
 }

@@ -29,7 +29,7 @@ export function applySecurityHeaders(res: {
     [
       "default-src 'self'",
       "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self'",  // AUDIT-005 (P2)：移除 unsafe-inline，Tailwind 已迁移到 JIT 构建时生成
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "connect-src 'self'",
@@ -42,6 +42,10 @@ export function applySecurityHeaders(res: {
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('X-Download-Options', 'noopen');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()',
+  );
 }
 
 export function trustProxySetting(value = process.env.TRUST_PROXY): number | boolean | string[] {
@@ -68,8 +72,9 @@ export function trustProxySetting(value = process.env.TRUST_PROXY): number | boo
 export function isSpaFallbackPath(path: string): boolean {
   return (
     !path.startsWith('/api/') &&
-    !path.startsWith('/health/') &&
-    path !== '/metrics'
+    !path.startsWith('/health') &&
+    path !== '/metrics' &&
+    !path.endsWith('.map')
   );
 }
 
@@ -92,8 +97,8 @@ export async function bootstrapStandalone(): Promise<void> {
 
   app.set('trust proxy', trustProxySetting());
 
-  // BUG-005：压缩待后续用稳定方案（nginx 反代或验证过的 compression 包）实现。
-  // 当前自定义 zlib 中间件有流处理缺陷，暂不启用。
+  // BUG-005：gzip 压缩需在 Docker 镜像中安装 compression 包后启用。
+  // 当前容器无 compression 依赖，暂不启用。
 
   app.useBodyParser('json', { limit: process.env.BODY_LIMIT || '1mb' });
 
@@ -118,20 +123,24 @@ export async function bootstrapStandalone(): Promise<void> {
     ? 'index.html'
     : 'index.standalone.html';
   if (existsSync(join(clientDir, indexFile))) {
-    // MIN-003 修复：带 content-hash 的静态资源设长缓存。
+    // MIN-003 修复：带 content-hash 的静态资源设长缓存；HTML 设 no-cache。
     app.useStaticAssets(clientDir, {
       index: indexFile,
-      maxAge: '1d',
+      maxAge: 0,
       setHeaders: (res, filePath) => {
         if (filePath.includes('/assets/') && filePath !== join(clientDir, indexFile)) {
+          // hash 静态资源：长期缓存
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('.html')) {
+          // HTML：不缓存，确保每次获取最新版本
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         }
       },
     });
-    // MIN-001 修复：SPA 兜底返回 404 状态码。
+    // SPA fallback：合法前端路由返回 index.html + 200，由 React Router 接管。
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (req.method === 'GET' && isSpaFallbackPath(req.path)) {
-        res.status(404);
+        res.status(200);
         res.sendFile(join(clientDir, indexFile));
         return;
       }

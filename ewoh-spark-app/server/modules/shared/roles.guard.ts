@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ROLES_KEY } from './roles.decorator';
+import { ROLES_KEY, FALLBACK_ROLES_KEY } from './roles.decorator';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { FALLBACK_CONTROLLER_ROLES } from './route-role.policy';
 
@@ -25,10 +25,16 @@ export class RolesGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+    // AUDIT-002：优先使用 @FallbackRoles 元数据（不依赖类名字符串），回退到 FALLBACK_CONTROLLER_ROLES 映射
+    const fallbackRoles = this.reflector.getAllAndOverride<string[]>(FALLBACK_ROLES_KEY, [
+      context.getClass(),
+    ]);
     const effectiveRoles =
       requiredRoles && requiredRoles.length > 0
         ? requiredRoles
-        : FALLBACK_CONTROLLER_ROLES[context.getClass()?.name] ?? [];
+        : (fallbackRoles && fallbackRoles.length > 0)
+          ? fallbackRoles
+          : FALLBACK_CONTROLLER_ROLES[context.getClass()?.name] ?? [];
     if (!effectiveRoles || effectiveRoles.length === 0) {
       // Default deny: authenticated business routes must declare @Roles or an
       // explicit public marker. This closes the previous allow-by-default hole.

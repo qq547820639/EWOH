@@ -1,4 +1,4 @@
-import { Controller, Get, Query, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Controller, Get, Query, HttpException, HttpStatus, Req, BadRequestException } from '@nestjs/common';
 import { WorldCursorService, CursorExpiredError } from './world-cursor.service';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -24,6 +24,10 @@ export class WorldCursorController {
     @Query('limit') limit?: string,
     @Req() request?: { userContext?: OrgContext },
   ) {
+    // BUG-013 修复：cursor 参数缺失时返回400而非500。
+    if (!cursor?.trim()) {
+      throw new BadRequestException('cursor query parameter is required');
+    }
     try {
       // NEST-639：limit 钳制上限 1000（NaN 回退默认 200）。
       const parsed = limit ? parseInt(limit, 10) : 200;

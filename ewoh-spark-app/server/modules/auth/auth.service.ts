@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
 import { sign, verify, type JwtPayload } from 'jsonwebtoken';
@@ -121,7 +121,7 @@ export class AuthService {
   >();
 
   constructor(
-    @Inject(DRIZZLE_DATABASE) private readonly db: any,
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() redis?: RedisService,
   ) {
     this.redis = redis ?? new RedisService();

@@ -59,6 +59,9 @@ export class LoginRateLimitGuard implements CanActivate {
       this.logger.warn(
         `login_rate_limited: IP ${subject} 超过登录限流（${count}/${effectiveMax} in ${ttl}s window）`,
       );
+      // BUG-010 修复：429 响应添加 Retry-After 头。
+      const response = context.switchToHttp().getResponse<{ setHeader: (name: string, value: string) => void }>();
+      response.setHeader('Retry-After', String(ttl));
       throw new HttpException(
         {
           code: 'RATE_LIMITED',

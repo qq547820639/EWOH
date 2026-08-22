@@ -157,7 +157,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       httpStatus = HttpStatus.INTERNAL_SERVER_ERROR;
       const error = exception instanceof Error ? exception : undefined;
       this.logger.error('Unhandled request error', error?.stack);
-      const exposeDiagnostics = process.env.NODE_ENV !== 'production';
+      // AUDIT-004 (P3)：显式开关 + NODE_ENV 双重判定（Docker 中 NODE_ENV 可能未设置）
+      const exposeDiagnostics =
+        process.env.EWOH_EXPOSE_DIAGNOSTICS === '1' ||
+        (process.env.NODE_ENV !== 'production' && process.env.EWOH_EXPOSE_DIAGNOSTICS !== '0');
       const cause = error?.cause;
       errorResponse = this.withRequestContext(
         {

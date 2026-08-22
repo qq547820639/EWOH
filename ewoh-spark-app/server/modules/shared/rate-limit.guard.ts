@@ -60,6 +60,9 @@ export class RateLimitGuard implements CanActivate {
       );
     }
     if (count > effectiveMax) {
+      // BUG-010 修复：429 响应添加 Retry-After 头。
+      const response = context.switchToHttp().getResponse<{ setHeader: (name: string, value: string) => void }>();
+      response.setHeader('Retry-After', String(ttl));
       throw new HttpException(
         { code: 'RATE_LIMITED', message: 'Too many requests', details: { limit: effectiveMax } },
         HttpStatus.TOO_MANY_REQUESTS,

@@ -1,6 +1,6 @@
 import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { DRIZZLE_DATABASE } from '@lark-apaas/fullstack-nestjs-core';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql, eq, and, desc } from 'drizzle-orm';
 import { ewohSchedulerConfig } from '@server/database/schema';
 import { validateReasoningResult } from '@shared/reasoning-result';
@@ -58,7 +58,7 @@ export class ArkService {
   private readonly logger = new Logger(ArkService.name);
 
   constructor(
-    @Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: any,
+    @Optional() @Inject(DRIZZLE_DATABASE) private readonly db?: PostgresJsDatabase,
     @Optional() private readonly auditService?: AuditService,
   ) {}
 

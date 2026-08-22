@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 /** auto generated, do not edit */
 /**
  * org_id 列类型策略（NEST-502/512 裁决，2026-08-17，最小破坏方案；

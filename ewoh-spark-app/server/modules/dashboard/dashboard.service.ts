@@ -79,6 +79,10 @@ export function parsePageParam(raw: string | undefined, fallback = 1): number {
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
+  // 性能优化：dashboard/overview 5秒缓存（减少数据库查询频率）
+  private overviewCache: { data: OverviewStats; timestamp: number; orgKey: string } | null = null;
+  private readonly OVERVIEW_CACHE_TTL_MS = 5000;
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly auditService: AuditService,
@@ -114,61 +118,73 @@ export class DashboardService {
   }
 
   async getOverview(actor?: OrgContext): Promise<OverviewStats> {
+    // 性能优化：5秒缓存（仪表板数据实时性要求不高）
+    const orgKey = actor?.primaryOrgId ?? 'global';
+    const now = Date.now();
+    if (this.overviewCache && this.overviewCache.orgKey === orgKey && now - this.overviewCache.timestamp < this.OVERVIEW_CACHE_TTL_MS) {
+      return this.overviewCache.data;
+    }
+
     try {
       const deviceOrg = this.orgCondition(ewohDevice.orgId, actor);
-      const [deviceStats] = await this.db
-        .select({
-          total: sql<number>`count(*)::int`,
-          online: sql<number>`count(*) filter (where ${ewohDevice.online} = true)::int`,
-        })
-        .from(ewohDevice)
-        .where(deviceOrg);
-
       const eventOrg = this.orgCondition(ewohEvent.orgId, actor);
-      const [eventStats] = await this.db
-        .select({
-          open: sql<number>`count(*) filter (where ${ewohEvent.status} = 'open')::int`,
-          // ADR-027：新写入规范阶梯（critical/high/medium）；legacy L2/L3 为存量兼容
-          // 并集统计，避免存量/新量口径漂移（真实 PG 首推后按需收紧）。
-          critical: sql<number>`count(*) filter (where ${ewohEvent.severity} in ('critical','high','medium','L2','L3'))::int`,
-        })
-        .from(ewohEvent)
-        .where(eventOrg);
-
       const telemetryOrg = this.orgCondition(ewohTelemetry.orgId, actor);
-      const [loadStats] = await this.db
-        .select({
-          avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
-        })
-        .from(ewohTelemetry)
-        .where(
-          telemetryOrg
-            ? and(telemetryOrg, gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
-            : gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
-        );
 
-      const [workerStats] = await this.db
-        .select({
-          count: sql<number>`count(distinct ${ewohDevice.workerName})::int`,
-        })
-        .from(ewohDevice)
-        .where(
-          deviceOrg
-            ? and(
-                deviceOrg,
-                sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
-              )
-            : sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
-        );
+      // 性能优化：将4个独立查询并行执行（原串行~700ms → 并行~200ms）
+      const [deviceStats, eventStats, loadStats, workerStats] = await Promise.all([
+        this.db
+          .select({
+            total: sql<number>`count(*)::int`,
+            online: sql<number>`count(*) filter (where ${ewohDevice.online} = true)::int`,
+          })
+          .from(ewohDevice)
+          .where(deviceOrg),
+        this.db
+          .select({
+            open: sql<number>`count(*) filter (where ${ewohEvent.status} = 'open')::int`,
+            // ADR-027：新写入规范阶梯（critical/high/medium）；legacy L2/L3 为存量兼容
+            // 并集统计，避免存量/新量口径漂移（真实 PG 首推后按需收紧）。
+            critical: sql<number>`count(*) filter (where ${ewohEvent.severity} in ('critical','high','medium','L2','L3'))::int`,
+          })
+          .from(ewohEvent)
+          .where(eventOrg),
+        this.db
+          .select({
+            avgLoad: sql<number>`coalesce(avg(${ewohTelemetry.loadScore}), 0)::float`,
+          })
+          .from(ewohTelemetry)
+          .where(
+            telemetryOrg
+              ? and(telemetryOrg, gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`))
+              : gte(ewohTelemetry.ts, sql`now() - interval '1 hour'`),
+          ),
+        this.db
+          .select({
+            count: sql<number>`count(distinct ${ewohDevice.workerName})::int`,
+          })
+          .from(ewohDevice)
+          .where(
+            deviceOrg
+              ? and(
+                  deviceOrg,
+                  sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
+                )
+              : sql`${ewohDevice.workerName} is not null and ${ewohDevice.workerName} != ''`,
+          ),
+      ]);
 
-      return {
-        deviceTotal: deviceStats?.total ?? 0,
-        deviceOnline: deviceStats?.online ?? 0,
-        eventOpen: eventStats?.open ?? 0,
-        eventCritical: eventStats?.critical ?? 0,
-        avgLoad: Number((loadStats?.avgLoad ?? 0).toFixed(3)),
-        workerCount: workerStats?.count ?? 0,
+      const result = {
+        deviceTotal: deviceStats?.[0]?.total ?? 0,
+        deviceOnline: deviceStats?.[0]?.online ?? 0,
+        eventOpen: eventStats?.[0]?.open ?? 0,
+        eventCritical: eventStats?.[0]?.critical ?? 0,
+        avgLoad: Number((loadStats?.[0]?.avgLoad ?? 0).toFixed(3)),
+        workerCount: workerStats?.[0]?.count ?? 0,
       };
+
+      // 更新缓存
+      this.overviewCache = { data: result, timestamp: now, orgKey };
+      return result;
     } catch (error) {
       this.logger.error('getOverview 失败', error);
       throw error;

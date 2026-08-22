@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { login } from '../../api/auth';
 import { isAuthenticated, setSession } from '../../lib/auth';
 
@@ -11,6 +11,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false); // AUDIT-009
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -50,17 +51,29 @@ const Login = () => {
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary"
+          autoComplete="username" // AUDIT-008
         />
         <label className="mt-4 block text-sm font-medium text-foreground" htmlFor="password">
           密码
         </label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:border-primary"
-        />
+        <div className="relative">
+          <input
+            id="password"
+            type={showPassword ? 'text' : 'password'} // AUDIT-009
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm outline-none focus:border-primary"
+            autoComplete="current-password" // AUDIT-008
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+            aria-label={showPassword ? '隐藏密码' : '显示密码'}
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
         {error && (
           <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         )}

@@ -26,7 +26,8 @@ export default defineConfig({
   build: {
     outDir: path.resolve(root, 'dist/client'),
     emptyOutDir: true,
-    sourcemap: true,
+    // BUG-003 修复：生产环境关闭 source map，避免源码泄露。
+    sourcemap: process.env.NODE_ENV !== 'production',
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: path.resolve(root, 'client/index.standalone.html'),
