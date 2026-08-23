@@ -76,6 +76,7 @@ function makeDb(seedConflicts: Array<Record<string, unknown>> = [], seedPlans: A
           const q: any = Promise.resolve([...plans]);
           q.where = () => q;
           q.orderBy = () => q;
+          q.limit = () => q;
           return q;
         }
         return Promise.resolve([]);

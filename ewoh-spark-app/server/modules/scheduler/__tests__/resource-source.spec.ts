@@ -84,13 +84,20 @@ function makeProjectionSvc(
   const reservationService = {
     listActive: jest.fn().mockResolvedValue(reservations),
   };
+  function makeChain(rows: unknown[]): any {
+    const p: any = Promise.resolve(rows);
+    p.where = () => p;
+    p.orderBy = () => p;
+    p.limit = () => p;
+    return p;
+  }
   const db = {
     select: jest.fn().mockReturnValue({
       from: jest.fn((t: unknown) => {
-        if (t === ewohPersonnel) return Promise.resolve(personnelRows);
-        if (t === ewohDevice) return Promise.resolve(deviceRows);
-        if (t === ewohSpatialEntity) return Promise.resolve(spatialRows);
-        return Promise.resolve([]);
+        if (t === ewohPersonnel) return makeChain(personnelRows);
+        if (t === ewohDevice) return makeChain(deviceRows);
+        if (t === ewohSpatialEntity) return makeChain(spatialRows);
+        return makeChain([]);
       }),
     }),
   };

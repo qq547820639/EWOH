@@ -42,13 +42,16 @@ function makeDbWithTransientFailure(typedError: Error): FakeDb {
       const result = shouldFail
         ? Promise.reject(typedError)
         : Promise.resolve([]);
-      return {
-        where: () => result,
+      const chain: any = {
+        where: () => chain,
+        orderBy: () => chain,
+        limit: () => chain,
         then: (
           onFulfilled: (v: unknown[]) => unknown,
           onRejected?: (e: unknown) => unknown,
         ) => result.then(onFulfilled, onRejected),
       };
+      return chain;
     }),
   }));
   const execute = jest.fn().mockResolvedValue([{ last_seq: 1 }]);

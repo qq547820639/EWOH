@@ -65,6 +65,7 @@ function makeService(seedConflicts: Array<Record<string, unknown>> = []) {
           const q: any = Promise.resolve([...plans]);
           q.where = () => q;
           q.orderBy = () => q;
+          q.limit = () => q;
           return q;
         }
         return Promise.resolve([]);

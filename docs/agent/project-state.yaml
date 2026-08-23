@@ -14,21 +14,21 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "c2db581"                     # 更新时的 main HEAD（git log -1；R-104 提交后基线）
-  rounds_elapsed: 105
+  git_head: "771461c"                     # 更新时的 main HEAD（git log -1；R-105 提交后基线）
+  rounds_elapsed: 106
 
-current_phase: "Phase 12 收口后深化（R-105：default jest 失败收口第一波——drizzle 假库链修复，19→17 suites / 60→26 tests；剩余 26 失败为审计引入的行为/阈值不匹配）"
+current_phase: "Phase 12 收口后深化（R-106：default jest 失败收口第二波——假库 thenable 链 + orderBy/limit 补全，17→14 suites / 26→16 tests；剩余 16 失败为 provider.estimate/mock 参数不匹配/行为不匹配）"
 phase_summary: >
-  Round 105 完成 default jest 失败收口第一波：3 个 scheduler
-  __tests__ 文件的 drizzle 假库链修复（world-state-version 4
-  tests + world-state-derive 6 tests + scheduler-domain 9/10
-  tests）——根因：审计添加 org 条件后 collectState 查询链从
-  .where().then() 变为 .where().orderBy().limit()，假库未
-  同步更新 orderBy/limit 支持。default jest 19→17 failed
-  suites / 60→26 failed tests（-34 tests）、client jest 131/
-  1069 不变、双 tsc PASS。剩余 26 失败为审计引入的行为/
-  阈值不匹配（FreshnessPolicy/value/derived fields 等），
-  需后续收口。
+  Round 106 完成 default jest 失败收口第二波：6 个 scheduler
+  __tests__ 文件假库 thenable 链补全（resource-source/
+  resource-freshness/resource-state：makeChain() 统一
+  where/orderBy/limit 支持 ×3 文件 + conflict-lifecycle/
+  conflict-query-readonly：ewohSchedulePlan 链补 limit
+  + world-state-db-failure：chain 对象补 orderBy/limit）。
+  default jest 17→14 failed suites / 26→16 failed tests
+  （-10 tests）；client jest 131/1069 不变；双 tsc PASS。
+  剩余 16 失败为 provider.estimate 缺失/mock 参数不匹配/
+  行为不匹配（非链问题），需逐项分析。
   75（23%）+ schema/契约双口径漂移 58（17%）+ 幂等/CAS/事务边界
   52（16%）。关键修复：P0 R2-SMI-001 高危指令审批链接入
   ApprovalPersistenceService（INV-005）；幂等 claim/release
