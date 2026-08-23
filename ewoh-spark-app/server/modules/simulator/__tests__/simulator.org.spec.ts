@@ -46,6 +46,7 @@ function createSimulatorEnv() {
     db as never,
     {} as never,
     requestDatabaseContext as never,
+    {} as never,
   );
   return { service, inserts };
 }

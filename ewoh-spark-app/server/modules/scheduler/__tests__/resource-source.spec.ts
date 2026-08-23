@@ -24,6 +24,7 @@ import { defaultConfig, defaultPolicy } from './scheduler-test-helpers';
 import type { WorldStateSnapshot } from '@shared/api.interface';
 
 const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 
 function personRow(over: Record<string, unknown> = {}) {
   return {
@@ -141,7 +142,7 @@ describe('P1-B 投影层：source 与 dataQuality 正交', () => {
     const svc = makeProjectionSvc(
       [
         personRow({ id: 'P-F', updatedAt: new Date(now) }),
-        personRow({ id: 'P-S', updatedAt: new Date(now - 6 * MINUTE) }),
+        personRow({ id: 'P-S', updatedAt: new Date(now - 25 * HOUR) }),
       ],
       [],
       [],

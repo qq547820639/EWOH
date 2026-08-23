@@ -621,6 +621,7 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(plans.map((p) => p.planId)).toEqual(expect.arrayContaining(['P-1', 'P-2']));
       expect(mocks.planService.listPlansBatched).toHaveBeenCalledWith(
         expect.arrayContaining(['P-1', 'P-2']),
+        { slim: true },
       );
     });
   });

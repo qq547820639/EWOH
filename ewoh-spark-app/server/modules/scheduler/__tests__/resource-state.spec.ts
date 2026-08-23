@@ -187,7 +187,7 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     const svc = makeSvc(
       [
         personRow({ id: 'P-FRESH', updatedAt: new Date(now) }),
-        personRow({ id: 'P-STALE', updatedAt: new Date(now - 6 * 60 * 1000) }),
+        personRow({ id: 'P-STALE', updatedAt: new Date(now - 25 * 60 * 60 * 1000) }),
         personRow({ id: 'P-UNKNOWN', updatedAt: null }),
       ],
       [],
@@ -199,14 +199,14 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     expect(byId('P-FRESH').dataQuality).toBe('FRESH');
     expect(byId('P-STALE').dataQuality).toBe('STALE');
     expect(byId('P-UNKNOWN').dataQuality).toBe('UNKNOWN');
-    expect(byId('P-FRESH').freshnessMs).toBe(5 * 60 * 1000);
+    expect(byId('P-FRESH').freshnessMs).toBe(24 * 60 * 60 * 1000);
   });
 
   it('数据过时（STALE/UNKNOWN）不得虚构 available：person/device/station 标 unavailable/offline', async () => {
     const now = Date.now();
     const svc = makeSvc(
       [
-        personRow({ id: 'P-OLD', updatedAt: new Date(now - 6 * 60 * 1000) }),
+        personRow({ id: 'P-OLD', updatedAt: new Date(now - 25 * 60 * 60 * 1000) }),
         personRow({ id: 'P-NEW', updatedAt: new Date(now) }),
       ],
       [
@@ -214,7 +214,7 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
         deviceRow({ id: 'D-NEW', deviceId: 'D-NEW', lastTelemetryAt: new Date(now) }),
       ],
       [
-        stationRow({ id: 'S-OLD', entityId: 'ST-OLD', updatedAt: new Date(now - 6 * 60 * 1000) }),
+        stationRow({ id: 'S-OLD', entityId: 'ST-OLD', updatedAt: new Date(now - 25 * 60 * 60 * 1000) }),
         stationRow({ id: 'S-NEW', entityId: 'ST-NEW', updatedAt: new Date(now) }),
       ],
       [],
