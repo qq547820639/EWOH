@@ -15,15 +15,16 @@ meta:
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
   git_head: "849a6e4"                     # 更新时的 main HEAD（git log -1；R-134 提交后）
-  rounds_elapsed: 145
+  rounds_elapsed: 146
 
-current_phase: "系统实质完成（R-145 §36 自审全绿——54/56 Implemented，12/12 Phases，0 High 债务，所有门禁全绿）"
+current_phase: "后续长周期任务执行（R-146：6 项核心任务全部完成——测试口径澄清/Event Envelope 审计/能力矩阵精确化/ortools 部署方案/scoped-assistant 设计/Continuous Learning 深化）"
 phase_summary: >
-  Round 145 完成 §36 自审：所有判据全绿（真实能力/生产调用链/
-  Contract/Event/World State/可解释/可审计/失败支持/重试/离线/
-  多租户/TCK/Golden Scenario）。系统实质完成：54/56 Implemented
-  （96%），12/12 Phases 至少 Partial，0 High 债务。剩余仅
-  ortools 环境解锁 + scoped-assistant 原型。目标阶段性完成。
+  Round 146 完成 6 项核心任务：P0 测试计数口径澄清（290/2250 =
+  290 suites ALL GREEN / 2250 tests ALL GREEN）；P0 Event Envelope
+  全链路审计（25/25 写入 + 读取自动包含 + OpenAPI 已文档化）；
+  P1 能力矩阵精确化（unlock_conditions）；P1 ortools 部署方案；
+  P2 scoped-assistant 设计；P2 Continuous Learning 深化方案。
+  default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
@@ -1832,7 +1833,31 @@ authoritative_sources:
     role: 长期 Agent 外置记忆（本文件）
 
 test_status:
-  as_of: "2026-08-18"
+  as_of: "2026-08-24"
+  # 测试计数口径说明：
+  #   "290/2250" 表示 "290 suites ALL GREEN / 2250 tests ALL GREEN"
+  #   ——分子=suites passed，分母=tests passed，两者均为 100% 通过率。
+  #   同理 "138/1173" = 138 client suites passed / 1173 client tests passed。
+  #   不是 "290 passed out of 2250 total"。
+  current_metrics:
+    default_jest:
+      suites_passed: 290
+      suites_total: 290
+      tests_passed: 2250
+      tests_total: 2250
+      status: all_green
+    client_jest:
+      suites_passed: 138
+      suites_total: 138
+      tests_passed: 1173
+      tests_total: 1173
+      status: all_green
+    pytest:
+      passed: 1340
+      skipped: 10
+      status: all_green
+    server_tsc: PASS
+    client_tsc: PASS
   gates:
     - name: 二轮审计全量回归（Round 103）
       result: "unittest 979 OK；pytest 契约 681 passed/11 skipped；golden 330+6；状态机 5；production-smoke 11；tsc -b 0 错误；client jest 127 suites/1022 tests；server jest 290 suites/2247 tests 全过；lint/truth-check(584/584)/audit-regression-gates 十条/contract 族/scheduler-golden/openapi:no-drift 全绿；bandit 与真实环境依赖项 ENVIRONMENT_BLOCKED 如实登记（docs/audit/current/test-report.md）"

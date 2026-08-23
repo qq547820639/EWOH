@@ -593,6 +593,16 @@ capabilities:
       - ewoh-spark-app/server/modules/scheduler/shadow-policy.service.ts
   - id: solver-pluggability
     status: Partial
+    unlock_conditions:
+      - ortools worker 服务部署并健康检查通过
+      - EWOH_SOLVER_ACTIVATION=PRODUCTION 环境变量配置
+      - 小规模数据集求解验证通过（10 项 skip 测试取消 skip）
+      - cp-sat-circuit-breaker 熔断器在生产环境验证
+    related_files:
+      - ewoh-spark-app/server/modules/scheduler/cp-sat-scheduling-solver.ts
+      - ewoh-spark-app/server/modules/scheduler/cp-sat-circuit-breaker.ts
+      - ewoh-spark-app/server/modules/scheduler/solver.service.ts
+      - src/edge_platform/scheduler/cpsat/solver.py
     summary: §8 求解器阶梯四类落地：CP-SAT（部署形态与激活阶梯既有，
       ortools 无环境从未真实求解——OPEN-DECISIONS 唯一项，10 项测试
       skip）+ heuristic（canonical，8 权重软目标优化）+ rule-based
@@ -814,6 +824,14 @@ capabilities:
       - openapi/ewoh.yaml（+4 路由，383 零漂移）
   - id: scoped-assistant
     status: Prototype
+    unlock_conditions:
+      - 定义 LLM 调用安全边界与审计机制
+      - 人工确认流程集成（不允许直接修改生产配置）
+      - 原型通过内部评测（配置生成准确率 ≥80%）
+      - 提示注入防护与敏感数据脱敏验证
+    related_files:
+      - src/edge_platform/assistant/local_llm.py
+      - ewoh-spark-app/server/modules/ai/
     summary: 边缘 assistant.local_llm 白名单问答（8 可答 7 拒绝）；云侧 ai 为视觉服务。
     evidence:
       - src/edge_platform/assistant/local_llm.py
