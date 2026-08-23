@@ -14,15 +14,15 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "f0ff8aa"                     # 更新时的 main HEAD（git log -1；R-116 提交后）
-  rounds_elapsed: 116
+  git_head: "21b4727"                     # 更新时的 main HEAD（git log -1；R-117 提交后）
+  rounds_elapsed: 117
 
-current_phase: "Phase 12 收口后深化（R-116：default jest 2→1 失败 + OpenAPI spec 补全；R-117：Scale 数据页纯逻辑层——§17 消费面补强第 8 项）"
+current_phase: "Phase 12 收口后深化（R-117：Scale 纯逻辑层 ADR-088；R-118：repo-facts 最后 1 项环境失败修复——release bundle 结构补全）"
 phase_summary: >
-  Round 116 完成 OpenAPI spec 补 POST /api/devices（审计添加
-  DeviceContractController 后遗漏）+ reconcile 修复（5/5 全绿）；
-  default jest 2→1 failed suites（仅 repo-facts release bundle 环境
-  问题）；project-state R-115 更新。
+  Round 117 完成 Scale 数据页纯逻辑层（ADR-088）+ 13 例测试。
+  §17 消费面累计 8 页面纯逻辑层 + 2 渲染 smoke（+120 tests）。
+  default jest 289/290 绿（1 项 CI infra）、client jest 137/1156
+  全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
