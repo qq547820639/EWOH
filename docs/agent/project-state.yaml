@@ -14,21 +14,19 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "dae6240"                     # 更新时的 main HEAD（git log -1；R-112 提交后）
-  rounds_elapsed: 112
+  git_head: "5da8d2c"                     # 更新时的 main HEAD（git log -1；R-114 提交后）
+  rounds_elapsed: 114
 
-current_phase: "Phase 12 收口后深化（R-107~112：default jest 失败收口 19→2 suites + 数据型页面纯逻辑层推广 Scheduling/Devices/Organization——§17 消费面补强 4 项）"
+current_phase: "Phase 12 收口后深化（R-113~114：数据型页面纯逻辑层推广 Personnel/Alerts——§17 消费面补强 6 项 + 走读完成后继续深化）"
 phase_summary: >
-  Round 107~110 完成 default jest 失败收口（19→2 failed suites / 60→2
-  failed tests，-17/-58）：假库 thenable 链 / mock 补全 / DI 修复 /
-  freshness 阈值对齐 / 行为语义变更对齐 / entityVersion 哈希 FNV-1a
-  对齐；剩余 2 失败为 CI 基础设施检查（release bundle checksums）。
-  Round 111 完成 Devices 数据页纯逻辑层（ADR-083）：devicesLogic.ts
-  6 纯函数 + 18 例测试；client jest +1/+18。
-  Round 112 完成 Organization 数据页纯逻辑层（ADR-084）：organization
-  Logic.ts 2 常量 + 3 纯函数 + 11 例测试；client jest +1/+11。
-  default jest 288/2248 全绿（2 项 CI infra）、client jest 133/1098
-  全绿、双 tsc PASS。
+  Round 113 完成 Personnel 数据页纯逻辑层（ADR-085）：personnelLogic.ts
+  3 常量 + 5 纯函数 + 16 例测试；client jest +1/+16。
+  Round 114 完成 Alerts 数据页纯逻辑层（ADR-086）：alertsLogic.ts
+  2 常量 + 3 纯函数 + 13 例测试；client jest +1/+13。
+  全仓库逐行走读完成（6 子代理并行覆盖服务端/合约/数据库/
+  Python/前端/脚本文档），产出结构化走读报告。
+  default jest 288/2248 全绿（2 项 CI infra）、client jest
+  135/1127 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
   + world-state-db-failure：chain 对象补 orderBy/limit）。
   default jest 17→14 failed suites / 26→16 failed tests
@@ -137,6 +135,21 @@ phase_summary: >
   398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
   feature-status 32/32、env-inventory 124/125。
 completed_capabilities:
+  - id: alerts-logic-layer
+    summary: >
+      Round 114（ADR-086）：Alerts 数据页纯逻辑层——alertsLogic.ts
+      2 常量 + 3 纯函数（alertStatusLabel/nextAlertAction/isAlertActive）
+      + 13 例测试；client jest +1/+13；§17 消费面补强
+    evidence:
+      - ewoh-spark-app/client/src/pages/Alerts/alertsLogic.ts
+      - ewoh-spark-app/client/src/pages/Alerts/alertsLogic.test.ts
+  - id: personnel-logic-layer
+    summary: >
+      Round 113（ADR-085）：Personnel 数据页纯逻辑层——personnelLogic.ts
+      3 常量 + 5 纯函数 + 16 例测试；client jest +1/+16；§17 消费面补强
+    evidence:
+      - ewoh-spark-app/client/src/pages/Personnel/personnelLogic.ts
+      - ewoh-spark-app/client/src/pages/Personnel/personnelLogic.test.ts
   - id: devices-logic-layer
     summary: >
       Round 111（ADR-083）：Devices 数据页纯逻辑层——devicesLogic.ts
@@ -2768,5 +2781,5 @@ next_objectives:
       已完成。每项按既有纪律：ADR → 契约/门禁 → 运行时 → Golden →
       §36 评估
 
-round_report_file: docs/agent/round-reports/2026-08-16-round-104.md
+round_report_file: docs/agent/round-reports/2026-08-16-round-114.md
 
