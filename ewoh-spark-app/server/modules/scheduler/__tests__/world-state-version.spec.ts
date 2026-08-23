@@ -56,14 +56,15 @@ interface FakeDb {
 }
 
 function makeDb(): FakeDb {
+  const emptyResult: any = Promise.resolve([]);
+  emptyResult.orderBy = () => emptyResult;
+  emptyResult.limit = () => emptyResult;
+  const fromResult: any = Promise.resolve([]);
+  fromResult.where = () => emptyResult;
+  fromResult.orderBy = () => fromResult;
+  fromResult.limit = () => fromResult;
   const select = jest.fn(() => ({
-    from: jest.fn((table: unknown) => {
-      // NEST-101（2026-08-17）：带 org ctx 的 collectState 对全部 5 张主表
-      // 追加 where（org 过滤）；reservation / binding 原有 where 保留——
-      // 统一提供 where 链（返回空集，本 spec 只测版本分配）。
-      void table;
-      return { where: () => Promise.resolve([]) };
-    }),
+    from: jest.fn(() => fromResult),
   }));
   const execute = jest.fn().mockResolvedValue([{ last_seq: 1 }]);
   const values = jest.fn().mockResolvedValue(undefined);

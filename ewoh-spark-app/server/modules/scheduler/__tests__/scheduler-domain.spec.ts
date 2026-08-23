@@ -404,20 +404,24 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
         };
       }
       if (table === ewohResourceReservation || table === ewohDeviceBinding) {
-        return { where: () => Promise.resolve([]) };
+        const chain: any = Promise.resolve([]);
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
+        return { where: () => chain };
       }
       // P1（2026-08-19 审计）：collectState 事件查询收紧为 status='open'
       // （生产语义），替身同步——按 open 过滤（null 视作 open，与生产
       // status ?? 'open' 缺省口径一致）。
       if (table === ewohEvent) {
+        const filtered = events.filter(
+          (e) => (e as { status?: string | null }).status == null
+            || (e as { status?: string | null }).status === 'open',
+        );
+        const chain: any = Promise.resolve(filtered);
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
         return {
-          where: () =>
-            Promise.resolve(
-              events.filter(
-                (e) => (e as { status?: string | null }).status == null
-                  || (e as { status?: string | null }).status === 'open',
-              ),
-            ),
+          where: () => chain,
         };
       }
       const rows =
@@ -783,12 +787,18 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
         };
       }
       if (table === ewohResourceReservation || table === ewohDeviceBinding) {
-        return { where: () => Promise.resolve([]) };
+        const chain: any = Promise.resolve([]);
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
+        return { where: () => chain };
       }
       // P1（2026-08-19 审计）：collectState 事件查询收紧为 status='open'
       // （生产语义），替身同步（本双打事件恒空，仅补 where 能力）。
       if (table === ewohEvent) {
-        return { where: () => Promise.resolve([]) };
+        const chain: any = Promise.resolve([]);
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
+        return { where: () => chain };
       }
       const tableRows = new Map<unknown, unknown[]>([
         [ewohPersonnel, rows.personnel ?? []],

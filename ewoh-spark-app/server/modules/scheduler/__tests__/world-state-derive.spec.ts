@@ -55,14 +55,15 @@ function makeDb(rowsByTable: Partial<Record<string, unknown[]>>) {
     // （生产语义），测试替身同步——where() 近似按 open 过滤（null 视作 open，
     // 与 eventList 的 status ?? 'open' 缺省口径一致）。
     if (key === 'event') {
+      const filtered = rows.filter(
+        (r) => (r as { status?: string | null }).status == null
+          || (r as { status?: string | null }).status === 'open',
+      );
+      const chainResult: any = Promise.resolve(filtered);
+      chainResult.orderBy = () => chainResult;
+      chainResult.limit = () => chainResult;
       return {
-        where: () =>
-          Promise.resolve(
-            rows.filter(
-              (r) => (r as { status?: string | null }).status == null
-                || (r as { status?: string | null }).status === 'open',
-            ),
-          ),
+        where: () => chainResult,
       };
     }
     return Promise.resolve(rows);
