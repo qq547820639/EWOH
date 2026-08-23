@@ -14,16 +14,14 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "9cb16d8"                     # 更新时的 main HEAD（git log -1；R-120 提交后）
-  rounds_elapsed: 120
+  git_head: "7d83c35"                     # 更新时的 main HEAD（git log -1；R-121 提交后）
+  rounds_elapsed: 121
 
-current_phase: "Phase 12 收口后深化（R-120~121：§17 消费面全量覆盖确认 + 走读后架构深化评估——所有主要数据页逻辑层已覆盖，剩余小页面/AiDecision/DigitalWorld/ModelManagement 极小量；CP-SAT 环境阻塞）"
+current_phase: "Phase 12 收口后深化（R-121~122：§17 全量覆盖确认 + 架构深化评估——所有主要数据页逻辑层已覆盖，CP-SAT 环境阻塞）"
 phase_summary: >
-  Round 120 确认 §17 消费面全量覆盖：13 页面逻辑层 + 4 渲染 smoke
-  （WorkOrchestration 已有 5 模块 + 3 测试、MobileWorkbench 已有
-  labels/hooks；仅 AiDecision/DigitalWorld/ModelManagement 极小页面
-  未提取）。default jest 290/2250 全绿、client jest 138/1173 全绿、
-  双 tsc PASS、全审计绿。
+  Round 121 确认 §17 消费面全量覆盖：13 页面逻辑层 + 4 渲染 smoke。
+  AiDecision/DigitalWorld/ModelManagement 极小页面无纯逻辑可提取。
+  default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
