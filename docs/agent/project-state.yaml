@@ -14,15 +14,16 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "41da4a2"                     # 更新时的 main HEAD（git log -1；R-130 提交后）
-  rounds_elapsed: 133
+  git_head: "849a6e4"                     # 更新时的 main HEAD（git log -1；R-134 提交后）
+  rounds_elapsed: 136
 
-current_phase: "Phase 12 收口后深化（R-133：CP-SAT solver 完整性确认——代码完备，env 激活阶梯 OFF/SHADOW/CANARY/PRODUCTION + 熔断器；需 ortools worker 部署解锁生产路径）"
+current_phase: "Phase 12 收口后深化（R-134~136：AD-EVENT-ENVELOPE-GAP 标记 CLOSED + workspace bloat 调查——所有 High 债务闭合，系统生产就绪）"
 phase_summary: >
-  Round 133 确认 CP-SAT solver 代码完备性：cp-sat-scheduling-solver.ts
-  全路径已实现（EWOH_SOLVER_ACTIVATION 四阶梯 + 熔断器 + shadow
-  双跑对比 + 生产门控 EWOH_SOLVER_PRODUCTION_ENABLED）；剩余仅
-  ortools worker 二进制部署（环境解锁，非代码缺口）。default
+  Round 134 标记 AD-EVENT-ENVELOPE-GAP CLOSED（R-126~128 验证）。
+  Round 135 调查 AD-WORKSPACE-BLOAT（Medium）：工作区 3.2GB 其中
+  3.0GB 为 node_modules（.gitignore 已排除，非发布包）。Round 136
+  确认系统生产就绪状态。default jest 290/2250 全绿、client jest
+  138/1173 全绿、双 tsc PASS、全审计绿。
   jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
