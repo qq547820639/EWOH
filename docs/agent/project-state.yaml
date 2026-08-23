@@ -14,15 +14,22 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "58b7819"                     # 更新时的 main HEAD（git log -1；本轮二轮审计工作区提交前的基线）
-  rounds_elapsed: 103
+  git_head: "58b7819"                     # 更新时的 main HEAD（git log -1；本轮 R-104 基线）
+  rounds_elapsed: 104
 
-current_phase: "Phase 12 收口后深化（R-103 二轮全仓逐行审计 + 架构收敛 + 全量回归：325 发现全闭环 189 FIXED/136 DISPOSITIONED，P0/P1 100% 关闭，交付 docs/audit/current/ 16 份报告）→ 遗留架构债/环境债已登记（Decision 域提升、Event 骨干抽取、RLS e2e 扩面、CI 环境阻塞项）"
+current_phase: "Phase 12 收口后深化（NO-13ah 完成：Scheduling 数据页渲染 smoke + 纯逻辑层 ADR-082，R-104——§17 消费面补强第二项）→ 遗留架构债/环境债已登记（Decision 域提升、Event 骨干抽取、RLS e2e 扩面、CI 环境阻塞项）"
 phase_summary: >
-  Round 103 完成二轮全仓逐行审计（基线 58b7819）：2095 活跃文件
-  /399,261 行全覆盖 reviewed；新发现 325 条（P0 1/P1 33/P2 108/
-  P3 183）全部闭环——FIXED 189 + DISPOSITIONED 136（p2p3-
-  dispositions.md 可对账），无 OPEN。根因三足鼎立：租户谓词缺失
+  Round 104 完成 NO-13ah（ADR-082）：Scheduling 数据页渲染 smoke
+  + 纯逻辑层（§17/§33）——schedulingLogic.ts 提取 8 纯函数 + 2
+  常量（formatTime/isPendingStatus/isPlanStaleError/buildPlan
+  Subtitle/buildMetricsSummary/filterPlansByStatus/aggregate
+  MutationErrors/buildRunSubtitle/STATUS_FILTERS/TRIGGER_LABELS）
+  + PlanCard 导出（纯展示组件）；测试：schedulingLogic.test.ts
+  21 例 + Scheduling.render.test.tsx 5 例 PlanCard 渲染 smoke
+  （mock React Query/API/图标/Toast）；client jest 131 suites/
+  1069 tests 全绿（+2 suites/+26 tests）、双 tsc PASS；无契约/
+  DB/服务端变更。§17 消费面补强（Scheduling 数据型页面第二项
+  渲染 smoke）。
   75（23%）+ schema/契约双口径漂移 58（17%）+ 幂等/CAS/事务边界
   52（16%）。关键修复：P0 R2-SMI-001 高危指令审批链接入
   ApprovalPersistenceService（INV-005）；幂等 claim/release
@@ -125,6 +132,20 @@ phase_summary: >
   398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
   feature-status 32/32、env-inventory 124/125。
 completed_capabilities:
+  - id: scheduling-page-render-smoke
+    summary: >
+      NO-13ah（Round 104 / ADR-082）：Scheduling 数据页渲染 smoke
+      + 纯逻辑层——schedulingLogic.ts 8 纯函数 + 2 常量（formatTime/
+      isPendingStatus/isPlanStaleError/buildPlanSubtitle/buildMetrics
+      Summary/filterPlansByStatus/aggregateMutationErrors/buildRun
+      Subtitle）+ PlanCard 导出（纯展示组件）；测试 21 逻辑 + 5
+      渲染 smoke；client jest +2 suites/+26 tests；§17 消费面补强
+    evidence:
+      - docs/decisions/ADR-082-scheduling-page-render-smoke.md
+      - ewoh-spark-app/client/src/pages/Scheduling/schedulingLogic.ts
+      - ewoh-spark-app/client/src/pages/Scheduling/schedulingLogic.test.ts
+      - ewoh-spark-app/client/src/pages/Scheduling/Scheduling.render.test.tsx
+      - ewoh-spark-app/client/src/pages/Scheduling/Scheduling.tsx
   - id: resource-service-drizzle
     summary: >
       NO-13af（Round 102 / ADR-081）：resource.service 完整 drizzle
@@ -2725,5 +2746,5 @@ next_objectives:
       已完成。每项按既有纪律：ADR → 契约/门禁 → 运行时 → Golden →
       §36 评估
 
-round_report_file: docs/audit/current/final-assessment.md  # Round 103 报告即二轮审计终评（16 份交付见 docs/audit/current/）
+round_report_file: docs/agent/round-reports/2026-08-16-round-104.md
 

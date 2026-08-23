@@ -121,8 +121,8 @@ function isPlanStaleError(err: unknown): boolean {
   return status === 409 && msg.includes('PLAN_STALE');
 }
 
-/** 单个方案卡片（LazyPlanList 的 renderItem 渲染体）。 */
-interface PlanCardProps {
+/** 单个方案卡片（LazyPlanList 的 renderItem 渲染体；ADR-082 导出供渲染 smoke）。 */
+export interface PlanCardProps {
   row: SchedulingPlanV2;
   actionFor: string | null;
   actionMode: 'approve' | 'reject';
@@ -139,7 +139,8 @@ interface PlanCardProps {
   onReplan: (row: SchedulingPlanV2) => void;
 }
 
-function PlanCard({
+/** ADR-082：导出供渲染 smoke 测试（纯展示，无内部状态）。 */
+export function PlanCard({
   row,
   actionFor,
   actionMode,
