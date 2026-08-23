@@ -17,6 +17,7 @@ describe('Redis 不可用（Task 15.3 fault-injection）', () => {
       getType: () => 'http',
       switchToHttp: () => ({
         getRequest: () => overrides,
+        getResponse: () => ({ setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() }),
       }),
     } as never;
   }

@@ -7,6 +7,7 @@ describe('rate limit guard (memory fallback)', () => {
       getType: () => 'http',
       switchToHttp: () => ({
         getRequest: () => overrides,
+        getResponse: () => ({ setHeader: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() }),
       }),
     } as never;
   }

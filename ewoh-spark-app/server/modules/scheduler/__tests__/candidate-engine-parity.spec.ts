@@ -88,14 +88,14 @@ function snapshot(): WorldStateSnapshot {
 
 describe('M02 #17 candidate-engine parity', () => {
   it('求解器注入 CandidateEngine 时消费 buildCandidatePool（不再内联自建）', async () => {
-    const { engine, policy } = makeEngine();
+    const { engine, policy, routeCostProvider } = makeEngine();
     const snap = snapshot();
     const spy = jest.spyOn(engine, 'buildCandidatePool');
 
     const solver = new HeuristicSchedulingSolver(
       policy as never,
       {} as never,
-      {} as never,
+      routeCostProvider as never,
       new EligibilityService(),
       undefined,
       undefined,
@@ -114,7 +114,7 @@ describe('M02 #17 candidate-engine parity', () => {
   });
 
   it('端点候选池与求解器候选池一致（同 snapshot+policy：身份集+eligible 对齐）', async () => {
-    const { engine, policy } = makeEngine();
+    const { engine, policy, routeCostProvider } = makeEngine();
     const snap = snapshot();
     const task = snap.tasks[0];
 
@@ -134,7 +134,7 @@ describe('M02 #17 candidate-engine parity', () => {
     const solver = new HeuristicSchedulingSolver(
       policy as never,
       {} as never,
-      {} as never,
+      routeCostProvider as never,
       new EligibilityService(),
       undefined,
       undefined,
