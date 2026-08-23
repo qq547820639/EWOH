@@ -24,6 +24,7 @@ import {
 import type { ReservationResult } from '../resource-reservation.service';
 
 const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 
 function personRow(over: Record<string, unknown> = {}) {
   return {
@@ -106,7 +107,7 @@ describe('差异化新鲜度策略（FreshnessPolicy）', () => {
 
   it('不同资源类型使用不同阈值：same-age 的 device 为 STALE、person 为 FRESH', async () => {
     const now = Date.now();
-    // 统一 2 分钟龄：device:telemetry 阈值 60s → STALE；person:master 阈值 5min → FRESH。
+    // 统一 2 分钟龄：device:telemetry 阈值 60s → STALE；person:master 阈值 24h → FRESH。
     const age = 2 * MINUTE;
     const svc = makeSvc(
       [personRow({ id: 'P-MID', updatedAt: new Date(now - age) })],
@@ -130,15 +131,15 @@ describe('差异化新鲜度策略（FreshnessPolicy）', () => {
     expect(person.dataQuality).toBe('FRESH');
     // 各自命中差异化阈值（freshnessMs 来自策略，而非统一默认值）。
     expect(device.freshnessMs).toBe(1 * MINUTE);
-    expect(person.freshnessMs).toBe(5 * MINUTE);
-    expect(device.freshnessPolicyVersion).toBe(1);
-    expect(person.freshnessPolicyVersion).toBe(1);
+    expect(person.freshnessMs).toBe(24 * HOUR);
+    expect(device.freshnessPolicyVersion).toBe(2);
+    expect(person.freshnessPolicyVersion).toBe(2);
   });
 
   it('STALE 不被视为可派工：person→unavailable、device→offline', async () => {
     const now = Date.now();
     const svc = makeSvc(
-      [personRow({ id: 'P-STALE', updatedAt: new Date(now - 6 * MINUTE) })],
+      [personRow({ id: 'P-STALE', updatedAt: new Date(now - 25 * HOUR) })],
       [
         deviceRow({
           id: 'D-STALE',
