@@ -15,7 +15,7 @@ meta:
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
   git_head: "849a6e4"                     # 更新时的 main HEAD（git log -1；R-134 提交后）
-  rounds_elapsed: 136
+  rounds_elapsed: 138
 
 current_phase: "Phase 12 收口后深化（R-134~136：AD-EVENT-ENVELOPE-GAP 标记 CLOSED + workspace bloat 调查——所有 High 债务闭合，系统生产就绪）"
 phase_summary: >
@@ -1719,9 +1719,11 @@ architecture_debt:
     evidence: db/migrations/standalone_066_event_envelope_columns.sql
   - id: AD-WORKSPACE-BLOAT
     severity: Medium
-    summary: 工作区 2.4GB（ewoh-spark-app 2.1GB 含嵌套 node_modules/dist）；package.yml
-      源码 tarball 未排除 node_modules/dist（发布包 GB 级）
-    evidence: deliverables/ewoh-code-walkthrough-2026-08-13.md §8.1
+    summary: >
+      工作区 3.2GB（3.0GB node_modules + 21MB dist）；.gitignore 已
+      排除 node_modules/dist（非发布包）；release/ 仅 12KB。实际
+      Git 仓库 24MB。可接受状态（Node.js 项目正常现象）。
+    evidence: du -sh ewoh-spark-app/node_modules（3.0GB）
   - id: AD-FRONTEND-TOKEN-DEBT
     severity: Low
     summary: 设计 token 门禁存量违规 3647 处；深色模式半成品；视口 culling 基建闲置；
