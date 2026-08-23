@@ -207,6 +207,13 @@ export class RuleEngineService {
         title,
         status: 'open',
         createdAt: now,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: now,
+        receivedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         sourceType,
         triggerRecordId: row.recordId ?? null,
         // NEST-621：事件显式 orgId（缺省依赖 GUC 默认，不再写 NULL 全局行）。

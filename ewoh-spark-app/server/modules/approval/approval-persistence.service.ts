@@ -193,6 +193,13 @@ export class ApprovalPersistenceService {
         title: `Approval for ${entityType} ${entityId}`,
         status: 'pending',
         createdAt: now,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: now,
+        receivedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         sourceType: 'approval',
         // NEST-401：写入显式携带 orgId。
         orgId,

@@ -1345,6 +1345,13 @@ export class MesService {
         createdAt: new Date(),
         sourceType: 'real',
         orgId,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: new Date(),
+        receivedAt: new Date(),
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         evidenceJson: {
           workOrderId: orderId,
           stepId: body.stepId,

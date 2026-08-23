@@ -269,7 +269,31 @@ export class DeadLetterService {
       sourceType: 'reliability',
       orgId,
       createdAt: now,
-      evidenceJson: {
+      
+      // ADR-009 / standalone_066: Event Envelope
+
+      occurredAt: now,
+
+      // ADR-009 / standalone_066: Event Envelope
+
+      receivedAt: now,
+
+      // ADR-009 / standalone_066: Event Envelope
+
+      schemaVersion: '1.0.0',
+
+      // ADR-009 / standalone_066: Event Envelope
+
+      correlationId: null,
+
+      // ADR-009 / standalone_066: Event Envelope
+
+      causationId: null,
+
+      // ADR-009 / standalone_066: Event Envelope
+
+      confidence: null,
+evidenceJson: {
         letterId: row.letterId,
         sourceId: row.sourceId,
         reason: row.reason,

@@ -583,6 +583,16 @@ export class IngestService {
           sourceType: 'real',
           orgId,
           evidenceJson,
+          // ADR-009 / standalone_066：Event Envelope 字段持久化。
+          occurredAt: Number.isNaN(occurredAt.getTime()) ? null : occurredAt,
+          receivedAt: now,
+          schemaVersion: '1.0.0',
+          correlationId: (envelope as unknown as Record<string, unknown>).correlationId != null
+            ? String((envelope as unknown as Record<string, unknown>).correlationId) : null,
+          causationId: (envelope as unknown as Record<string, unknown>).causationId != null
+            ? String((envelope as unknown as Record<string, unknown>).causationId) : null,
+          confidence: (envelope as unknown as Record<string, unknown>).confidence != null
+            ? String((envelope as unknown as Record<string, unknown>).confidence) : null,
         });
       } catch (error) {
         this.logger.error(
@@ -1289,6 +1299,14 @@ export class IngestService {
         createdAt: now,
         sourceType,
         triggerRecordId: recordId,
+        // ADR-009 / standalone_066：Event Envelope 字段持久化。
+        occurredAt: now,
+        receivedAt: now,
+        observedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         evidenceJson: {
           ...evidence,
           device_id: deviceId,

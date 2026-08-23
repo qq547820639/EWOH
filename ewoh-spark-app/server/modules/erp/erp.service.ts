@@ -120,6 +120,13 @@ export class ErpService {
         title: `ERP订单 ${body.externalOrderId}`,
         status: 'received',
         createdAt: now,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: now,
+        receivedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         sourceType: 'real',
         // NEST-406：写入显式携带 orgId。
         orgId,

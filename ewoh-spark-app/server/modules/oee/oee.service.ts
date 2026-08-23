@@ -202,6 +202,13 @@ export class OeeService {
         title: `设备状态-${body.status}`,
         status: 'closed',
         createdAt: startedAt,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: startedAt,
+        receivedAt: new Date(),
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         sourceType: body.sourceType ?? 'simulated',
         orgId,
         evidenceJson,

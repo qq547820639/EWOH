@@ -893,6 +893,21 @@ export const ewohEvent = pgTable("ewoh_event", {
    * 证据快照（触发时关键指标）
    */
   evidenceJson: jsonb("evidence_json"),
+  /** Event Envelope 字段（standalone_066, ADR-009/§5）：全链路强制。 */
+  /** 事件发生时间（ADR-009 occurredAt；边缘设备时钟；NULL=边缘未上行）。 */
+  occurredAt: customTimestamptz("occurred_at", { precision: 6 }),
+  /** 事件观察时间（ADR-009 observedAt；边缘接收时间）。 */
+  observedAt: customTimestamptz("observed_at", { precision: 6 }),
+  /** 云端接收时间（ADR-009 receivedAt；ingest 写入时 now()）。 */
+  receivedAt: customTimestamptz("received_at", { precision: 6 }),
+  /** 引起本事件的事件 ID（ADR-009 causationId；因果链追踪）。 */
+  causationId: varchar("causation_id", { length: 255 }),
+  /** 关联事件组 ID（ADR-009 correlationId；同一流程所有事件共享）。 */
+  correlationId: varchar("correlation_id", { length: 255 }),
+  /** 事件置信度（ADR-009 confidence；0-1 范围；NULL=未声明）。 */
+  confidence: numeric("confidence", { precision: 5, scale: 4 }),
+  /** 事件模式版本（ADR-009 schemaVersion；1.0.0）。 */
+  schemaVersion: varchar("schema_version", { length: 50 }),
   orgId: varchar("org_id", { length: 255 }),
   // System field: Update time (auto-filled, do not modify)
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),

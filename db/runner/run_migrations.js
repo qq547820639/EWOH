@@ -191,6 +191,12 @@ const FILES = {
   standalone_plan_narration: path.join(root, 'db/migrations/standalone_064_plan_narration.sql'),
   standalone_plan_narration_rollback: path.join(root, 'db/migrations/standalone_064_plan_narration.rollback.sql'),
   standalone_plan_narration_verify: path.join(root, 'db/verify/standalone_064_plan_narration.verify.sql'),
+  standalone_audit_log_authenticated_read: path.join(root, 'db/migrations/standalone_065_audit_log_authenticated_read.sql'),
+  standalone_audit_log_authenticated_read_rollback: path.join(root, 'db/migrations/standalone_065_audit_log_authenticated_read.rollback.sql'),
+  standalone_audit_log_authenticated_read_verify: path.join(root, 'db/verify/standalone_065_audit_log_authenticated_read.verify.sql'),
+  standalone_event_envelope_columns: path.join(root, 'db/migrations/standalone_066_event_envelope_columns.sql'),
+  standalone_event_envelope_columns_rollback: path.join(root, 'db/migrations/standalone_066_event_envelope_columns.rollback.sql'),
+  standalone_event_envelope_columns_verify: path.join(root, 'db/verify/standalone_066_event_envelope_columns.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -507,6 +513,8 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-telemetry-org-ts-index': ['standalone_telemetry_org_ts_index_verify', 'standalone_061_verified', 'standalone_061 telemetry org ts index ((org_id, ts DESC) 复合索引 + 列序自证)'],
   '--verify-standalone-route-edge-status-check': ['standalone_route_edge_status_check_verify', 'standalone_062_verified', 'standalone_062 route edge status check (CHECK route_edge_status_valid + 存量归一自证)'],
   '--verify-standalone-plan-narration': ['standalone_plan_narration_verify', 'standalone_064_verified', 'standalone_064 plan narration (ai_narration text + narration_source varchar(32) 双列存在自证)'],
+  '--verify-standalone-audit-log-authenticated-read': ['standalone_audit_log_authenticated_read_verify', 'standalone_065_verified', 'standalone_065 audit log authenticated read (ewoh_audit_select_authenticated policy + GRANT SELECT TO authenticated + service_role policy preserved)'],
+  '--verify-standalone-event-envelope-columns': ['standalone_event_envelope_columns_verify', 'standalone_066_verified', 'standalone_066 event envelope columns (occurred_at/observed_at/received_at/causation_id/correlation_id/confidence/schema_version on ewoh_event + indexes)'],
   // 审计 SQL-103（2026-08-17）补齐的 5 个缺失 verify 脚本，同为单字段断言形态。
   '--verify-users': ['users_verify', 'users_verified', '002_ewoh_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
   '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
@@ -1471,6 +1479,10 @@ function main() {
       '--rollback-standalone-ai-suggestion-title-width': 'standalone_ai_suggestion_title_width_rollback',
       '--apply-standalone-plan-narration': 'standalone_plan_narration',
       '--rollback-standalone-plan-narration': 'standalone_plan_narration_rollback',
+      '--apply-standalone-audit-log-authenticated-read': 'standalone_audit_log_authenticated_read',
+      '--rollback-standalone-audit-log-authenticated-read': 'standalone_audit_log_authenticated_read_rollback',
+      '--apply-standalone-event-envelope-columns': 'standalone_event_envelope_columns',
+      '--rollback-standalone-event-envelope-columns': 'standalone_event_envelope_columns_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {

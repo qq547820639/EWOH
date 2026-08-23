@@ -44,6 +44,8 @@ STANDALONE_SUFFIXES=(
   learning-proposal-decision
   policy-activation-decision
   route-org-isolation
+  audit-log-authenticated-read
+  event-envelope-columns
 )
 
 apply_and_verify() {

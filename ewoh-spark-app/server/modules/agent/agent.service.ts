@@ -811,6 +811,13 @@ export class AgentService {
         title: `agent:${full.role ?? ''} ${input.command} ${outcome}`,
         status: 'open',
         createdAt: now,
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: now,
+        receivedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
         sourceType: 'real',
         orgId,
         evidenceJson: {

@@ -702,6 +702,13 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
       status: 'open',
       createdAt: now,
       sourceType: 'simulated',
+        // ADR-009 / standalone_066: Event Envelope fields.
+        occurredAt: now,
+        receivedAt: now,
+        schemaVersion: '1.0.0',
+        correlationId: null,
+        causationId: null,
+        confidence: null,
       orgId,
       evidenceJson: { simulator_event: true, device_id: params.deviceId },
     });

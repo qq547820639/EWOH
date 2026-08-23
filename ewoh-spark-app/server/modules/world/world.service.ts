@@ -629,6 +629,13 @@ export class WorldService {
       status: 'open',
       createdAt,
       sourceType: 'replayed',
+      // ADR-009 / standalone_066: Event Envelope fields.
+      occurredAt: createdAt,
+      receivedAt: new Date(),
+      schemaVersion: '1.0.0',
+      correlationId: null,
+      causationId: null,
+      confidence: null,
       orgId,
       evidenceJson: {
         sourceEventId: body.eventId,

@@ -504,6 +504,32 @@ jobs:
           node db/runner/run_migrations.js --apply-standalone-route-org-isolation
           node db/runner/run_migrations.js --verify-standalone-route-org-isolation
 
+      - name: "Audit log authenticated read (standalone_065: apply, verify, rollback, re-apply)"
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-audit-log-authenticated-read
+          node db/runner/run_migrations.js --verify-standalone-audit-log-authenticated-read
+          node db/runner/run_migrations.js --rollback-standalone-audit-log-authenticated-read
+          node db/runner/run_migrations.js --apply-standalone-audit-log-authenticated-read
+          node db/runner/run_migrations.js --apply-standalone-audit-log-authenticated-read
+          node db/runner/run_migrations.js --verify-standalone-audit-log-authenticated-read
+
+      - name: "Event envelope columns (standalone_066: apply, verify, rollback, re-apply)"
+        env:
+          EWOH_DATABASE_URL: postgresql://postgres:ewoh-ci-owner-only@127.0.0.1:5432/ewoh
+          EWOH_ALLOW_DDL: "1"
+          EWOH_ALLOW_DESTRUCTIVE_ROLLBACK: "1"
+        run: |
+          node db/runner/run_migrations.js --apply-standalone-event-envelope-columns
+          node db/runner/run_migrations.js --verify-standalone-event-envelope-columns
+          node db/runner/run_migrations.js --rollback-standalone-event-envelope-columns
+          node db/runner/run_migrations.js --apply-standalone-event-envelope-columns
+          node db/runner/run_migrations.js --apply-standalone-event-envelope-columns
+          node db/runner/run_migrations.js --verify-standalone-event-envelope-columns
+
       - name: "Learning proposal decision column (ADR-063/NO-13n: apply, verify, rollback, re-apply)"
         # ewoh_learning_proposal += decision_json jsonb（既有受管表原地加固，计数不变
         # 74/77）：learning_proposal_activation DecisionRecord 持久化（ADR-047 契约形态，

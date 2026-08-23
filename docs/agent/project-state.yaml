@@ -14,14 +14,19 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "7d83c35"                     # 更新时的 main HEAD（git log -1；R-121 提交后）
-  rounds_elapsed: 121
+  git_head: "72f47d2"                     # 更新时的 main HEAD（git log -1；未提交变更在工作区）
+  rounds_elapsed: 128
 
-current_phase: "Phase 12 收口后深化（R-121~122：§17 全量覆盖确认 + 架构深化评估——所有主要数据页逻辑层已覆盖，CP-SAT 环境阻塞）"
+current_phase: "Phase 12 收口后深化（R-128：Event Envelope 全量持久化——25/25 事件写入路径全覆盖，AD-EVENT-ENVELOPE-GAP High 债务闭合）"
 phase_summary: >
-  Round 121 确认 §17 消费面全量覆盖：13 页面逻辑层 + 4 渲染 smoke。
-  AiDecision/DigitalWorld/ModelManagement 极小页面无纯逻辑可提取。
-  default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
+  Round 128 完成 Event Envelope 全量持久化（25/25 事件写入路径
+  全覆盖）：ingest 双路径（R-126）+ identity/quality/gamification/
+  learning/exo/simulation/oee/world/mes/agent/rule-engine/workorder/
+  knowledge/simulator/dead-letter/inference/maintenance/erp/approval
+  共 23 服务 25 处 insert(ewohEvent) 全部补全 occurredAt/receivedAt/
+  schemaVersion/correlationId/causationId/confidence 六字段。
+  server tsc PASS、default jest 290/2250 全绿、client jest 138/1173
+  全绿。AD-EVENT-ENVELOPE-GAP（High）债务闭合。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
@@ -132,6 +137,21 @@ phase_summary: >
   398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
   feature-status 32/32、env-inventory 124/125。
 completed_capabilities:
+  - id: audit-log-authenticated-read
+    summary: >
+      Round 122（standalone_065）：ewoh_audit_log 认证读策略（§15 第 12 波）
+      ——ewoh_audit_select_authenticated RLS policy（FOR SELECT TO
+      authenticated USING ewoh_org_visible(org_id) OR global_admin）+
+      GRANT SELECT TO authenticated + service_role 原有策略保留；
+      迁移锁步完整（.sql + .rollback.sql + .verify.sql + runner +
+      standalone-postgres-check.sh + CI standalone.yml）
+    evidence:
+      - db/migrations/standalone_065_audit_log_authenticated_read.sql
+      - db/migrations/standalone_065_audit_log_authenticated_read.rollback.sql
+      - db/verify/standalone_065_audit_log_authenticated_read.verify.sql
+      - db/runner/run_migrations.js（注册）
+      - scripts/standalone-postgres-check.sh（STANDALONE_SUFFIXES）
+      - .github/workflows/standalone.yml（CI 步骤）
   - id: operations-logic-layer
     summary: >
       Round 115（ADR-087）：Operations 数据页纯逻辑层——operationsLogic.ts
