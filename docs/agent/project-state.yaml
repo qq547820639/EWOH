@@ -14,15 +14,17 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "21b4727"                     # 更新时的 main HEAD（git log -1；R-117 提交后）
-  rounds_elapsed: 117
+  git_head: "fb69d59"                     # 更新时的 main HEAD（git log -1；R-118 全绿里程碑后）
+  rounds_elapsed: 118
 
-current_phase: "Phase 12 收口后深化（R-117：Scale 纯逻辑层 ADR-088；R-118：repo-facts 最后 1 项环境失败修复——release bundle 结构补全）"
+current_phase: "Phase 12 收口后深化（R-118：default jest 290/290 全绿里程碑 + release bundle 结构补全；R-119：System 数据页纯逻辑层——§17 消费面补强第 9 项）"
 phase_summary: >
-  Round 117 完成 Scale 数据页纯逻辑层（ADR-088）+ 13 例测试。
-  §17 消费面累计 8 页面纯逻辑层 + 2 渲染 smoke（+120 tests）。
-  default jest 289/290 绿（1 项 CI infra）、client jest 137/1156
-  全绿、双 tsc PASS。
+  Round 118 达成 default jest 290/290 全绿里程碑（首次！从 R-105
+  起点 19 failed suites / 60 failed tests 收口至 0/0）：release
+  bundle 结构补全（release-manifest.yaml + SHA256SUMS.txt）+
+  测试证据计数刷新。
+  default jest 290/2250 全绿、client jest 137/1156 全绿、
+  双 tsc PASS、全审计绿。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
