@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { EligibilityService } from '../eligibility.service';
 import { SolverService, type SolverConstraint, type SolveOptions } from '../solver.service';
 import { RoutingService } from '../routing.service';
@@ -475,20 +474,23 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
   it('快照仍新鲜时审批通过（不抛异常）', async () => {
     // 当前世界状态（空 person/task/device，仅 low open 事件）经 entityVersion
     // 序化得到的 safety 指纹，与快照捕获时刻一致 → 视为新鲜。
-    // NEST-149（2026-08-17）：entityVersion 哈希 djb2 → SHA-256 48-bit 折叠——
-    // 期望指纹按同一算法计算（非硬编码常量，防算法再漂移时假绿）。
+    // 性能优化（2026-08-21）：SHA-256 → FNV-1a 48-bit——期望指纹按同一算法计算。
+    function fnv1a48(str: string): number {
+      let h1 = 0x811c9dc5;
+      let h2 = 0x62b821d5;
+      for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        h1 ^= c; h1 = Math.imul(h1, 0x01000193);
+        h2 ^= c; h2 = Math.imul(h2, 0x01000193);
+      }
+      return ((h1 >>> 0) * 0x100000000 + (h2 >>> 0)) & 0xFFFFFFFFFFFF;
+    }
     const safetyObject = {
       safetyBlockedPersonIds: [],
       safetyBlockedDeviceIds: [],
       forbiddenZones: [],
     };
-    const safetyFingerprint = parseInt(
-      createHash('sha256')
-        .update(JSON.stringify(safetyObject))
-        .digest('hex')
-        .slice(0, 12),
-      16,
-    );
+    const safetyFingerprint = fnv1a48(JSON.stringify(safetyObject));
     const freshSnapshotRow = {
       snapshotVersion: 'WS-OLD',
       snapshotJson: {

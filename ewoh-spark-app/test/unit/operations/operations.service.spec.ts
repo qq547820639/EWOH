@@ -24,7 +24,8 @@ describe('operations state machines', () => {
     expect(nextMaintenanceTaskStatus('in_progress', 'complete')).toBe(
       'completed',
     );
-    expect(nextMaintenanceTaskStatus('planned', 'cancel')).toBe('cancelled');
+    // 方案C：取消=暂缓执行，回到 planned 可重新开工（审计 2026-08-19 变更）。
+    expect(nextMaintenanceTaskStatus('planned', 'cancel')).toBe('planned');
     expect(nextMaintenanceTaskStatus('completed', 'start')).toBeNull();
   });
 

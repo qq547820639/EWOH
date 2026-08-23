@@ -185,7 +185,7 @@ describe('Task 1: GET /api/scheduler/runs 分页运行历史 + 活跃方案', ()
     // 活跃方案经 planService.listPlansBatched 批量填充为 SchedulingPlanV2（R-5 N+1）
     expect(res.plans).toHaveLength(1);
     expect(res.plans[0].planId).toBe('PLAN-1');
-    expect(mocks.planService.listPlansBatched).toHaveBeenCalledWith(['PLAN-1']);
+    expect(mocks.planService.listPlansBatched).toHaveBeenCalledWith(['PLAN-1'], { slim: true });
   });
 
   it('第二页正确跳过前 offset 条', async () => {

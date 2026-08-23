@@ -28,6 +28,8 @@ describe('DeviceContractController', () => {
       'simulated',
       'A1',
       'battery',
+      undefined,
+      undefined,
       { userContext },
     );
     expect(service.getDevices).toHaveBeenCalledWith(
