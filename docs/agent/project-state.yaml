@@ -14,18 +14,15 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "cdfdcff"                     # 更新时的 main HEAD（git log -1；R-119 提交后）
-  rounds_elapsed: 119
+  git_head: "9cb16d8"                     # 更新时的 main HEAD（git log -1；R-120 提交后）
+  rounds_elapsed: 120
 
-current_phase: "Phase 12 收口后深化（R-118~119：default jest 全绿里程碑 + System 纯逻辑层——§17 消费面补强 10 项）"
+current_phase: "Phase 12 收口后深化（R-120~121：§17 消费面全量覆盖确认 + 走读后架构深化评估——所有主要数据页逻辑层已覆盖，剩余小页面/AiDecision/DigitalWorld/ModelManagement 极小量；CP-SAT 环境阻塞）"
 phase_summary: >
-  Round 118 达成 default jest 290/290 全绿里程碑（首次全绿！从 R-105
-  起点 19 failed suites / 60 failed tests 收口至 0/0）。
-  Round 119 完成 System 数据页纯逻辑层（ADR-089）+ 17 例测试。
-  §17 消费面累计 9 页面纯逻辑层 + 2 渲染 smoke（+137 tests）；
-  WorkOrchestration 已有 5 个提取模块 + 3 个测试文件（审计实现）；
-  MobileWorkbench 已有 labels/exceptionPayload/hooks。
-  default jest 290/2250 全绿、client jest 138/1173 全绿、
+  Round 120 确认 §17 消费面全量覆盖：13 页面逻辑层 + 4 渲染 smoke
+  （WorkOrchestration 已有 5 模块 + 3 测试、MobileWorkbench 已有
+  labels/hooks；仅 AiDecision/DigitalWorld/ModelManagement 极小页面
+  未提取）。default jest 290/2250 全绿、client jest 138/1173 全绿、
   双 tsc PASS、全审计绿。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
