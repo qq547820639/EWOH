@@ -1709,9 +1709,13 @@ architecture_debt:
     evidence: src/edge_platform/edge/adapters/{camera,environment,uwb}/adapter.py（基类）
   - id: AD-EVENT-ENVELOPE-GAP
     severity: High
-    summary: 统一 Event Envelope（occurred/observed/received/causation/correlation/confidence）
-      未全链路强制，云侧 ingest 去重与迟到语义不完整
-    evidence: contracts/events/event-catalog.yaml（类型级目录，缺 envelope 强约束）
+    summary: >
+      ~~统一 Event Envelope 未全链路强制~~ ✅ CLOSED (R-126~128)：
+      standalone_066 ewohEvent 表补全 7 列 + 25/25 事件写入路径
+      envelope 持久化（ingest 双路径 + 23 服务）。ingest 去重与
+      迟到语义已完整（ewoh_ingest_event_dedup org_id+source+event_id
+      + isLate/clockDrift）。
+    evidence: db/migrations/standalone_066_event_envelope_columns.sql
   - id: AD-WORKSPACE-BLOAT
     severity: Medium
     summary: 工作区 2.4GB（ewoh-spark-app 2.1GB 含嵌套 node_modules/dist）；package.yml
