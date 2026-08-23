@@ -93,11 +93,58 @@ CREATE TABLE ewoh_outcome_annotation (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- §15 租户隔离：RLS + org 可见性
+ALTER TABLE ewoh_outcome_annotation ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY ewoh_outcome_annotation_org_select
+  ON ewoh_outcome_annotation
+  FOR SELECT TO authenticated
+  USING (ewoh_org_visible(org_id));
+
+CREATE POLICY ewoh_outcome_annotation_service_all
+  ON ewoh_outcome_annotation
+  FOR ALL TO service_role
+  USING (ewoh_org_visible(org_id))
+  WITH CHECK (ewoh_org_visible(org_id));
+
+-- 索引
+CREATE INDEX idx_outcome_annotation_org_plan
+  ON ewoh_outcome_annotation (org_id, plan_id);
+CREATE INDEX idx_outcome_annotation_task
+  ON ewoh_outcome_annotation (org_id, task_id);
+CREATE INDEX idx_outcome_annotation_status
+  ON ewoh_outcome_annotation (org_id, completion_status);
 ```
+
+**迁移锁步**：作为 standalone_067 迁移（.sql + .rollback.sql + .verify.sql + runner 注册）。
 
 ## 3. 影子评估机制
 
-### 3.1 影子模型定义
+### 3.1 与现有 solver SHADOW 模式的关系
+
+**现有 SHADOW 模式**（`solver.service.ts`，`EWOH_SOLVER_ACTIVATION=SHADOW`）：
+- 同时运行 heuristic（生产）和 CP-SAT（影子）
+- 对比两者结果（分配数、成本、约束满足率）
+- 仅使用 heuristic 结果，CP-SAT 结果仅记录
+- **聚焦**：求解器算法对比（heuristic vs CP-SAT）
+
+**本文档的影子评估机制**：
+- 在现有 SHADOW 模式基础上扩展，增加 outcome annotation 数据采集
+- 不仅对比求解器算法，还对比**模型版本**（如 heuristic-v1 vs heuristic-v2）
+- 增加**长期效果评估**（调度结果 vs 实际执行结果）
+- **聚焦**：模型/算法的长期效果对比（含 outcome 反馈）
+
+**两者关系**：
+```
+现有 SHADOW 模式（solver.service.ts）
+  └── 求解器算法对比（heuristic vs CP-SAT）
+      └── 本文档影子评估（扩展）
+          ├── 模型版本对比（v1 vs v2）
+          └── 长期效果评估（outcome annotation）
+```
+
+### 3.2 影子模型定义
 
 影子模型 = 新模型/算法与现有模型并行运行，仅收集结果不实际执行。
 
@@ -117,14 +164,14 @@ CREATE TABLE ewoh_outcome_annotation (
 └─────────────────────┘
 ```
 
-### 3.2 评估流程
+### 3.3 评估流程
 
 1. **数据收集**：每次调度请求同时运行线上模型和影子模型
 2. **结果记录**：记录两者的结果（分配、成本、约束满足率）
 3. **定期对比**：每周生成对比报告
 4. **决策阈值**：影子模型优于线上模型 × 连续 N 周 → 考虑切换
 
-### 3.3 评估报告模板
+### 3.4 评估报告模板
 
 ```markdown
 # 影子评估报告 - [日期范围]
@@ -153,7 +200,7 @@ CREATE TABLE ewoh_outcome_annotation (
 - [ ] 终止评估
 ```
 
-### 3.4 决策阈值
+### 3.5 决策阈值
 
 | 条件 | 动作 |
 |------|------|

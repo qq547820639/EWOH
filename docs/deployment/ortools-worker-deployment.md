@@ -66,29 +66,121 @@ CP-SAT 代码已完备（`cp-sat-scheduling-solver.ts`），但需要 ortools wo
 
 ### 4.1 API 契约
 
+Worker 实现 `POST /solve` 端点，请求/响应格式与 NestJS 侧 `SolverRequest`/`SolverResponse` 接口对齐（`shared/scheduler.ts:354,483`）。
+
 **请求**（POST /solve）：
 ```json
 {
-  "request_id": "uuid",
-  "tasks": [...],
-  "resources": [...],
-  "constraints": [...],
-  "objective": {...},
-  "timeout_ms": 8000
+  "requestId": "550e8400-e29b-41d4-a716-446655440000",
+  "snapshotVersion": "snap-2026-08-24-001",
+  "policyVersion": 3,
+  "solverVersion": "cpsat-v1",
+  "horizonMinutes": 480,
+  "nowMs": 1724505600000,
+  "seed": 42,
+  "weights": {
+    "lateness": 1.0,
+    "travel": 0.3,
+    "workloadBalance": 0.5,
+    "stationWait": 0.2,
+    "changeCost": 0.1,
+    "risk": 0.8,
+    "energyRisk": 0.4,
+    "churn": 0.1
+  },
+  "tasks": [
+    {
+      "taskId": "task-001",
+      "priority": 1,
+      "earliestStartMs": 1724505600000,
+      "dueMs": 1724534400000,
+      "durationMs": 1800000,
+      "requiredSkills": ["welding"],
+      "requiredCertifications": ["safety-basic"],
+      "requiredDeviceCapabilities": [],
+      "candidateStationIds": ["station-a", "station-b"],
+      "zoneId": "zone-1",
+      "predecessorIds": [],
+      "safetyCritical": false,
+      "preemptible": true,
+      "skillMatchMode": "ALL",
+      "effectivePriorityScore": 2.5,
+      "mustFinishByMs": null
+    }
+  ],
+  "persons": [
+    {
+      "id": "worker-001",
+      "status": "available",
+      "locationStationId": "station-a",
+      "skills": ["welding", "assembly"],
+      "certifications": ["safety-basic"],
+      "currentFatigueScore": 0.3,
+      "maxConsecutiveMinutes": 480,
+      "alreadyAssignedMinutes": 0
+    }
+  ],
+  "stations": [
+    {
+      "id": "station-a",
+      "status": "available",
+      "zoneId": "zone-1",
+      "capabilities": ["welding"],
+      "currentLoad": 0
+    }
+  ],
+  "constraints": {
+    "hard": [
+      {"type": "skill_match", "description": "worker must have required skill"},
+      {"type": "certification_match", "description": "worker must have required certification"}
+    ],
+    "soft": [
+      {"type": "fatigue_limit", "description": "fatigue score < 0.8"},
+      {"type": "zone_proximity", "description": "prefer same zone"}
+    ]
+  }
 }
 ```
 
-**响应**：
+**响应**（SolverResponse）：
 ```json
 {
-  "request_id": "uuid",
-  "status": "OPTIMAL|FEASIBLE|INFEASIBLE|TIMEOUT",
-  "assignments": [...],
-  "score": 0.85,
-  "solver_time_ms": 1234,
-  "solver_version": "cpsat-v1"
+  "solverVersion": "cpsat-v1",
+  "solverStatus": "OPTIMAL",
+  "solveDurationMs": 1234,
+  "objective": 42.5,
+  "objectiveBreakdown": {
+    "lateness": 0,
+    "travel": 12.3,
+    "workloadBalance": 8.2,
+    "stationWait": 5.0,
+    "changeCost": 0,
+    "risk": 15.0,
+    "energyRisk": 2.0,
+    "churn": 0
+  },
+  "hardViolations": [],
+  "optimalityGap": 0.0,
+  "unassignedTaskIds": [],
+  "assignments": [
+    {
+      "taskId": "task-001",
+      "personId": "worker-001",
+      "deviceId": null,
+      "stationId": "station-a",
+      "startMs": 1724505600000,
+      "endMs": 1724507400000,
+      "reasons": ["skill_match", "same_zone", "low_fatigue"],
+      "rejectedAlternatives": []
+    }
+  ]
 }
 ```
+
+**说明**：
+- `solverStatus` 枚举：`OPTIMAL | FEASIBLE | INFEASIBLE | TIMEOUT | UNAVAILABLE`
+- `hardViolations` 非空时方案不可用，应拒绝
+- `unassignedTaskIds` 列出无法分配的任务（CP-SAT 求解器允许部分分配）
 
 ### 4.2 错误处理
 
@@ -106,7 +198,75 @@ CP-SAT 代码已完备（`cp-sat-scheduling-solver.ts`），但需要 ortools wo
 - 请求级超时：可通过 `timeout_ms` 参数覆盖
 - 超时后：回退到 heuristic 求解器
 
-## 5. 灰度切换方案
+## 5. Worker HTTP 服务实现指引
+
+### 5.1 最小实现（FastAPI + ortools）
+
+```python
+# worker/main.py
+from fastapi import FastAPI, HTTPException
+from ortools.sat.python import cp_model
+import uvicorn
+
+app = FastAPI()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "solver": "ortools-cpsat"}
+
+@app.post("/solve")
+async def solve(request: dict):
+    """CP-SAT 求解入口。"""
+    try:
+        model = cp_model.CpModel()
+        # ... 构建变量、约束、目标（参考 src/edge_platform/scheduler/cpsat/solver.py）
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = request.get("timeout_ms", 8000) / 1000
+        status = solver.Solve(model)
+        
+        return {
+            "solverVersion": "cpsat-v1",
+            "solverStatus": _map_status(status),
+            "solveDurationMs": int(solver.WallTime() * 1000),
+            "objective": solver.ObjectiveValue() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0,
+            "objectiveBreakdown": {},
+            "hardViolations": [],
+            "optimalityGap": solver.BestObjectiveBound() if status == cp_model.OPTIMAL else None,
+            "unassignedTaskIds": [],
+            "assignments": _extract_assignments(solver, request),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _map_status(status):
+    return {
+        cp_model.OPTIMAL: "OPTIMAL",
+        cp_model.FEASIBLE: "FEASIBLE",
+        cp_model.INFEASIBLE: "INFEASIBLE",
+    }.get(status, "TIMEOUT")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+### 5.2 Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+RUN pip install ortools fastapi uvicorn
+COPY worker/ /app/worker/
+COPY src/edge_platform/scheduler/cpsat/ /app/cpsat/
+WORKDIR /app
+CMD ["uvicorn", "worker.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### 5.3 与现有代码的关系
+
+- 现有 `src/edge_platform/scheduler/cpsat/solver.py` 包含 CP-SAT 求解逻辑
+- Worker HTTP 服务包装该逻辑为 REST API
+- NestJS 侧 `cp-sat-scheduling-solver.ts` 通过 `CPSAT_WORKER_URL` 调用 Worker
+
+## 6. 灰度切换方案
 
 ### 阶段 1：影子模式（Shadow）
 
@@ -139,8 +299,12 @@ CPSAT_WORKER_URL=http://ortools-worker:8000
 
 **行为**：
 - 10% 请求走 CP-SAT，90% 走 heuristic
-- 监控 CP-SAT 求解质量和延迟
-- 自动回退：熔断器打开时 100% 回退 heuristic
+- 分流机制（`solver.service.ts:318`）：
+  - 优先级 1：org allowlist 命中 → 100% 走 CP-SAT
+  - 优先级 2：确定性哈希 `(stableHash(orgId ?? planId) % 1000) / 1000 < canaryFraction` → 走 CP-SAT
+  - 未命中 → 走 heuristic
+  - 哈希保证同一 org/plan 的请求路由一致（可复现）
+- 熔断器打开时 100% 回退 heuristic
 
 **验证指标**：
 - CP-SAT 分配成本 ≤ heuristic 成本 × 1.1
