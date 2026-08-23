@@ -15,15 +15,15 @@ meta:
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
   git_head: "849a6e4"                     # 更新时的 main HEAD（git log -1；R-134 提交后）
-  rounds_elapsed: 141
+  rounds_elapsed: 145
 
-current_phase: "Phase 12 收口后深化（R-140~141：系统实质完成里程碑——54/56 Implemented，所有 High 债务闭合，所有 12 Phase 至少 Partial；仅剩 ortools 环境解锁 + scoped-assistant 原型）"
+current_phase: "系统实质完成（R-145 §36 自审全绿——54/56 Implemented，12/12 Phases，0 High 债务，所有门禁全绿）"
 phase_summary: >
-  Round 140~141 确认系统实质完成：能力矩阵 54/56 Implemented（96%），
-  所有 12 实施阶段至少 Partial（Phase 0~11 均 Implemented，Phase 12
-  Partial）。Agent Runtime（Phase 9）和 Event Backbone（Phase 4）
-  均已 Implemented。所有 High 债务闭合。default jest 290/2250 全绿、
-  client jest 138/1173 全绿、双 tsc PASS、全审计绿。
+  Round 145 完成 §36 自审：所有判据全绿（真实能力/生产调用链/
+  Contract/Event/World State/可解释/可审计/失败支持/重试/离线/
+  多租户/TCK/Golden Scenario）。系统实质完成：54/56 Implemented
+  （96%），12/12 Phases 至少 Partial，0 High 债务。剩余仅
+  ortools 环境解锁 + scoped-assistant 原型。目标阶段性完成。
   jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
