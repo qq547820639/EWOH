@@ -14,15 +14,21 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "771461c"                     # 更新时的 main HEAD（git log -1；R-105 提交后基线）
-  rounds_elapsed: 106
+  git_head: "dae6240"                     # 更新时的 main HEAD（git log -1；R-112 提交后）
+  rounds_elapsed: 112
 
-current_phase: "Phase 12 收口后深化（R-106：default jest 失败收口第二波——假库 thenable 链 + orderBy/limit 补全，17→14 suites / 26→16 tests；剩余 16 失败为 provider.estimate/mock 参数不匹配/行为不匹配）"
+current_phase: "Phase 12 收口后深化（R-107~112：default jest 失败收口 19→2 suites + 数据型页面纯逻辑层推广 Scheduling/Devices/Organization——§17 消费面补强 4 项）"
 phase_summary: >
-  Round 106 完成 default jest 失败收口第二波：6 个 scheduler
-  __tests__ 文件假库 thenable 链补全（resource-source/
-  resource-freshness/resource-state：makeChain() 统一
-  where/orderBy/limit 支持 ×3 文件 + conflict-lifecycle/
+  Round 107~110 完成 default jest 失败收口（19→2 failed suites / 60→2
+  failed tests，-17/-58）：假库 thenable 链 / mock 补全 / DI 修复 /
+  freshness 阈值对齐 / 行为语义变更对齐 / entityVersion 哈希 FNV-1a
+  对齐；剩余 2 失败为 CI 基础设施检查（release bundle checksums）。
+  Round 111 完成 Devices 数据页纯逻辑层（ADR-083）：devicesLogic.ts
+  6 纯函数 + 18 例测试；client jest +1/+18。
+  Round 112 完成 Organization 数据页纯逻辑层（ADR-084）：organization
+  Logic.ts 2 常量 + 3 纯函数 + 11 例测试；client jest +1/+11。
+  default jest 288/2248 全绿（2 项 CI infra）、client jest 133/1098
+  全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
   + world-state-db-failure：chain 对象补 orderBy/limit）。
   default jest 17→14 failed suites / 26→16 failed tests
@@ -131,6 +137,23 @@ phase_summary: >
   398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
   feature-status 32/32、env-inventory 124/125。
 completed_capabilities:
+  - id: devices-logic-layer
+    summary: >
+      Round 111（ADR-083）：Devices 数据页纯逻辑层——devicesLogic.ts
+      6 纯函数（batteryColor/isDataStale/buildDeviceSearchQuery/
+      buildBatteryChartData/buildEntityNameMap/SOURCE_LABELS）+
+      18 例测试；client jest +1/+18；§17 消费面补强
+    evidence:
+      - ewoh-spark-app/client/src/pages/Devices/devicesLogic.ts
+      - ewoh-spark-app/client/src/pages/Devices/devicesLogic.test.ts
+  - id: organization-logic-layer
+    summary: >
+      Round 112（ADR-084）：Organization 数据页纯逻辑层——organization
+      Logic.ts 2 常量 + 3 纯函数（orgTypeLabel/flattenTree/
+      canSubmitOrg）+ 11 例测试；client jest +1/+11；§17 消费面补强
+    evidence:
+      - ewoh-spark-app/client/src/pages/Organization/organizationLogic.ts
+      - ewoh-spark-app/client/src/pages/Organization/organizationLogic.test.ts
   - id: scheduling-page-render-smoke
     summary: >
       NO-13ah（Round 104 / ADR-082）：Scheduling 数据页渲染 smoke
