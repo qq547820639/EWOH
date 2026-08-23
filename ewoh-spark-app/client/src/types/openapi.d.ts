@@ -580,7 +580,35 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /** Create device */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateDeviceDto"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeviceInfo"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

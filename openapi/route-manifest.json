@@ -230,6 +230,7 @@
     "POST /api/dashboard/devices",
     "POST /api/dashboard/devices/{deviceId}/bindings",
     "POST /api/dashboard/events/{eventId}/handle",
+    "POST /api/devices",
     "POST /api/devices/{id}/bindings",
     "POST /api/erp/orders",
     "POST /api/erp/outbound",
@@ -632,6 +633,7 @@
     "POST /api/dashboard/devices",
     "POST /api/dashboard/devices/{deviceId}/bindings",
     "POST /api/dashboard/events/{eventId}/handle",
+    "POST /api/devices",
     "POST /api/devices/{id}/bindings",
     "POST /api/erp/orders",
     "POST /api/erp/outbound",
@@ -804,9 +806,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 400,
-  "specOperations": 593,
-  "documentedControllerOperations": 400,
+  "controllerOperations": 401,
+  "specOperations": 594,
+  "documentedControllerOperations": 401,
   "undocumented": [],
   "unimplemented": []
 }
