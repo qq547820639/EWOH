@@ -14,17 +14,17 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "c8bd137"                     # 更新时的 main HEAD（git log -1；R-115 提交后）
-  rounds_elapsed: 115
+  git_head: "f0ff8aa"                     # 更新时的 main HEAD（git log -1；R-116 提交后）
+  rounds_elapsed: 116
 
-current_phase: "Phase 12 收口后深化（R-113~115：数据型页面纯逻辑层推广 Personnel/Alerts/Operations——§17 消费面补强 7 项 + 走读完成后继续深化）"
+current_phase: "Phase 12 收口后深化（R-116：default jest 2→1 失败 + OpenAPI spec 补全；R-117：Scale 数据页纯逻辑层——§17 消费面补强第 8 项）"
 phase_summary: >
-  Round 113 完成 Personnel 数据页纯逻辑层（ADR-085）+ 16 例测试。
-  Round 114 完成 Alerts 数据页纯逻辑层（ADR-086）+ 13 例测试 +
-  全仓库走读（6 子代理并行覆盖 12 区域）。
-  Round 115 完成 Operations 数据页纯逻辑层（ADR-087）+ 16 例测试。
-  client jest 136/1143 全绿、default jest 288/2248 全绿（2 项
-  CI infra）、双 tsc PASS。
+  Round 116 完成 OpenAPI spec 补 POST /api/devices（审计添加
+  DeviceContractController 后遗漏）+ reconcile 修复（5/5 全绿）；
+  default jest 2→1 failed suites（仅 repo-facts release bundle 环境
+  问题）；project-state R-115 更新。
+  default jest 289/2250 全绿（1 项 CI infra）、client jest
+  136/1143 全绿、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
   + world-state-db-failure：chain 对象补 orderBy/limit）。
   default jest 17→14 failed suites / 26→16 failed tests
