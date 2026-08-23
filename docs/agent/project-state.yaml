@@ -14,19 +14,17 @@ meta:
   updated_at: "2026-08-18"
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
-  git_head: "5da8d2c"                     # 更新时的 main HEAD（git log -1；R-114 提交后）
-  rounds_elapsed: 114
+  git_head: "c8bd137"                     # 更新时的 main HEAD（git log -1；R-115 提交后）
+  rounds_elapsed: 115
 
-current_phase: "Phase 12 收口后深化（R-113~114：数据型页面纯逻辑层推广 Personnel/Alerts——§17 消费面补强 6 项 + 走读完成后继续深化）"
+current_phase: "Phase 12 收口后深化（R-113~115：数据型页面纯逻辑层推广 Personnel/Alerts/Operations——§17 消费面补强 7 项 + 走读完成后继续深化）"
 phase_summary: >
-  Round 113 完成 Personnel 数据页纯逻辑层（ADR-085）：personnelLogic.ts
-  3 常量 + 5 纯函数 + 16 例测试；client jest +1/+16。
-  Round 114 完成 Alerts 数据页纯逻辑层（ADR-086）：alertsLogic.ts
-  2 常量 + 3 纯函数 + 13 例测试；client jest +1/+13。
-  全仓库逐行走读完成（6 子代理并行覆盖服务端/合约/数据库/
-  Python/前端/脚本文档），产出结构化走读报告。
-  default jest 288/2248 全绿（2 项 CI infra）、client jest
-  135/1127 全绿、双 tsc PASS。
+  Round 113 完成 Personnel 数据页纯逻辑层（ADR-085）+ 16 例测试。
+  Round 114 完成 Alerts 数据页纯逻辑层（ADR-086）+ 13 例测试 +
+  全仓库走读（6 子代理并行覆盖 12 区域）。
+  Round 115 完成 Operations 数据页纯逻辑层（ADR-087）+ 16 例测试。
+  client jest 136/1143 全绿、default jest 288/2248 全绿（2 项
+  CI infra）、双 tsc PASS。
   conflict-query-readonly：ewohSchedulePlan 链补 limit
   + world-state-db-failure：chain 对象补 orderBy/limit）。
   default jest 17→14 failed suites / 26→16 failed tests
@@ -135,6 +133,15 @@ phase_summary: >
   398/590 零漂移、repo-facts 39/39、reconcile 6/6 computed=74、
   feature-status 32/32、env-inventory 124/125。
 completed_capabilities:
+  - id: operations-logic-layer
+    summary: >
+      Round 115（ADR-087）：Operations 数据页纯逻辑层——operationsLogic.ts
+      7 常量 + 7 纯函数（formatOpsTime/countActiveFlags/activeFlagLabels/
+      assetCategoryLabel/taskTypeLabel/taskPriorityLabel/calcEfficiencyPercent/
+      efficiencyGrade）+ 16 例测试；client jest +1/+16；§17 消费面补强
+    evidence:
+      - ewoh-spark-app/client/src/pages/Operations/operationsLogic.ts
+      - ewoh-spark-app/client/src/pages/Operations/operationsLogic.test.ts
   - id: alerts-logic-layer
     summary: >
       Round 114（ADR-086）：Alerts 数据页纯逻辑层——alertsLogic.ts
