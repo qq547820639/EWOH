@@ -15,15 +15,15 @@ meta:
   updated_by: "long-cycle-agent"
   version_baseline: "0.6.0-rc4"          # version.json
   git_head: "41da4a2"                     # 更新时的 main HEAD（git log -1；R-130 提交后）
-  rounds_elapsed: 132
+  rounds_elapsed: 133
 
-current_phase: "Phase 12 收口后深化（R-131~132：走读后架构深化评估——所有主要架构债务已闭合，系统生产就绪；剩余 CP-SAT 环境阻塞 + 大型架构任务）"
+current_phase: "Phase 12 收口后深化（R-133：CP-SAT solver 完整性确认——代码完备，env 激活阶梯 OFF/SHADOW/CANARY/PRODUCTION + 熔断器；需 ortools worker 部署解锁生产路径）"
 phase_summary: >
-  Round 131 完成全仓库走读后架构深化评估：所有主要架构债务
-  已闭合（AD-EVENT-ENVELOPE-GAP High ✅、raw-SQL 清零 ✅、
-  跨租户隔离 12 波 ✅、audit_log 认证读策略 ✅）。系统生产
-  就绪。default jest 290/2250 全绿、client jest 138/1173 全绿、
-  双 tsc PASS、全审计绿。
+  Round 133 确认 CP-SAT solver 代码完备性：cp-sat-scheduling-solver.ts
+  全路径已实现（EWOH_SOLVER_ACTIVATION 四阶梯 + 熔断器 + shadow
+  双跑对比 + 生产门控 EWOH_SOLVER_PRODUCTION_ENABLED）；剩余仅
+  ortools worker 二进制部署（环境解锁，非代码缺口）。default
+  jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 290/2250 全绿、client jest 138/1173 全绿、双 tsc PASS。
   default jest 289/2250 全绿（1 项 CI infra）、client jest
   136/1143 全绿、双 tsc PASS。
