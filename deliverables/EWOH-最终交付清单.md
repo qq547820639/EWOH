@@ -79,6 +79,7 @@ EWOH_SIMULATOR_DISABLED=1
 | `/health/live` | HTTP 200（进程存活） |
 | `/health/ready` | HTTP 200 + `{"status":"ok","service":"ewoh-api"}`（DB 可达门禁通过） |
 | 容器清单 | `ewoh-api:0.6.0-rc42` Up 5 days (healthy)；`ewoh-postgres`（postgres:17-alpine）Up 6 days (healthy)；`ewoh-redis`（redis:7-alpine）Up 6 days (healthy) |
+| 账号验证 | `POST /api/auth/login`（admin）实测通过：返回 accessToken + `global_admin` 角色（token 不落文档） |
 
 - 生产 `.env` 模拟器双保险实测在位（见 §三.1）。
 - 说明：本地 main 交付链（19 commit 审计整改）与在跑镜像 `0.6.0-rc42` 的代码
