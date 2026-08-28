@@ -10,7 +10,13 @@ import {
 } from '@server/database/schema';
 
 function createDispatchDb(planRows: unknown[], deviceRows: unknown[]) {
-  const updateWhere = jest.fn().mockResolvedValue([]);
+  // T4 CAS 加固（2026-08-28）：dispatchPlan 的状态更新改为
+  // where(confirmed).returning({id}) 形状（0 行 → 409 并发派工），
+  // where 需返回带 returning 的 builder；断言能力（toHaveBeenCalled）不变。
+  const updateReturning = jest.fn().mockResolvedValue([{ id: 'P-1' }]);
+  const updateWhere = jest.fn().mockImplementation(() => ({
+    returning: updateReturning,
+  }));
   const auditReturning = jest.fn().mockResolvedValue([
     { auditId: 'AUDIT-1', planId: 'P-1' },
   ]);

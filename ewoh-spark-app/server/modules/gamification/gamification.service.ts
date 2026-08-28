@@ -1,4 +1,4 @@
-import { Injectable, Inject, Optional, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ArkService } from '../ai/ark.service';
 import { SchedulerService } from '../scheduler/scheduler.service';
@@ -595,8 +595,9 @@ export class GamificationService {
               ? `下发冲突：${conflicts.join('; ')}`
               : req.executionNote ?? `方案下发执行`,
           createdAt: now,
-          // NEST-330：audit 行显式归属（actor org，缺省取方案行 org，不回退 NULL）。
-          orgId: actor?.primaryOrgId ?? existing.orgId ?? null,
+          // NEST-330（2026-08-28 闭合）：audit 行显式归属。schedule_plan.org_id
+          // 自 057 起 NOT NULL，去掉 null 回退（残留会写出无归属审计行）。
+          orgId: actor?.primaryOrgId ?? existing.orgId,
         })
         .returning();
 
@@ -613,10 +614,26 @@ export class GamificationService {
       }
 
       // 4. 无冲突，更新方案状态为 'dispatched'
-      await this.db
+      // T4 加固（2026-08-28，审计 R2-SBZ-014 闭合）：补 status CAS——
+      // 读-改-写窗口内并发 double-dispatch 时后到者 0 行命中 → 409，
+      // 与 plan.service dispatchPlanV2 的 approved→dispatched CAS 语义对齐。
+      // （完整收敛——本旁路委托 dispatchPlanV2 或删除——涉及 legacy
+      //   confirm 轨去留，待产品决策，见断点交接文档 §五。）
+      const dispatchedRows = await this.db
         .update(ewohSchedulePlan)
         .set({ status: 'dispatched' })
-        .where(eq(ewohSchedulePlan.planId, planId));
+        .where(
+          and(
+            eq(ewohSchedulePlan.planId, planId),
+            eq(ewohSchedulePlan.status, 'confirmed'),
+          ),
+        )
+        .returning({ id: ewohSchedulePlan.id });
+      if (dispatchedRows.length === 0) {
+        throw new ConflictException(
+          `Schedule plan ${planId} concurrently dispatched or no longer confirmed`,
+        );
+      }
 
       this.logger.log(`dispatchPlan planId=${planId} dispatched auditId=${auditRow.auditId}`);
 
