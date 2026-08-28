@@ -76,6 +76,9 @@ export interface ShadowCompareResult {
  */
 @Injectable()
 export class SolverService {
+  /** T10（审计批次 D）：缺省目标评估器单例（无注入时 rule-based/milp 共享同一实例）。 */
+  private static readonly defaultObjectiveEvaluator = new SchedulingObjectiveEvaluator();
+
   private readonly logger = new Logger(SolverService.name);
   private readonly heuristicSolver: HeuristicSchedulingSolver;
   private readonly cpSatSolver: CpSatSchedulingSolver;
@@ -120,13 +123,15 @@ export class SolverService {
     this.ruleBasedSolver = new RuleBasedSchedulingSolver(
       policyService,
       candidateEngine,
-      objectiveEvaluator ?? new SchedulingObjectiveEvaluator(),
+      // T10（审计批次 D）：缺省评估器收敛为单例——原先两个 `?? new` 各自实例化，
+      // 评估器一旦携带内部状态（缓存/计数）即产生双源漂移风险。
+      objectiveEvaluator ?? SolverService.defaultObjectiveEvaluator,
     );
     // NO-13i / ADR-058：MILP 求解器（HiGHS WASM 进程内；策略显式选择 milp-v1）。
     this.milpSolver = new MilpSchedulingSolver(
       policyService,
       candidateEngine,
-      objectiveEvaluator ?? new SchedulingObjectiveEvaluator(),
+      objectiveEvaluator ?? SolverService.defaultObjectiveEvaluator,
     );
   }
 
@@ -250,20 +255,49 @@ export class SolverService {
     let plan: SchedulingPlanV2;
     if (policy.solverVersion === RULE_BASED_SOLVER_VERSION) {
       activation = { state: 'RULE_BASED', canaryFraction: 0, orgAllowlist: [], orgAllowlisted: false };
-      plan = await this.ruleBasedSolver.solve(
-        snapshot,
-        this.toSchedulingConstraints(constraints),
-        opts,
-      );
+      try {
+        plan = await this.ruleBasedSolver.solve(
+          snapshot,
+          this.toSchedulingConstraints(constraints),
+          opts,
+        );
+      } catch (err) {
+        // T10（审计批次 D）：统一回退语义——策略声明求解器基础设施性失败 →
+        // 显式记录并回退 heuristic（与 CP-SAT 采样路径同语义；不再是"静默
+        // 把异常抛给调用方"）。回退方案 solverStatus=HEURISTIC 如实标记生产者。
+        this.logger.warn(
+          `策略声明 rule-based-v1 求解失败，显式回退 heuristic：planId=${opts.planId}，${err instanceof Error ? err.message : String(err)}`,
+        );
+        plan = await this.heuristicSolver.solve(
+          snapshot,
+          this.toSchedulingConstraints(constraints),
+          opts,
+        );
+      }
     } else if (policy.solverVersion === MILP_SOLVER_VERSION) {
-      // NO-13i / ADR-058：MILP 显式策略选择（差异边界 §9——不参与 CP-SAT 激活阶梯，
-      // 亦不隐式回退；solverActivation 如实标记 MILP）。
+      // NO-13i / ADR-058：MILP 显式策略选择（不参与 CP-SAT 激活阶梯；
+      // solverActivation 如实标记 MILP）。
+      // T10（审计批次 D）：回退语义与 CP-SAT 采样路径统一——MILP 失败模式均为
+      // 基础设施/实现缺陷类（HiGHS WASM 加载失败、非 Optimal 实现缺陷，见
+      // milp-scheduling-solver.ts §33 注释），非"问题不可行"判定，故显式回退
+      // heuristic 并留痕（原实现异常直抛调用方，与 cp-sat 的回退语义不一致）。
       activation = { state: 'MILP', canaryFraction: 0, orgAllowlist: [], orgAllowlisted: false };
-      plan = await this.milpSolver.solve(
-        snapshot,
-        this.toSchedulingConstraints(constraints),
-        opts,
-      );
+      try {
+        plan = await this.milpSolver.solve(
+          snapshot,
+          this.toSchedulingConstraints(constraints),
+          opts,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `策略声明 milp-v1 求解失败，显式回退 heuristic：planId=${opts.planId}，${err instanceof Error ? err.message : String(err)}`,
+        );
+        plan = await this.heuristicSolver.solve(
+          snapshot,
+          this.toSchedulingConstraints(constraints),
+          opts,
+        );
+      }
     } else {
       activation = await this.resolveActivation(opts);
       plan = await this.runByActivation(activation, snapshot, constraints, opts);

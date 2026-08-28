@@ -14,6 +14,8 @@
 /// <reference types="jest" />
 import type { SolverResponse } from '@shared/api.interface';
 import { ShadowEvaluatorService } from '../prediction/shadow-evaluator.service';
+import { MILP_SOLVER_VERSION } from '../milp-scheduling-solver';
+import { RULE_BASED_SOLVER_VERSION } from '../rule-based-scheduling-solver';
 import {
   person as seedPerson,
   task as seedTask,
@@ -299,5 +301,42 @@ describe('SolverService 激活阶梯（Task A / P0）', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(plan.solverStatus).toBe('HEURISTIC');
     expect(activationOf(plan).state).toBe('OFF');
+  });
+
+  // T10（审计批次 D）：统一回退语义——策略声明求解器基础设施性失败 → 显式
+  // 记录并回退 heuristic（与 CP-SAT 采样路径同语义；solverStatus 如实标记
+  // HEURISTIC 生产者，solverActivation 审计仍如实标记声明轨道）。
+  it('T10 统一回退：策略声明 milp-v1 且 MILP 基础设施失败 → 显式回退 heuristic（activation 仍标 MILP）', async () => {
+    const { solver } = makeSolver();
+    const milpStub = {
+      solve: jest.fn().mockRejectedValue(new Error('milp-v1: HiGHS WASM 加载失败')),
+    };
+    (solver as unknown as { milpSolver: unknown }).milpSolver = milpStub;
+
+    const plan = await solver.solve(snapshot, [], {
+      ...opts,
+      policy: { ...opts.policy, solverVersion: MILP_SOLVER_VERSION },
+    });
+
+    expect(milpStub.solve).toHaveBeenCalledTimes(1);
+    expect(plan.solverStatus).toBe('HEURISTIC');
+    expect(activationOf(plan).state).toBe('MILP');
+  });
+
+  it('T10 统一回退：策略声明 rule-based-v1 且求解异常 → 显式回退 heuristic（activation 仍标 RULE_BASED）', async () => {
+    const { solver } = makeSolver();
+    const ruleStub = {
+      solve: jest.fn().mockRejectedValue(new Error('rule-based-v1: 内部异常')),
+    };
+    (solver as unknown as { ruleBasedSolver: unknown }).ruleBasedSolver = ruleStub;
+
+    const plan = await solver.solve(snapshot, [], {
+      ...opts,
+      policy: { ...opts.policy, solverVersion: RULE_BASED_SOLVER_VERSION },
+    });
+
+    expect(ruleStub.solve).toHaveBeenCalledTimes(1);
+    expect(plan.solverStatus).toBe('HEURISTIC');
+    expect(activationOf(plan).state).toBe('RULE_BASED');
   });
 });
