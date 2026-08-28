@@ -186,7 +186,11 @@ describe('T02 / P0-2 constraint-run-loading', () => {
       const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
       const triggerService = { evaluate: jest.fn().mockResolvedValue({ runId: 'RUN-1', triggerType: 'MANUAL', triggerEntityId: null }) };
       const solverService = { solve: jest.fn(), solveVariants: jest.fn().mockResolvedValue([]) };
-      const worldStateSnapshotService = { buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()) };
+      // b9f406c：预览路径改用 buildSnapshotReadOnly（只读快照），mock 同步补齐。
+      const worldStateSnapshotService = {
+        buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
+        buildSnapshotReadOnly: jest.fn().mockResolvedValue(makeSnapshot()),
+      };
       const planService = { persistPlan: jest.fn().mockResolvedValue(undefined) };
       const policyService = { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() };
       const constraintLoader = new ConstraintLoaderService(
@@ -237,7 +241,11 @@ describe('T02 / P0-2 constraint-run-loading', () => {
       };
       const triggerService = { evaluate: jest.fn().mockResolvedValue({ runId: 'RUN-2', triggerType: 'DEVICE_OFFLINE', triggerEntityId: 'd9' }) };
       const solverService = { solve: jest.fn(), solveVariants: jest.fn().mockResolvedValue([]) };
-      const worldStateSnapshotService = { buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()) };
+      // b9f406c：预览路径改用 buildSnapshotReadOnly（只读快照），mock 同步补齐。
+      const worldStateSnapshotService = {
+        buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
+        buildSnapshotReadOnly: jest.fn().mockResolvedValue(makeSnapshot()),
+      };
       const planService = { persistPlan: jest.fn().mockResolvedValue(undefined) };
       const policyService = { getActivePolicy: jest.fn(), getPolicy: jest.fn(), getConfig: jest.fn(), getConfigByVersion: jest.fn() };
       const constraintLoader = new ConstraintLoaderService(
@@ -280,7 +288,11 @@ describe('T02 / P0-2 constraint-run-loading', () => {
         persistPlan: jest.fn(),
       };
       const planCompareService = { compare: jest.fn().mockReturnValue(null) };
-      const worldStateSnapshotService = { buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()) };
+      // b9f406c：预览路径改用 buildSnapshotReadOnly（只读快照），mock 同步补齐。
+      const worldStateSnapshotService = {
+        buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
+        buildSnapshotReadOnly: jest.fn().mockResolvedValue(makeSnapshot()),
+      };
       const replanCoordinator = {
         impactAnalysis: jest.fn().mockResolvedValue({ affectedTaskIds: ['t1'], frozenTaskIds: [], reason: 'test' }),
       };

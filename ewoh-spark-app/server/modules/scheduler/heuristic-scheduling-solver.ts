@@ -21,6 +21,7 @@ import { deviceCapabilityNames, personSkillNames } from './capability-projection
 import { RoutingService } from './routing.service';
 import { RouteCostProvider } from './route-cost.provider';
 import { createRouteCostMemo, type RouteCostMemo, type RouteCostMemoStats } from './route-cost-memo';
+import { SlotIndex, type DeviceSlot, type PersonSlot, type StationSlot } from './solver-resource-index';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import type { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TaskLifecycle } from './task-lifecycle';
@@ -132,9 +133,9 @@ interface ReuseContext {
   eligibleDeviceById: Map<string, EligibleDevice>;
   bookedPerson: Map<string, number>;
   bookedDevice: Map<string, number>;
-  personSlotsById: Map<string, Array<{ personId: string; start: number; end: number }>>;
-  deviceSlotsById: Map<string, Array<{ deviceId: string; start: number; end: number }>>;
-  stationSlotsById: Map<string, Array<{ stationId: string; start: number; end: number }>>;
+  personSlotsById: Map<string, SlotIndex<PersonSlot>>;
+  deviceSlotsById: Map<string, SlotIndex<DeviceSlot>>;
+  stationSlotsById: Map<string, SlotIndex<StationSlot>>;
   forbiddenZoneIds: string[];
   safetyBlockedPersonIds: string[];
   /** R2-SCH-006：其他任务已锁定人员（eligibility 5 同判据）。 */
@@ -597,6 +598,39 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     }> = [];
     // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
     const bookedStationCounts = new Map<string, number>();
+    // T9（审计批次 D）：资源维度槽位索引（SlotIndex：按 start 排序 + 前缀
+    // max(end) + 二分 overlap 判定）。原实现每任务从全量数组重建三 Map
+    // （O(T × S_total) 主导项）且每候选线性 .some() 扫描（O(C × k)）；现改为
+    // solve 开始构建一次 + 接受分配时增量 insert，查询 O(log k)。
+    // 语义等价性：overlap 存在性与遍历顺序无关；索引内容与「全量重建」在
+    // 每任务起点的集合完全一致（槽位只在任务间追加）。见 solver-resource-index.ts。
+    const personSlotsById = new Map<string, SlotIndex<PersonSlot>>();
+    for (const s of bookedPersonSlots) {
+      let idx = personSlotsById.get(s.personId);
+      if (!idx) {
+        idx = new SlotIndex<PersonSlot>();
+        personSlotsById.set(s.personId, idx);
+      }
+      idx.insert(s);
+    }
+    const deviceSlotsById = new Map<string, SlotIndex<DeviceSlot>>();
+    for (const s of bookedDeviceSlots) {
+      let idx = deviceSlotsById.get(s.deviceId);
+      if (!idx) {
+        idx = new SlotIndex<DeviceSlot>();
+        deviceSlotsById.set(s.deviceId, idx);
+      }
+      idx.insert(s);
+    }
+    const stationSlotsById = new Map<string, SlotIndex<StationSlot>>();
+    for (const s of bookedStationSlots) {
+      let idx = stationSlotsById.get(s.stationId);
+      if (!idx) {
+        idx = new SlotIndex<StationSlot>();
+        stationSlotsById.set(s.stationId, idx);
+      }
+      idx.insert(s);
+    }
 
     for (const { task, priority } of ranked) {
       // P0-3：due/lateness 语义分离（与 CP-SAT 一致：due 软、mustFinishBy 硬）。
@@ -675,45 +709,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       let mustFinishByViolated = false;
       let taskCandidateCount = 0;
       let taskRejectedTotal = 0;
-      // 当前已占用槽位 → 资源维度索引（每任务 O(S) 构建一次；
-      // eligibility 的 time_conflict/device_reserved/station_reserved 只需扫描
-      // 本资源槽位，避免每候选全量扫描——结果与全量扫描语义完全一致）。
-      const personSlotsById = new Map<
-        string,
-        Array<{ personId: string; start: number; end: number }>
-      >();
-      for (const s of bookedPersonSlots) {
-        let arr = personSlotsById.get(s.personId);
-        if (!arr) {
-          arr = [];
-          personSlotsById.set(s.personId, arr);
-        }
-        arr.push(s);
-      }
-      const deviceSlotsById = new Map<
-        string,
-        Array<{ deviceId: string; start: number; end: number }>
-      >();
-      for (const s of bookedDeviceSlots) {
-        let arr = deviceSlotsById.get(s.deviceId);
-        if (!arr) {
-          arr = [];
-          deviceSlotsById.set(s.deviceId, arr);
-        }
-        arr.push(s);
-      }
-      const stationSlotsById = new Map<
-        string,
-        Array<{ stationId: string; start: number; end: number }>
-      >();
-      for (const s of bookedStationSlots) {
-        let arr = stationSlotsById.get(s.stationId);
-        if (!arr) {
-          arr = [];
-          stationSlotsById.set(s.stationId, arr);
-        }
-        arr.push(s);
-      }
+      // 当前已占用槽位 → 资源维度索引（T9：已上移到 solve 顶部构建一次，
+      // 接受分配时增量维护——见 bookedStationCounts 附近的 SlotIndex 构建段）。
       // 候选设备集合（hoist 出 person 循环：devicesForTask 与 person/station 无关）。
       const deviceCandidates = this.deviceCandidatesForTask(
         task.id,
@@ -1043,9 +1040,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             // P0：资源占用冲突预筛（与 eligibility 4/4b/4c 同判据、同优先级顺序；
             // 命中即该组合必被 eligibility 拒绝——直接紧凑拒绝，跳过完整资格评估）。
             // 预筛只淘汰"必拒绝"组合，绝不改变可行集/argmin；计数与 eligibility 拒绝一致。
-            const personConflict = (
-              personSlotsById.get(person.id) ?? EMPTY_PERSON_SLOTS
-            ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+            const personIdx = personSlotsById.get(person.id);
+            const personConflict = personIdx !== undefined && personIdx.hasOverlap(startMs, endMs);
             if (personConflict) {
               hardRejectCount += 1;
               taskRejectedTotal += 1;
@@ -1058,9 +1054,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               continue;
             }
             if (device != null) {
-              const deviceConflict = (
-                deviceSlotsById.get(device.id) ?? EMPTY_DEVICE_SLOTS
-              ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+              const deviceConflict =
+                deviceSlotsById.get(device.id)?.hasOverlap(startMs, endMs) === true;
               if (deviceConflict) {
                 hardRejectCount += 1;
                 taskRejectedTotal += 1;
@@ -1074,9 +1069,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               }
             }
             if (stationId != null) {
-              const stationConflict = (
-                stationSlotsById.get(stationId) ?? EMPTY_STATION_SLOTS
-              ).some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs));
+              const stationConflict =
+                stationSlotsById.get(stationId)?.hasOverlap(startMs, endMs) === true;
               if (stationConflict) {
                 hardRejectCount += 1;
                 taskRejectedTotal += 1;
@@ -1099,14 +1093,15 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 // P0：资源维度槽位索引（每任务构建一次）——扫描范围从全量槽位
                 // 收窄到本资源槽位；eligibility 判定结果与全量扫描完全一致
                 // （time_conflict/device_reserved/station_reserved 均按资源 id 过滤）。
-                bookedTimeSlots: personSlotsById.get(person.id) ?? EMPTY_PERSON_SLOTS,
+                bookedTimeSlots:
+                  personSlotsById.get(person.id)?.slots() ?? EMPTY_PERSON_SLOTS,
                 bookedDeviceSlots:
                   device != null
-                    ? deviceSlotsById.get(device.id) ?? EMPTY_DEVICE_SLOTS
+                    ? deviceSlotsById.get(device.id)?.slots() ?? EMPTY_DEVICE_SLOTS
                     : EMPTY_DEVICE_SLOTS,
                 bookedStationSlots:
                   stationId != null
-                    ? stationSlotsById.get(stationId) ?? EMPTY_STATION_SLOTS
+                    ? stationSlotsById.get(stationId)?.slots() ?? EMPTY_STATION_SLOTS
                     : EMPTY_STATION_SLOTS,
                 lockedPersonIds,
                 forbiddenZones: forbiddenZoneIds,
@@ -1282,12 +1277,27 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         start: best.startMs,
         end: best.endMs,
       });
+      // T9：资源维度索引同步增量维护（查询 O(log k) 的前提）。
+      {
+        let idx = personSlotsById.get(best.personId);
+        if (!idx) {
+          idx = new SlotIndex<PersonSlot>();
+          personSlotsById.set(best.personId, idx);
+        }
+        idx.insert({ personId: best.personId, start: best.startMs, end: best.endMs });
+      }
       if (best.deviceId) {
         bookedDeviceSlots.push({
           deviceId: best.deviceId,
           start: best.startMs,
           end: best.endMs,
         });
+        let idx = deviceSlotsById.get(best.deviceId);
+        if (!idx) {
+          idx = new SlotIndex<DeviceSlot>();
+          deviceSlotsById.set(best.deviceId, idx);
+        }
+        idx.insert({ deviceId: best.deviceId, start: best.startMs, end: best.endMs });
       }
       if (best.stationId) {
         bookedStationSlots.push({
@@ -1295,6 +1305,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           start: best.startMs,
           end: best.endMs,
         });
+        let sIdx = stationSlotsById.get(best.stationId);
+        if (!sIdx) {
+          sIdx = new SlotIndex<StationSlot>();
+          stationSlotsById.set(best.stationId, sIdx);
+        }
+        sIdx.insert({ stationId: best.stationId, start: best.startMs, end: best.endMs });
         // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
         bookedStationCounts.set(
           best.stationId,
@@ -1835,17 +1851,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
 
     // 当前运行状态下的资源占用冲突。
     if (
-      (ctx.personSlotsById.get(person.id) ?? []).some((s) =>
-        this.intervalsOverlap(s.start, s.end, startMs, endMs),
-      )
+      ctx.personSlotsById.get(person.id)?.hasOverlap(startMs, endMs) === true
     ) {
       return null;
     }
     if (
       device &&
-      (ctx.deviceSlotsById.get(device.id) ?? []).some((s) =>
-        this.intervalsOverlap(s.start, s.end, startMs, endMs),
-      )
+      ctx.deviceSlotsById.get(device.id)?.hasOverlap(startMs, endMs) === true
     ) {
       return null;
     }
@@ -1877,12 +1889,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       device ? ctx.eligibleDeviceById.get(device.id)! : null,
       {
         now: ctx.now,
-        bookedTimeSlots: ctx.personSlotsById.get(person.id) ?? [],
+        bookedTimeSlots: ctx.personSlotsById.get(person.id)?.slots() ?? [],
         bookedDeviceSlots:
-          device != null ? ctx.deviceSlotsById.get(device.id) ?? [] : [],
+          device != null ? ctx.deviceSlotsById.get(device.id)?.slots() ?? [] : [],
         bookedStationSlots:
           entry.stationId != null
-            ? ctx.stationSlotsById.get(entry.stationId) ?? []
+            ? ctx.stationSlotsById.get(entry.stationId)?.slots() ?? []
             : [],
         lockedPersonIds: ctx.lockedPersonIds,
         forbiddenZones: ctx.forbiddenZoneIds,
@@ -1903,18 +1915,18 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     );
     if (!reuseEligibility.eligible) return null;
     if (entry.stationId) {
-      const stationSlots = ctx.stationSlotsById.get(entry.stationId) ?? [];
-      if (
-        stationSlots.some((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs))
-      ) {
+      const stationIdx = ctx.stationSlotsById.get(entry.stationId);
+      if (stationIdx?.hasOverlap(startMs, endMs) === true) {
         return null;
       }
       // 工位容量（与 eligibility 4f 语义一致：重叠任务数 >= capacity → 拒绝）。
+      // 容量计数需全量重叠数（非存在性），保持线性计数（工位槽位规模小）。
       const capacity = ctx.stationCapacityById.get(entry.stationId) ?? null;
-      if (capacity != null && capacity >= 0) {
-        const overlapCount = stationSlots.filter((s) =>
-          this.intervalsOverlap(s.start, s.end, startMs, endMs),
-        ).length;
+      if (capacity != null && capacity >= 0 && stationIdx != null) {
+        const overlapCount = stationIdx
+          .slots()
+          .filter((s) => this.intervalsOverlap(s.start, s.end, startMs, endMs))
+          .length;
         if (overlapCount >= capacity) return null;
       }
     }

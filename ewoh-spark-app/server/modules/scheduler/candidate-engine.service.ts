@@ -256,6 +256,29 @@ export class CandidateEngineService {
     const bookedDeviceSlots = opts.bookedDeviceSlots ?? [];
     const bookedStationSlots = opts.bookedStationSlots ?? [];
     const bookedStationCounts = opts.bookedStationCounts ?? new Map<string, number>();
+    // T9（审计批次 D）：按资源 id 一次性分组（原实现把全量槽位数组塞进每个
+    // 候选的 eligibility ctx，eligibility.slotIndexFor 对每个新 ctx 重新分组
+    // 全量数组 → O(C × S_total) 二次项）。改为每组一次、每候选只携带本资源
+    // 行：eligibility 的冲突判定按 personId/deviceId/stationId 取本资源槽位，
+    // 传入预分组行与传全量数组在 slotIndexFor 分组后集合完全一致（同果）。
+    const slotsByPerson = new Map<string, Array<{ personId: string; start: number; end: number }>>();
+    for (const s of bookedTimeSlots) {
+      const list = slotsByPerson.get(s.personId);
+      if (list) list.push(s);
+      else slotsByPerson.set(s.personId, [s]);
+    }
+    const slotsByDevice = new Map<string, Array<{ deviceId: string; start: number; end: number }>>();
+    for (const s of bookedDeviceSlots) {
+      const list = slotsByDevice.get(s.deviceId);
+      if (list) list.push(s);
+      else slotsByDevice.set(s.deviceId, [s]);
+    }
+    const slotsByStation = new Map<string, Array<{ stationId: string; start: number; end: number }>>();
+    for (const s of bookedStationSlots) {
+      const list = slotsByStation.get(s.stationId);
+      if (list) list.push(s);
+      else slotsByStation.set(s.stationId, [s]);
+    }
 
     const lockedPersonByTask = opts.lockedPersonByTask ?? new Map<string, string>();
     const lockedDeviceByTask = opts.lockedDeviceByTask ?? new Map<string, string>();
@@ -395,9 +418,15 @@ export class CandidateEngineService {
             device,
             ctx: {
               now: nowMs,
-              bookedTimeSlots,
-              bookedDeviceSlots,
-              bookedStationSlots,
+              // T9：每候选仅携带本资源槽位（见上方一次性分组注释）；
+              // eligibility 按 personId/deviceId/stationId 过滤 → 同果。
+              bookedTimeSlots: slotsByPerson.get(person.id) ?? [],
+              bookedDeviceSlots: device
+                ? slotsByDevice.get(device.id) ?? []
+                : [],
+              bookedStationSlots: (stationId ?? task.stationId)
+                ? slotsByStation.get((stationId ?? task.stationId) as string) ?? []
+                : [],
               lockedPersonIds: this.lockedPersonIdsForTask(snapshot, task.id),
               forbiddenZones,
               minBatteryPct: minBattery,
