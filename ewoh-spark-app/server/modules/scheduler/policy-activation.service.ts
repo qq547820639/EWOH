@@ -14,6 +14,7 @@ import type {
   PolicyGateEvaluation,
 } from '@shared/api.interface';
 import { PolicyReplayService } from './policy-replay.service';
+import { SchedulingPolicyService } from './scheduling-policy.service';
 import { KpiService } from './kpi.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
@@ -57,6 +58,10 @@ export class PolicyActivationService {
     @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
     // R2-SSV-24（2026-08-17）：rollback 审计留痕（@Optional 兼容直构测试）。
     @Optional() private readonly auditService?: AuditService,
+    // T8（2026-08-28）：activate/rollback 会改写 ewohSchedulingPolicy.active，
+    // 写后必须失效 SchedulingPolicyService 的 activeRowCache（30s TTL），
+    // 否则其它请求最长 30s 读到旧 active 策略。@Optional 保持直构测试兼容。
+    @Optional() private readonly policyService?: SchedulingPolicyService,
   ) {}
 
   /** 计算当前 Gate 配置（可扩展为持久化配置；当前用默认 + 环境覆盖）。 */
@@ -324,6 +329,11 @@ export class PolicyActivationService {
       });
     });
 
+    // T8（2026-08-28）：activate 事务内已改写 ewohSchedulingPolicy.active
+    // （归档旧 ACTIVE 行 + CAS 激活新行），写后主动失效 activeRowCache，
+    // 避免其它请求在 TTL 窗口内读到旧 active 策略。
+    this.policyService?.invalidateActiveRowCache(opts.orgId ?? null);
+
     try {
       this.metricsService.recordPolicyEvent('activation');
       await this.outboxService.enqueue(
@@ -433,6 +443,10 @@ export class PolicyActivationService {
           and(eq(ewohSchedulingPolicy.configVersion, target), policyOrgScope),
         );
     });
+
+    // T8（2026-08-28）：rollback 事务内已改写 ewohSchedulingPolicy.active
+    // （归档当前 ACTIVE + 重激活 rollback target），写后主动失效 activeRowCache。
+    this.policyService?.invalidateActiveRowCache(orgId);
 
     // R2-SSV-24（2026-08-17）：rollback 与 activate 对称留痕——outbox 事件
     // policy.rolled_back + 审计 + metrics（此前回滚在事件流/审计面不可见）。

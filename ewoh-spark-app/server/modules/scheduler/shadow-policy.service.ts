@@ -25,6 +25,7 @@ import { PlanCompareService } from './plan-compare.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { OutboxService } from './outbox.service';
 import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
+import { SchedulingPolicyService } from './scheduling-policy.service';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -54,6 +55,9 @@ export class ShadowPolicyService {
     @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
     // R2-SSV-03：shadow plan 落库与 isShadow 标记同事务（可空；直构测试回退补偿路径）。
     @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
+    // T8（2026-08-28）：setStatus 会改写 ewohSchedulingPolicy 行（status 字段），
+    // activeRowCache 缓存的是整行快照，写后需失效。@Optional 保持直构测试兼容。
+    @Optional() private readonly policyService?: SchedulingPolicyService,
   ) {}
 
   /**
@@ -95,6 +99,10 @@ export class ShadowPolicyService {
           ? and(eq(ewohSchedulingPolicy.configVersion, configVersion), orgScope)
           : eq(ewohSchedulingPolicy.configVersion, configVersion),
       );
+    // T8（2026-08-28）：activeRowCache 缓存的是整行快照（含 status），
+    // 本方法改写 status 后需失效，避免 TTL 窗口内读到旧行。orgId 提取
+    // 对齐 policyOrgScope（ctx.primaryOrgId）。
+    this.policyService?.invalidateActiveRowCache(ctx?.primaryOrgId?.trim() ?? null);
     void operator;
   }
 

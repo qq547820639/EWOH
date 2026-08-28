@@ -559,8 +559,14 @@ export class SchedulingPolicyService {
     return row;
   }
 
-  /** 主动失效 active policy 缓存（策略写入/激活时调用）。 */
-  private invalidateActiveRowCache(orgId?: string | null): void {
+  /**
+   * 主动失效 active policy 缓存（策略写入/激活时调用）。
+   * T8（2026-08-28）：改为 public——PolicyActivationService（activate/rollback）
+   * 与 ShadowPolicyService（setStatus）等跨服务写入方也会修改 ewohSchedulingPolicy，
+   * 写后必须失效本缓存，否则其它请求最长 30s（CACHE_TTL_MS）读到旧 active 行。
+   * 同类内的 save/activate 路径维持原调用。
+   */
+  public invalidateActiveRowCache(orgId?: string | null): void {
     // 失效指定 org + 全局（NULL）两条缓存
     if (orgId) this.activeRowCache.delete(orgId);
     this.activeRowCache.delete('__global__');
