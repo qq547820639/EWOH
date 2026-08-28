@@ -79,9 +79,34 @@ export function parsePageParam(raw: string | undefined, fallback = 1): number {
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
-  // 性能优化：dashboard/overview 5秒缓存（减少数据库查询频率）
-  private overviewCache: { data: OverviewStats; timestamp: number; orgKey: string } | null = null;
+  /**
+   * 性能优化：dashboard/overview 5秒缓存（减少数据库查询频率）。
+   *
+   * 按 orgKey 分桶（此前为单槽变量：任一 org 的请求都会覆盖上一条，
+   * 多租户交替访问时命中率趋近 0，"未命中"成为常态路径而非异常路径）。
+   * 写法对齐 SchedulingPolicyService 的 activeRowCache。
+   *
+   * 有界化：Map 无界会随租户数增长而泄漏，故设容量上限并在超限时
+   * 淘汰最老一半（Map 保持插入序，近似 LRU；同 SchedulerStreamService.SEEN_CAP 做法）。
+   */
+  private readonly overviewCache = new Map<
+    string,
+    { data: OverviewStats; timestamp: number }
+  >();
   private readonly OVERVIEW_CACHE_TTL_MS = 5000;
+  private static readonly OVERVIEW_CACHE_MAX_ORGS = 500;
+
+  /** 超限时淘汰最老一半，防止多租户下 Map 无界增长。 */
+  private evictOverviewCacheIfNeeded(): void {
+    const cache = this.overviewCache;
+    if (cache.size <= DashboardService.OVERVIEW_CACHE_MAX_ORGS) return;
+    const drop = Math.floor(cache.size / 2);
+    let i = 0;
+    for (const oldKey of cache.keys()) {
+      if (i++ >= drop) break;
+      cache.delete(oldKey);
+    }
+  }
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -121,8 +146,9 @@ export class DashboardService {
     // 性能优化：5秒缓存（仪表板数据实时性要求不高）
     const orgKey = actor?.primaryOrgId ?? 'global';
     const now = Date.now();
-    if (this.overviewCache && this.overviewCache.orgKey === orgKey && now - this.overviewCache.timestamp < this.OVERVIEW_CACHE_TTL_MS) {
-      return this.overviewCache.data;
+    const cached = this.overviewCache.get(orgKey);
+    if (cached && now - cached.timestamp < this.OVERVIEW_CACHE_TTL_MS) {
+      return cached.data;
     }
 
     try {
@@ -182,8 +208,9 @@ export class DashboardService {
         workerCount: workerStats?.[0]?.count ?? 0,
       };
 
-      // 更新缓存
-      this.overviewCache = { data: result, timestamp: now, orgKey };
+      // 更新缓存（按 orgKey 分桶；写入前做容量收敛）
+      this.evictOverviewCacheIfNeeded();
+      this.overviewCache.set(orgKey, { data: result, timestamp: now });
       return result;
     } catch (error) {
       this.logger.error('getOverview 失败', error);
