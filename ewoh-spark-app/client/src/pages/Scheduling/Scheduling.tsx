@@ -436,6 +436,16 @@ const Scheduling = (): React.ReactElement => {
     mutationFn: (plan: SchedulingPlanV2) => dispatchPlanV2(plan.planId, getCurrentOperator()),
     onSuccess: (plan) => {
       toast.success('方案已下发执行');
+      // T12-B（2026-08-28 审计）：dispatch 成功但 Execution 建档 3 次重试耗尽时，
+      // 响应携带 executionSync 降级警告（此前前端 0 消费 = 静默数据缺口）。
+      const executionSync = (
+        plan as SchedulingPlanV2 & { executionSync?: { ok: boolean; error: string } }
+      ).executionSync;
+      if (executionSync && executionSync.ok === false) {
+        toast.warning('方案已下发，但执行跟踪建档失败', {
+          description: executionSync.error,
+        });
+      }
       refreshPlan(plan);
     },
     onError: (err) => {
