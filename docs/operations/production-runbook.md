@@ -21,6 +21,13 @@ EWOH_RUNTIME_MODE=production EWOH_DB_PATH=/data/ewoh/edge.db python3 run.py --po
 # 验证：/api/status 的 rule_version 应为 risk-rule-v0.2（真实规则引擎，非 stub）
 ```
 
+> **禁止 `EWOH_EDGE_SCHEDULING_WRITE=1`（决策项 2 / T4 收敛配套）**
+> 正式调度（方案确认/派工）的写权限归 NestJS 控制面。Edge 侧该开关在生产
+> 模式（非 simulation/development/test）置 1 → **启动即抛配置错误（fail-closed，
+> run.py `ensure_scheduling_write_permitted`），禁止静默降级为 advisory**。
+> 部署清单/环境模板不得包含该变量；如需 Edge 参与调度演练，仅允许
+> simulation 模式。
+
 ### API（NestJS standalone）
 
 ```bash
