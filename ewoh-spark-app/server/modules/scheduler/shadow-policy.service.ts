@@ -10,7 +10,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import { ewohSchedulingPolicy, ewohSchedulePlan } from '@server/database/schema';
 import type {
   PlanCompareResult,
@@ -30,6 +30,14 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
+// ===== T12（2026-08-28 审计）：shadow 方案惰性 retention 清理 =====
+// shadow plan 此前永不清理（全仓清理逻辑 grep=0），是数据腐化根因之一。
+// 48h 对齐世界状态快照 retention（retention.service.ts 快照表 48h）；
+// 节流/吞错模式逐字对齐 shadow-evaluator.maybePrune（惰性触发 +
+// PRUNE_MIN_INTERVAL_MS 流控 + fire-and-forget + 失败仅记日志）。
+const SHADOW_PLAN_RETENTION_MS = 48 * 60 * 60 * 1000;
+const SHADOW_PRUNE_MIN_INTERVAL_MS = 60 * 60 * 1000;
+
 /**
  * Shadow Policy（Phase 4 / P4-SHADOW）。
  *
@@ -42,6 +50,9 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 @Injectable()
 export class ShadowPolicyService {
   private readonly logger = new Logger(ShadowPolicyService.name);
+
+  /** T12：惰性清理节流（PRUNE_MIN_INTERVAL_MS 内至多一次真实扫表）。 */
+  private lastShadowPruneAtMs = 0;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -225,6 +236,9 @@ export class ShadowPolicyService {
       // 观测失败不阻断
     }
 
+    // T12：惰性清理超期 shadow 方案（fire-and-forget，绝不影响本次返回）。
+    this.maybePruneShadowPlans();
+
     return { shadowPlan: shadow, compare };
   }
 
@@ -260,6 +274,53 @@ export class ShadowPolicyService {
   }
 
   /** NEST-115：策略表 org 作用域条件（本 org + NULL 全局行；缺省 undefined）。 */
+  /**
+   * T12：惰性保留清理触发。挂在 generateShadowPlan 成功路径（shadow 方案的
+   * 唯一写入口），PRUNE_MIN_INTERVAL_MS 内至多一次真实扫表。
+   * 整体 try/catch 兜底：直构测试的 db mock 可能无 delete 链，清理绝不
+   * 影响主流程（与 shadow-evaluator.maybePrune 的"失败仅记日志"语义一致）。
+   */
+  private maybePruneShadowPlans(): void {
+    const now = Date.now();
+    if (now - this.lastShadowPruneAtMs < SHADOW_PRUNE_MIN_INTERVAL_MS) return;
+    this.lastShadowPruneAtMs = now;
+    try {
+      void this.pruneShadowPlans(SHADOW_PLAN_RETENTION_MS).catch((err) => {
+        this.logger.warn(
+          `shadow plan prune skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    } catch (err) {
+      this.logger.warn(
+        `shadow plan prune skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * T12：删除超期 shadow 方案行（is_shadow=true 且 created_at < now − retentionMs）。
+   * 只删 is_shadow 行，业务方案（is_shadow=false）不受影响；is_shadow/status
+   * 原子性由 DB CHECK 兜底（R2-SSV-03），整行删除不产生半状态。48h 远超
+   * canary/Gate 观察窗，删除不影响进行中的策略评估。
+   */
+  private async pruneShadowPlans(retentionMs: number): Promise<void> {
+    const cutoff = new Date(Date.now() - retentionMs);
+    const deleted = await this.db
+      .delete(ewohSchedulePlan)
+      .where(
+        and(
+          eq(ewohSchedulePlan.isShadow, true),
+          lt(ewohSchedulePlan.createdAt, cutoff),
+        ),
+      )
+      .returning({ planId: ewohSchedulePlan.planId });
+    if (deleted.length > 0) {
+      this.logger.log(
+        `shadow plan prune: removed ${deleted.length} expired shadow plans (cutoff=${cutoff.toISOString()})`,
+      );
+    }
+  }
+
   private policyOrgScope(ctx?: OrgContext) {
     const orgId = ctx?.primaryOrgId?.trim();
     return orgId

@@ -256,7 +256,11 @@ describe('R2-SSV-03: shadow plan isShadow 标记原子化', () => {
     const svc = makeSvc(deps, tx);
     await svc.generateShadowPlan(2, { userId: 'u1', primaryOrgId: 'org1' });
     // persist 与 mark 都发生在 tx-begin 与 tx-end 之间（同事务原子）。
-    expect(deps.calls).toEqual(['tx-begin', 'persist-plan', 'mark-shadow', 'tx-end']);
+    // T12（2026-08-28）：generateShadowPlan 尾部新增惰性 shadow 方案清理
+    // （maybePruneShadowPlans），fire-and-forget、不进入该事务，会在序列
+    // 尾部追加一次 delete-plan；前缀断言仍覆盖原子性意图。
+    expect(deps.calls.slice(0, 4)).toEqual(['tx-begin', 'persist-plan', 'mark-shadow', 'tx-end']);
+    expect(deps.calls.slice(4)).toEqual(['delete-plan']);
     expect(deps.markedPlanIds).toEqual(['marked']);
   });
 
