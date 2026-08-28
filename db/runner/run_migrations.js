@@ -197,6 +197,12 @@ const FILES = {
   standalone_event_envelope_columns: path.join(root, 'db/migrations/standalone_066_event_envelope_columns.sql'),
   standalone_event_envelope_columns_rollback: path.join(root, 'db/migrations/standalone_066_event_envelope_columns.rollback.sql'),
   standalone_event_envelope_columns_verify: path.join(root, 'db/verify/standalone_066_event_envelope_columns.verify.sql'),
+  standalone_scheduling_org_rls: path.join(root, 'db/migrations/standalone_067_scheduling_org_rls.sql'),
+  standalone_scheduling_org_rls_rollback: path.join(root, 'db/migrations/standalone_067_scheduling_org_rls.rollback.sql'),
+  standalone_scheduling_org_rls_verify: path.join(root, 'db/verify/standalone_067_scheduling_org_rls.verify.sql'),
+  standalone_dashboard_org_composite_indexes: path.join(root, 'db/migrations/standalone_068_dashboard_org_composite_indexes.sql'),
+  standalone_dashboard_org_composite_indexes_rollback: path.join(root, 'db/migrations/standalone_068_dashboard_org_composite_indexes.rollback.sql'),
+  standalone_dashboard_org_composite_indexes_verify: path.join(root, 'db/verify/standalone_068_dashboard_org_composite_indexes.verify.sql'),
   standalone_learning_proposal_rollback: path.join(root, 'db/migrations/standalone_045_learning_proposal.rollback.sql'),
   standalone_exo_session_rollback: path.join(root, 'db/migrations/standalone_046_exo_session.rollback.sql'),
   standalone_outcome_annotation_rollback: path.join(root, 'db/migrations/standalone_047_outcome_annotation.rollback.sql'),
@@ -515,6 +521,8 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-plan-narration': ['standalone_plan_narration_verify', 'standalone_064_verified', 'standalone_064 plan narration (ai_narration text + narration_source varchar(32) 双列存在自证)'],
   '--verify-standalone-audit-log-authenticated-read': ['standalone_audit_log_authenticated_read_verify', 'standalone_065_verified', 'standalone_065 audit log authenticated read (ewoh_audit_select_authenticated policy + GRANT SELECT TO authenticated + service_role policy preserved)'],
   '--verify-standalone-event-envelope-columns': ['standalone_event_envelope_columns_verify', 'standalone_066_verified', 'standalone_066 event envelope columns (occurred_at/observed_at/received_at/causation_id/correlation_id/confidence/schema_version on ewoh_event + indexes)'],
+  '--verify-standalone-scheduling-org-rls': ['standalone_scheduling_org_rls_verify', 'standalone_067_verified', 'standalone_067 scheduling org rls (RLS enabled + org isolation policy TO service_role on execution/conflict/kpi/route_cost_matrix/policy_activation)'],
+  '--verify-standalone-dashboard-org-composite-indexes': ['standalone_dashboard_org_composite_indexes_verify', 'standalone_068_verified', 'standalone_068 dashboard org composite indexes (event org+status+severity / telemetry org+ts incl load_score / device org+online)'],
   // 审计 SQL-103（2026-08-17）补齐的 5 个缺失 verify 脚本，同为单字段断言形态。
   '--verify-users': ['users_verify', 'users_verified', '002_ewoh_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
   '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
@@ -1483,6 +1491,10 @@ function main() {
       '--rollback-standalone-audit-log-authenticated-read': 'standalone_audit_log_authenticated_read_rollback',
       '--apply-standalone-event-envelope-columns': 'standalone_event_envelope_columns',
       '--rollback-standalone-event-envelope-columns': 'standalone_event_envelope_columns_rollback',
+      '--apply-standalone-scheduling-org-rls': 'standalone_scheduling_org_rls',
+      '--rollback-standalone-scheduling-org-rls': 'standalone_scheduling_org_rls_rollback',
+      '--apply-standalone-dashboard-org-composite-indexes': 'standalone_dashboard_org_composite_indexes',
+      '--rollback-standalone-dashboard-org-composite-indexes': 'standalone_dashboard_org_composite_indexes_rollback',
     }[command];
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {
