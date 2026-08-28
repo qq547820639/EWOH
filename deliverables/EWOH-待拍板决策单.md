@@ -134,17 +134,19 @@ ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"
 
 只读验证，零改动（除非发现 ENABLED=1，则按既有文档操作）。
 
-### ⊘ 外部依赖标注（2026-08-29 复核）
+### ⊘→✅ 闭环记录（2026-08-29，凭据恢复后实测）
 
-**本环境无法闭环，标注为外部依赖**：2026-08-29 再次实测
-`ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"` →
-`Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password)`
-（与 2026-08-28 18:35 首测同因：无有效凭据）。
+用户提供了 ECS 凭据，终验已执行（只读命令）：
 
-**替代方案（已写入交付清单）**：由持有效凭据的运维执行上述只读命令；
-预期 `EWOH_SIMULATOR_ENABLED=0` 且 `EWOH_SIMULATOR_DISABLED=1` 即闭环。
-证据强度评估：代码层 fail-closed 完备 + 部署模板默认安全 + 三份历史文档
-交叉印证（8/22 已关停）→ 该终验为低风险收尾项，不阻塞交付。
+```
+$ ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"
+EWOH_SIMULATOR_ENABLED=0
+EWOH_SIMULATOR_ORG_ID=00000000-0000-4000-8000-000000000001
+EWOH_SIMULATOR_DISABLED=1
+```
+
+`ENABLED=0` 且 `DISABLED=1`（双保险在位）——**与预期闭环条件完全一致，T3 终验闭环**。
+ORG_ID 为模拟器归属租户配置，与开关无关，属正常配置项。
 
 ---
 
@@ -154,5 +156,5 @@ ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"
 |---|---|---|---|---|
 | 1 | T4 旁路端点处置 | ✅ 已决 | **B 委托反转（轨道分派适配器）** | `70aaa06`；C 观察期开放 |
 | 2 | Python 调度栈定位 | ✅ 已决 | **B 冻结**（零风险子项先落） | `2df572e`；完整冻结留季度评审 |
-| 3 | T3 模拟器终验 | ⊘ 外部依赖 | 只读命令（需有效凭据者执行） | 替代方案已写入交付清单 |
+| 3 | T3 模拟器终验 | ✅ 已闭环 | SSH 实测双保险在位（凭据恢复后执行） | 见决策项 3 闭环记录 |
 | 4 | T8 lockfile | ✅ 已决 | 同步 lockfile（覆盖移交限制） | `ec023d4`，npm ci 实测通过 |

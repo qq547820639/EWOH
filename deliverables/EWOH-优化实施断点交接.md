@@ -16,7 +16,7 @@
 |---|---|---|---|
 | **A** | T1 前端测试接入 CI | ✅ 已完成并验证 | `b9d4c60` |
 | **A** | T2 overview 缓存改 Map | ✅ 已完成并验证 | `92ae73c` |
-| **A** | T3 生产模拟器开关 | ⊘ 调查闭环（无需代码改动）；ECS .env 终验=**外部依赖**（SSH 凭据失效，2026-08-29 复测同因） | — |
+| **A** | T3 生产模拟器开关 | ✅ **终验闭环**（2026-08-29 SSH 实测：`ENABLED=0` + `DISABLED=1` 双保险在位；零代码改动） | — |
 | **A** | T7 预览接口切只读快照 | ✅ 已完成并验证 | `b9f406c` |
 | **A** | T8 缓存抽象（方案①） | ✅ 已完成并验证；lockfile 收尾 `ec023d4`（裁决 4） | `6376f69`/`ec023d4` |
 | **B** | T5 补 5 表 RLS | ✅ 迁移 standalone_067 | `4831848` |
@@ -28,7 +28,7 @@
 | **D** | T10 统一求解器回退语义 | ✅ milp/rule-based 显式回退 heuristic + 评估器单例 | `b7ad4ac` |
 | **决策** | 决策项 1（T4 处置） | ✅ 裁决 B 并实施；C 观察期开放 | `70aaa06` |
 | **决策** | 决策项 2（Python 调度栈） | ✅ 裁决 B 冻结；零风险子项已落（runbook 警告），完整冻结留季度评审 | `2df572e` |
-| **决策** | 决策项 3（T3 终验） | ⊘ 外部依赖（SSH 凭据），替代方案已写入交付清单 | — |
+| **决策** | 决策项 3（T3 终验） | ✅ **已闭环**（凭据恢复后 SSH 实测双保险在位 + 平台部署健康证据） | 见 §七 |
 | **决策** | 决策项 4（T8 lockfile） | ✅ `npm install --package-lock-only`（2 行差异，npm ci 实测通过） | `ec023d4` |
 
 **T13–T16**（shared 解环/边缘核心域下线/上帝文件拆分/覆盖率门禁）：维持路线图定位
@@ -211,13 +211,18 @@
   演练仅限 simulation）；`deploy/.env.example:149-151` 已有同口径警告，操作面补齐。
 - 完整冻结（路由裁剪/生产镜像变化）留季度评审，不自动推进（与决策单约束一致）。
 
-### 决策项 3（T3 终验）— 外部依赖标注
+### 决策项 3（T3 终验）— ✅ 已闭环（2026-08-29 凭据恢复后）
 
-- 2026-08-29 复测 `ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"` →
-  `Permission denied (publickey,...)`（无有效凭据，与 08-28 首测同因）。
-- 替代方案：由持有效凭据的运维执行同一只读命令；预期 `EWOH_SIMULATOR_ENABLED=0`
-  且 `EWOH_SIMULATOR_DISABLED=1` 即闭环。证据强度：代码层 fail-closed 完备 +
-  部署模板默认安全 + 三份历史文档交叉印证（8/22 已关停）→ 低风险收尾项，不阻塞交付。
+- 用户提供 ECS 凭据后执行只读命令
+  `ssh root@121.43.230.202 "grep SIMULATOR /opt/ewoh/.env"`，实测输出：
+  `EWOH_SIMULATOR_ENABLED=0`、`EWOH_SIMULATOR_ORG_ID=…0001`、
+  `EWOH_SIMULATOR_DISABLED=1` —— 双保险在位，与预期闭环条件完全一致。
+- **测试平台部署健康证据（同日只读实测）**：`:3000` 首页/live/ready 全 200；
+  `/health/ready` 返回 `{"status":"ok","service":"ewoh-api"}`（DB 门禁通过）；
+  容器 `ewoh-api:0.6.0-rc42` Up 5 days (healthy)、`ewoh-postgres`（postgres:17）
+  Up 6 days (healthy)、`ewoh-redis` Up 6 days (healthy)。
+- 遗留说明：本地 main 整改链与在跑镜像 rc42 的代码对应关系未核实（容器无
+  commit 标记）；本地整改随下次发布流水线上线。
 
 ### 类型检查口径说明
 
