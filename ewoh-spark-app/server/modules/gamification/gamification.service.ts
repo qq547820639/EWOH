@@ -534,13 +534,31 @@ export class GamificationService {
 
   // ===== G3.5 调度下发 =====
 
+  /**
+   * T4 完整收敛（2026-08-29，待拍板决策单·决策项 1 裁决 B：委托反转）。
+   *
+   * 本端点是旁路契约（POST /api/gamification/schedule/:planId/dispatch），历史上
+   * 与正统派工（scheduler.controller → dispatchPlanV2）双实现并存。按决策单推荐
+   * B：保留端点与契约（零 breaking），内部按方案所在轨道分派：
+   *
+   * - `approved`（V2 正统轨道）→ 完整委托 SchedulerService.dispatchPlanV2：获得
+   *   快照新鲜度校验、安全事件熔断、资源预约（EXCLUDE/advisory lock）、Execution
+   *   建档与 audit_log 审计的全套正统机制——消除"approved 方案经旁路只得到 400"
+   *   的行为分叉。此分支回写一条 ewoh_schedule_audit（正统审计在 audit_log hash
+   *   链，两审计表面向不同契约承诺，并存不重复）以兑现旁路契约的 auditId。
+   * - `confirmed`（legacy confirm 轨道）→ 保留既有薄路径：该轨道方案不持有
+   *   ewoh_scheduling_plan_assignment 明细与 snapshotVersion，无法安全进入 V2
+   *   派工机制（派工将变成空分配）；confirmed→approved 状态提升等于伪造审批，
+   *   属治理违规。此轨道即决策单 C（硬删）的观察期对象，废弃告警日志供网关
+   *   流量核对。
+   */
   async dispatchPlan(
     planId: string,
     req: DispatchRequest,
     actor?: OrgContext,
   ): Promise<DispatchResult> {
     try {
-      // 1. 校验方案存在且已确认
+      // 0. 载入 + 租户守卫（ADR-071/NO-13v：先守卫后业务校验，反枚举 404）。
       const [existing] = await this.db
         .select()
         .from(ewohSchedulePlan)
@@ -550,105 +568,158 @@ export class GamificationService {
       if (!existing) {
         throw new NotFoundException(`Schedule plan ${planId} not found`);
       }
-      // ADR-071（NO-13v）：下发变面租户守卫（反枚举 404；与 RLS 语义等价）。
       assertPlanTenantVisible(existing.orgId, actor, planId);
+
+      // 1. V2 正统轨道：完整委托（决策项 1 裁决 B 的核心收益面）。
+      if (existing.status === 'approved' && this.schedulerService) {
+        return await this.dispatchViaOrthodox(planId, req, actor, existing);
+      }
+
       if (existing.status !== 'confirmed') {
         throw new BadRequestException(`Schedule plan ${planId} is not confirmed (current: ${existing.status})`);
       }
-
-      const operator = req.operator ?? 'dispatcher';
-      const now = new Date();
-
-      // 2. 冲突检测：从 metricsJson 提取关联实体/设备，检查是否离线
-      const metrics = (existing.metricsJson as Record<string, unknown> | null) ?? {};
-      const entityIds = this.extractEntityIds(metrics);
-
-      let conflicts: string[] = [];
-      if (entityIds.length > 0) {
-        // NEST-309 配套：冲突检测设备查询带 org 过滤（跨租户设备不进冲突判定）。
-        const dispatchOrgCond = actor?.isGlobalAdmin
-          ? undefined
-          : eq(ewohDevice.orgId, this.requireOrgId(actor));
-        const deviceRows = await this.db
-          .select({ deviceId: ewohDevice.deviceId, online: ewohDevice.online, workerName: ewohDevice.workerName })
-          .from(ewohDevice)
-          .where(
-            dispatchOrgCond
-              ? and(inArray(ewohDevice.deviceId, entityIds), dispatchOrgCond)
-              : inArray(ewohDevice.deviceId, entityIds),
-          );
-        conflicts = deviceRows
-          .filter((d) => d.online === false)
-          .map((d) => `设备 ${d.workerName ?? d.deviceId} 离线，无法下发`);
-      }
-
-      // 3. 写入审计 action='dispatch'
-      const [auditRow] = await this.db
-        .insert(ewohScheduleAudit)
-        .values({
-          auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
-          planId,
-          action: 'dispatch',
-          operator,
-          reason:
-            conflicts.length > 0
-              ? `下发冲突：${conflicts.join('; ')}`
-              : req.executionNote ?? `方案下发执行`,
-          createdAt: now,
-          // NEST-330（2026-08-28 闭合）：audit 行显式归属。schedule_plan.org_id
-          // 自 057 起 NOT NULL，去掉 null 回退（残留会写出无归属审计行）。
-          orgId: actor?.primaryOrgId ?? existing.orgId,
-        })
-        .returning();
-
-      if (conflicts.length > 0) {
-        // 存在冲突，保持已确认状态，返回 conflict
-        this.logger.warn(`dispatchPlan planId=${planId} conflict: ${conflicts.length} issues`);
-        return {
-          planId,
-          status: 'conflict',
-          conflicts,
-          dispatchedAt: now.toISOString(),
-          auditId: auditRow.auditId,
-        };
-      }
-
-      // 4. 无冲突，更新方案状态为 'dispatched'
-      // T4 加固（2026-08-28，审计 R2-SBZ-014 闭合）：补 status CAS——
-      // 读-改-写窗口内并发 double-dispatch 时后到者 0 行命中 → 409，
-      // 与 plan.service dispatchPlanV2 的 approved→dispatched CAS 语义对齐。
-      // （完整收敛——本旁路委托 dispatchPlanV2 或删除——涉及 legacy
-      //   confirm 轨去留，待产品决策，见断点交接文档 §五。）
-      const dispatchedRows = await this.db
-        .update(ewohSchedulePlan)
-        .set({ status: 'dispatched' })
-        .where(
-          and(
-            eq(ewohSchedulePlan.planId, planId),
-            eq(ewohSchedulePlan.status, 'confirmed'),
-          ),
-        )
-        .returning({ id: ewohSchedulePlan.id });
-      if (dispatchedRows.length === 0) {
-        throw new ConflictException(
-          `Schedule plan ${planId} concurrently dispatched or no longer confirmed`,
-        );
-      }
-
-      this.logger.log(`dispatchPlan planId=${planId} dispatched auditId=${auditRow.auditId}`);
-
-      return {
-        planId,
-        status: 'dispatched',
-        conflicts: [],
-        dispatchedAt: now.toISOString(),
-        auditId: auditRow.auditId,
-      };
+      this.logger.warn(
+        `[DEPRECATED] legacy confirm-track dispatch via gamification bypass: planId=${planId} (决策项 1 观察期；硬删前需网关日志确认零调用)`,
+      );
+      return await this.dispatchConfirmedLegacy(planId, req, actor, existing);
     } catch (error) {
       if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
       this.logger.error('dispatchPlan 失败', error);
       throw error;
     }
+  }
+
+  /** T4：V2 正统轨道委托 + 旁路契约形状适配（语义见 dispatchPlan 注释）。 */
+  private async dispatchViaOrthodox(
+    planId: string,
+    req: DispatchRequest,
+    actor: OrgContext | undefined,
+    existing: typeof ewohSchedulePlan.$inferSelect,
+  ): Promise<DispatchResult> {
+    const now = new Date();
+    // 正统机制全量执行（预约/安全熔断/新鲜度/Execution/出站事件）。
+    // 失败（SHADOW_PLAN_GUARD/PLAN_CONCURRENT_DISPATCH 等）原样上抛——
+    // 旁路调用方与正统调用方看到同一错误语义。
+    await this.schedulerService!.dispatchPlanV2(planId, actor);
+
+    // 旁路契约 auditId 兑现：legacy 审计面留痕（action='dispatch'），reason
+    // 注明委托语义；正统审计走 auditService（audit_log hash 链）不在此重复。
+    const [auditRow] = await this.db
+      .insert(ewohScheduleAudit)
+      .values({
+        auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+        planId,
+        action: 'dispatch',
+        operator: req.operator ?? 'dispatcher',
+        reason: req.executionNote ?? `方案下发执行（T4 委托 dispatchPlanV2）`,
+        createdAt: now,
+        orgId: actor?.primaryOrgId ?? existing.orgId,
+      })
+      .returning();
+
+    this.logger.log(`dispatchPlan planId=${planId} dispatched via dispatchPlanV2 auditId=${auditRow.auditId}`);
+    return {
+      planId,
+      status: 'dispatched',
+      conflicts: [],
+      dispatchedAt: now.toISOString(),
+      auditId: auditRow.auditId,
+    };
+  }
+
+  /** T4：legacy confirm 轨道薄路径（原实现收敛为私有方法，行为不变）。 */
+  private async dispatchConfirmedLegacy(
+    planId: string,
+    req: DispatchRequest,
+    actor: OrgContext | undefined,
+    existing: typeof ewohSchedulePlan.$inferSelect,
+  ): Promise<DispatchResult> {
+    const operator = req.operator ?? 'dispatcher';
+    const now = new Date();
+
+    // 冲突检测：从 metricsJson 提取关联实体/设备，检查是否离线
+    const metrics = (existing.metricsJson as Record<string, unknown> | null) ?? {};
+    const entityIds = this.extractEntityIds(metrics);
+
+    let conflicts: string[] = [];
+    if (entityIds.length > 0) {
+      // NEST-309 配套：冲突检测设备查询带 org 过滤（跨租户设备不进冲突判定）。
+      const dispatchOrgCond = actor?.isGlobalAdmin
+        ? undefined
+        : eq(ewohDevice.orgId, this.requireOrgId(actor));
+      const deviceRows = await this.db
+        .select({ deviceId: ewohDevice.deviceId, online: ewohDevice.online, workerName: ewohDevice.workerName })
+        .from(ewohDevice)
+        .where(
+          dispatchOrgCond
+            ? and(inArray(ewohDevice.deviceId, entityIds), dispatchOrgCond)
+            : inArray(ewohDevice.deviceId, entityIds),
+        );
+      conflicts = deviceRows
+        .filter((d) => d.online === false)
+        .map((d) => `设备 ${d.workerName ?? d.deviceId} 离线，无法下发`);
+    }
+
+    // 写入审计 action='dispatch'
+    const [auditRow] = await this.db
+      .insert(ewohScheduleAudit)
+      .values({
+        auditId: `AUDIT-${Date.now()}-${this.randomSuffix(4)}`,
+        planId,
+        action: 'dispatch',
+        operator,
+        reason:
+          conflicts.length > 0
+            ? `下发冲突：${conflicts.join('; ')}`
+            : req.executionNote ?? `方案下发执行`,
+        createdAt: now,
+        // NEST-330（2026-08-28 闭合）：audit 行显式归属。schedule_plan.org_id
+        // 自 057 起 NOT NULL，去掉 null 回退（残留会写出无归属审计行）。
+        orgId: actor?.primaryOrgId ?? existing.orgId,
+      })
+      .returning();
+
+    if (conflicts.length > 0) {
+      // 存在冲突，保持已确认状态，返回 conflict
+      this.logger.warn(`dispatchPlan planId=${planId} conflict: ${conflicts.length} issues`);
+      return {
+        planId,
+        status: 'conflict',
+        conflicts,
+        dispatchedAt: now.toISOString(),
+        auditId: auditRow.auditId,
+      };
+    }
+
+    // 无冲突，更新方案状态为 'dispatched'
+    // T4 加固（2026-08-28，审计 R2-SBZ-014 闭合）：补 status CAS——
+    // 读-改-写窗口内并发 double-dispatch 时后到者 0 行命中 → 409，
+    // 与 plan.service dispatchPlanV2 的 approved→dispatched CAS 语义对齐。
+    const dispatchedRows = await this.db
+      .update(ewohSchedulePlan)
+      .set({ status: 'dispatched' })
+      .where(
+        and(
+          eq(ewohSchedulePlan.planId, planId),
+          eq(ewohSchedulePlan.status, 'confirmed'),
+        ),
+      )
+      .returning({ id: ewohSchedulePlan.id });
+    if (dispatchedRows.length === 0) {
+      throw new ConflictException(
+        `Schedule plan ${planId} concurrently dispatched or no longer confirmed`,
+      );
+    }
+
+    this.logger.log(`dispatchPlan planId=${planId} dispatched auditId=${auditRow.auditId}`);
+
+    return {
+      planId,
+      status: 'dispatched',
+      conflicts: [],
+      dispatchedAt: now.toISOString(),
+      auditId: auditRow.auditId,
+    };
   }
 
   // ===== G3.6 外骨骼反馈 =====

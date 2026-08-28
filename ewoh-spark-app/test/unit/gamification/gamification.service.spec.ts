@@ -133,6 +133,45 @@ describe('GamificationService dispatch and feedback', () => {
     expect(updateWhere).toHaveBeenCalled();
   });
 
+  // T4 完整收敛（决策项 1 裁决 B 委托反转）：approved 轨道方案经旁路端点
+  // 不再得到 400，而是完整委托 SchedulerService.dispatchPlanV2（正统派工
+  // 机制），并适配回旁路契约形状 DispatchResult。
+  it('delegates an approved plan to SchedulerService.dispatchPlanV2 and adapts the shape', async () => {
+    const plan = {
+      id: 'row-1',
+      planId: 'P-1',
+      status: 'approved',
+      metricsJson: { assignedEntities: ['EXO-1'] },
+    };
+    const { db, insertRows } = createDispatchDb([plan], []);
+    const dispatchPlanV2 = jest.fn().mockResolvedValue({
+      planId: 'P-1',
+      status: 'dispatched',
+    });
+    const service = new GamificationService(
+      db as never,
+      undefined,
+      { dispatchPlanV2 } as never,
+    );
+
+    const result = await service.dispatchPlan(
+      'P-1',
+      { operator: 'supervisor', executionNote: 'T4 委托验证' },
+      { userId: 'supervisor', primaryOrgId: 'ORG-1' },
+    );
+
+    expect(dispatchPlanV2).toHaveBeenCalledWith('P-1', expect.objectContaining({ userId: 'supervisor' }));
+    expect(result.status).toBe('dispatched');
+    expect(result.conflicts).toEqual([]);
+    expect(result.auditId).toBe('AUDIT-1');
+    // 委托分支回写 legacy 审计面留痕（action='dispatch'；reason 携带调用方
+    // executionNote，无 note 时回落委托语义说明）。
+    const auditInserts = insertRows.filter((r) => r.table === ewohScheduleAudit);
+    expect(auditInserts).toHaveLength(1);
+    expect(auditInserts[0]?.row['action']).toBe('dispatch');
+    expect(auditInserts[0]?.row['reason']).toBe('T4 委托验证');
+  });
+
   it('returns conflict and refuses dispatch when a linked device is offline', async () => {
     const plan = {
       id: 'row-1',
