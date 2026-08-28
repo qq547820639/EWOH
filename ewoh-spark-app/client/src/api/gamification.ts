@@ -5,8 +5,6 @@ import type {
   ResourceAllocationResult,
   TaskOrchestrationRequest,
   TaskOrchestrationResult,
-  DispatchRequest,
-  DispatchResult,
   ExoFeedbackRequest,
   ExoFeedbackResult,
   BrainSuggestion,
@@ -41,17 +39,11 @@ export async function orchestrateTask(
   return res.data;
 }
 
-export async function dispatchPlan(
-  planId: string,
-  body: DispatchRequest,
-): Promise<DispatchResult> {
-  const res = await axiosForBackend({
-    url: `/api/gamification/schedule/${planId}/dispatch`,
-    method: 'POST',
-    data: body,
-  });
-  return res.data;
-}
+// T4 前置清理（2026-08-28 审计）：原 dispatchPlan 封装（指向
+// /api/gamification/schedule/:planId/dispatch 旁路端点）为死代码——
+// 全前端零组件调用（所有派工 UI 均走 api/scheduler.ts 的 dispatchPlanV2
+// 正统路径），随 EWOH-待拍板决策单.md 的 T4 收敛决策一并下线。
+// 后端端点与 OpenAPI 契约的处置见决策单（待拍板，本轮不动）。
 
 export async function sendExoFeedback(
   deviceId: string,
