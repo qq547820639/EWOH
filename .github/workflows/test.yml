@@ -209,6 +209,13 @@ jobs:
         run: npm test -- --runInBand --json --outputFile=jest.results.json
         working-directory: ewoh-spark-app
 
+      # 前端（client）Jest 测试此前从未在 CI 中执行——7 个 workflow 均无调用，
+      # 即 client/src 下 138 套件 1173 用例的回归保护完全依赖人工本地执行。
+      # 该套件仅需约 13.9s，紧随后端 Jest 之后执行，同享已安装的 Node 依赖。
+      - name: Client Jest 测试（前端 138 套件，此前 CI 未覆盖）
+        run: npm run test:client
+        working-directory: ewoh-spark-app
+
       - name: 单一事实源证据清单生成与漂移校验（truth-check）
         run: make truth-check
 
