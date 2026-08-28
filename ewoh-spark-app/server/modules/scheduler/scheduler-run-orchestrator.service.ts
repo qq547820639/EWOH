@@ -13,6 +13,7 @@ import {
   Inject,
   Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -95,10 +96,26 @@ export class SchedulerRunOrchestrator {
     const horizonMinutes = body.horizonMinutes ?? 480;
     // P0-2（G2）：createRun 主链路加载全局 active 约束（org + 有效期过滤）。
     // 人工 LOCK/EXCLUDE 不得因为空 constraints 在 manual/automatic run 中丢失。
+    // T11（2026-08-28 审计）：此前 constraintLoader 缺失时静默返回空约束——
+    // 人工 LOCK 可能丢失且无任何告警。现升格为 error 日志显形；生产可设
+    // EWOH_REQUIRE_CONSTRAINT_LOADER=1 切换 fail-closed（装配缺失直接拒绝
+    // 调度）。默认仍 fail-open：loader 为 undefined 主要是直构测试的既有
+    // 语义（构造后注入，见 :59 注释），无条件抛错会大面积破坏表征测试。
     const constraintLoader = this.getConstraintLoader();
-    const constraints = constraintLoader
-      ? await constraintLoader.loadGlobalActive(ctx)
-      : [];
+    let constraints: Awaited<ReturnType<ConstraintLoaderService['loadGlobalActive']>> = [];
+    if (constraintLoader) {
+      constraints = await constraintLoader.loadGlobalActive(ctx);
+    } else {
+      const message =
+        'createRun: constraintLoader 未装配，本次 run 将在空约束下求解——人工 LOCK/EXCLUDE 约束丢失';
+      if (process.env.EWOH_REQUIRE_CONSTRAINT_LOADER === '1') {
+        this.logger.error(`${message}；EWOH_REQUIRE_CONSTRAINT_LOADER=1 → fail-closed`);
+        throw new ServiceUnavailableException(
+          'constraint loader not assembled; scheduling refused (EWOH_REQUIRE_CONSTRAINT_LOADER=1)',
+        );
+      }
+      this.logger.error(message);
+    }
 
     // P0-6：baselinePlanId → churn 基线（taskId → personId，复用 solveVariants 的
     // baselineAssignee 机制）；读取失败降级为空基线（仅记日志，不阻断求解）。
