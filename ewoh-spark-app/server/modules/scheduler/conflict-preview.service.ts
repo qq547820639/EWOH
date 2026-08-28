@@ -72,7 +72,9 @@ export class ConflictPreviewService {
         `conflict preview without org context (conflict=${conflictId}); falling back to system snapshot scope`,
       );
     }
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(effectiveCtx);
+    // 预览不落库：使用只读快照，避免每次预览都写入全量 snapshotJson
+    // 并竞争同一天的版本计数器行锁（buildSnapshot 语义供写路径使用）。
+    const snapshot = await this.worldStateSnapshotService.buildSnapshotReadOnly(effectiveCtx);
     const impact = await this.replanCoordinator.impactAnalysis(
       snapshot,
       conflict.type,

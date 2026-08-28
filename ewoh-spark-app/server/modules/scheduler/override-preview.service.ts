@@ -56,7 +56,9 @@ export class OverridePreviewService {
     const baseline = await this.planService.getPlan(planId, ctx).catch(() => null);
     if (!baseline) throw new NotFoundException(`Plan ${planId} not found`);
 
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    // 预览不落库：使用只读快照，避免每次预览都写入全量 snapshotJson
+    // 并竞争同一天的版本计数器行锁（buildSnapshot 语义供写路径使用）。
+    const snapshot = await this.worldStateSnapshotService.buildSnapshotReadOnly(ctx);
 
     // safetyCritical 守卫：预览动作不得改变安全关键任务的分配/时间（SAFETY_CRITICAL_LOCKED 语义）。
     await this.assertNoSafetyCriticalChange(baseline, body.actions, snapshot);

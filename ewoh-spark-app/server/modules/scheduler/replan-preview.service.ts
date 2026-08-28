@@ -44,7 +44,9 @@ export class ReplanPreviewService {
     triggerIds: string[],
     ctx: OrgContext,
   ): Promise<ReplanPreviewResult> {
-    const snapshot = await this.worldStateSnapshotService.buildSnapshot(ctx);
+    // 预览不落库：使用只读快照，避免每次预览都写入全量 snapshotJson
+    // 并竞争同一天的版本计数器行锁（buildSnapshot 语义供写路径使用）。
+    const snapshot = await this.worldStateSnapshotService.buildSnapshotReadOnly(ctx);
 
     // 影响分析 V2（propagateImpact 闭包）。
     const impact = await this.replanCoordinatorService.analyzeImpactV2FromSnapshot(

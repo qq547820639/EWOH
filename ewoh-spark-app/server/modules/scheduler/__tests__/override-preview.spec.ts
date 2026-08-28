@@ -67,6 +67,8 @@ function makeService() {
   };
   const worldState = {
     buildSnapshot: jest.fn().mockResolvedValue(makeSnapshot()),
+    // 预览改走只读快照（不落库）；mock 同步提供，避免 undefined 调用。
+    buildSnapshotReadOnly: jest.fn().mockResolvedValue(makeSnapshot()),
     getCurrentWorldState: jest.fn().mockResolvedValue(makeSnapshot()),
   };
   const constraintLoader = {
