@@ -42,6 +42,13 @@ describe('standalone bootstrap security configuration', () => {
     expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['Referrer-Policy']).toBe('no-referrer');
     expect(headers['X-XSS-Protection']).toBe('0');
+    // CSP：script-src 保持严格（XSS 主防线）；style-src 允许 unsafe-inline
+    // （可用性自测实测 sonner/chart 运行时样式被 'self' 阻断，见 standalone-main.ts 注释）。
+    const csp = headers['Content-Security-Policy'] ?? '';
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("frame-ancestors 'none'");
   });
 
   it('keeps API, health, and metrics routes out of the SPA fallback', () => {

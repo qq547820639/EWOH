@@ -29,7 +29,13 @@ export function applySecurityHeaders(res: {
     [
       "default-src 'self'",
       "script-src 'self'",
-      "style-src 'self'",  // AUDIT-005 (P2)：移除 unsafe-inline，Tailwind 已迁移到 JIT 构建时生成
+      // AUDIT-005 曾收紧为 style-src 'self'；可用性自测（UX 目标）实测其破坏运行时样式：
+      // ① sonner Toaster（全局挂载，document.createElement('style') 注入动画样式表）与
+      // ② ui/chart.tsx ChartStyle（按 light/dark 主题类注入 CSS 自定义变量）在所有页面
+      // 每页各产生 2 条 CSP 控制台报错，图表主题变量与 toast 动画被浏览器阻断。
+      // style-src 的 unsafe-inline 残余风险为低（不含脚本执行能力；真正的 XSS 防线是
+      // 保持严格的 script-src 'self'），故恢复 unsafe-inline，仅限 style 维度。
+      "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "connect-src 'self'",
