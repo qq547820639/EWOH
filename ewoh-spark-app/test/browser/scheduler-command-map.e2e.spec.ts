@@ -221,11 +221,11 @@ test.describe('Command Map 真实后端浏览器 E2E', () => {
     expect(chain.runHttpStatus, `run 创建失败（HTTP ${chain.runHttpStatus}）`).toBe(201);
     expect(chain.runCreated).toBe(true);
     expect(chain.planId).toBeTruthy();
-    // 审批：真实成功且业务状态翻转。
-    expect(chain.approveHttpStatus, `approve 失败（HTTP ${chain.approveHttpStatus}）`).toBe(201);
+    // 审批：真实成功且业务状态翻转（approve/dispatch 为状态转换端点，返回 200 而非 201）。
+    expect(chain.approveHttpStatus, `approve 失败（HTTP ${chain.approveHttpStatus}）`).toBe(200);
     expect(chain.approveStatus).toBe('approved');
     // 派工：审批通过后必须可达且状态翻转。
-    expect(chain.dispatchHttpStatus, `dispatch 失败（HTTP ${chain.dispatchHttpStatus}）`).toBe(201);
+    expect(chain.dispatchHttpStatus, `dispatch 失败（HTTP ${chain.dispatchHttpStatus}）`).toBe(200);
     expect(chain.dispatchStatus).toBe('dispatched');
   });
 
@@ -262,36 +262,42 @@ test.describe('Command Map 真实后端浏览器 E2E', () => {
       expect((result.replay.body as { replayId?: string }).replayId).toBeTruthy();
       expect((result.replay.body as { seed?: number }).seed).toBe(42);
     } else {
-      // 500 = 无历史快照的合法失败路径（后端显式错误），不掩盖。
-      expect([400, 409, 500]).toContain(result.replay.status);
+      // 400/409/500 = 无历史快照的合法失败路径（后端显式错误），不掩盖；
+      // 404 = 全新库无候选策略版本（candidatePolicyVersion 不存在），同为显式失败。
+      expect([400, 404, 409, 500]).toContain(result.replay.status);
     }
   });
 
-  test('D: SSE v2/stream 可建立（经代理，200 + text/event-stream）', async ({ page }) => {
+  test('D: SSE v2/stream 可建立（200 + text/event-stream）', async () => {
     const { accessToken } = await loginRealBackend();
-    await routeApiToBackend(page, accessToken);
-
-    await page.goto(`${staticServer!.baseUrl}/command-map`, { waitUntil: 'domcontentloaded' });
     // R2-APT-013：401 是鉴权失败（恰恰证明流不可用），必须 FAIL——原断言把
     // 401 当"可建立"通过。现仅接受 200 且 content-type 含 text/event-stream，
     // 并使用本次登录的新鲜 token（原取 localStorage 可能已过期的 token）。
-    const streamStatus = await page.evaluate(async (args: { backend: string; token: string }) => {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${args.backend}/api/scheduler/v2/stream`, {
-          headers: { Authorization: `Bearer ${args.token}` },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        const out = { status: res.status, contentType: res.headers.get('content-type') };
-        // 响应头到达即断开（SSE 长连接不留挂）。
-        controller.abort();
-        return out;
-      } catch (e) {
-        return { status: 0, error: (e as Error).message };
+    // 交付收口 2026-08-29：改为 Node 侧直连后端——原实现虽写 BACKEND，
+    // 但 page.route('**/api/**') 会拦截 evaluate 内 fetch 并陷入
+    // arrayBuffer 全量代理（SSE 长连接永不完成 → abort → status=0）。
+    // SSE 建立性验证不依赖浏览器上下文，直连等价且确定性。
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    let streamStatus: { status: number; contentType: string | null };
+    try {
+      const res = await fetch(`${BACKEND}/api/scheduler/v2/stream`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      });
+      streamStatus = { status: res.status, contentType: res.headers.get('content-type') };
+      // 响应头到达即断开（SSE 长连接不留挂）。
+      controller.abort();
+    } catch (e) {
+      if (controller.signal.aborted) {
+        // abort 发生在响应头之后属预期；若发生在之前则拿不到头，显式失败。
+        streamStatus = { status: 0, contentType: null };
+      } else {
+        throw e;
       }
-    }, { backend: BACKEND, token: accessToken });
+    } finally {
+      clearTimeout(timeout);
+    }
     expect(
       streamStatus.status === 200 &&
         String(streamStatus.contentType ?? '').includes('text/event-stream'),

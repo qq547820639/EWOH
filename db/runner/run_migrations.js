@@ -476,6 +476,27 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-route-edge-status-check',
   '--rollback-standalone-route-edge-status-check',
   '--verify-standalone-route-edge-status-check',
+  // 063-068：SQL 文件与 which 映射/verify 表均已存在，但此前漏登记
+  // EXECUTE_COMMANDS，导致 apply/rollback/verify 全部落入 usage 分支
+  // （交付收口 2026-08-29：本地全量迁移链在 ewoh_trace_span 处断裂时发现）。
+  '--apply-standalone-ai-suggestion-title-width',
+  '--rollback-standalone-ai-suggestion-title-width',
+  '--verify-standalone-ai-suggestion-title-width',
+  '--apply-standalone-plan-narration',
+  '--rollback-standalone-plan-narration',
+  '--verify-standalone-plan-narration',
+  '--apply-standalone-audit-log-authenticated-read',
+  '--rollback-standalone-audit-log-authenticated-read',
+  '--verify-standalone-audit-log-authenticated-read',
+  '--apply-standalone-event-envelope-columns',
+  '--rollback-standalone-event-envelope-columns',
+  '--verify-standalone-event-envelope-columns',
+  '--apply-standalone-scheduling-org-rls',
+  '--rollback-standalone-scheduling-org-rls',
+  '--verify-standalone-scheduling-org-rls',
+  '--apply-standalone-dashboard-org-composite-indexes',
+  '--rollback-standalone-dashboard-org-composite-indexes',
+  '--verify-standalone-dashboard-org-composite-indexes',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、

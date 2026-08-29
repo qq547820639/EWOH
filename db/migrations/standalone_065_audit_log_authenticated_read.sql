@@ -11,14 +11,14 @@
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 
 -- 1) GRANT SELECT TO authenticated（additive，不触碰 service_role）。
-GRANT SELECT ON TABLE __EWOH_SCHEMA__.ewoh_audit_log TO __EWOH_ROLE_AUTHENTICATED__;
+GRANT SELECT ON TABLE __EWOH_SCHEMA__.ewoh_audit_log TO authenticated;
 
 -- 2) 新增认证读策略（org 过滤：ewoh_org_visible 匹配或 global_admin）。
 DROP POLICY IF EXISTS ewoh_audit_select_authenticated ON __EWOH_SCHEMA__.ewoh_audit_log;
 CREATE POLICY ewoh_audit_select_authenticated
   ON __EWOH_SCHEMA__.ewoh_audit_log
   FOR SELECT
-  TO __EWOH_ROLE_AUTHENTICATED__
+  TO authenticated
   USING (
     __EWOH_SCHEMA__.ewoh_org_visible(org_id)
     OR (org_id IS NULL AND coalesce(current_setting('app.is_global_admin', true), '') = 'true')
