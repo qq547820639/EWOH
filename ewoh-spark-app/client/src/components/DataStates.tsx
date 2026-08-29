@@ -23,7 +23,7 @@ const HEALTH_PRESENTATION: Record<
     icon: Database,
     label: '部分数据缺失',
     containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
-    iconClass: 'text-risk-degraded',
+    iconClass: 'text-risk-degraded-foreground',
   },
   stale: {
     icon: TriangleAlert,
@@ -35,13 +35,13 @@ const HEALTH_PRESENTATION: Record<
     icon: CloudOff,
     label: '服务降级',
     containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
-    iconClass: 'text-risk-degraded',
+    iconClass: 'text-risk-degraded-foreground',
   },
   offline: {
     icon: WifiOff,
     label: '离线',
     containerClass: 'border-risk-offline-border bg-risk-offline-soft',
-    iconClass: 'text-risk-offline',
+    iconClass: 'text-risk-offline-foreground',
   },
 };
 

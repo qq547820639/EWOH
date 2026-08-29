@@ -41,7 +41,7 @@ function ResultPanel({ run }: { run: SimulationRun }): React.ReactElement {
         <span className="text-xs text-muted-foreground">引擎 {run.engineVersion}</span>
       </div>
       {run.status === 'failed' && run.failureReason && (
-        <div className="mt-2 flex items-start gap-1.5 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-2 text-sm text-risk-blocked">
+        <div className="mt-2 flex items-start gap-1.5 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-2 text-sm text-risk-blocked-foreground">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span data-testid="simulation-failure-reason">{run.failureReason}</span>
         </div>
@@ -205,13 +205,13 @@ const SimulationConsole = (): React.ReactElement => {
               运行评估
             </Button>
             {runMutation.isSuccess && lastResult?.status === 'completed' && (
-              <span className="flex items-center gap-1 text-sm text-risk-normal">
+              <span className="flex items-center gap-1 text-sm text-risk-normal-foreground">
                 <CheckCircle2 className="size-4" /> 评估完成
               </span>
             )}
           </div>
           {precheckErrors.length > 0 && (
-            <ul className="mt-3 space-y-1 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked" data-testid="simulation-precheck-errors">
+            <ul className="mt-3 space-y-1 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked-foreground" data-testid="simulation-precheck-errors">
               {precheckErrors.map((message) => (
                 <li key={message} className="flex items-start gap-1.5">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0" />
@@ -230,7 +230,7 @@ const SimulationConsole = (): React.ReactElement => {
             <p className="mt-3 text-sm text-muted-foreground">台账加载中…</p>
           )}
           {runsQuery.isError && (
-            <div className="mt-3 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked">
+            <div className="mt-3 rounded border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked-foreground">
               台账加载失败
               <button
                 type="button"
@@ -262,7 +262,7 @@ const SimulationConsole = (): React.ReactElement => {
             </div>
           )}
           {runError && !runMutation.isError && (
-            <p className="mt-3 text-sm text-risk-blocked">部分数据加载失败，请重试。</p>
+            <p className="mt-3 text-sm text-risk-blocked-foreground">部分数据加载失败，请重试。</p>
           )}
         </section>
       </div>

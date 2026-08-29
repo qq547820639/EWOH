@@ -60,7 +60,7 @@ export function TaskMoveExplain({
         <span className="text-white/70">{fmtResource(vm.old, personNameOf)}</span>
         <span className="text-white/40">→</span>
         <span className="text-white/40">New:</span>
-        <span className="font-medium text-risk-offline">{fmtResource(vm.current, personNameOf)}</span>
+        <span className="font-medium text-risk-offline-foreground">{fmtResource(vm.current, personNameOf)}</span>
         <span className="ml-auto rounded border border-white/10 px-1 py-0 text-[9px] text-white/55">
           {resourceChanged(vm)}
         </span>
@@ -90,7 +90,7 @@ export function TaskMoveExplain({
         <span>
           未变化任务：
           {vm.unchangedTaskCount != null ? (
-            <span className="font-semibold text-risk-normal">{vm.unchangedTaskCount}</span>
+            <span className="font-semibold text-risk-normal-foreground">{vm.unchangedTaskCount}</span>
           ) : (
             '—'
           )}

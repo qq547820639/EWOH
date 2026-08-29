@@ -77,16 +77,16 @@ export function ExecutionDeviationList({
             className={cn(
               'shrink-0',
               ex.status === 'FAILED'
-                ? 'text-risk-blocked'
+                ? 'text-risk-blocked-foreground'
                 : ex.status === 'COMPLETED'
-                  ? 'text-risk-normal'
+                  ? 'text-risk-normal-foreground'
                   : 'text-white/80',
             )}
           >
             {EXECUTION_STATUS_LABELS[ex.status] ?? ex.status}
           </span>
           {ex.deviationType ? (
-            <span className="min-w-0 truncate text-risk-degraded/90">
+            <span className="min-w-0 truncate text-risk-degraded-foreground/90">
               {DEVIATION_LABELS[ex.deviationType] ?? ex.deviationType}
             </span>
           ) : (

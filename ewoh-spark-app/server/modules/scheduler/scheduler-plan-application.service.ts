@@ -1,3 +1,4 @@
+/* eslint-disable @darraghor/nestjs-typed/injectable-should-be-provided -- 手工组合装配：由 SchedulerService 构造函数 new 实例化，不经 DI providers 注册，规则误报 */
 /**
  * SchedulerService Strangler Refactor（Task 2）：方案应用写路径。
  *

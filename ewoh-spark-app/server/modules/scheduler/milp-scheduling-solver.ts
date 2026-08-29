@@ -1,3 +1,4 @@
+/* eslint-disable @darraghor/nestjs-typed/injectable-should-be-provided -- 手工组合装配：由 SolverService 构造函数 new 实例化，不经 DI providers 注册，规则误报 */
 /* milp-scheduling-solver.ts — MILP Scheduling Solver（ADR-058 / NO-13i，§8/§9）。
  *
  * 求解器插拔阶梯第 4 类：精确联合整数规划（HiGHS 1.15.2 WASM，真实 MILP 求解器，

@@ -46,31 +46,31 @@ const KIND_PRESENTATION: Record<
     icon: ShieldX,
     title: '权限不足',
     containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
-    iconClass: 'text-risk-degraded',
+    iconClass: 'text-risk-degraded-foreground',
   },
   validation: {
     icon: CircleAlert,
     title: '操作未通过校验',
     containerClass: 'border-risk-degraded-border bg-risk-degraded-soft',
-    iconClass: 'text-risk-degraded',
+    iconClass: 'text-risk-degraded-foreground',
   },
   connection: {
     icon: WifiOff,
     title: '网络连接失败',
     containerClass: 'border-risk-offline-border bg-risk-offline-soft',
-    iconClass: 'text-risk-offline',
+    iconClass: 'text-risk-offline-foreground',
   },
   server: {
     icon: ServerCrash,
     title: '服务器暂时不可用',
     containerClass: 'border-risk-blocked-border bg-risk-blocked-soft',
-    iconClass: 'text-risk-blocked',
+    iconClass: 'text-risk-blocked-foreground',
   },
   unknown: {
     icon: TriangleAlert,
     title: '操作失败',
     containerClass: 'border-risk-blocked-border bg-risk-blocked-soft',
-    iconClass: 'text-risk-blocked',
+    iconClass: 'text-risk-blocked-foreground',
   },
 };
 
@@ -168,7 +168,7 @@ const ErrorState = ({
           <span
             className={`mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${
               parsed.retryable
-                ? 'border-risk-normal-border bg-risk-normal-soft text-risk-normal'
+                ? 'border-risk-normal-border bg-risk-normal-soft text-risk-normal-foreground'
                 : 'border-border bg-muted text-muted-foreground'
             }`}
           >

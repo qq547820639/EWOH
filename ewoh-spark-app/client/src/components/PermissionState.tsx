@@ -52,7 +52,7 @@ const PermissionState = ({
       className="flex flex-col gap-3 rounded-lg border border-risk-degraded-border bg-risk-degraded-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <ShieldX className="mt-0.5 size-5 shrink-0 text-risk-degraded" />
+        <ShieldX className="mt-0.5 size-5 shrink-0 text-risk-degraded-foreground" />
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{title}</p>
           <p className="mt-0.5 text-foreground">{resolvedDescription}</p>

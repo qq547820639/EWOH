@@ -48,7 +48,7 @@ const PlanCompareWorkspace = ({
         className="absolute right-2 top-[6.5rem] z-40 flex items-center gap-1 rounded-md border border-white/10 bg-surface-inverse-raised/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-card/10"
         title="Plan Compare：基线/候选/差异三模式"
       >
-        <GitCompareArrows className="w-3.5 h-3.5 text-risk-normal" />
+        <GitCompareArrows className="w-3.5 h-3.5 text-risk-normal-foreground" />
         {showCompare ? '关闭对比' : '方案对比'}
       </button>
     )}

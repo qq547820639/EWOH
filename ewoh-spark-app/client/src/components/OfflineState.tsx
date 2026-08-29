@@ -25,7 +25,7 @@ const OfflineState = ({
       className="flex flex-col gap-3 rounded-lg border border-risk-offline-border bg-risk-offline-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <WifiOff className="mt-0.5 size-5 shrink-0 text-risk-offline" />
+        <WifiOff className="mt-0.5 size-5 shrink-0 text-risk-offline-foreground" />
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{title}</p>
           <p className="mt-0.5 text-foreground">{description}</p>

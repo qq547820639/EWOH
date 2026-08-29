@@ -97,7 +97,7 @@ export const CommandCenterView = ({
             value={String(pageSize)}
             onValueChange={(v) => onPageSizeChange?.(Number(v))}
           >
-            <SelectTrigger className="h-8 w-[110px] text-xs">
+            <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="每页显示条数">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -109,8 +109,14 @@ export const CommandCenterView = ({
             </SelectContent>
           </Select>
         </div>
-        {/* 列表容器：自适应剩余高度 + 内部滚动（响应式，无固定高度）。 */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* 列表容器：自适应剩余高度 + 内部滚动（响应式，无固定高度）。
+            A11Y（axe scrollable-region-focusable）：可滚动区域需可键盘聚焦。 */}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          tabIndex={0}
+          role="region"
+          aria-label="事件列表"
+        >
           {isEventsLoading && events.length === 0 ? (
             <div className="p-6 text-sm text-muted-foreground">正在加载事件…</div>
           ) : events.length === 0 ? (

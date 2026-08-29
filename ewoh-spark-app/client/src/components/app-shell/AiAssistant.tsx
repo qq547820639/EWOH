@@ -123,7 +123,7 @@ const AiAssistant = () => {
         onClick={() => setOpen(true)}
         aria-label="AI 助手"
         title="AI 助手（基于实时数据问答）"
-        className="inline-flex h-8 items-center gap-2 rounded-lg border border-risk-conflict bg-card px-2.5 text-sm font-medium text-risk-conflict hover:bg-risk-conflict-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-risk-conflict"
+        className="inline-flex h-8 items-center gap-2 rounded-lg border border-risk-conflict bg-card px-2.5 text-sm font-medium text-risk-conflict-foreground hover:bg-risk-conflict-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-risk-conflict"
       >
         <Bot className="h-4 w-4" aria-hidden />
         <span className="hidden sm:inline">AI 助手</span>
@@ -132,7 +132,7 @@ const AiAssistant = () => {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="size-4 text-risk-conflict" aria-hidden />
+              <Sparkles className="size-4 text-risk-conflict-foreground" aria-hidden />
               AI 助手
             </DialogTitle>
             <DialogDescription>

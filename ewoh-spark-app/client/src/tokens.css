@@ -67,6 +67,32 @@
   --risk-unknown-foreground: hsl(220 9% 26%);
   --risk-unknown-soft: hsl(220 14% 96%);
   --risk-unknown-border: hsl(220 9% 85%);
+
+  /* A11Y（UX-009 axe color-contrast）：destructive 主色（hsl(2 84% 62%)）直接
+     作文字色叠在 /20 软底上时对比度不足（亮色 ≈2.9:1、暗色 ≈3.2:1）。
+     新增软底专配前景色：亮色用深红、暗色用提亮红，双主题 ≥ 4.5:1。 */
+  --destructive-on-soft: hsl(2 84% 34%);
+}
+
+[data-theme="dark"] {
+  --destructive-on-soft: hsl(2 84% 78%);
+}
+
+/* ------------------------------------------------------------------ */
+/* 五点五、恒定深色表面作用域（data-inverse-surface）                    */
+/*     CommandMap 全屏壳、AlertToast 深色卡等使用 bg-surface-inverse，  */
+/*     不随全局主题切换。该子树内「软色底 + 前景」组合的取值必须按      */
+/*     深底重定向（A11Y/axe color-contrast：深底上用亮字）。组件类名    */
+/*     语义不变（*-foreground / *-on-soft），仅按表面上下文取值。       */
+/* ------------------------------------------------------------------ */
+[data-inverse-surface] {
+  --risk-normal-foreground: hsl(130 54% 70%);
+  --risk-degraded-foreground: hsl(26 90% 70%);
+  --risk-offline-foreground: hsl(199 89% 70%);
+  --risk-blocked-foreground: hsl(2 84% 76%);
+  --risk-conflict-foreground: hsl(262 83% 80%);
+  --risk-unknown-foreground: hsl(220 9% 74%);
+  --destructive-on-soft: hsl(2 84% 78%);
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,6 +163,8 @@
   --color-risk-unknown-soft: var(--risk-unknown-soft);
   --color-risk-unknown-border: var(--risk-unknown-border);
 
+  --color-destructive-on-soft: var(--destructive-on-soft);
+
   --z-base: var(--z-base);
   --z-sticky: var(--z-sticky);
   --z-nav: var(--z-nav);
@@ -194,6 +222,15 @@
   --risk-blocked: hsl(2 84% 66%);
   --risk-conflict: hsl(262 83% 70%);
   --risk-unknown: hsl(220 9% 62%);
+
+  /* A11Y（UX-009 axe color-contrast）：risk-*-foreground 在暗色下同样提亮，
+     保证「软色底（/20、-soft）+ 前景文字」组合在暗色主题 ≥ 4.5:1。 */
+  --risk-normal-foreground: hsl(130 54% 74%);
+  --risk-degraded-foreground: hsl(26 90% 76%);
+  --risk-offline-foreground: hsl(199 89% 76%);
+  --risk-blocked-foreground: hsl(2 84% 78%);
+  --risk-conflict-foreground: hsl(262 83% 82%);
+  --risk-unknown-foreground: hsl(220 9% 78%);
 }
 
 /* ------------------------------------------------------------------ */

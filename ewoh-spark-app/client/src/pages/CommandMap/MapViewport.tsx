@@ -295,7 +295,7 @@ const MapViewport = ({
       </div>
       {schedulerState.ui.activeLayers.includes('execution-deviation') &&
         schedulerState.executionsError && (
-          <span className="rounded border border-risk-blocked/30 bg-risk-blocked/10 px-1.5 py-0.5 text-[10px] text-risk-blocked">
+          <span className="rounded border border-risk-blocked/30 bg-risk-blocked/10 px-1.5 py-0.5 text-[10px] text-risk-blocked-foreground">
             执行记录加载失败
           </span>
         )}

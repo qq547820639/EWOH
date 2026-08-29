@@ -28,7 +28,7 @@ export function DecisionHistoryTable({
         {skippedInvalid > 0 && (
           <span
             data-testid="decision-history-skipped-invalid"
-            className="rounded border border-risk-degraded/30 bg-risk-degraded/10 px-2 py-0.5 text-risk-degraded"
+            className="rounded border border-risk-degraded/30 bg-risk-degraded/10 px-2 py-0.5 text-risk-degraded-foreground"
           >
             非法记录 {skippedInvalid} 条已显式跳过（§33 不静默丢弃）
           </span>

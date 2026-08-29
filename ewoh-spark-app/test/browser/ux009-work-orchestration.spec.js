@@ -6,7 +6,8 @@
  * 断言验证最终用户可见状态（门禁决定、影响预览、交接状态、同步结果、场地就绪阶段），
  *      而非仅 HTTP 状态码。
  *
- * 说明：Gate 撤销在后端为 TODO（前端点击提示「撤销功能待后端支持」），故撤销用例断言用户可见的提示文案。
+ * 说明：Gate 撤销后端已实现（POST /api/work/gates/:id/revoke，GatesPanel revokeMutation），
+ *       撤销用例 mock 撤销 API 并断言用户可见的撤销成功回显（原「待后端支持」断言已过时，随 CLI-201 后端实现更新）。
  *
  * 运行方式：`npm run test:browser:ux009 -- --grep "UX-009/WorkOrchestration"`
  * 依赖：`dist/client` 构建产物已存在。
@@ -61,10 +62,12 @@ const GATES_MOCK = [
     gateId: 'G-1',
     title: '试点范围确认',
     calculatedStatus: 'requires_approval',
-    humanDecision: null,
+    // CLI-201 后更新：撤销入口仅在已有决定时可用（disabled={!gate.humanDecision}），
+    // 撤销用例需要一条「已有人工决定」的门禁才能触发撤销动作。
+    humanDecision: 'approved',
+    approver: 'AG-00',
+    decidedAt: new Date().toISOString(),
     conditions: ['试点范围已确认'],
-    approver: null,
-    decidedAt: null,
   },
 ];
 
@@ -142,15 +145,26 @@ test.describe('UX-009/WorkOrchestration', () => {
     await expect(page.locator('text=已记录 G-1 的决定')).toBeVisible();
   });
 
-  test('Gate 撤销：点击撤销展示「待后端支持」用户可见提示（后端 TODO）', async ({ page }) => {
+  test('Gate 撤销：确认后调用撤销 API 并回显用户可见的撤销结果', async ({ page }) => {
     await mockApi(page, {
       'GET /api/work/overview': OVERVIEW_WRITABLE,
       'GET /api/work/graph': GRAPH_MOCK,
       'GET /api/work/gates': GATES_MOCK,
+      'POST /api/work/gates/G-1/revoke': () => ({
+        gateId: 'G-1',
+        revoked: true,
+        revokedAt: new Date().toISOString(),
+        revokedBy: 'AG-00',
+        reason: '撤销测试',
+      }),
     });
     await openSession(page, baseUrl, ROLES.global_admin, '/work-orchestration?tab=gates');
     await page.getByRole('button', { name: '撤销' }).first().click();
-    await expect(page.locator('text=撤销功能待后端支持：需新增 gate 撤销/回滚 API（TODO）')).toBeVisible();
+    // 显式确认弹窗（审批类写操作必须二次确认）
+    await expect(page.locator('text=确认撤销门禁决定')).toBeVisible();
+    await page.getByRole('button', { name: '确认撤销' }).click();
+    // 撤销成功后用户可见回显（toast）
+    await expect(page.locator('text=已撤销 G-1 的决定')).toBeVisible();
   });
 
   test('Handoff 创建：填写交接并登记，确认后回显用户可见的交接提示', async ({ page }) => {
@@ -168,7 +182,8 @@ test.describe('UX-009/WorkOrchestration', () => {
     });
     await openSession(page, baseUrl, ROLES.global_admin, '/work-orchestration?tab=handoffs');
     await expect(page.locator('h2', { hasText: '交接记录' })).toBeVisible();
-    // 填表
+    // 填表（CLI-201：来源 Agent 为必填项，不预填不伪造）
+    await page.getByPlaceholder('来源 Agent').fill('AG-00');
     await page.getByPlaceholder('接收 Agent').fill('AG-01');
     await page.getByPlaceholder('交接范围').fill('工序交接');
     await page.getByPlaceholder('验收标准').fill('验收通过');

@@ -14,7 +14,7 @@ const DATA_SOURCE_CLASSES: Record<string, string> = {
   real: 'bg-info/10 text-info border-info/30',
   controlled_test: 'bg-warning/10 text-warning border-warning/30',
   simulated: 'bg-muted text-muted-foreground border-border',
-  replayed: 'bg-risk-conflict/10 text-risk-conflict border-risk-conflict/30',
+  replayed: 'bg-risk-conflict/10 text-risk-conflict-foreground border-risk-conflict/30',
   stale: 'bg-risk-degraded/15 text-risk-degraded-foreground border-risk-degraded-border',
   offline: 'bg-destructive/10 text-destructive border-destructive/30',
 };

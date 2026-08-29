@@ -186,11 +186,11 @@ const AlertToast = ({
           >
             <div className="flex items-start gap-2">
               <div className="w-7 h-7 shrink-0 rounded-md bg-destructive/20 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-destructive" />
+                <AlertTriangle className="w-4 h-4 text-destructive-on-soft" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <Badge className="text-[9px] px-1 py-0 bg-destructive/20 text-destructive border-destructive/30">
+                  <Badge className="text-[9px] px-1 py-0 bg-destructive/20 text-destructive-on-soft border-destructive/30">
                     L3{activeToast.count > 1 ? ` ×${activeToast.count}` : ''}
                   </Badge>
                   <span className="text-xs font-semibold text-white truncate">
@@ -251,6 +251,7 @@ const AlertToast = ({
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
             className="pointer-events-auto w-80 rounded-lg border border-white/10 bg-surface-inverse/95 backdrop-blur-sm shadow-lg p-2"
+            data-inverse-surface=""
             ref={alertListRef}
             tabIndex={-1}
             role="region"
@@ -308,7 +309,7 @@ const AlertToast = ({
                                   详情
                                 </button>
                                 <button
-                                  className="text-[9px] px-1 py-0.5 rounded bg-destructive/20 hover:bg-destructive/30 text-destructive"
+                                  className="text-[9px] px-1 py-0.5 rounded bg-destructive/20 hover:bg-destructive/30 text-destructive-on-soft"
                                   onClick={() => handleHandle(ev.eventId)}
                                   aria-label={`${UI_ARIA_LABELS.handleAlert}：${ev.title}`}
                                 >

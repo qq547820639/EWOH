@@ -9,6 +9,15 @@ import {
 const baseURL = (import.meta as unknown as { env?: Record<string, string> }).env
   ?.VITE_API_BASE_URL || '';
 
+/**
+ * SSE/流式请求与 axios 实例共用同一 API base。
+ * CLI-723：ai.ts 的 SSE fetch 此前用相对路径，跨域 API 网关部署
+ * （VITE_API_BASE_URL 非空）下会打到错误 origin 造成死链；统一由此构造。
+ */
+export function apiBaseUrl(): string {
+  return baseURL;
+}
+
 // CLI-701：刷新凭证在 httpOnly cookie；withCredentials 保证跨域 API
 // 网关部署下浏览器也会附带 cookie（同源部署时默认即附带）。
 const refreshClient = axios.create({

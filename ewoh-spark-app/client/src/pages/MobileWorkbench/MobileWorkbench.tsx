@@ -316,6 +316,7 @@ const MobileWorkbench = (): React.ReactElement => {
               onChange={(event) =>
                 updateSettings({ touchMode: event.target.checked })
               }
+              aria-label="触控优化"
             />
             触控优化
           </label>
@@ -326,6 +327,7 @@ const MobileWorkbench = (): React.ReactElement => {
               onChange={(event) =>
                 updateSettings({ oneHandMode: event.target.checked })
               }
+              aria-label="单手模式"
             />
             单手模式
           </label>
@@ -336,6 +338,7 @@ const MobileWorkbench = (): React.ReactElement => {
               onChange={(event) =>
                 updateSettings({ gloveMode: event.target.checked })
               }
+              aria-label="手套模式"
             />
             手套模式
           </label>

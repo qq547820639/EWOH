@@ -52,7 +52,7 @@ const IntelligenceWorkspace = ({
         className="absolute right-2 top-14 z-40 flex items-center gap-1 rounded-md border border-white/10 bg-surface-inverse-raised/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-card/10"
         title="智能调度驾驶舱图层"
       >
-        <Brain className="w-3.5 h-3.5 text-risk-conflict" />
+        <Brain className="w-3.5 h-3.5 text-risk-conflict-foreground" />
         智能调度{selectedTaskId ? ' ⚠候选' : ''}
       </button>
     )}
@@ -78,7 +78,7 @@ const IntelligenceWorkspace = ({
         className="absolute right-2 top-20 z-40 flex items-center gap-1 rounded-md border border-white/10 bg-surface-inverse-raised/95 px-2 py-1.5 text-[10px] text-white/80 shadow-lg hover:bg-card/10"
         title="Phase 4 智能工作台：KPI / Policy Replay / Shadow / Activation"
       >
-        <Activity className="w-3.5 h-3.5 text-risk-offline" />
+        <Activity className="w-3.5 h-3.5 text-risk-offline-foreground" />
         {showWorkspace ? '隐藏工作台' : '智能工作台'}
       </button>
     )}

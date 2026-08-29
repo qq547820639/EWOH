@@ -8,8 +8,8 @@ import { cn } from '@client/src/lib/utils';
 import { PLAN_STATUS_LABELS, planStatusSteps } from '../vm/planStatusStepVM';
 
 const STEP_CLS: Record<string, string> = {
-  done: 'border-risk-normal/30 bg-risk-normal/15 text-risk-normal',
-  current: 'border-risk-offline/40 bg-risk-offline/15 text-risk-offline',
+  done: 'border-risk-normal/30 bg-risk-normal/15 text-risk-normal-foreground',
+  current: 'border-risk-offline/40 bg-risk-offline/15 text-risk-offline-foreground',
   todo: 'border-white/10 bg-card/5 text-white/40',
 };
 

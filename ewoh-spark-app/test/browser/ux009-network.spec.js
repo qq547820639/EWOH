@@ -148,6 +148,10 @@ test.describe('UX-009/Network', () => {
         status: 409,
         body: { message: 'STATE_CONFLICT: step already advanced' },
       },
+      // 冲突解析端点（resolveConflict → forceResolveMobileStep）：采用任一方后调用
+      'POST /api/mobile/workbench/orders/WO-1001/steps/S1/force-resolve': () => ({
+        applied: true,
+      }),
     });
     await openSession(page, baseUrl, ROLES.worker, '/mobile-workbench');
     await expect(page.locator('h1')).toHaveText('移动工作台');

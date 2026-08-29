@@ -197,7 +197,7 @@ const AppErrorState = ({
       className="flex flex-col gap-3 rounded-lg border border-risk-blocked-border bg-risk-blocked-soft p-4 text-sm"
     >
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-5 shrink-0 text-risk-blocked" />
+        <Icon className="mt-0.5 size-5 shrink-0 text-risk-blocked-foreground" />
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{title}</p>
           <p className="mt-0.5 text-foreground">{phenomenonText}</p>

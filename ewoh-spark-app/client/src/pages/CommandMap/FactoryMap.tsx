@@ -1196,7 +1196,7 @@ const FactoryMap = ({
       {/* 近景模式提示 */}
       {isNearView && focus && (
         <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[70%] items-center gap-2 rounded-lg border border-white/10 bg-[hsl(220_14%_14%)]/90 px-3 py-1.5 text-xs text-white/80 shadow-xl backdrop-blur">
-          <Crosshair className="w-3.5 h-3.5 text-risk-conflict" />
+          <Crosshair className="w-3.5 h-3.5 text-risk-conflict-foreground" />
           <span className="truncate">
             {level === 'L3' ? '工位近景' : '人员跟随'}：{focus.name}
           </span>

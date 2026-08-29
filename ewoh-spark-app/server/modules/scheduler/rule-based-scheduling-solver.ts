@@ -1,3 +1,4 @@
+/* eslint-disable @darraghor/nestjs-typed/injectable-should-be-provided -- 手工组合装配：由 SolverService 构造函数 new 实例化，不经 DI providers 注册，规则误报 */
 /* rule-based-scheduling-solver.ts — Rule-based Scheduling Solver（ADR-053 / NO-13d，§8/§9）。
  *
  * 求解器插拔阶梯第 3 类：确定性 L1 规则求解器（stdlib 零外部依赖）。

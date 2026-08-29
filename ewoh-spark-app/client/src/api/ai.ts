@@ -1,4 +1,4 @@
-import { axiosForBackend } from '../lib/http';
+import { apiBaseUrl, axiosForBackend } from '../lib/http';
 import { getAccessToken } from '../lib/auth';
 
 /*
@@ -56,7 +56,9 @@ export async function createSuggestionStream(
   onEvent: (evt: SuggestionStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<AiSuggestion | null> {
-  const res = await fetch('/api/ai/suggestions/stream', {
+  // SSE 流式必须用 fetch（axios 不支持 ReadableStream 增量读取）；base 与 axios 实例一致。
+  // eslint-disable-next-line no-restricted-syntax
+  const res = await fetch(`${apiBaseUrl()}/api/ai/suggestions/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -206,7 +208,9 @@ export async function aiChatStream(
   onReasoning?: (reasoning: string) => void,
   signal?: AbortSignal,
 ): Promise<AiChatResult> {
-  const res = await fetch('/api/ai/chat', {
+  // SSE 流式必须用 fetch（axios 不支持 ReadableStream 增量读取）；base 与 axios 实例一致。
+  // eslint-disable-next-line no-restricted-syntax
+  const res = await fetch(`${apiBaseUrl()}/api/ai/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
