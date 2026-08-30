@@ -12,8 +12,11 @@
 |----|------|----------|----------|----------|---------------|--------|
 | R-01 | **E2E 与生产 DB 访问路径分叉**：e2e server 未设 `EWOH_DB_REQUIRE_TX`，E2E 全程走根句柄回落（无 GUC/RLS） | 测试有效性——RLS 租户隔离回归可能漏测 | 任何未显式开启开关的测试环境 | ★ 已验证：`standalone-e2e-server.ts` 无该变量；生产开关 fail-closed 已存在 | ① e2e server 默认 `EWOH_DB_REQUIRE_TX ??= '1'`；② 跑全量 E2E 暴露非事务查询；③ 逐一补 `runInTransaction`；④ CI 同步该默认值 | 后端 + AI 代办 |
 | R-02 | **错误契约被绕过**：`parseError` 仅 2 文件消费，119 处三元 + 151 处裸 `toast.error`（含 `err.message` 直显） | 全站错误提示一致性；脱敏策略（堆栈/内部信息不入 UI）持续面临绕过风险 | 每次新增/修改页面代码 | ★ 已验证计数不变 | 按 backlog P0-1：抽 `errorMessage()`/`mutationErrorToast()` → codemod → lint 禁回潮 | 前端 + AI 代办 |
-| R-03 | **生产部署 rc43 缺失**：main 已含 a11y 修复、AI SSE 死链修复、迁移链收口（`2221526`），生产仍在 rc42 | 生产用户未获得修复；两版本差异随时间扩大 | 生产环境按 rc42 运行 | ★ SSH 无免密凭据（root@121.43.230.202 Permission denied），助手无法代执行 | 运维人工执行 runbook：rsync → ECS 原生构建 → compose tag rc43 → `up -d --no-deps api` → 验证 `/health/ready`；或为本机配置 ECS SSH key 后交 AI 代办 | **运维** |
-| R-04 | **迁移链在全新环境断链**（runner 白名单漏登记已修，但需一次真实演练闭环） | 全新环境/灾备重建部署失败风险 | 全新库执行全量迁移 | ★ 8-29 已在本地嵌入式 PG 验证 68 文件/102 表安装成功；修复已推送（`c1f3c87`） | ① 在 CI 或 ECS 临时库再演练一次 `run_migrations` 全链（非本地）；② 给 CI standalone.yml 增加真实空库迁移 job（利用 `EWOH_PG_URL` 机制） | 后端 + QA |
+| ~~R-03~~ | **✅ 已关闭（2026-08-30）**：生产部署 rc43 缺失 | 生产用户未获得修复；两版本差异随时间扩大 | 生产环境按 rc42 运行 | ★ 部署完成：SSH 免密配置 → rsync → ECS 原生构建 rc43（1.14GB）→ compose 切版重建 → 容器 healthy；`health/live`、`/health/ready` 内外网 200；真实登录 201；核心 API 冒烟 200。rc41 已清理（回收 1.2GB），rc42 保留回滚。SSH key 已配置于 ECS，后续部署可交 AI 代办 | 无需进一步动作 | ~~运维~~（已解除） |
+| R-04 | **迁移链在全新环境断链**（runner 白名单漏登记已修，但需一次真实演练闭环） | 全新环境/灾备重建部署失败风险 | 全新库执行全量迁移 | ★ 演练已部分完成：8-29 本地嵌入式 PG 68 文件/102 表安装成功；8-30 生产库真实演练**发现并补齐 065/066 两个未应用迁移**（见 R-22） | ① CI standalone.yml 增加真实空库迁移 job（利用 `EWOH_PG_URL` 机制）；② 把本地嵌入式 PG 流程固化为 `scripts/e2e-local.sh`（R-23） | 后端 + QA |
+| R-22（新立·已修复→转流程项） | **生产库迁移落后于代码（存量故障）**：`ewoh_event` 缺 066 envelope 7 列、065 audit policy 未应用，而 rc42 代码已引用新列——**world/state、scheduler/snapshot、alerts 三端点在生产持续 500**（指挥地图/告警页数据不可用，非 rc43 引入，系 rc42「跳过 migrate」runbook 致迁移与代码脱钩） | 生产三核心数据端点 | 访问 world/state、scheduler/snapshot、alerts 即触发 | ★ **已修复**：对生产库补应用 065/066（schema 占位符渲染 + ewoh_owner 角色），端点全部恢复 200（world/state 0.69s、alerts 0.18s） | **流程固化**：后续部署切流量前必须以 `run_migrations --verify-*` 确认迁移链完整；把迁移状态核对写入部署 checklist | 后端 + 运维 |
+| R-23（新立） | **E2E 本地环境未固化**：嵌入式 PG + 迁移 + seed + server 启动为手工拼装，曾致 401 间歇失败与 R-01 验证中断 | 后端改动的持续验证能力；R-01 暴露面修复被阻塞 | 每次需要真实后端验证时 | ★ 本日两度手工重建，第二次踩坑（seed 遗漏/顺序依赖） | 固化 `scripts/e2e-local.sh`（一键：起库→全量迁移→seed→起服务→跑真实 E2E→清理）；作为 R-01 暴露面修复的迭代载体 | 后端 + AI 代办 |
+| ~~R-02 部分~~ | 错误契约收敛 | client 侧 97/98 三元已收敛至 `errorMessage()/errorDescription()`（1 处为观测底层合理保留） | 日常开发 | ★ 已完成（codemod 42 文件）+ ApprovalConsole 同名遮蔽修复 | server 侧 22 处为日志场景（String(err) 可接受），暂不动 | 前端 |
 
 ## 二、P1（两周内）
 
