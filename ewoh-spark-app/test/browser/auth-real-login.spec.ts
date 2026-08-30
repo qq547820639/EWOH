@@ -7,13 +7,34 @@ import { test, expect } from '@playwright/test';
 const BASE_URL = 'http://121.43.230.202:3000';
 const ADMIN_USER = 'admin';
 
-// Pre-fetched token (refreshed via SSH when needed)
-const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInR5cGUiOiJhY2Nlc3MiLCJqdGkiOiJjZjc5ZTlhNC1hYjBhLTRmYTMtYmQ5NC1mMzUxNDgyZDIxYmUiLCJ1c2VybmFtZSI6ImFkbWluIiwicm9sZXMiOlsiZ2xvYmFsX2FkbWluIl0sIm9yZ0lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwiaWF0IjoxNzg3MzYyNzIxLCJleHAiOjE3ODczOTE1MjF9.BwmQD6b3b0PNF0d8IZuVlOHNZFPvCTTMUlqAYJ59ix8';
+// R-03 交付收口（2026-08-30）：原硬编码 token 会过期导致整批注入用例失败——
+// 改为运行时调用真实 login API 获取新鲜 token；密码经 EWOH_TEST_ADMIN_PASS
+// 环境变量注入，绝不入库。
+const ADMIN_PASS = process.env.EWOH_TEST_ADMIN_PASS ?? '';
+
+let ACCESS_TOKEN = '';
 const AUTH_USER = JSON.stringify({
   userId: 'admin',
   username: 'admin',
   roles: ['global_admin'],
   orgId: '00000000-0000-4000-8000-000000000001',
+});
+
+test.beforeAll(async () => {
+  if (!ADMIN_PASS) {
+    test.skip(true, '需要 EWOH_TEST_ADMIN_PASS 环境变量（真实平台凭据不入库）');
+    return;
+  }
+  const res = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
+  });
+  if (!res.ok) {
+    throw new Error(`真实平台登录失败 (${res.status})——请核对新凭据或服务状态`);
+  }
+  const data = (await res.json()) as { accessToken: string };
+  ACCESS_TOKEN = data.accessToken;
 });
 
 test.use({ serviceWorkers: 'block' });
@@ -192,9 +213,11 @@ test.describe('Logout Flow', () => {
     await injectSessionAndGo(page, '/command-center');
     await page.waitForTimeout(2000);
 
-    // Clear session
+    // Clear session（access token 同时存在于 sessionStorage 与 localStorage，
+    // 仅清其一在有效 token 下不会触发登录页重定向——auth 存储双通道见 lib/auth.ts）
     await page.evaluate(() => {
       sessionStorage.clear();
+      localStorage.clear();
     });
     await page.goto(`${BASE_URL}/command-center`);
     await page.waitForURL(/\/login/, { timeout: 10000 });
