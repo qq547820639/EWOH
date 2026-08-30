@@ -152,10 +152,15 @@ const DeviceConfigDrawer = ({
   // ===== 层级树选择器状态 =====
   const [showHierarchyPicker, setShowHierarchyPicker] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  // UX-IA-2026-08：编辑模式 3 步向导（0 基本信息 → 1 绑定关系 → 2 状态历史），
+  // 新增模式仅步骤 0（绑定/历史依赖已保存设备，仅编辑可用）。
+  const [step, setStep] = useState(0);
+  const STEP_LABELS = ['基本信息', '绑定关系', '状态历史'] as const;
 
   // 打开/切换设备时同步表单
   useEffect(() => {
     if (!open) return;
+    setStep(0);
     setShowHierarchyPicker(false);
     setSelectedEntityId(null);
     if (isEdit && device) {
@@ -434,10 +439,36 @@ const DeviceConfigDrawer = ({
               ? `设备ID：${device.deviceId}`
               : '填写设备基础信息后保存'}
           </DrawerDescription>
+          {/* UX-IA-2026-08：分步指示器——按任务分组降低单屏字段密度。 */}
+          {isEdit && (
+            <div
+              role="tablist"
+              aria-label="设备配置步骤"
+              className="mt-2 flex gap-1 rounded-lg border border-border bg-muted/40 p-1"
+            >
+              {STEP_LABELS.map((label, index) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="tab"
+                  aria-selected={step === index}
+                  onClick={() => setStep(index)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                    step === index
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {index + 1}. {label}
+                </button>
+              ))}
+            </div>
+          )}
         </DrawerHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-4">
-          {/* ===== 设备信息表单 ===== */}
+          {/* ===== 设备信息表单（步骤 1；新增模式恒显） ===== */}
+          {(step === 0 || !isEdit) && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
@@ -568,9 +599,10 @@ const DeviceConfigDrawer = ({
               )}
             </div>
           </div>
+          )}
 
-          {/* ===== 绑定关系区块（仅 edit 模式） ===== */}
-          {isEdit && (
+          {/* ===== 绑定关系区块（步骤 2，仅 edit 模式） ===== */}
+          {isEdit && step === 1 && (
             <>
               <Separator />
               <div className="space-y-3">
@@ -779,8 +811,8 @@ const DeviceConfigDrawer = ({
             </>
           )}
 
-          {/* ===== 状态历史 / 时间线区块（仅 edit 模式） ===== */}
-          {isEdit && (
+          {/* ===== 状态历史 / 时间线区块（步骤 3，仅 edit 模式） ===== */}
+          {isEdit && step === 2 && (
             <>
               <Separator />
               <div className="space-y-3">
@@ -806,7 +838,25 @@ const DeviceConfigDrawer = ({
           )}
         </div>
 
-        <DrawerFooter className="flex-row justify-end gap-2 border-t border-border">
+        <DrawerFooter className="flex-row justify-between gap-2 border-t border-border">
+          {/* UX-IA-2026-08：步骤导航（编辑模式）；保存作用于基本信息，恒可用。 */}
+          <div>
+            {isEdit && step > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep((s) => Math.max(0, s - 1))}
+              >
+                上一步
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+          {isEdit && step < 2 && (
+            <Button variant="outline" size="sm" onClick={() => setStep((s) => s + 1)}>
+              下一步
+            </Button>
+          )}
           {/* BUG-004 修复：用 DrawerClose 包裹取消按钮，确保 vaul 原生关闭机制生效 */}
           <DrawerClose asChild>
             <Button
@@ -826,6 +876,7 @@ const DeviceConfigDrawer = ({
             <Save className="w-3.5 h-3.5" />
             {saveMutation.isPending ? '保存中...' : '保存'}
           </Button>
+          </div>
         </DrawerFooter>
       </DrawerContent>
     </Drawer>

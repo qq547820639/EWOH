@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
-import type { NavItem } from '@/lib/navigation';
+import { CornerDownRight, Search } from 'lucide-react';
+import { pageFunctionEntries, type NavItem } from '@/lib/navigation';
 import {
   CommandDialog,
   CommandEmpty,
@@ -17,6 +17,8 @@ interface GlobalSearchCommandProps {
 
 /**
  * 全局搜索/命令面板：可搜索所有导航项并跳转，支持 Cmd+K / Ctrl+K 快捷键。
+ * UX-IA-2026-08：新增「页面内功能」分组——聚合页内部能力（tab/锚点）可直达，
+ * 不占导航视觉空间（渐进式展示的命令面板横切层）。
  */
 const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
   const [open, setOpen] = useState(false);
@@ -36,6 +38,11 @@ const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
   const items = navGroups.flatMap((group) =>
     group.items.map((item) => ({ ...item, group: group.label })),
   );
+
+  const goToFunction = (to: string, anchor?: string) => {
+    navigate(anchor ? `${to}#${anchor}` : to);
+    setOpen(false);
+  };
 
   return (
     <>
@@ -59,7 +66,7 @@ const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
       >
         <CommandInput placeholder="输入页面名称或关键词…" />
         <CommandList>
-          <CommandEmpty>未找到匹配的页面</CommandEmpty>
+          <CommandEmpty>未找到匹配的页面或功能</CommandEmpty>
           <CommandGroup heading="导航">
             {items.map((item) => (
               <CommandItem
@@ -74,6 +81,21 @@ const GlobalSearchCommand = ({ navGroups }: GlobalSearchCommandProps) => {
                 <span>{item.label}</span>
                 <span className="ml-auto text-xs text-muted-foreground">
                   {item.group}
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandGroup heading="页面内功能">
+            {pageFunctionEntries.map((entry) => (
+              <CommandItem
+                key={`${entry.to}#${entry.anchor ?? ''}`}
+                value={`${entry.label} ${entry.keywords} ${entry.to}`}
+                onSelect={() => goToFunction(entry.to, entry.anchor)}
+              >
+                <CornerDownRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <span>{entry.label}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {entry.to.split('?')[0]}
                 </span>
               </CommandItem>
             ))}

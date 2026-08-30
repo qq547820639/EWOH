@@ -107,7 +107,8 @@ describe('收藏视图', () => {
 describe('面包屑与路由映射', () => {
   it('反向映射已知路由为分组 + 页面', () => {
     const crumbs = resolveBreadcrumb('/devices');
-    expect(crumbs.map((c) => c.label)).toEqual(['态势感知', '设备中心']);
+    // UX-IA-2026-08：设备中心已随任务域重组移入「资源与资产」组。
+    expect(crumbs.map((c) => c.label)).toEqual(['资源与资产', '设备中心']);
     expect(crumbs[crumbs.length - 1].to).toBe('/devices');
   });
 

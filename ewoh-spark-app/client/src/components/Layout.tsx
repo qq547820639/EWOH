@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, LogOut, Menu, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, LogOut, Menu, X } from 'lucide-react';
 import { EWOH_ROLE_LABELS } from '@client/src/types/ewoh';
 import { getVisibleNavGroups } from '../lib/navigation';
 import { getAuthUser, revokeSession } from '../lib/auth';
@@ -18,6 +18,37 @@ import { useOfflineSnapshot } from './app-shell/useOfflineSnapshot';
 import OnboardingQuickStart from './OnboardingQuickStart';
 import { prefetchRoute } from '../lib/routePrefetch';
 
+const NAV_EXPANDED_STORAGE_KEY = 'ewoh_nav_expanded_groups';
+
+/** 当前路由所属的导航组名（无匹配返回 null）。 */
+function groupLabelOfPathname(
+  groups: Array<{ label: string; items: Array<{ to: string }> }>,
+  pathname: string,
+): string | null {
+  return groups.find((group) => group.items.some((item) => item.to === pathname))?.label ?? null;
+}
+
+function readExpandedGroups(
+  groups: Array<{ label: string; items: Array<{ to: string }> }>,
+  pathname: string,
+): Set<string> {
+  // UX-IA-2026-08：默认仅展开「当前路由所在组」，其余组折叠为组标题，
+  // 将 global_admin 的 18 项常驻列表降为「5 行组标题 + 当前组明细」。
+  const current = groupLabelOfPathname(groups, pathname);
+  try {
+    const raw = window.localStorage.getItem(NAV_EXPANDED_STORAGE_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw) as string[];
+      return new Set(
+        Array.isArray(stored) && stored.length > 0 ? stored : current ? [current] : [],
+      );
+    }
+  } catch {
+    // 存储损坏时回退默认规则。
+  }
+  return new Set(current ? [current] : []);
+}
+
 const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,6 +58,9 @@ const Layout = () => {
   const pendingCount = offlineSnapshot?.pendingCount ?? 0;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() =>
+    readExpandedGroups(navGroups, location.pathname),
+  );
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const wasSidebarOpenRef = useRef(false);
@@ -34,6 +68,36 @@ const Layout = () => {
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
+
+  // 路由切换时自动展开当前组（不收起用户手动展开的其他组）。
+  useEffect(() => {
+    const current = groupLabelOfPathname(navGroups, location.pathname);
+    if (!current) return;
+    setExpandedGroups((prev) => {
+      if (prev.has(current)) return prev;
+      const next = new Set(prev);
+      next.add(current);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      try {
+        window.localStorage.setItem(NAV_EXPANDED_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        // 存储不可用时仅内存态生效。
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (sidebarOpen) {
@@ -98,64 +162,65 @@ const Layout = () => {
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="space-y-4">
-            {navGroups.map((group) => (
-              <div key={group.label}>
-                <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.label}
-                </p>
-                <div className="space-y-1">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    const isMap = item.to === '/command-map';
-                    const roleText = item.roles
-                      .map((role) => EWOH_ROLE_LABELS[role])
-                      .join(' · ');
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        title={roleText}
-                        data-roles={item.roles.join(',')}
-                        onMouseEnter={() => prefetchRoute(item.to)}
-                        onFocus={() => prefetchRoute(item.to)}
-                        onClick={() => setSidebarOpen(false)}
-                      >
-                        {({ isActive }) => (
-                          <span
-                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                              isMap
-                                ? 'bg-gradient-to-r from-primary to-risk-conflict text-white hover:opacity-90'
-                                : isActive
-                                  ? 'bg-primary text-white'
-                                  : 'text-foreground hover:bg-muted'
-                            }`}
+          <div className="space-y-1.5">
+            {navGroups.map((group) => {
+              const expanded = expandedGroups.has(group.label);
+              return (
+                <div key={group.label}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.label)}
+                    aria-expanded={expanded}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {group.label}
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
+                    />
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 space-y-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isMap = item.to === '/command-map';
+                        const roleText = item.roles
+                          .map((role) => EWOH_ROLE_LABELS[role])
+                          .join(' · ');
+                        return (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            title={roleText}
+                            data-roles={item.roles.join(',')}
+                            onMouseEnter={() => prefetchRoute(item.to)}
+                            onFocus={() => prefetchRoute(item.to)}
+                            onClick={() => setSidebarOpen(false)}
                           >
-                            <Icon className="h-4 w-4 shrink-0" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate leading-5">{item.label}</span>
+                            {({ isActive }) => (
                               <span
-                                className={`block truncate text-[10px] leading-4 ${
+                                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                                   isMap
-                                    ? 'text-white/80'
+                                    ? 'bg-gradient-to-r from-primary to-risk-conflict text-white hover:opacity-90'
                                     : isActive
-                                    // 蓝底(hsl(221 83% 53%))上 text-white/75 对比度仅 3.61:1，不达 WCAG AA(4.5:1)
-                                    ? 'text-white'
-                                    : 'text-muted-foreground'
+                                      ? 'bg-primary text-white'
+                                      : 'text-foreground hover:bg-muted'
                                 }`}
                               >
-                                {roleText}
+                                <Icon className="h-4 w-4 shrink-0" />
+                                <span className="min-w-0 flex-1 truncate leading-5">
+                                  {item.label}
+                                </span>
+                                {isMap && <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />}
                               </span>
-                            </span>
-                            {isMap && <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />}
-                          </span>
-                        )}
-                      </NavLink>
-                    );
-                  })}
+                            )}
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </nav>
         <div className="px-5 py-4 border-t border-border">

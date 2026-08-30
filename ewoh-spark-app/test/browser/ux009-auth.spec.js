@@ -134,6 +134,8 @@ test.describe('UX-009/Auth', () => {
       'POST /api/auth/refresh': { status: 401, body: { message: 'invalid refresh' } },
     });
     await openSession(page, baseUrl, ROLES.global_admin, '/work-orchestration');
-    await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 });
+    // CLI-507：重定向需携带 redirect= 保留被中断页面（原断言 /login$ 与
+    // redirectToLogin 的 ?redirect= 行为矛盾，在 redirect 特性合入后即失效）。
+    await expect(page).toHaveURL(/\/login\?redirect=%2Fwork-orchestration$/, { timeout: 20_000 });
   });
 });

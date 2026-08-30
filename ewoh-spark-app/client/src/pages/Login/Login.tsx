@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { login } from '../../api/auth';
-import { isAuthenticated, setSession } from '../../lib/auth';
+import { getAuthUser, isAuthenticated, setSession } from '../../lib/auth';
+import { defaultLandingPath } from '../../lib/navigation';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -15,7 +16,8 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate('/command-center', { replace: true });
+      // UX-IA-2026-08：按角色任务域分流默认落地页（redirect 现场仍在 from 中）。
+      navigate(defaultLandingPath(getAuthUser()?.roles), { replace: true });
     }
   }, [navigate]);
 
@@ -27,7 +29,8 @@ const Login = () => {
       const tokens = await login(username, password);
       setSession(tokens);
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(from ?? '/command-center', { replace: true });
+      const roles = getAuthUser()?.roles;
+      navigate(from ?? defaultLandingPath(roles), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {

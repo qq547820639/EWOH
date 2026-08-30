@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Ban, BrainCircuit, CheckCircle2, Database, FlaskConical, Loader2, Plus, Radar, Search, Undo2 } from 'lucide-react';
@@ -285,6 +286,15 @@ const System = (): React.ReactElement => {
   const parameterSummary = parameterSummaryQuery.data;
   const traces = tracesQuery.data ?? [];
 
+  // UX-IA-2026-08：支持 ⌘K 搜索「页面内功能」直达（/system#anchor）滚动定位；
+  // 锚点条 <a href="#id"> 的点击同样经此 effect 平滑滚动。
+  const location = useLocation();
+  useEffect(() => {
+    if (!location.hash) return;
+    const target = document.getElementById(location.hash.slice(1));
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location.hash]);
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <header>
@@ -292,8 +302,32 @@ const System = (): React.ReactElement => {
         <p className="mt-1 text-sm text-muted-foreground">组织化配置与敏感值脱敏展示。</p>
       </header>
 
+      {/* UX-IA-2026-08：粘性分区锚点条——4 区块平铺页的快速定位路径。 */}
+      <nav
+        aria-label="系统管理分区导航"
+        className="sticky top-0 z-10 flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1 shadow-sm"
+      >
+        {[
+          { id: 'system-flags', label: '功能开关评估' },
+          { id: 'system-params', label: '参数注册中心' },
+          { id: 'system-ai', label: 'AI 能力接入' },
+          { id: 'system-tracing', label: '请求追踪' },
+        ].map((section) => (
+          <a
+            key={section.id}
+            href={`#${section.id}`}
+            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {section.label}
+          </a>
+        ))}
+      </nav>
+
       <div className="rounded-lg border border-border bg-card p-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <h2
+          id="system-flags"
+          className="flex scroll-mt-14 items-center gap-2 text-sm font-semibold text-foreground"
+        >
           <FlaskConical className="h-4 w-4 text-primary" />
           功能开关评估
         </h2>
@@ -396,7 +430,10 @@ const System = (): React.ReactElement => {
 
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <h2
+            id="system-params"
+            className="flex scroll-mt-14 items-center gap-2 text-sm font-semibold text-foreground"
+          >
             <Database className="h-4 w-4 text-primary" />
             参数注册中心
           </h2>
@@ -612,7 +649,10 @@ const System = (): React.ReactElement => {
 
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <h2
+            id="system-ai"
+            className="flex scroll-mt-14 items-center gap-2 text-sm font-semibold text-foreground"
+          >
             <BrainCircuit className="h-4 w-4 text-[hsl(262_83%_58%)]" />
             AI 能力接入
           </h2>
@@ -717,7 +757,10 @@ const System = (): React.ReactElement => {
 
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <h2
+            id="system-tracing"
+            className="flex scroll-mt-14 items-center gap-2 text-sm font-semibold text-foreground"
+          >
             <Radar className="h-4 w-4 text-sky-600" />
             请求追踪
           </h2>

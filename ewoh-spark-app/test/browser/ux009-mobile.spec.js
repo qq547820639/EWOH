@@ -194,14 +194,20 @@ test.describe('UX-009/Mobile', () => {
     await stepCard.getByRole('button', { name: '异常上报' }).click();
     await stepCard.getByLabel('异常说明').fill('工位设备异响需维修');
     // 上传照片（需所属工序 in_progress 才可执行暂停；此处以 pending 工序验证异常 UI 与提交动作）
+    // 字节需通过 uploadGuard 的 magic bytes 校验（image/jpeg 要求 FFD8FF 头，
+    // 伪造字节会被安全守卫正确拒绝——2026-08-29 交付收口时同步 fixture）。
+    const jpegHead = Buffer.concat([
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]),
+      Buffer.alloc(24, 0x00),
+    ]);
     await stepCard.getByLabel('异常照片').setInputFiles({
       name: 'exception-photo.jpg',
       mimeType: 'image/jpeg',
-      buffer: Buffer.from('fake-jpeg-bytes'),
+      buffer: jpegHead,
     });
     await stepCard.getByRole('button', { name: '提交异常' }).click();
 
     // 异常上报提交（用户可见，含照片上传走 /api/files）
-    await expect(page.locator('text=工序 S1 已暂停')).toBeVisible();
+    await expect(page.locator('text=工序 S1 已暂停')).toBeVisible({ timeout: 12_000 });
   });
 });

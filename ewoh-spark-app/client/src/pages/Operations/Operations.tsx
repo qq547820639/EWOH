@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -139,7 +140,14 @@ function Field({
 
 const Operations = (): React.ReactElement => {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>('总览');
+  // UX-IA-2026-08：tab 状态同步 URL（?tab=，replace 不污染历史），
+  // 支持搜索直达与收藏视图；非法值回退「总览」。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const tab: Tab = (TABS as readonly string[]).includes(urlTab ?? '') ? (urlTab as Tab) : '总览';
+  const setTab = (next: Tab) => {
+    setSearchParams(next === '总览' ? {} : { tab: next }, { replace: true });
+  };
 
   const [assetName, setAssetName] = useState('');
   const [assetCategory, setAssetCategory] = useState('device');
@@ -448,7 +456,7 @@ const Operations = (): React.ReactElement => {
     <div className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">运营管理</h1>
+          <h1 className="text-2xl font-bold text-foreground">运维中心</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             维保、工装、工作中心配置与人员效率。
           </p>
@@ -476,7 +484,8 @@ const Operations = (): React.ReactElement => {
         </div>
       </header>
 
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1">
+      {/* UX-IA-2026-08：tab 条粘性置顶——长内容切换后随时可换区，防「滚入深区后找不到导航」。 */}
+      <div className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-sm">
         {TABS.map((item) => (
           <button
             key={item}
