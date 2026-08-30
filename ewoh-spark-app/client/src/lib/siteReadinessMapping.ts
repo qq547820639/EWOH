@@ -1,3 +1,4 @@
+import { errorMessage } from './errorContract';
 /**
  * UX-005 映射与导入 —— 纯前端逻辑（无网络依赖，便于单元测试）。
  *
@@ -242,7 +243,7 @@ export function parseImportText(text: string): {
   } catch (error) {
     return {
       records: [],
-      error: error instanceof Error ? error.message : 'JSON 解析失败',
+      error: errorMessage(error, 'JSON 解析失败'),
     };
   }
 }

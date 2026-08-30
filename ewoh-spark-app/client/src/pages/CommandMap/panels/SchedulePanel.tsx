@@ -28,6 +28,7 @@ import { queryKeys } from '@client/src/hooks/queryKeys';
 import { isNonAuthoritativePlan } from './schedule-panel-demo';
 import { pickComparePlanId, pickPreviousApprovedPlanId } from './schedule-panel-logic';
 import SolverStatusChain from './SolverStatusChain';
+import { errorMessage, errorDescription } from '@client/src/lib/errorContract';
 import {
   ApprovePlanDialog,
   RejectPlanDialog,
@@ -376,14 +377,14 @@ function SchedulePanel({
       const isDemoBuild = Boolean(buildMeta?.DEV) || buildMeta?.MODE?.includes('demo');
       if (isProdBuild && !isDemoBuild) {
         toast.error('调度引擎不可用', {
-          description: err instanceof Error ? err.message : undefined,
+          description: errorDescription(err),
         });
         setIsDemo(true); // 进入 degraded 展示（无 Demo 方案）
         return;
       }
       // 开发/演示构建：Demo 兜底（明确标注 demo，不影响真实数据）
       toast.warning('后端调度引擎不可用，已加载演示方案', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
       setIsDemo(true);
       appendPlans([buildDemoPlan()]);
@@ -416,7 +417,7 @@ function SchedulePanel({
         toast.error('该方案生成后现场状态已发生变化，请重新计算');
       } else {
         toast.error('审批失败', {
-          description: err instanceof Error ? err.message : undefined,
+          description: errorDescription(err),
         });
       }
     },
@@ -434,7 +435,7 @@ function SchedulePanel({
     onError: (err) => {
       // CLI-028：透传后端错误细节（原仅通用文案）。
       toast.error('方案驳回失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -459,7 +460,7 @@ function SchedulePanel({
     onError: (err) => {
       // CLI-028：透传后端错误细节（原仅通用文案）。
       toast.error('下发失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -487,7 +488,7 @@ function SchedulePanel({
     },
     onError: (err) => {
       toast.error('重新排程失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -498,7 +499,7 @@ function SchedulePanel({
     onError: (err) => {
       // CLI-028：透传后端错误细节（原仅通用文案）。
       toast.error('方案对比失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -560,7 +561,7 @@ function SchedulePanel({
     previewReplan({ triggerType: 'MANUAL', triggerIds: [plan.planId] })
       .then((preview) => setReplanPreview(preview))
       .catch((err: unknown) => {
-        setReplanPreviewError(err instanceof Error ? err.message : String(err));
+        setReplanPreviewError(errorMessage(err));
       })
       .finally(() => setReplanPreviewLoading(false));
   };

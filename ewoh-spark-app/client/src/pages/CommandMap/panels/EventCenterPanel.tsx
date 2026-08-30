@@ -14,6 +14,7 @@ import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 import { useVirtualList } from '@client/src/lib/virtualList';
 import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
 import { summarizeReplayContext, type ReplayContextSummary } from '../replayContext';
+import { errorMessage, errorDescription } from '@client/src/lib/errorContract';
 
 interface EventCenterPanelProps {
   selectedEventId?: string | null;
@@ -174,7 +175,7 @@ export default function EventCenterPanel({
     },
     onError: (err) => {
       toast.error('事件操作失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -230,7 +231,7 @@ export default function EventCenterPanel({
       setReplayContext(summarizeReplayContext(context));
     } catch (error) {
       if (token !== replayContextAliveRef.current) return;
-      setContextError(error instanceof Error ? error.message : '回放上下文加载失败');
+      setContextError(errorMessage(error, '回放上下文加载失败'));
     } finally {
       if (token === replayContextAliveRef.current) setContextLoading(false);
     }

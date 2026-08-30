@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { History, ListChecks, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -145,7 +146,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
     // CLI-214：决定记录失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('门禁决定记录失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -160,7 +161,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
     // CLI-214：批量决定失败显式反馈。
     onError: (err) => {
       toast.error('批量决定记录失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -179,7 +180,7 @@ const GatesPanel = ({ writable }: { writable: boolean }): React.ReactElement => 
     },
     onError: (err) => {
       toast.error('撤销决定失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -261,7 +262,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('资产登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -271,7 +272,7 @@ const Operations = (): React.ReactElement => {
     onSuccess: invalidateAll,
     onError: (err) => {
       toast.error('资产状态变更失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -291,7 +292,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('任务登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -322,7 +323,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('任务状态变更失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -346,7 +347,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('工装登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -356,7 +357,7 @@ const Operations = (): React.ReactElement => {
     onSuccess: invalidateAll,
     onError: (err) => {
       toast.error('工装操作失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -381,7 +382,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('工作中心保存失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -401,7 +402,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('标准工时登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -431,7 +432,7 @@ const Operations = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('效率记录登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

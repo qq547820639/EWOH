@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { errorMessage } from '../../../../lib/errorContract';
 import { Paperclip } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,7 +43,7 @@ export function AttachmentToolbarButton({
       }
     } catch (error) {
       toast.error(
-        `插入附件失败：${error instanceof Error ? error.message : '未知错误'}`,
+        `插入附件失败：${errorMessage(error, '未知错误')}`,
       );
     } finally {
       if (fileInputRef.current) {

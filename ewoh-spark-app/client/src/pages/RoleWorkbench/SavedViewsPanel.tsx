@@ -1,4 +1,5 @@
 import { useCallback, useReducer, useState } from 'react';
+import { errorMessage } from '@client/src/lib/errorContract';
 import { Play, Trash2 } from 'lucide-react';
 import {
   deleteWorkbenchView,
@@ -82,7 +83,7 @@ export function SavedViewsPanel({
     } catch (error) {
       dispatch({
         type: 'confirm-fail',
-        error: error instanceof Error ? error.message : '删除失败',
+        error: errorMessage(error, '删除失败'),
       });
     }
   }, [pending, onViewsChanged]);
@@ -105,7 +106,7 @@ export function SavedViewsPanel({
     } catch (error) {
       dispatch({
         type: 'undo-fail',
-        error: error instanceof Error ? error.message : '撤销失败',
+        error: errorMessage(error, '撤销失败'),
       });
     }
   }, [pending, role, onViewsChanged]);

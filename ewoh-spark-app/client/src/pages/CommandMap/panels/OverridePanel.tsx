@@ -28,6 +28,7 @@ import { queryKeys } from '@client/src/hooks/queryKeys';
 import { usePlanOverrides } from '@client/src/hooks/usePlanOverrides';
 import { getCurrentOperator } from '@client/src/lib/auth';
 import { planDiffVM } from '../vm/planDiffVM';
+import { errorMessage } from '@client/src/lib/errorContract';
 import { overridePreviewSummary, overridePreviewDeltaRows } from './override-preview-logic';
 import type {
   OverridePreviewResponse,
@@ -203,7 +204,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
     previewOverrides(planId, { actions: [action], operator, reason })
       .then(setPreview)
       .catch((e) => {
-        setPreviewError(e instanceof Error ? e.message : String(e));
+        setPreviewError(errorMessage(e));
       })
       .finally(() => setPreviewLoading(false));
   }
@@ -227,7 +228,7 @@ export function OverridePanel({ planId: externalPlanId, initialKind }: OverrideP
           });
         },
         onError: (e) => {
-          toast.error(`覆盖失败：${e instanceof Error ? e.message : '未知错误'}`);
+          toast.error(`覆盖失败：${errorMessage(e, '未知错误')}`);
         },
       },
     );

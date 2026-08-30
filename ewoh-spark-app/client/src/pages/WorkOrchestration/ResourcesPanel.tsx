@@ -8,6 +8,7 @@ import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/quer
 import { listWorkResources, acquireResourceLock, releaseResourceLock } from '../../api/work';
 import { useVirtualList } from '../../lib/virtualList';
 import { formatLockRemaining, formatTime, StatusBadge, WriteConfirmDialog } from './shared';
+import { errorMessage } from '../../lib/errorContract';
 
 /** 行高估算（px），资源行含两行文本，取值略高。 */
 const ROW_HEIGHT = 64;
@@ -44,7 +45,7 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
     // CLI-216：加锁失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('资源加锁失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -57,7 +58,7 @@ const ResourcesPanel = ({ writable }: { writable: boolean }): React.ReactElement
     // CLI-216：释放失败显式反馈。
     onError: (err) => {
       toast.error('资源释放失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

@@ -4,6 +4,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { login } from '../../api/auth';
 import { getAuthUser, isAuthenticated, setSession } from '../../lib/auth';
 import { defaultLandingPath } from '../../lib/navigation';
+import { errorMessage } from '../../lib/errorContract';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ const Login = () => {
       const roles = getAuthUser()?.roles;
       navigate(from ?? defaultLandingPath(roles), { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登录失败');
+      setError(errorMessage(err, '登录失败'));
     } finally {
       setLoading(false);
     }

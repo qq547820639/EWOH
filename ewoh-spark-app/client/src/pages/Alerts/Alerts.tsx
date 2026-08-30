@@ -11,6 +11,7 @@ import {
 import QueryState from '../../components/QueryState';
 import OfflineState from '../../components/OfflineState';
 import { Button } from '@client/src/components/ui/button';
+import { errorDescription } from '@client/src/lib/errorContract';
 
 const statusLabel: Record<string, string> = {
   open: '待确认',
@@ -68,7 +69,7 @@ const Alerts = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('状态更新失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

@@ -6,6 +6,7 @@
  * 收集输入（CLI-029，必填写入重排审计）。
  */
 import { Check, X, Send } from 'lucide-react';
+import { toneBadge } from '@client/src/lib/statusTone';
 import {
   replanPreviewSummary,
   dispatchPlanSummary,
@@ -106,17 +107,17 @@ export function ReplanPreviewBlock({
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'approved':
-      return 'bg-risk-normal/20 text-risk-normal-foreground border-risk-normal/30';
+      return toneBadge.normal;
     case 'dispatched':
-      return 'bg-risk-offline/20 text-risk-offline-foreground border-risk-offline/30';
+      return toneBadge.offline;
     case 'executing':
-      return 'bg-risk-offline/20 text-risk-offline-foreground border-risk-offline/30';
+      return toneBadge.offline;
     case 'completed':
-      return 'bg-risk-normal/20 text-risk-normal-foreground border-risk-normal/30';
+      return toneBadge.normal;
     case 'rejected':
-      return 'bg-risk-blocked/20 text-risk-blocked-foreground border-risk-blocked/30';
+      return toneBadge.blocked;
     default:
-      return 'bg-risk-unknown/20 text-risk-unknown-foreground border-risk-unknown/30';
+      return toneBadge.unknown;
   }
 }
 

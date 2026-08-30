@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { useNavigate } from 'react-router-dom';
 import { createReplayItem } from '../../api/world';
 import { getEvents, handleEvent } from '../../api/dashboard';
@@ -140,6 +141,7 @@ function SchedulerRealtimeBadge({
       {contextStale && (
         <span
           className="rounded border border-risk-blocked/50 bg-risk-blocked/20 px-1 font-bold text-risk-blocked-foreground"
+          // R-07：内联组合保留（含 border-blocked/50 变体，非标准 toneBadge 形状）
           title="活跃方案与统一调度上下文（/api/scheduler/context）版本不一致，可能展示混合版本数据"
         >
           上下文已过期
@@ -620,7 +622,7 @@ const CommandMapShell = (): React.ReactElement => {
         })
         .catch((err) => {
           toast.error('处置失败', {
-            description: err instanceof Error ? err.message : undefined,
+            description: errorDescription(err),
           });
         });
     },
@@ -647,7 +649,7 @@ const CommandMapShell = (): React.ReactElement => {
     },
     onError: (error) => {
       toast.error('创建跟进问题失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     },
   });

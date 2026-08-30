@@ -10,6 +10,7 @@ import { uploadFile } from '../../api/files';
 import type { DraftStore } from '../../lib/draftStore';
 import { buildExceptionBody } from './exceptionPayload';
 import type { QueueAttachment } from './useOfflineWorkbench';
+import { errorDescription } from '../../lib/errorContract';
 
 interface MobileOrderLike {
   workOrder: { scheduleTaskId: string };
@@ -141,7 +142,7 @@ export function useMobileException({
         toast.info(file ? '异常及照片已加入待同步队列' : '异常已加入待同步队列');
       } catch (error) {
         toast.error('离线照片处理失败', {
-          description: error instanceof Error ? error.message : undefined,
+          description: errorDescription(error),
         });
       }
       return;
@@ -157,7 +158,7 @@ export function useMobileException({
         });
       } catch (error) {
         toast.error('照片上传失败', {
-          description: error instanceof Error ? error.message : undefined,
+          description: errorDescription(error),
         });
         return;
       }

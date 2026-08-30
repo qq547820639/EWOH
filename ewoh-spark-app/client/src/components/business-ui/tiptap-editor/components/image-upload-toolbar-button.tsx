@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { errorMessage } from '../../../../lib/errorContract';
 import { Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -34,7 +35,7 @@ export function ImageUploadToolbarButton() {
       }
     } catch (error) {
       toast.error(
-        `插入图片失败：${error instanceof Error ? error.message : '未知错误'}`,
+        `插入图片失败：${errorMessage(error, '未知错误')}`,
       );
     } finally {
       if (fileInputRef.current) {

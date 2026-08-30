@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw, Workflow } from 'lucide-react';
@@ -103,7 +104,7 @@ const Scale = (): React.ReactElement => {
     // CLI-209：失败 toast 透传 err.message。
     onError: (err) => {
       toast.error('工厂 onboarding 失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -132,7 +133,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('差异登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -144,7 +145,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('差异解决失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -171,7 +172,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('Fleet 升级失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -185,7 +186,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('Fleet 回滚失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -219,7 +220,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('工作流启动失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -238,7 +239,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('工作流推进失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -251,7 +252,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('场景包安装失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -264,7 +265,7 @@ const Scale = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('场景包卸载失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

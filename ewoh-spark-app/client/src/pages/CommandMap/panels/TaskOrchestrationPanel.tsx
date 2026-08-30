@@ -28,6 +28,7 @@ import { Button } from '@client/src/components/ui/button';
 import { UI_ARIA_LABELS } from '../../../lib/a11y';
 import { useVirtualList } from '@client/src/lib/virtualList';
 import { KeyboardTableView, type KeyboardTableColumn } from '../components/KeyboardTableView';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
 import {
@@ -135,7 +136,7 @@ const TaskOrchestrationPanel = ({
     },
     onError: (err) => {
       toast.error('节拍模拟失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

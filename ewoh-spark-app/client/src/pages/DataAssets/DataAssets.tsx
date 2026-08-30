@@ -17,6 +17,7 @@ import {
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
 import { toast } from 'sonner';
+import { errorMessage } from '../../lib/errorContract';
 
 interface DataAssetsData {
   models: ModelRecord[];
@@ -65,7 +66,7 @@ const DataAssets = (): React.ReactElement => {
     // CLI-101：JSON.parse 抛错或后端 4xx 时不再静默，toast 透传错误信息。
     onError: (err) => {
       toast.error('AAS 资产导入失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -75,7 +76,7 @@ const DataAssets = (): React.ReactElement => {
     // CLI-102：语义查询失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('语义查询失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

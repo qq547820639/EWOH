@@ -8,6 +8,7 @@
 // （Compare→方案对比 / Override→人工覆盖 / Locate→定位 / Undo→清除上下文）。
 
 import { useMemo, useState } from 'react';
+import { errorMessage } from '@client/src/lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -266,7 +267,7 @@ export function DecisionCockpit({
       setAcceptReason('');
     },
     onError: (e) => {
-      toast.error(`确认处置失败：${e instanceof Error ? e.message : '未知错误'}`);
+      toast.error(`确认处置失败：${errorMessage(e, '未知错误')}`);
     },
   });
 

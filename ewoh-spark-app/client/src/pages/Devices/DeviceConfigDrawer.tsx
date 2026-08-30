@@ -28,6 +28,7 @@ import type {
   PersonnelInfo,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { Label } from '@client/src/components/ui/label';
@@ -225,7 +226,7 @@ const DeviceConfigDrawer = ({
     },
     onError: (err: unknown) => {
       toast.error('保存失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -395,7 +396,7 @@ const DeviceConfigDrawer = ({
     },
     onError: (err: unknown) => {
       toast.error('绑定失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -408,7 +409,7 @@ const DeviceConfigDrawer = ({
     },
     onError: (err: unknown) => {
       toast.error('解绑失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

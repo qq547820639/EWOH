@@ -1,4 +1,5 @@
 import { useCallback, useReducer, useRef } from 'react';
+import { errorMessage } from './errorContract';
 import {
   confirmDangerous,
   previewDangerousImpact,
@@ -45,7 +46,7 @@ export function useDangerousConfirm() {
       } catch (error) {
         dispatch({
           type: 'preview-fail',
-          error: error instanceof Error ? error.message : '影响预览失败',
+          error: errorMessage(error, '影响预览失败'),
         });
       }
     },
@@ -82,7 +83,7 @@ export function useDangerousConfirm() {
       } catch (error) {
         dispatch({
           type: 'confirm-fail',
-          error: error instanceof Error ? error.message : '操作执行失败',
+          error: errorMessage(error, '操作执行失败'),
         });
         throw error;
       }
@@ -103,7 +104,7 @@ export function useDangerousConfirm() {
     } catch (error) {
       dispatch({
         type: 'undo-fail',
-        error: error instanceof Error ? error.message : '撤销失败',
+        error: errorMessage(error, '撤销失败'),
       });
     }
   }, [state.actionId, state.impact]);

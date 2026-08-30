@@ -7,6 +7,7 @@ import { queryKeys } from '../../hooks/queryKeys';
 import { ADMIN_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
 import { createWorkHandoff, listWorkHandoffs, updateWorkHandoffStatus } from '../../api/work';
 import { formatTime, StatusBadge, WriteConfirmDialog } from './shared';
+import { errorMessage } from '../../lib/errorContract';
 
 type HandoffAction = 'accepted' | 'rejected' | 'closed';
 
@@ -48,7 +49,7 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
     // CLI-215：登记失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('交接登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -62,7 +63,7 @@ const HandoffsPanel = ({ writable }: { writable: boolean }): React.ReactElement 
     // CLI-215：状态更新失败显式反馈。
     onError: (err) => {
       toast.error('交接状态更新失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });

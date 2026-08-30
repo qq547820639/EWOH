@@ -164,6 +164,49 @@ function getRawMessage(error: unknown): string {
   return '';
 }
 
+/**
+ * R-08（风险登记册）：从任意错误提取可安全展示的 message（终返回 string）。
+ * 优先级：Error.message → 字符串本身 → axios 结构化 error.message →
+ * fallback（未提供时 String(error)，保持原三元的 String(err) 语义）。
+ * 替代 `err instanceof Error ? err.message : String(err)` 三元的收敛入口。
+ */
+export function errorMessage(error: unknown, fallback?: string): string {
+  if (error instanceof Error) {
+    const msg = error.message?.trim();
+    if (msg) return msg;
+  }
+  if (typeof error === 'string') {
+    const msg = error.trim();
+    if (msg) return msg;
+  }
+  const structured = getErrorObject(error);
+  if (typeof structured?.message === 'string' && structured.message) {
+    return structured.message;
+  }
+  return fallback ?? String(error);
+}
+
+/**
+ * R-08：`errorMessage` 的可空变体——替代
+ * `err instanceof Error ? err.message : undefined`（toast description 等场景）。
+ * 优先级：Error.message → 字符串 → axios 结构化 message → undefined。
+ */
+export function errorDescription(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    const msg = error.message?.trim();
+    return msg || undefined;
+  }
+  if (typeof error === 'string') {
+    const msg = error.trim();
+    return msg || undefined;
+  }
+  const structured = getErrorObject(error);
+  if (typeof structured?.message === 'string' && structured.message) {
+    return structured.message;
+  }
+  return undefined;
+}
+
 export function parseError(error: unknown): ParsedError {
   const status = getStatus(error);
   const errorObj = getErrorObject(error);

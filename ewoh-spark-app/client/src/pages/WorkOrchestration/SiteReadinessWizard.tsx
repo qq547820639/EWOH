@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { toast } from 'sonner';
 import {
   Play,
@@ -240,7 +241,7 @@ const SiteReadinessWizard = ({
     } catch (error) {
       setDryRun(null);
       setDryRunError(
-        error instanceof Error ? error.message : '后端 Dry Run 失败',
+        errorMessage(error, '后端 Dry Run 失败'),
       );
       toast.error('后端 Dry Run 失败，请检查映射 ID 或后端是否已注册该映射');
     }

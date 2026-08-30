@@ -1,3 +1,4 @@
+import { errorMessage } from './errorContract';
 /**
  * Wave W8「可观测性」— 请求关联（requestId / traceId）解析。
  *
@@ -64,7 +65,7 @@ function extractFromHeaders(error: unknown): TraceContext {
 const ID_IN_MESSAGE = /(?:request[\s_-]?id|trace[\s_-]?id)[\s:=]+([a-zA-Z0-9._-]+)/i;
 
 function extractFromMessage(error: unknown): TraceContext {
-  const message = error instanceof Error ? error.message : '';
+  const message = errorMessage(error, '');
   const match = message.match(ID_IN_MESSAGE);
   if (!match) return {};
   return { requestId: match[1], traceId: match[1] };

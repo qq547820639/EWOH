@@ -13,6 +13,7 @@ import {
 } from '../../lib/progressiveList';
 import { EvidenceRow, useUrlParam } from './shared';
 import EvidenceDrawer from './EvidenceDrawer';
+import { errorMessage } from '../../lib/errorContract';
 
 const EvidencePanel = (): React.ReactElement => {
   const [kind, setKind] = useUrlParam('evidenceKind');
@@ -54,7 +55,7 @@ const EvidencePanel = (): React.ReactElement => {
     try {
       setPreview(await getWorkEvidenceContent(entry.evidenceId, 200));
     } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : '证据预览失败');
+      setPreviewError(errorMessage(error, '证据预览失败'));
     } finally {
       setPreviewLoading(false);
     }

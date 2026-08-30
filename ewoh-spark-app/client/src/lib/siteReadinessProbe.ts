@@ -1,4 +1,5 @@
 import type { SiteReadinessCheck, RepairSuggestion } from './siteReadinessFlow';
+import { errorMessage } from './errorContract';
 
 /**
  * UX-005 环境/工具自动探测 —— 仅在客户端可探项目才做真实探测。
@@ -146,9 +147,7 @@ export async function probeBackendConnectivity(
       error:
         error instanceof Error && error.name === 'AbortError'
           ? `探针超时（${PROBE_TIMEOUT_MS}ms）`
-          : error instanceof Error
-            ? error.message
-            : '后端不可达',
+          : errorMessage(error, '后端不可达'),
     };
   } finally {
     clearTimeout(timeout);

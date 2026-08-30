@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { errorDescription } from '../../lib/errorContract';
 import { toast } from 'sonner';
 import {
   flushOfflineQueue,
@@ -585,7 +586,7 @@ export function useOfflineWorkbench(
           } catch (error) {
             // CLI-202：API 失败时保留冲突项（可重试），不删除。
             toast.error('冲突解析失败，请重试', {
-              description: error instanceof Error ? error.message : undefined,
+              description: errorDescription(error),
             });
             return;
           }
@@ -630,7 +631,7 @@ export function useOfflineWorkbench(
       toast.success(`已导出离线数据（共 ${snapshot.pendingActions.length} 项待同步）`);
     } catch (error) {
       toast.error('导出失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     }
   }, []);
@@ -653,7 +654,7 @@ export function useOfflineWorkbench(
       await refreshPending();
     } catch (error) {
       toast.error('恢复失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     }
   }, [refreshPending]);
@@ -676,7 +677,7 @@ export function useOfflineWorkbench(
       toast.success('已清空待同步队列与离线附件');
     } catch (error) {
       toast.error('清理失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     }
   }, [personId, recordAudit, refreshPending]);

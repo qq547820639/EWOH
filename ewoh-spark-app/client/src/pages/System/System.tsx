@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -162,7 +163,7 @@ const System = (): React.ReactElement => {
     // CLI-211：评估失败显式反馈。
     onError: (err) => {
       toast.error('功能开关评估失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -191,7 +192,7 @@ const System = (): React.ReactElement => {
     // CLI-211：登记失败显式反馈。
     onError: (err) => {
       toast.error('参数登记失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -208,7 +209,7 @@ const System = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('参数更新失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -218,7 +219,7 @@ const System = (): React.ReactElement => {
     onSuccess: invalidateParameters,
     onError: (err) => {
       toast.error('参数审批失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -227,7 +228,7 @@ const System = (): React.ReactElement => {
     onSuccess: invalidateParameters,
     onError: (err) => {
       toast.error('参数回滚失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -236,7 +237,7 @@ const System = (): React.ReactElement => {
     onSuccess: invalidateParameters,
     onError: (err) => {
       toast.error('参数退役失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -256,7 +257,7 @@ const System = (): React.ReactElement => {
         ok: false,
         answer: '',
         model: '',
-        error: error instanceof Error ? error.message : '连接失败',
+        error: errorMessage(error, '连接失败'),
       });
     },
   });
@@ -277,7 +278,7 @@ const System = (): React.ReactElement => {
       );
     },
     onError: (error) => {
-      setAiSaveMsg(`保存失败：${error instanceof Error ? error.message : '未知错误'}`);
+      setAiSaveMsg(`保存失败：${errorMessage(error, '未知错误')}`);
     },
   });
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link2, Loader2, Plus, Search, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
@@ -151,7 +152,7 @@ const Personnel = (): React.ReactElement => {
     },
     onError: (error) => {
       toast.error('绑定操作失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     },
   });
@@ -181,7 +182,7 @@ const Personnel = (): React.ReactElement => {
     },
     onError: (error) => {
       toast.error('创建失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     },
   });

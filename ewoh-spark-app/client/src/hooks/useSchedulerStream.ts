@@ -12,6 +12,7 @@ import {
   type SchedulerStreamStatusV2,
 } from '@client/src/pages/CommandMap/hooks/schedulerRealtimeCore';
 import type { SchedulingEvent, SchedulingPlanV2 } from '@shared/api.interface';
+import { errorMessage } from '@client/src/lib/errorContract';
 
 /**
  * 调度实时事件流 Hook（SSE）。
@@ -429,7 +430,7 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
       })
       .catch((err: unknown) => {
         if (abort.signal.aborted) return; // 主动取消，不视为错误。
-        handleStreamEnd(err instanceof Error ? err.message : String(err));
+        handleStreamEnd(errorMessage(err));
       });
 
     function handleStreamEnd(reason: string): void {

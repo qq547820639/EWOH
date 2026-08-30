@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useMutation } from '@tanstack/react-query';
 import { Bot, Loader2, Send, Sparkles } from 'lucide-react';
 import { aiChatStream, getAiConfigStatus } from '@/api/ai';
@@ -93,7 +94,7 @@ const AiAssistant = () => {
     onError: (error) => {
       // CLI-326：错误原文可能携带内部堆栈/接口信息，清洗后再展示给用户。
       const cleaned =
-        sanitizeUserText(error instanceof Error ? error.message : '') || '请求失败';
+        sanitizeUserText(errorMessage(error, '')) || '请求失败';
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         // 若最后一条是占位 assistant 消息，就地替换为错误；否则追加一条

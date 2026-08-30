@@ -23,6 +23,7 @@ import { openOfflineDb } from './lib/offlineDb';
 import { clearTokens } from './lib/auth';
 import { flushLeaseManager } from './lib/offlineLeader';
 import { sessionLifecycle } from './lib/runtimeLifecycle';
+import { errorMessage } from '@client/src/lib/errorContract';
 
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
@@ -38,7 +39,7 @@ const MainApp = () => {
               <div className="rounded-lg border border-border bg-card p-6 text-center text-card-foreground">
                 <p className="text-sm font-semibold text-destructive">页面加载失败</p>
                 <p className="mt-2 max-w-md text-xs text-muted-foreground">
-                  {error instanceof Error ? error.message : '未知错误'}
+                  {errorMessage(error, '未知错误')}
                 </p>
                 <button
                   type="button"

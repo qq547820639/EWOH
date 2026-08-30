@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { errorMessage } from '../../lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GitPullRequest,
@@ -132,7 +133,7 @@ const GitSyncPanel = (): React.ReactElement => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workGitSync });
     },
     onError: (error: unknown) => {
-      const reason = error instanceof Error ? error.message : '同步失败';
+      const reason = errorMessage(error, '同步失败');
       setFailure({ reason, retryable: /timeout|network|超时|网络/i.test(reason) });
       toast.error('同步失败');
     },

@@ -16,6 +16,7 @@ import type { ConflictPreviewResult } from '@shared/api.interface';
 import type { PlanCompareMode } from '../vm/planCompareVM';
 import { previewSummary, resolvePreviewAction } from './conflict-preview-logic';
 import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
+import { errorMessage } from '@client/src/lib/errorContract';
 
 interface ConflictPreviewPanelProps {
   conflict: SchedulingConflict;
@@ -81,7 +82,7 @@ export function ConflictPreviewPanel({
       queryClient.invalidateQueries({ queryKey: queryKeys.schedulerConflicts() });
     },
     onError: (e) => {
-      toast.error(`预览失败：${e instanceof Error ? e.message : '未知错误'}`);
+      toast.error(`预览失败：${errorMessage(e, '未知错误')}`);
     },
   });
 

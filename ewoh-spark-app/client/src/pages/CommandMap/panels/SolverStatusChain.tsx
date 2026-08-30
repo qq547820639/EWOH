@@ -7,6 +7,7 @@
 import { memo } from 'react';
 import type { SolverStatus } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import { toneBadge } from '@client/src/lib/statusTone';
 import { Badge } from '@client/src/components/ui/badge';
 import { solverStatusChain, type SolverChainStep } from '../vm/solverStatusChainVM';
 
@@ -20,9 +21,9 @@ export interface SolverStatusChainProps {
 
 const STEP_CLASSES: Record<SolverChainStep['kind'], string> = {
   primary: 'bg-primary/20 text-primary border-primary/30',
-  failed: 'bg-risk-blocked/20 text-risk-blocked-foreground border-risk-blocked/30',
-  fallback: 'bg-risk-degraded/20 text-risk-degraded-foreground border-risk-degraded/30',
-  result: 'bg-risk-normal/20 text-risk-normal-foreground border-risk-normal/30',
+  failed: toneBadge.blocked,
+  fallback: toneBadge.degraded,
+  result: toneBadge.normal,
 };
 
 /** 求解器状态链（CP-SAT 请求 → 状态 → 启发式回退；仅展示服务端已知信息）。 */

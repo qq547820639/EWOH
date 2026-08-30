@@ -28,6 +28,7 @@ import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProv
 import { getCurrentOperator } from '../../lib/auth';
 import { LazyPlanList } from '../../components/LazyPlanList';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
@@ -385,7 +386,7 @@ const Scheduling = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('方案生成失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -409,7 +410,7 @@ const Scheduling = (): React.ReactElement => {
         toast.error('该方案生成后现场状态已发生变化，请重新计算');
       } else {
         toast.error('方案审批失败', {
-          description: err instanceof Error ? err.message : undefined,
+          description: errorDescription(err),
         });
       }
     },
@@ -427,7 +428,7 @@ const Scheduling = (): React.ReactElement => {
     onError: (err) => {
       // R2-CP2-004：透传后端错误详情（与 CLI-028 修复口径一致）。
       toast.error('方案驳回失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -450,7 +451,7 @@ const Scheduling = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('下发失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -469,7 +470,7 @@ const Scheduling = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('重新排程失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

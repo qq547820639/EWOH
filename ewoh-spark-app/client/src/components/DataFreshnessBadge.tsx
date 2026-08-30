@@ -1,4 +1,5 @@
 import { Badge } from './ui/badge';
+import { toneBadge } from '../lib/statusTone';
 import {
   Tooltip,
   TooltipContent,
@@ -15,14 +16,14 @@ import {
 /** 新鲜度状态 → 深色主题徽标样式（与 Command Map 徽标风格一致，CLI-336：
  *  全部使用语义设计令牌）。 */
 export const FRESHNESS_STATUS_CLASSES: Record<FreshnessStatus, string> = {
-  LIVE: 'bg-risk-normal/20 text-risk-normal-foreground border-risk-normal/30',
-  DELAYED: 'bg-risk-degraded/20 text-risk-degraded-foreground border-risk-degraded/30',
+  LIVE: toneBadge.normal,
+  DELAYED: toneBadge.degraded,
   STALE: 'bg-warning/20 text-warning border-warning/30',
   OFFLINE: 'bg-destructive/20 text-destructive-on-soft border-destructive/30',
-  REPLAY: 'bg-risk-conflict/20 text-risk-conflict-foreground border-risk-conflict/30',
+  REPLAY: toneBadge.conflict,
   SHADOW: 'bg-info/20 text-info border-info/30',
   RESYNCING: 'bg-info/20 text-info border-info/30',
-  DEGRADED: 'bg-risk-degraded/20 text-risk-degraded-foreground border-risk-degraded/30',
+  DEGRADED: toneBadge.degraded,
 };
 
 function formatUpdatedAt(ts: number | null | undefined): string {

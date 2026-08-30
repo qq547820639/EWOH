@@ -24,6 +24,7 @@ import { cn } from '@client/src/lib/utils';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { ScrollArea } from '@client/src/components/ui/scroll-area';
+import { errorDescription } from '@client/src/lib/errorContract';
 
 type SuggestionType = BrainSuggestion['type'];
 
@@ -211,7 +212,7 @@ const BrainPanel = ({ onSelectPlan }: BrainPanelProps): React.ReactElement => {
     },
     onError: (err) =>
       toast.error('采纳失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       }),
   });
 

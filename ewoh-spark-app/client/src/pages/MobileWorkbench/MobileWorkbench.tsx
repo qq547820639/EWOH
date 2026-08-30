@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@client/src/components/ui/alert-dialog';
 import QueryState from '../../components/QueryState';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { StepCard } from './StepCard';
 import { PendingQueuePanel } from './PendingQueuePanel';
 import { OfflineStatusBar } from './OfflineStatusBar';
@@ -137,7 +138,7 @@ const MobileWorkbench = (): React.ReactElement => {
         },
       }));
       toast.error('操作失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -177,7 +178,7 @@ const MobileWorkbench = (): React.ReactElement => {
         },
       }));
       toast.error('质检提交失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

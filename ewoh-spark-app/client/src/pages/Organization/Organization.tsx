@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { errorDescription } from '@client/src/lib/errorContract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -113,7 +114,7 @@ const Organization = (): React.ReactElement => {
     },
     onError: (error) => {
       toast.error('创建失败', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     },
   });

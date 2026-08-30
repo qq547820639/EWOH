@@ -19,6 +19,10 @@ async function bootstrap(): Promise<void> {
   process.env.DATABASE_URL =
     process.env.EWOH_E2E_RUNTIME_DATABASE_URL ??
     'postgresql://postgres:postgres@127.0.0.1:15432/ewoh_e2e_runtime';
+  // R-01（风险登记册 2026-08-30）：E2E 与生产 DB 访问路径对齐——默认强制
+  // 事务上下文（GUC/RLS），让「非事务查询」在 E2E 阶段即暴露而非生产。
+  // 显式设置 EWOH_DB_REQUIRE_TX=0 可临时关闭（仅限排查）。
+  if (process.env.EWOH_DB_REQUIRE_TX == null) process.env.EWOH_DB_REQUIRE_TX = '1';
   process.env.JWT_SECRET = process.env.EWOH_E2E_JWT_SECRET ?? 'e2e-test-secret-key-please-change';
   process.env.REFRESH_TOKEN_EXPIRES_IN = '7d';
   process.env.RATE_LIMIT_MAX = '100000';

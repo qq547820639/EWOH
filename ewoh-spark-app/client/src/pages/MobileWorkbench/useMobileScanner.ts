@@ -16,6 +16,7 @@ import {
 } from '../../lib/scanner';
 import { queryKeys } from '../../hooks/queryKeys';
 import { scanTypeLabel } from './labels';
+import { errorDescription } from '../../lib/errorContract';
 
 export function useMobileScanner({
   personId,
@@ -46,7 +47,7 @@ export function useMobileScanner({
     onError: (err) => {
       playScanFeedback('fail');
       toast.error('扫码失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });
@@ -105,7 +106,7 @@ export function useMobileScanner({
     } catch (error) {
       playScanFeedback('fail');
       toast.error('条码识别不可用', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     }
   };

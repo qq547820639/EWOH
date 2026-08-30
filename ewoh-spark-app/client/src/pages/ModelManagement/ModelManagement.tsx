@@ -9,6 +9,7 @@ import {
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
 import { Button } from '@client/src/components/ui/button';
+import { errorDescription } from '@client/src/lib/errorContract';
 
 const actionFor = (status: string | null): { label: string; action: string } | null => {
   switch (status) {
@@ -42,7 +43,7 @@ const ModelManagement = (): React.ReactElement => {
     },
     onError: (err) => {
       toast.error('状态更新失败', {
-        description: err instanceof Error ? err.message : undefined,
+        description: errorDescription(err),
       });
     },
   });

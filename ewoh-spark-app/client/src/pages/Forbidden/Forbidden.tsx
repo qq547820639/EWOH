@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LogOut, ShieldX } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAuthUser, revokeSession } from '../../lib/auth';
+import { errorDescription } from '../../lib/errorContract';
 
 const Forbidden = (): React.ReactElement => {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ const Forbidden = (): React.ReactElement => {
     } catch (error) {
       // CLI-111：revoke 失败仍允许本地登出（服务端会话由后端过期兜底）。
       toast.error('退出登录请求失败，已本地登出', {
-        description: error instanceof Error ? error.message : undefined,
+        description: errorDescription(error),
       });
     }
     navigate('/login', { replace: true });

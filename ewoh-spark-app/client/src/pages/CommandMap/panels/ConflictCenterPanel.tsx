@@ -28,6 +28,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useSchedulerConflicts } from '@client/src/hooks/useSchedulerConflicts';
+import { errorMessage } from '@client/src/lib/errorContract';
 import {
   acknowledgeConflict,
   resolveConflict,
@@ -221,7 +222,7 @@ export function ConflictCenterPanel({
       toast.success('冲突状态已更新');
     },
     onError: (e) => {
-      toast.error(`操作失败：${e instanceof Error ? e.message : '未知错误'}`);
+      toast.error(`操作失败：${errorMessage(e, '未知错误')}`);
     },
   });
 

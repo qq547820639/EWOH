@@ -22,6 +22,7 @@ import {
 } from './approvalConsoleLogic';
 import { Button } from '@client/src/components/ui/button';
 import { toast } from 'sonner';
+import { errorMessage } from '@client/src/lib/errorContract';
 
 /**
  * 审批控制台（ADR-030 / NO-12f，§17 操作台"是否批准？"）。
@@ -86,7 +87,7 @@ const ApprovalConsole = (): React.ReactElement => {
     // CLI-002：失败不再静默，toast 透传后端错误信息。
     onError: (err) => {
       toast.error('标记已读失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -98,7 +99,7 @@ const ApprovalConsole = (): React.ReactElement => {
     // CLI-002：重试失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('推送重试失败', {
-        description: err instanceof Error ? err.message : String(err),
+        description: errorMessage(err),
       });
     },
   });
@@ -106,7 +107,9 @@ const ApprovalConsole = (): React.ReactElement => {
   const rows = buildApprovalRows(agentQuery.data ?? [], schedulerQuery.data ?? []);
   const notifications = notificationSummary(notificationQuery.data ?? []);
   const busy = resolveAgent.isPending || stepAction.isPending || markRead.isPending;
-  const errorMessage =
+  // R-08：本地横幅状态改名 bannerErrorMessage，避免与 errorContract 导入的
+  // errorMessage() 工具函数同名遮蔽（原同名导致 mutation onError 处 TDZ 不可调用）。
+  const bannerErrorMessage =
     resolveAgent.error instanceof Error
       ? resolveAgent.error.message
       : stepAction.error instanceof Error
@@ -125,9 +128,9 @@ const ApprovalConsole = (): React.ReactElement => {
         </div>
       </header>
 
-      {errorMessage && (
+      {bannerErrorMessage && (
         <div className="rounded-lg border border-risk-blocked/30 bg-risk-blocked/10 p-3 text-sm text-risk-blocked-foreground">
-          {errorMessage}
+          {bannerErrorMessage}
         </div>
       )}
 
