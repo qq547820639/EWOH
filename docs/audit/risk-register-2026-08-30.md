@@ -65,3 +65,14 @@
 1. **AI 代办立即批**：R-01（E2E 开关）→ R-07/R-08（机械替换批）→ R-18/R-11——全部有测试基座，一天内可完成并全量回归。
 2. **人工并行**：R-03（运维部署，唯一阻塞项）+ R-04 演练 + R-05/R-06 后端排期。
 3. **产品决策项**：R-17、R-21、R-20 需要业务输入，建议下周例会决策。
+
+---
+
+## 运维记录（2026-08-30 追加）
+
+### R-24｜ECS 存储深度清洁（已完成，运维记录）
+- **释放**：journal 104M（vacuum 50M/14d 限额）+ DB 备份旧份 144M（280M→136M，保留最近 7 天）+ dnf 缓存与旧轮转日志 ~30M；磁盘 35%→34%。
+- **防复发加固**：`/etc/docker/daemon.json` 增加 `log-opts: max-size=50m, max-file=3`（原 json-file 无限额，容器日志可无限增长），三容器已 force-recreate 生效（50m×3=150M 封顶）。
+- **有意保留**：rc42 镜像（回滚）、node:22-alpine（构建基建，runbook 约定不依赖 Docker Hub）、DB 备份最近 7 天、数据卷（postgres/redis）。
+- **回滚**：`/etc/docker/daemon.json.bak-20260830`；`docker compose.yml.bak-rc42` 仍在。
+- 验证：三容器 healthy、外部 ready 200、登录 201。
