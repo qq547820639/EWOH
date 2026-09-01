@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-contrast="normal" data-page-node-id="hvATgVIbvVFGECDQIYQccj">
+<head data-page-node-id="5nYcyDpG9jRKqyMfS9vP9r">
+<meta charset="UTF-8" data-page-node-id="X8glsfBf3IpvB5MVvNrLbJ">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="86VCM8qJIFIN9pl8l7lCr0">
+<title>EWOH 设计系统 · 界面原型</title>
+<style>
+/* ============================================================
+   EWOH 设计令牌（自 client/src/tailwind-theme.css + tokens.css 提取）
+   本原型使用生产真实值，所见即所得，可直接落地。
+   ============================================================ */
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(220 14% 14%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(220 14% 14%);
+  --muted: hsl(220 14% 96%);
+  --muted-foreground: hsl(218 10% 42%);
+  --primary: hsl(221 83% 53%);
+  --primary-foreground: hsl(220 14% 98%);
+  --secondary: hsl(220 14% 96%);
+  --secondary-foreground: hsl(220 14% 14%);
+  --border: hsl(220 14% 89%);
+  --input: hsl(220 14% 89%);
+  --ring: hsl(221 83% 53%);
+
+  --risk-normal: hsl(130 54% 42%);
+  --risk-normal-foreground: hsl(130 54% 24%);
+  --risk-normal-soft: hsl(120 60% 96%);
+  --risk-normal-border: hsl(130 54% 82%);
+
+  --risk-degraded: hsl(26 90% 49%);
+  --risk-degraded-foreground: hsl(26 90% 30%);
+  --risk-degraded-soft: hsl(33 100% 96%);
+  --risk-degraded-border: hsl(26 90% 82%);
+
+  --risk-offline: hsl(199 89% 48%);
+  --risk-offline-foreground: hsl(199 89% 28%);
+  --risk-offline-soft: hsl(199 89% 96%);
+  --risk-offline-border: hsl(199 89% 82%);
+
+  --risk-blocked: hsl(2 84% 62%);
+  --risk-blocked-foreground: hsl(2 84% 32%);
+  --risk-blocked-soft: hsl(2 84% 97%);
+  --risk-blocked-border: hsl(2 84% 85%);
+
+  --risk-conflict: hsl(262 83% 58%);
+  --risk-conflict-foreground: hsl(262 83% 38%);
+  --risk-conflict-soft: hsl(262 83% 97%);
+  --risk-conflict-border: hsl(262 83% 85%);
+
+  --risk-unknown: hsl(220 9% 46%);
+  --risk-unknown-foreground: hsl(220 9% 26%);
+  --risk-unknown-soft: hsl(220 14% 96%);
+  --risk-unknown-border: hsl(220 9% 85%);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Source Code Pro', Menlo, monospace;
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+
+  --shadow-sm: 0 2px 12px 0 hsl(0 0% 0% / 0.02), 0 1px 2px -1px hsl(0 0% 0% / 0.02);
+  --shadow-md: 0 4px 16px 0 hsl(0 0% 0% / 0.04), 0 2px 4px -2px hsl(0 0% 0% / 0.04);
+
+  --transition: 150ms ease;
+}
+
+[data-theme="dark"] {
+  --background: hsl(222 47% 8%);
+  --foreground: hsl(220 14% 92%);
+  --card: hsl(222 47% 10%);
+  --card-foreground: hsl(220 14% 92%);
+  --muted: hsl(222 30% 16%);
+  --muted-foreground: hsl(218 10% 64%);
+  --primary: hsl(221 83% 62%);
+  --primary-foreground: hsl(220 14% 98%);
+  --secondary: hsl(222 30% 16%);
+  --secondary-foreground: hsl(220 14% 92%);
+  --border: hsl(222 26% 20%);
+  --input: hsl(222 26% 22%);
+  --ring: hsl(221 83% 62%);
+
+  --risk-normal: hsl(130 54% 56%);
+  --risk-normal-foreground: hsl(130 54% 74%);
+  --risk-normal-soft: hsl(130 40% 14%);
+  --risk-normal-border: hsl(130 40% 30%);
+
+  --risk-degraded: hsl(26 90% 60%);
+  --risk-degraded-foreground: hsl(26 90% 76%);
+  --risk-degraded-soft: hsl(26 60% 14%);
+  --risk-degraded-border: hsl(26 60% 32%);
+
+  --risk-offline: hsl(199 89% 60%);
+  --risk-offline-foreground: hsl(199 89% 76%);
+  --risk-offline-soft: hsl(199 60% 14%);
+  --risk-offline-border: hsl(199 60% 32%);
+
+  --risk-blocked: hsl(2 84% 66%);
+  --risk-blocked-foreground: hsl(2 84% 78%);
+  --risk-blocked-soft: hsl(2 60% 14%);
+  --risk-blocked-border: hsl(2 60% 32%);
+
+  --risk-conflict: hsl(262 83% 70%);
+  --risk-conflict-foreground: hsl(262 83% 82%);
+  --risk-conflict-soft: hsl(262 50% 15%);
+  --risk-conflict-border: hsl(262 50% 32%);
+
+  --risk-unknown: hsl(220 9% 62%);
+  --risk-unknown-foreground: hsl(220 9% 78%);
+  --risk-unknown-soft: hsl(220 14% 16%);
+  --risk-unknown-border: hsl(220 14% 32%);
+}
+
+[data-contrast="high"] {
+  --border: hsl(220 14% 62%);
+  --input: hsl(220 14% 58%);
+  --muted-foreground: hsl(218 10% 30%);
+  --ring: hsl(221 95% 45%);
+  --risk-degraded: hsl(26 90% 40%);
+  --risk-offline: hsl(199 90% 38%);
+  --risk-unknown: hsl(220 9% 34%);
+}
+
+[data-theme="dark"][data-contrast="high"] {
+  --border: hsl(220 14% 55%);
+  --muted-foreground: hsl(218 10% 78%);
+  --ring: hsl(221 95% 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--foreground);
+  background: var(--background);
+  transition: background var(--transition), color var(--transition);
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.brand { font-size: 15px; font-weight: 500; }
+.brand span { color: var(--muted-foreground); font-weight: 400; margin-left: var(--space-2); }
+
+.switcher { display: flex; gap: var(--space-1); background: var(--muted); padding: 3px; border-radius: var(--radius-sm); }
+.switcher button {
+  font-family: inherit; font-size: 13px;
+  min-height: 32px; padding: 0 var(--space-3);
+  border: none; background: transparent; color: var(--muted-foreground);
+  border-radius: 4px; cursor: pointer; transition: all var(--transition);
+}
+.switcher button[aria-pressed="true"] { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+.switcher button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+h1 { font-size: 24px; font-weight: 500; line-height: 1.4; }
+h2 { font-size: 18px; font-weight: 500; margin-bottom: var(--space-2); }
+h3 { font-size: 14px; font-weight: 500; margin-bottom: var(--space-3); color: var(--muted-foreground); }
+p.lead { color: var(--muted-foreground); margin-bottom: var(--space-6); max-width: 74ch; }
+
+section { margin-bottom: var(--space-12); }
+section > header { margin-bottom: var(--space-6); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+
+.grid { display: grid; gap: var(--space-4); }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+/* 状态徽章：软底 + 深前景 + 边框，对比度 6.48–9.45:1 */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 24px; padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 500; line-height: 1.4;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.badge.normal   { background: var(--risk-normal-soft);   color: var(--risk-normal-foreground);   border-color: var(--risk-normal-border); }
+.badge.degraded { background: var(--risk-degraded-soft); color: var(--risk-degraded-foreground); border-color: var(--risk-degraded-border); }
+.badge.offline  { background: var(--risk-offline-soft);  color: var(--risk-offline-foreground);  border-color: var(--risk-offline-border); }
+.badge.blocked  { background: var(--risk-blocked-soft);  color: var(--risk-blocked-foreground);  border-color: var(--risk-blocked-border); }
+.badge.conflict { background: var(--risk-conflict-soft); color: var(--risk-conflict-foreground); border-color: var(--risk-conflict-border); }
+.badge.unknown  { background: var(--risk-unknown-soft);  color: var(--risk-unknown-foreground);  border-color: var(--risk-unknown-border); }
+
+.swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.swatch { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.swatch .bar { height: 44px; display: flex; align-items: flex-end; padding: 6px 10px; font-size: 11px; font-weight: 500; }
+.swatch .meta { padding: 8px 10px; font-size: 12px; color: var(--muted-foreground); }
+.swatch .meta code { font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+
+/* 按钮：触控目标 ≥44px（工业手套场景） */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  min-height: 44px; padding: 0 var(--space-4);
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+  cursor: pointer; transition: all var(--transition); white-space: nowrap;
+}
+.btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: var(--primary-foreground); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-secondary { background: var(--secondary); color: var(--secondary-foreground); border-color: var(--border); }
+.btn-secondary:hover:not(:disabled) { background: var(--muted); }
+.btn-ghost { background: transparent; color: var(--foreground); }
+.btn-ghost:hover:not(:disabled) { background: var(--muted); }
+.btn-danger { background: var(--risk-blocked); color: hsl(0 0% 100%); }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-sm { min-height: 36px; font-size: 13px; padding: 0 var(--space-3); }
+
+/* 指标卡：替代 JSON dump 的核心组件 */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: var(--space-3); }
+.metric { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); background: var(--card); }
+.metric .label { font-size: 12px; color: var(--muted-foreground); margin-bottom: 2px; }
+.metric .value { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.metric .value .unit { font-size: 13px; font-weight: 400; color: var(--muted-foreground); margin-left: 2px; }
+.metric .hint { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+.metric.is-warn .value { color: var(--risk-degraded-foreground); }
+.metric.is-bad .value { color: var(--risk-blocked-foreground); }
+.metric.is-good .value { color: var(--risk-normal-foreground); }
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 500; color: var(--muted-foreground); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: var(--space-3); border-bottom: 1px solid var(--border); }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+tbody tr:last-child td { border-bottom: none; }
+
+/* Journey Rail：流程带，用户永远知道在哪、下一步去哪 */
+.journey { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding-bottom: var(--space-2); }
+.jstep {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: transparent; border: none; border-bottom: 2px solid var(--border);
+  font-family: inherit; font-size: 13px; color: var(--muted-foreground);
+  cursor: pointer; white-space: nowrap; transition: all var(--transition);
+  min-height: 48px;
+}
+.jstep:hover:not(:disabled) { color: var(--foreground); }
+.jstep[aria-current="step"] { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
+.jstep[data-state="done"] { color: var(--foreground); }
+.jstep[data-state="done"] .num { background: var(--risk-normal-soft); color: var(--risk-normal-foreground); border-color: var(--risk-normal-border); }
+.jstep[data-state="todo"] { cursor: not-allowed; opacity: 0.6; }
+.jstep .num {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 11px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--muted); color: var(--muted-foreground);
+}
+.jstep[aria-current="step"] .num { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+.jstep:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.jsep { flex: none; width: 16px; align-self: center; height: 1px; background: var(--border); }
+
+/* 对象工作台 */
+.wb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.wb-title { font-size: 20px; font-weight: 500; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.wb-id { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); }
+.wb-meta { display: flex; gap: var(--space-4); flex-wrap: wrap; font-size: 12px; color: var(--muted-foreground); margin-top: var(--space-2); }
+.wb-meta b { font-weight: 500; color: var(--foreground); }
+
+.tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); margin-bottom: var(--space-4); overflow-x: auto; }
+.tab {
+  font-family: inherit; font-size: 13px; min-height: 40px; padding: 0 var(--space-3);
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted-foreground); cursor: pointer; transition: all var(--transition); white-space: nowrap;
+}
+.tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--primary); font-weight: 500; }
+.tab:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.panel[hidden] { display: none; }
+
+/* 时间线 */
+.timeline { list-style: none; border-left: 2px solid var(--border); padding-left: var(--space-4); margin-left: var(--space-2); }
+.timeline li { position: relative; padding-bottom: var(--space-4); font-size: 13px; }
+.timeline li::before {
+  content: ''; position: absolute; left: -21px; top: 6px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--border); border: 2px solid var(--card);
+}
+.timeline li.done::before { background: var(--risk-normal); }
+.timeline li.now::before { background: var(--primary); }
+.timeline .t-time { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
+
+/* 行动条：终态出口，解决"派工黑洞" */
+.actionbar {
+  display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center;
+  padding: var(--space-3); border-radius: var(--radius);
+  background: var(--muted); border: 1px solid var(--border);
+}
+.actionbar .spacer { flex: 1; }
+
+.callout {
+  border: 1px solid var(--risk-blocked-border);
+  background: var(--risk-blocked-soft);
+  color: var(--risk-blocked-foreground);
+  border-radius: var(--radius); padding: var(--space-3) var(--space-4); font-size: 13px;
+}
+
+pre.code {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  background: var(--muted); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: var(--space-3); overflow: auto; max-height: 160px;
+  color: var(--muted-foreground);
+}
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2) var(--space-4); font-size: 13px; }
+.kv dt { color: var(--muted-foreground); }
+.kv dd { font-variant-numeric: tabular-nums; }
+
+.note { font-size: 12px; color: var(--muted-foreground); margin-top: var(--space-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body data-page-node-id="uIJiRsu9fkdRmmYxfE44Uv">
+
+<div class="topbar" data-page-node-id="n3FboY84CXFzt6XEvcgjjA">
+  <div class="brand" data-page-node-id="Ah7TamszY1TUUbKL5tviQn">EWOH 设计系统<span data-page-node-id="doJBLrshuhDFycTSyhi8B6">界面原型 v1</span></div>
+  <div class="switcher" role="group" aria-label="主题切换" data-page-node-id="v5DCAzMkZFq7k0AVhWcmeg">
+    <button type="button" data-theme-btn="light" aria-pressed="true" data-page-node-id="3fPpp0T7c8fS0NMHgOBucU">浅色</button>
+    <button type="button" data-theme-btn="dark" aria-pressed="false" data-page-node-id="PF9GlqxGDDzTwTBzHXRZPA">暗色</button>
+    <button type="button" data-theme-btn="high" aria-pressed="false" data-page-node-id="rju609E1T9ple3xgnUh7xo">高对比</button>
+  </div>
+</div>
+
+<div class="wrap" data-page-node-id="yNoex9vfyCZr9R1yumNJBL">
+
+<section data-page-node-id="Yluy0GddaozGsHBItnkV9v">
+  <header data-page-node-id="B0sqR9eNsRSLFWcvmuQBrF">
+    <h1 data-page-node-id="ZWlILcEd2SrPIDpAvV2Die">EWOH 界面设计方案</h1>
+    <p class="lead" data-page-node-id="drcxrcNYfoLiorROt7woeK">
+      本原型使用 <code data-page-node-id="vU19NEn1JzVSmm9HKzoXgX">client/src/tokens.css</code> 与 <code data-page-node-id="cNHZMeH3gbRRGxBM3FrynG">tailwind-theme.css</code> 中的生产真实令牌值构建。
+      切换右上角主题可验证：语义令牌在浅色 / 暗色 / 高对比三套主题下均保持 AA 级以上对比度，
+      而页面内 368 处 Tailwind 硬编码色对这三套主题全部无响应。
+    </p>
+  </header>
+</section>
+
+<!-- ============ 1. 状态色板 ============ -->
+<section data-page-node-id="CFLnDjos0PkoBJZJpeejxQ">
+  <header data-page-node-id="kUnZrQ8rydQ5FZAcbH01DO"><h2 data-page-node-id="cAnrATKxRB7dVf03D334FI">1 · 状态色板</h2>
+  <p class="lead" data-page-node-id="1ioiC8ARKYy8ACeuie0vfI">六个业务状态，每个状态四个维度：主色（填充/图标）、软底（背景）、边框、前景（文字）。
+  面板标注的对比度为「软底 + 前景文字」实测值，全部高于 WCAG AA 的 4.5:1。</p></header>
+
+  <div class="swatches" data-page-node-id="DhPKyF0t1jIi0pYq6XRDWH">
+    <div class="swatch" data-page-node-id="WmSSlTxMchyDheiBpAeATq"><div class="bar" style="background:var(--risk-normal-soft);color:var(--risk-normal-foreground);border-bottom:2px solid var(--risk-normal)" data-page-node-id="8ulkE9GQoXvxL4W1BMn2Ag">正常</div>
+      <div class="meta" data-page-node-id="H5Fky9ajDSXtv9nUy6gs9m"><code data-page-node-id="FTdcq0e1cdl9J48SEJwofU">--risk-normal</code><br data-page-node-id="GoC3G32TYL7PyCtWbKY38n">7.36:1 · 方案已批准</div></div>
+    <div class="swatch" data-page-node-id="AkHUw2BZULearl92PkUSTn"><div class="bar" style="background:var(--risk-degraded-soft);color:var(--risk-degraded-foreground);border-bottom:2px solid var(--risk-degraded)" data-page-node-id="D0g5WCrFyn8CpD7kkyxghT">降级</div>
+      <div class="meta" data-page-node-id="WtqYhb1TO0QGFVUcVMiGIR"><code data-page-node-id="8J91RZasTYWuyIlnNiYA7i">--risk-degraded</code><br data-page-node-id="g23UxsZUJw7IiK3zYTjhA0">6.52:1 · 数据降级</div></div>
+    <div class="swatch" data-page-node-id="CKQNzsCXaWVVqNnCrNWL4i"><div class="bar" style="background:var(--risk-offline-soft);color:var(--risk-offline-foreground);border-bottom:2px solid var(--risk-offline)" data-page-node-id="NAwzAgzqQWKMbr7LhEsIfI">离线</div>
+      <div class="meta" data-page-node-id="XFsno4yYAu1PqAoR5lpuju"><code data-page-node-id="AiztIzaHpwxGCStE16TNCQ">--risk-offline</code><br data-page-node-id="1UzBs3DXwbiVC9E80evCF8">6.48:1 · 设备离线</div></div>
+    <div class="swatch" data-page-node-id="2cG4cSGAOd2eD03PLwa30X"><div class="bar" style="background:var(--risk-blocked-soft);color:var(--risk-blocked-foreground);border-bottom:2px solid var(--risk-blocked)" data-page-node-id="1AZHL6uhN5iJANkyKbdwPC">阻塞</div>
+      <div class="meta" data-page-node-id="fMZNScG17CVVAC55kfawCI"><code data-page-node-id="Z8inrk1bemtJXksdpZYJz2">--risk-blocked</code><br data-page-node-id="4UGuSobBMbH6rgEkLtxcLH">7.98:1 · 安全阻塞</div></div>
+    <div class="swatch" data-page-node-id="bW9fELMspjV7AVZfcKQPuq"><div class="bar" style="background:var(--risk-conflict-soft);color:var(--risk-conflict-foreground);border-bottom:2px solid var(--risk-conflict)" data-page-node-id="K0byXVmTvlaMdQi0dBJICt">冲突</div>
+      <div class="meta" data-page-node-id="aiueQljJl0X307RVwb9DoM"><code data-page-node-id="WugUzrS6d9ob1RCqQa7myK">--risk-conflict</code><br data-page-node-id="BTWXt5ljp9CwDGsCrPFC4l">9.43:1 · 版本冲突</div></div>
+    <div class="swatch" data-page-node-id="GjdNbggbdp0ZAxEAiYmkrd"><div class="bar" style="background:var(--risk-unknown-soft);color:var(--risk-unknown-foreground);border-bottom:2px solid var(--risk-unknown)" data-page-node-id="Cq9FHTCaJQA1oAAFVZgyse">未知</div>
+      <div class="meta" data-page-node-id="YsWZrfF2B6yJIoUXUJlJae"><code data-page-node-id="Pxehg5W5e2kAvLHHTL8PjM">--risk-unknown</code><br data-page-node-id="Sk8qM0V9PcnOhcEUOeLWdw">9.45:1 · 数据缺失</div></div>
+  </div>
+
+  <h3 style="margin-top:var(--space-6)" data-page-node-id="41O2KD1WYkBI1M0k6eDy3L">徽章组件</h3>
+  <div class="row" data-page-node-id="SbMS2FFVv5qkB90zm81aEf">
+    <span class="badge normal" data-page-node-id="FxU1CNxdzUCjwGun7pSBdw"><i class="dot" data-page-node-id="PFslGc6FuW8mwtuY1k8gTC"></i>正常运行</span>
+    <span class="badge degraded" data-page-node-id="Hi0TTcrYfwNZVAj2UP1uB2"><i class="dot" data-page-node-id="IZezbxqWeHlprDQqSfFoGc"></i>性能降级</span>
+    <span class="badge offline" data-page-node-id="Nv5930sjClrp48VG17yqME"><i class="dot" data-page-node-id="LesfuFGrA8Sc99KKs2EzSl"></i>连接中断</span>
+    <span class="badge blocked" data-page-node-id="hM9RRO3SgBIcwmp6FHv15U"><i class="dot" data-page-node-id="bu1HQCGcFTN6yq0ltzsIJC"></i>安全阻塞</span>
+    <span class="badge conflict" data-page-node-id="O8SVM6i2CTdfBphc46q4cG"><i class="dot" data-page-node-id="krvypX5uW0absSnf7cOdv2"></i>版本冲突</span>
+    <span class="badge unknown" data-page-node-id="ZcLocXiF3nXS2lBkJCqNYb"><i class="dot" data-page-node-id="Bm0fBpC7K8CXOlZMfRAASG"></i>状态未知</span>
+  </div>
+  <p class="note" data-page-node-id="EFezIKEkBKhuzuDYmnSmBb">状态不依赖颜色单一通道：圆点形状 + 中文文本 + 色彩三重编码，色觉障碍用户与强光车间环境均可辨识。</p>
+</section>
+
+<!-- ============ 2. 排版与间距 ============ -->
+<section data-page-node-id="3tyoVL8TEVBz8GF93WVFMM">
+  <header data-page-node-id="4H77TJmbBje5BfIfFxEgBp"><h2 data-page-node-id="2tfqjRwE3fLQ5S27ZpV2TT">2 · 排版与触控</h2>
+  <p class="lead" data-page-node-id="FFa8UYzNOUwR4s5sJs9IpD">中文优先字体栈（PingFang SC / 微软雅黑），正文 14px / 行高 1.6。
+  所有数字使用等宽数字（tabular-nums）保证表格纵向对齐。工业手套场景触控目标不小于 44px。</p></header>
+
+  <div class="grid grid-2" data-page-node-id="34Df9U80MGlvBY2d5Tt9yJ">
+    <div class="card" data-page-node-id="vl2R1fBNSpGzMZrLyvtZkU">
+      <h3 data-page-node-id="MPNbxONO23urCtVkpcLapd">字号阶梯</h3>
+      <div style="font-size:24px;font-weight:500" data-page-node-id="Y5NGmG87Vnt2AFOLzRgVrD">24 · 页面标题</div>
+      <div style="font-size:18px;font-weight:500;margin-top:8px" data-page-node-id="OgEv6HoARE65pErst2tZ3U">18 · 区块标题</div>
+      <div style="font-size:14px;margin-top:8px" data-page-node-id="GTlIzJWAvRJaQbxiqem7Tz">14 · 正文与表格（默认）</div>
+      <div style="font-size:12px;color:var(--muted-foreground);margin-top:8px" data-page-node-id="SopE9399ps2El1qmmg0HmD">12 · 辅助说明与元信息</div>
+      <div style="font-family:var(--font-mono);font-size:12px;margin-top:8px" data-page-node-id="ETeeLLWCTGM1jx1cbPhiAU">12 · mono 对象 ID / 时间戳</div>
+    </div>
+    <div class="card" data-page-node-id="jimTBYDaKksT558Kvwci1I">
+      <h3 data-page-node-id="WGqe2REtxx3SH5jE13bioT">按钮（触控目标 44px）</h3>
+      <div class="row" data-page-node-id="kCDji2v1RwKfBtoOwhFNVu">
+        <button class="btn btn-primary" type="button" data-page-node-id="w1zE0nU4oztMssJgBdeMox">下发执行</button>
+        <button class="btn btn-secondary" type="button" data-page-node-id="2D9oXuon8mvHLxLhAgYHCS">重新排程</button>
+        <button class="btn btn-ghost" type="button" data-page-node-id="itmw8R9P0WlnFuZB1BBQeD">取消</button>
+        <button class="btn btn-danger" type="button" data-page-node-id="hTgu0RVbXPhdVzDzVPpQPa">驳回</button>
+      </div>
+      <div class="row" style="margin-top:var(--space-3)" data-page-node-id="WtUxAM1pPNd2Bc26yo7rjw">
+        <button class="btn btn-secondary btn-sm" type="button" data-page-node-id="3S42jkA5V5vdphKtM8hEWi">小尺寸 36px</button>
+        <button class="btn btn-primary" type="button" disabled data-page-node-id="5ywC0CbvtxPTUyRK6yeSoI">禁用态</button>
+      </div>
+      <p class="note" data-page-node-id="zdSl1Ic9e1drq8PtuY59I2">尺寸规范：默认 44px（车间平板与手套操作），紧凑 36px（桌面端表格内行内操作）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. 指标卡 ============ -->
+<section data-page-node-id="MR9Hr30EyLUtg6BqVXXOYC">
+  <header data-page-node-id="Q7NoDhvUW1R1uNhrvRCoLE"><h2 data-page-node-id="GLQIKJ7xVORBTD4nvuoOjU">3 · 指标卡：替换 JSON dump</h2>
+  <p class="lead" data-page-node-id="WN8Vr34uSJFm3dN24a3qvb">方案卡片当前直接渲染 <code data-page-node-id="gRBeKj2ZqGdqIJdg3rlyHW">JSON.stringify(row.metrics)</code>，调度员需要阅读原始结构。
+  指标卡将同组数据转为「大数字 + 单位 + 语义色 + 阈值提示」，原始结构折叠进「查看原始指标」供排查使用。</p></header>
+
+  <div class="grid grid-2" data-page-node-id="KjBGHnNWp5jAWvX0WRS4Wa">
+    <div class="card" data-page-node-id="Ove5GT5Bh0fuOumg4PwigH">
+      <h3 data-page-node-id="v7dMAWDaYGEBxP5IKtDyAA">现在 · 原始结构直出</h3>
+      <pre class="code" data-page-node-id="GDVBFQ2bZgw9FnCiHkBrTY">{
+  "lateMinutes": 42.6,
+  "walkingMeters": 1280.4,
+  "stationWaitMinutes": 18.2,
+  "maxWorkload": 0.87,
+  "assignedTasks": 24,
+  "unassignedTasks": 3,
+  "solverFallback": false,
+  "snapshotVersion": "snap_8f3a",
+  "objectiveScore": 0.734
+}</pre>
+      <p class="note" data-page-node-id="FSux1BjgLEyPZa89fc9cmE">9 个字段平铺，无单位、无阈值、无优先级，扫描成本高。</p>
+    </div>
+    <div class="card" data-page-node-id="97ZT1L4OOBSrtYz6QERuJ5">
+      <h3 data-page-node-id="psbecfELL9VxjBgb5uPaG9">方案后 · 指标卡</h3>
+      <div class="metrics" data-page-node-id="8yXm9GL6GblSMkbhZy6Um0">
+        <div class="metric is-bad" data-page-node-id="osdUxdeppTS69ZfGUFdgex"><div class="label" data-page-node-id="L2lkCY1v9IA0hOqRrNqf90">延期</div><div class="value" data-page-node-id="FGuiz3f1FHpXHYccZO0oEm">42.6<span class="unit" data-page-node-id="fDsyY95BvDRpsdFO5JPxvX">min</span></div><div class="hint" data-page-node-id="RXupPfpMiQSnFQ0w2HtdRY">超阈值 30min</div></div>
+        <div class="metric" data-page-node-id="MvVpyJs2Yr7XDd2O0OYCma"><div class="label" data-page-node-id="rBkxPhEkRllVdbcEDujmBm">移动距离</div><div class="value" data-page-node-id="QhTAV4mV4KRpfDHHkMqXQr">1,280<span class="unit" data-page-node-id="OMBDiALz506JiE1EgQPdo7">m</span></div><div class="hint" data-page-node-id="p2D7rAB04auvYAQKd6iHtl">较基线 +8%</div></div>
+        <div class="metric" data-page-node-id="tAJbrRgDukCeT7FW5L0v1H"><div class="label" data-page-node-id="EGnbdsAN9mDGqjrSVZwSMR">工位等待</div><div class="value" data-page-node-id="5uUC5rcA4qlG6wHQBR6N81">18.2<span class="unit" data-page-node-id="cbHBh29Ko1HbKpgIkiqgyZ">min</span></div><div class="hint" data-page-node-id="gsWyYP8lBzdZ26PaLnXjmM">正常区间</div></div>
+        <div class="metric is-warn" data-page-node-id="JmZNDm6Y9gmLnhhLSrbmux"><div class="label" data-page-node-id="NB5dFCW31iGMrizqPKsHVz">最大负荷</div><div class="value" data-page-node-id="zCuGlBvbgR6afYBGeS9DV5">87<span class="unit" data-page-node-id="rdFchW2yX77BOKclXV2J2r">%</span></div><div class="hint" data-page-node-id="F20C9OKnzysi6THwVFJYqb">接近上限 90%</div></div>
+        <div class="metric is-good" data-page-node-id="JEjkxUeMjSQ0BDuDrmSC4h"><div class="label" data-page-node-id="FtrqUHIGtqGMnRfUOkL8Zc">已分配</div><div class="value" data-page-node-id="o1ZuvGuQepeOwCzTP7zGwl">24<span class="unit" data-page-node-id="6uCNJHcj6bYSake9WV6nV1">/27</span></div><div class="hint" data-page-node-id="fn6SL5Yi4t3MajVvU90C3T">3 项待分配</div></div>
+      </div>
+      <details style="margin-top:var(--space-3)" data-page-node-id="si4sC7IAtkOSlVJTOWGa8j">
+        <summary style="font-size:12px;color:var(--muted-foreground);cursor:pointer" data-page-node-id="FlrEviAw3tEtpyW9MKfTsq">查看原始指标</summary>
+        <pre class="code" style="margin-top:8px" data-page-node-id="H5GTeC3CLNPouP4kBraugs">{"objectiveScore":0.734,"snapshotVersion":"snap_8f3a","solverFallback":false}</pre>
+      </details>
+      <p class="note" data-page-node-id="Bfm2szX3DXD6KYjf2uI0f7">关键项优先、阈值着色、单位内嵌；调试字段折叠，不干扰决策。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. 对象工作台 ============ -->
+<section data-page-node-id="udKYLrZhFNeRSLVxw11Nxb">
+  <header data-page-node-id="cssDHfFRwCciAQqUYhFFFr"><h2 data-page-node-id="7qlnMb06rWFRpXLBD9mRmu">4 · 核心界面：对象工作台</h2>
+  <p class="lead" data-page-node-id="iH2LZCv59HbqPgMy7UcyyV">
+    承接 UX 架构 L1「对象解析层」。以调度方案为对象，将内容视图与审批流程合并到同一屏，
+    顶部 Journey Rail 常驻显示当前环节与下一步。点击下方环节或右侧状态可切换查看。
+  </p></header>
+
+  <div class="card" data-page-node-id="eeDvTwPaoYUwhkInSvBBgI">
+    <!-- Journey Rail -->
+    <div class="journey" role="list" aria-label="调度流程" data-page-node-id="EnVZSqzD68iLcTSb1KhrKS">
+      <button class="jstep" data-state="done" data-stage="0" type="button" data-page-node-id="d2Ev1JuUYvRwJzCFrK0iG1"><span class="num" data-page-node-id="SF8sHVpJcr4BukUDgj1D1H">1</span>生成方案</button>
+      <span class="jsep" data-page-node-id="FgO0R4CkzHv5JiIFxa2Ccf"></span>
+      <button class="jstep" data-state="done" data-stage="1" type="button" data-page-node-id="uA6cJCOAT47vbAgrpBgDtM"><span class="num" data-page-node-id="6I2zVhBwLE87LXYHaKD3R2">2</span>AI 解读</button>
+      <span class="jsep" data-page-node-id="FUYEiHVg3qzEgr7LF4Md09"></span>
+      <button class="jstep" data-state="current" data-stage="2" aria-current="step" type="button" data-page-node-id="Qwi9PbhL7KjXqHBebIfCnO"><span class="num" data-page-node-id="EMVxqEFd4JZAeTU2PtqcOR">3</span>评审会签</button>
+      <span class="jsep" data-page-node-id="WBDDbQufAEySP4W6y50o2S"></span>
+      <button class="jstep" data-state="todo" data-stage="3" type="button" data-page-node-id="BouE7EwYZUwJIVdCPNNM5H"><span class="num" data-page-node-id="Xf5OKOP5ISXVVaUC40hkiG">4</span>下发执行</button>
+      <span class="jsep" data-page-node-id="BhHm6MC4Wid9tI0u4owWiF"></span>
+      <button class="jstep" data-state="todo" data-stage="4" type="button" data-page-node-id="4YkNDiwglIqX0EGCHNDmFC"><span class="num" data-page-node-id="wB1ic0au4RHxflELMsEgSN">5</span>执行跟踪</button>
+    </div>
+
+    <!-- 对象头部 -->
+    <div class="wb-head" style="margin-top:var(--space-6)" data-page-node-id="gkpBY9AZjBfERVPqXAxEg6">
+      <div data-page-node-id="9pEE42bf0hB630tHd0ewOl">
+        <div class="wb-title" data-page-node-id="EzIwBixpZrXVBtD4iCz5h4">
+          焊装车间 A 线 · 白班排产
+          <span class="badge degraded" id="wbStatus" data-page-node-id="fn8oXezlgl5TSpJfXDTyOh"><i class="dot" data-page-node-id="lg6laDzi3FMbqukmcsmUR0"></i>待审批</span>
+        </div>
+        <div class="wb-id" data-page-node-id="CECiLA3HyGmes4N6pe5CJt">PLN-2026-0901-003 · v3</div>
+        <div class="wb-meta" data-page-node-id="7WmQctKky05lqlePij9KLC">
+          <span data-page-node-id="ibVlteC4Nb8IlChCNVX6Od">责任人 <b data-page-node-id="x0LLUvPUB1uJ5kt3Hf2QeX">张伟（调度员）</b></span>
+          <span data-page-node-id="yuBmgZrKAtPP1PHnN8irQW">触发 <b data-page-node-id="4Adh1hs5VAusyWZDjgCDZa">交期风险</b></span>
+          <span data-page-node-id="jHbNimCnNF4mKtWAcGB71e">更新 <b data-page-node-id="BKDnSMtI12bzs0P88Amlfb">2 分钟前</b></span>
+          <span data-page-node-id="C6B9K4wC7REyK8GuG2ZiGi">来源 <b data-page-node-id="GC2sBjiLQCcJikUkwB60qX">实时数据</b></span>
+        </div>
+      </div>
+      <div class="row" id="wbActions" data-page-node-id="wRECPptgm3jn0w7lUrDPpL">
+        <button class="btn btn-primary" type="button" data-page-node-id="klOhQ1BoDiW2DaVdzUCCj9">审批通过</button>
+        <button class="btn btn-danger" type="button" data-page-node-id="mZ7RPytai3pLzHKBxFI6If">驳回</button>
+        <button class="btn btn-ghost" type="button" data-page-node-id="uXfn0oDhEfGLxHdpSC6Gok">重新排程</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" role="tablist" data-page-node-id="cnHeWv2tku8hfCLmMcUPTV">
+      <button class="tab" role="tab" aria-selected="true" data-panel="p1" type="button" data-page-node-id="CegLsegHtSQfTVrzh2tTrZ">概览</button>
+      <button class="tab" role="tab" aria-selected="false" data-panel="p2" type="button" data-page-node-id="SRFqnB14xMvJEDB0g5qEQr">关联对象</button>
+      <button class="tab" role="tab" aria-selected="false" data-panel="p3" type="button" data-page-node-id="rsRdQgyDf2QX1bz1c03Y25">状态历史</button>
+      <button class="tab" role="tab" aria-selected="false" data-panel="p4" type="button" data-page-node-id="HI5IJ1wfNunYdcdHxbxrcu">证据</button>
+    </div>
+
+    <div class="panel" id="p1" role="tabpanel" data-page-node-id="XRO7iyd7CODJ73qOmazfAn">
+      <div class="metrics" data-page-node-id="0DiSzusIzXbikl5AL8tB8O">
+        <div class="metric is-bad" data-page-node-id="WYWFilfjtBmpLZ2r0sEsLj"><div class="label" data-page-node-id="MokGhuDhShu9bxpmYuSP5P">延期</div><div class="value" data-page-node-id="rBz7U9FoU6ci29MuXAMv01">42.6<span class="unit" data-page-node-id="CJ6kFfsH4cKCyIuA8QfHb0">min</span></div><div class="hint" data-page-node-id="cwUHCYPHcaMxgeAHEmBW6t">超阈值 30min</div></div>
+        <div class="metric" data-page-node-id="xgBE2pb296bX1VzBupnbKJ"><div class="label" data-page-node-id="1OufMwkoUPf5zeoalSnlk1">移动距离</div><div class="value" data-page-node-id="QpRDjgwqTG3OSLRwyLtqrm">1,280<span class="unit" data-page-node-id="DooYwFfeMhFKiLpHwG6rfc">m</span></div><div class="hint" data-page-node-id="PUkLW3dBXBoK2AqcSCScs9">较基线 +8%</div></div>
+        <div class="metric" data-page-node-id="Hin3r1boybcbQ7LHRWdi5t"><div class="label" data-page-node-id="jyRMxTl2LMdQHDtgcRgfwF">工位等待</div><div class="value" data-page-node-id="4G99zm88mnqrC2AcyDGTvl">18.2<span class="unit" data-page-node-id="DHn1f2tDMH3ZwdZUZvtIqO">min</span></div><div class="hint" data-page-node-id="rFYrLFNwzuAHhhVF8iLiIC">正常区间</div></div>
+        <div class="metric is-warn" data-page-node-id="W8GH7i9jc26rPDOCe1RGYU"><div class="label" data-page-node-id="SoDSDAwMguCaEu9DfEveBJ">最大负荷</div><div class="value" data-page-node-id="1oADNQY6s0l0m3tTHMMOWD">87<span class="unit" data-page-node-id="zWAmpEfa1n2YTtjRXMXFF3">%</span></div><div class="hint" data-page-node-id="qf8TBR578W7yFlWFAnUnZG">接近上限 90%</div></div>
+        <div class="metric is-good" data-page-node-id="WLnv3epu5TG9UqvGo74ZYt"><div class="label" data-page-node-id="GN0Quy0eP1fSV9to6G939R">已分配</div><div class="value" data-page-node-id="6G5d0rXnUW6pozC0cmeqbE">24<span class="unit" data-page-node-id="OFi7hEyXWzUXcrZ86UC0t5">/27</span></div><div class="hint" data-page-node-id="1c4mlVu1LCljWhiOAfwZOm">3 项待分配</div></div>
+      </div>
+
+      <h3 style="margin-top:var(--space-6)" data-page-node-id="VbF6QQBaE6CrA8CRunMLSQ">AI 方案解读</h3>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-4);background:var(--muted)" data-page-node-id="VWKOCz9Z5jKoUW3LJTagIq">
+        <div style="font-size:13px;line-height:1.7" data-page-node-id="eoyEgRtIpRvnSDidlcD43f">
+          本方案优先保障 2 个交期临界工单（WO-4471、WO-4488），将其前置至 09:00–11:30 窗口。
+          代价是 B 工位等待时间上升 4.2 分钟，最大负荷达 87%，仍在安全阈值内。
+          3 项低优先级任务未分配，建议在下一轮排程中处理。
+        </div>
+        <div class="note" data-page-node-id="IBzacenZTmZxkfol4tfFUI">生成中状态：AI 解读为异步生成（30–90s），此处应展示骨架占位而非空白——当前实现为整块不渲染，用户会误判为功能缺失。</div>
+      </div>
+
+      <h3 style="margin-top:var(--space-6)" data-page-node-id="tjZAWYQW8WZomjC3PTq12L">会签进度</h3>
+      <table data-page-node-id="FCxQEKOXVEu93JqGaIZDrt">
+        <thead data-page-node-id="k3A2hFMnUHTWZzm0vJSKZY"><tr data-page-node-id="3gW7FPQHnvYaPGBRghQ5Y2"><th data-page-node-id="HhtqqPYW6dlzzNuF2Ul9dp">环节</th><th data-page-node-id="8C83zN7QcKUXJscbfAcDII">角色</th><th data-page-node-id="rQBRuGZQKB46J7zZ35aJJL">审批人</th><th data-page-node-id="Fgg7uXU0Y5JefpbXOUODxs">状态</th><th data-page-node-id="UdDQnAZRJaSJN2QDAGdwzx">时间</th></tr></thead>
+        <tbody data-page-node-id="Lor4GZ07Lt3tVGyYY55EQW">
+          <tr data-page-node-id="JBBbhf3tG3TOsXbw1MvzfP"><td data-page-node-id="URG5Ml5s7Hs7wsIFk3J3kB">方案初审</td><td data-page-node-id="4Q6a55Fi1DJ38m5B4vaOj3">调度员</td><td data-page-node-id="Hl6rGq8ZSuNfYqj3skf348">张伟</td><td data-page-node-id="jiXRz9wtoFqQmBFviaYY6m"><span class="badge normal" data-page-node-id="4zkW9RbrAlcDU75yWidERF"><i class="dot" data-page-node-id="9yyOfUHLH1FFXEyXdXJ8UX"></i>已通过</span></td><td class="num" data-page-node-id="RJx6BzLb0GvVEcBqbpRkS0">09:12</td></tr>
+          <tr data-page-node-id="0FfmTD7ZICGumfHJS0PnOY"><td data-page-node-id="JHLsuGBEiwIeemrgBNTLWH">安全复核</td><td data-page-node-id="JZKGCKDRVByNTaN3eHXTiD">安全员</td><td data-page-node-id="9XG4g6krA8P0f1sdoqqwaw">李静</td><td data-page-node-id="xRRYjA1JzCzKkQhAm92Usn"><span class="badge normal" data-page-node-id="8koC5EA9YJENGYKMz5KNjH"><i class="dot" data-page-node-id="Q74HOeo7jZoPbuDmmVDgQj"></i>已通过</span></td><td class="num" data-page-node-id="iCrbBwDwNR490Mv1csmBeP">09:24</td></tr>
+          <tr data-page-node-id="2RRIwIKNEjqJTiHQ83dkmh"><td data-page-node-id="u8EN17ZmUKs0X6JukVen07">产能确认</td><td data-page-node-id="6ob1BqoDMLfBCqcze0mdsx">班组长</td><td data-page-node-id="ZSDzdNE1KEQAuL1NpcUg0b">王强</td><td data-page-node-id="CCCp4bRRG3eoHDrZzI5LkD"><span class="badge degraded" data-page-node-id="w5k93oVcBVAeKeq7lrFR6I"><i class="dot" data-page-node-id="dYgS3QduGoHj7ZvwEdtZHe"></i>待处理</span></td><td class="num" data-page-node-id="SWvq7NlLW0hoDYX0i3izfM">—</td></tr>
+        </tbody>
+      </table>
+      <p class="note" data-page-node-id="URw07Tsn5ILf5QwDp9ZLco">审批台当前仅显示「调度审批：scheduling_plan &lt;UUID&gt;」，审批人无法判断对象内容。此表在同一屏内提供对象上下文 + 会签流程。</p>
+    </div>
+
+    <div class="panel" id="p2" role="tabpanel" hidden data-page-node-id="iBdM9Tp9pNFspKvaqc9FDQ">
+      <table data-page-node-id="Vg1z6STMWPg8a8Qbv5CgcQ">
+        <thead data-page-node-id="Elm2Ww2qEpbV8iI36WDdDb"><tr data-page-node-id="kKIU5BoEcC82FcSRNeUfiy"><th data-page-node-id="9saPBAfRcMUB3UVhhAHdXP">对象</th><th data-page-node-id="Df4nmPJFdPRhNkysVefw1S">标识</th><th data-page-node-id="DsHpBuXnMGYYAOeikmDBMh">关联关系</th><th style="text-align:right" data-page-node-id="BpTOlmT5iIdtWsr39aIKEi">状态</th></tr></thead>
+        <tbody data-page-node-id="56XDqNDavFHKj1WFnGAvPH">
+          <tr data-page-node-id="Si8u9vyC6pYgzgPnIBtI2h"><td data-page-node-id="FHkgHlIslBc8n6wPZrZhXK">工单</td><td class="wb-id" data-page-node-id="3CwvTYwY4HBecoB649GDcv">WO-4471</td><td data-page-node-id="jyBBIaspWAR2P9e56hVTvq">交期临界，已前置</td><td style="text-align:right" data-page-node-id="RdTeGdKFO5VI8ZiA2RAv8N"><span class="badge degraded" data-page-node-id="VWmdkHCjwuTyRalZ8bywtN"><i class="dot" data-page-node-id="Ev4WhueWdSvRDsGbOLae9w"></i>风险</span></td></tr>
+          <tr data-page-node-id="x3OJeHqjHVVrcgq9eKk2gi"><td data-page-node-id="yLGYBuxklFRNToQsGNGTJi">工单</td><td class="wb-id" data-page-node-id="T8uPYDJQVx5xv6ToOUtbkW">WO-4488</td><td data-page-node-id="F9JOVhguMGnUrzwEZxL9gy">交期临界，已前置</td><td style="text-align:right" data-page-node-id="ONlyK0Aiw7kLPxHNFEZ4mX"><span class="badge degraded" data-page-node-id="AuDssSGZ1DMmHRYXUdXKgg"><i class="dot" data-page-node-id="m50LDBsNEetJlBCk7acCLp"></i>风险</span></td></tr>
+          <tr data-page-node-id="quyBdPgFKYtwYyzMTOCFvB"><td data-page-node-id="wkA6Nd4fRFsEKL1qBisTVC">人员</td><td class="wb-id" data-page-node-id="Z5JJKkaGbo0qG0kNZjNjCB">EMP-0231</td><td data-page-node-id="N0F2oYMUDOEtTiUA1x9TOX">负荷 87%，接近上限</td><td style="text-align:right" data-page-node-id="TTEgPiCnxl2k50cUATmYEx"><span class="badge degraded" data-page-node-id="yRQzDFLcgqFLdOe9tpfoOO"><i class="dot" data-page-node-id="jATUKHNsmLEaxSYPGoQBsH"></i>高负荷</span></td></tr>
+          <tr data-page-node-id="vOXIMrCpHvtEzYuJzhqdHU"><td data-page-node-id="s3Y4lJDdqNUcZn3FxWr3g2">外骨骼</td><td class="wb-id" data-page-node-id="fwPqGBAFVdQRLOIXjwMfwL">EXO-007</td><td data-page-node-id="VIGNWiJtAeyu8HraUAxO6d">B 工位分配</td><td style="text-align:right" data-page-node-id="lasVMZRIBU5QNJn4JKPXCt"><span class="badge normal" data-page-node-id="SGyIzk5BiEw5yv3e5X3f2x"><i class="dot" data-page-node-id="1BFV012UackYUwNYSr3W3h"></i>可用</span></td></tr>
+          <tr data-page-node-id="vmpIugySc0DGHSATSFogfd"><td data-page-node-id="mjmwk7vSQoh5s0qst1BFeq">外骨骼</td><td class="wb-id" data-page-node-id="ZLdFqLby7MucyIctmz7cvT">EXO-012</td><td data-page-node-id="SWKRlRneTxaB4h0pdHi9Ct">电量 18%，已排除</td><td style="text-align:right" data-page-node-id="1cXjSg6Q6diVPfip8WYmMO"><span class="badge offline" data-page-node-id="VRDTVFHqFLmO3txL8a4zyI"><i class="dot" data-page-node-id="OpUYAA5jbiwm16ZPn4uzqT"></i>低电量</span></td></tr>
+        </tbody>
+      </table>
+      <p class="note" data-page-node-id="EGQdA8k8q1gMEngZ4wBCrZ">关联对象行可下钻至对应对象工作台——复用 RoleWorkbench 已验证的 resolveRowPath 数据驱动跳转，无需新建机制。</p>
+    </div>
+
+    <div class="panel" id="p3" role="tabpanel" hidden data-page-node-id="PGgHL3myYrKJlDU3QBWy48">
+      <ul class="timeline" data-page-node-id="whM2lssNMVF5NhqWdKhhwM">
+        <li class="done" data-page-node-id="ACa0KymHUhDk1miGMZgKu7"><div data-page-node-id="vaGhJiSIppMvNiSBlMHduw">方案生成完成 · 4 个候选</div><div class="t-time" data-page-node-id="ub3yBuMdEr9EDPPJN83UK6">09:08:12 · 系统</div></li>
+        <li class="done" data-page-node-id="piPYP7y9gOTK93uSz7XLv1"><div data-page-node-id="bLX5dCFKQa1QzVvMYieSz6">AI 解读生成完成</div><div class="t-time" data-page-node-id="cl9XwJ4ODtC97dkad2xLUO">09:08:44 · AI 服务</div></li>
+        <li class="done" data-page-node-id="YfFQImatPAnleBR82pzCMt"><div data-page-node-id="MMCAEZ79p0RQ9kGAYLKKAu">方案初审通过</div><div class="t-time" data-page-node-id="HlSTrAOAyRodJ9IKiPXwKK">09:12:03 · 张伟</div></li>
+        <li class="done" data-page-node-id="RBYkGAeuLDvCTWSsBmSsmg"><div data-page-node-id="mfUVuq7dSvon4kcHagjN5W">安全复核通过 · 无 SAFETY_BLOCK</div><div class="t-time" data-page-node-id="BpMgp8AF42YVOjT2GD2GiC">09:24:17 · 李静</div></li>
+        <li class="now" data-page-node-id="xC5yjgbWSuzofJwBDUedVr"><div data-page-node-id="r7dYAHO5iZVKriHaY2viJR">等待产能确认</div><div class="t-time" data-page-node-id="PkHPcvJViPiC24KxBOKqLs">进行中 · 王强</div></li>
+      </ul>
+    </div>
+
+    <div class="panel" id="p4" role="tabpanel" hidden data-page-node-id="H75hD8DqqfwkUZsqyhto6T">
+      <dl class="kv" data-page-node-id="wZZnJqju3nlC3vSccBJZAj">
+        <dt data-page-node-id="EFEZkCCdvCtJYTtFAT17Tf">快照版本</dt><dd data-page-node-id="gCCIsbHNfNNyJHsqRRdZ5u">snap_8f3a91c</dd>
+        <dt data-page-node-id="jNq9Vxr7CbFzGnPT5WcrDB">求解器</dt><dd data-page-node-id="ssogGnAvmQGE9jiZzscqnB">cp-sat 9.11.4210</dd>
+        <dt data-page-node-id="tnvGjOOIH4MjFIA2zT5oBl">求解耗时</dt><dd data-page-node-id="vaPu7HxliE2OT6tYljSyUM">3.42 s</dd>
+        <dt data-page-node-id="ImCFsTUkCZlY6GzqLjFG0X">目标函数值</dt><dd data-page-node-id="wj2AFvmXE51RQu7znttzy6">0.734</dd>
+        <dt data-page-node-id="xLjy74a9WWXv3fwXxLBxGo">约束满足</dt><dd data-page-node-id="h53IvZi8jgvPUIwKvmpacl">硬约束 12/12 · 软约束 8/9</dd>
+        <dt data-page-node-id="b6INT97nvw4PPuEiy2zusD">降级标记</dt><dd data-page-node-id="5Ou6O8i3PFz6s2sgDv6RkC">无（未走欧氏距离降级）</dd>
+      </dl>
+      <p class="note" data-page-node-id="D5HlILu7fAPCYfaOXvtkpI">证据面板保留可追溯信息，但以结构化键值呈现，不直接暴露原始 JSON 给最终用户。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. 终态出口 ============ -->
+<section data-page-node-id="BjRn1pilzQyfbPpQbF6C8o">
+  <header data-page-node-id="itEMlNByTKpl72IGySMZe5"><h2 data-page-node-id="yd0HlQxFjZK6TDdRGdFb3e">5 · 终态出口：闭合「派工黑洞」</h2>
+  <p class="lead" data-page-node-id="KLjE6u55iR9D6wGIYGRz9k">
+    当前方案进入 dispatched / completed / rejected / superseded 后，卡片仅剩一行静态文本，无后继入口。
+    下方行动条为每种状态提供明确的下一步。点击状态按钮查看各终态的行动条。
+  </p></header>
+
+  <div class="card" data-page-node-id="JQXVwRBxokMwmPBcz6YRLi">
+    <div class="row" style="margin-bottom:var(--space-4)" data-page-node-id="7ax4LFjnsSd8vGKkAgIdKb">
+      <span style="font-size:13px;color:var(--muted-foreground)" data-page-node-id="Ad9xcbyQbOnEvb4u5Nlusp">查看状态：</span>
+      <button class="btn btn-secondary btn-sm" data-status="approved" type="button" data-page-node-id="4Sc5ykCOyu9WxziZlYsXP0">已审批</button>
+      <button class="btn btn-secondary btn-sm" data-status="dispatched" type="button" data-page-node-id="MlLgoyUO8xIcWBHMA52TdV">已下发</button>
+      <button class="btn btn-secondary btn-sm" data-status="completed" type="button" data-page-node-id="GSxpvtLpuQ1kfk1yvixmzO">已完成</button>
+      <button class="btn btn-secondary btn-sm" data-status="rejected" type="button" data-page-node-id="4oF4C58ugOaFaQYDcCyPjg">已驳回</button>
+      <button class="btn btn-secondary btn-sm" data-status="stale" type="button" data-page-node-id="DbyxrCzDKPSo6cG19hkkIO">已过期</button>
+    </div>
+
+    <div id="actionBar" class="actionbar" data-page-node-id="gLsDPSX5fjdiER0WAHYe4O"></div>
+    <div id="actionHint" class="note" data-page-node-id="AfLGsjHCrl9JExhdCM1cWZ"></div>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var root = document.documentElement;
+
+  // ---- 主题切换 ----
+  var themeButtons = document.querySelectorAll('[data-theme-btn]');
+  themeButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var mode = btn.getAttribute('data-theme-btn');
+      if (mode === 'high') {
+        root.setAttribute('data-theme', 'light');
+        root.setAttribute('data-contrast', 'high');
+      } else {
+        root.setAttribute('data-theme', mode);
+        root.setAttribute('data-contrast', 'normal');
+      }
+      themeButtons.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+
+  // ---- Tab 切换 ----
+  var tabs = document.querySelectorAll('.tab');
+  var panels = document.querySelectorAll('.panel');
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var target = tab.getAttribute('data-panel');
+      tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t === tab)); });
+      panels.forEach(function (p) { p.hidden = p.id !== target; });
+    });
+  });
+
+  // ---- Journey 环节切换 ----
+  var stages = ['生成方案', 'AI 解读', '评审会签', '下发执行', '执行跟踪'];
+  var journeySteps = document.querySelectorAll('.jstep');
+  var wbStatus = document.getElementById('wbStatus');
+  var wbActions = document.getElementById('wbActions');
+
+  var stageConfig = {
+    0: { status: '<i class="dot"></i>生成中', cls: 'badge offline', actions: '<button class="btn btn-primary" type="button" disabled>生成中…</button>' },
+    1: { status: '<i class="dot"></i>解读生成中', cls: 'badge offline', actions: '<button class="btn btn-secondary" type="button">查看指标</button>' },
+    2: { status: '<i class="dot"></i>待审批', cls: 'badge degraded', actions: '<button class="btn btn-primary" type="button">审批通过</button><button class="btn btn-danger" type="button">驳回</button><button class="btn btn-ghost" type="button">重新排程</button>' },
+    3: { status: '<i class="dot"></i>待下发', cls: 'badge normal', actions: '<button class="btn btn-primary" type="button">下发执行</button><button class="btn btn-secondary" type="button">预览影响</button>' },
+    4: { status: '<i class="dot"></i>执行中', cls: 'badge normal', actions: '<button class="btn btn-primary" type="button">查看执行态势</button><button class="btn btn-secondary" type="button">触发重排</button><button class="btn btn-ghost" type="button">查看决策历史</button>' }
+  };
+
+  function setStage(idx) {
+    journeySteps.forEach(function (s, i) {
+      var state = i < idx ? 'done' : (i === idx ? 'current' : 'todo');
+      s.setAttribute('data-state', state);
+      if (state === 'current') { s.setAttribute('aria-current', 'step'); }
+      else { s.removeAttribute('aria-current'); }
+    });
+    var cfg = stageConfig[idx];
+    if (cfg && wbStatus) {
+      wbStatus.className = cfg.cls;
+      wbStatus.innerHTML = cfg.status;
+    }
+    if (cfg && wbActions) { wbActions.innerHTML = cfg.actions; }
+  }
+
+  journeySteps.forEach(function (s, i) {
+    s.addEventListener('click', function () {
+      if (s.getAttribute('data-state') === 'todo') {
+        s.title = '该环节尚未解锁';
+        return;
+      }
+      setStage(i);
+    });
+  });
+
+  // ---- 终态行动条 ----
+  var actionBar = document.getElementById('actionBar');
+  var actionHint = document.getElementById('actionHint');
+
+  var statusConfig = {
+    approved: {
+      bar: '<button class="btn btn-primary" type="button">下发执行</button><button class="btn btn-secondary" type="button">重新排程</button><span class="spacer"></span><button class="btn btn-ghost" type="button">对比其他方案</button>',
+      hint: '已审批态：主行动为下发，次行动为重排。'
+    },
+    dispatched: {
+      bar: '<button class="btn btn-primary" type="button">查看执行态势</button><button class="btn btn-secondary" type="button">触发重排</button><span class="spacer"></span><button class="btn btn-ghost" type="button">复制方案 ID</button>',
+      hint: '已下发态（当前实现的断点）：原实现仅显示「方案已下发执行」静态文本，无后继入口。行动条提供执行跟踪直达。'
+    },
+    completed: {
+      bar: '<button class="btn btn-primary" type="button">查看执行报告</button><button class="btn btn-secondary" type="button">结案复盘</button><span class="spacer"></span><button class="btn btn-ghost" type="button">导出 KPI</button>',
+      hint: '已完成态：闭环至复盘与 KPI 沉淀。'
+    },
+    rejected: {
+      bar: '<button class="btn btn-primary" type="button">查看驳回理由</button><button class="btn btn-secondary" type="button">重新排程</button><span class="spacer"></span><button class="btn btn-ghost" type="button">查看决策历史</button>',
+      hint: '已驳回态：驳回理由为必填项，行动条引导至重排而非原地停留。'
+    },
+    stale: {
+      bar: '<div class="callout" style="flex:1">该方案生成后现场状态已发生变化，审批已被拒绝（PLAN_STALE）。</div><button class="btn btn-primary" type="button">重新计算</button>',
+      hint: '过期态：明确告知发生了什么、为什么、下一步能否恢复，避免用户面对「操作失败」无从下手。'
+    }
+  };
+
+  document.querySelectorAll('[data-status]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = btn.getAttribute('data-status');
+      var cfg = statusConfig[key];
+      if (!cfg || !actionBar) { return; }
+      actionBar.innerHTML = cfg.bar;
+      if (actionHint) { actionHint.textContent = cfg.hint; }
+      document.querySelectorAll('[data-status]').forEach(function (b) {
+        b.className = b === btn ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+      });
+    });
+  });
+
+  // 初始态
+  setStage(2);
+  if (actionBar) { actionBar.innerHTML = statusConfig.dispatched.bar; }
+  if (actionHint) { actionHint.textContent = statusConfig.dispatched.hint; }
+  var firstStatusBtn = document.querySelector('[data-status="dispatched"]');
+  if (firstStatusBtn) { firstStatusBtn.className = 'btn btn-primary btn-sm'; }
+})();
+</script>
+
+</body>
+</html>
