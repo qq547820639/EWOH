@@ -661,39 +661,6 @@ const Scheduling = (): React.ReactElement => {
           itemClassName="min-w-0"
         />
       </QueryState>
-
-      <div className="mt-6">
-        <h2 className="text-lg font-semibold text-foreground">调度运行记录</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          最近调度运行（以服务端为准）。
-        </p>
-        <div className="mt-3 space-y-2">
-          {recentRuns.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无运行记录。</p>
-          ) : (
-            recentRuns.map((run) => (
-              <div
-                key={run.runId}
-                className="rounded-lg border border-border bg-card p-4"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate font-mono text-xs text-foreground">
-                    {run.runId}
-                  </p>
-                  {runBadge(run.status)}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {TRIGGER_LABELS[run.triggerType] ?? run.triggerType} ·{' '}
-                  {formatTime(run.createdAt)} · 方案 {run.planIds.length} 个
-                </p>
-                {run.error && (
-                  <p className="mt-1 text-xs text-risk-blocked-foreground">{run.error}</p>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
     </div>
     </SchedulerRealtimeProvider>
   );
