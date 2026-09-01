@@ -27,7 +27,6 @@ import {
 } from '../../hooks/queryConfig';
 import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
 import { getCurrentOperator, getAuthUser } from '../../lib/auth';
-import { LazyPlanList } from '../../components/LazyPlanList';
 import { PlanMetricGrid } from '@client/src/components/business-ui/MetricCard';
 import { deriveNarrationStatus } from '../../lib/narration';
 import { track } from '../../lib/telemetry';
@@ -408,8 +407,6 @@ const Scheduling = (): React.ReactElement => {
     return rows.filter((row) => isPendingStatus(row.status));
   }, [rows, statusFilter]);
 
-  const recentRuns = runsQuery.data?.runs ?? [];
-
   const appendPlans = (newPlans: SchedulingPlanV2[]) => {
     if (!newPlans || newPlans.length === 0) return;
     queryClient.setQueryData<SchedulingPlanV2[]>(queryKeys.schedulerActivePlans, (prev) => {
@@ -626,7 +623,6 @@ const Scheduling = (): React.ReactElement => {
         isEmpty={!plansQuery.data || filteredRows.length === 0}
         onRefresh={() => {
           plansQuery.refetch();
-          runsQuery.refetch();
         }}
         errorMessage={
           plansQuery.error instanceof Error ? plansQuery.error.message : '数据加载失败'
@@ -635,31 +631,29 @@ const Scheduling = (): React.ReactElement => {
         emptyMessage="暂无调度方案，点击「生成方案」创建。"
         updatedAt={plansQuery.dataUpdatedAt}
       >
-        <LazyPlanList<SchedulingPlanV2>
-          items={filteredRows}
-          itemKey={(row) => row.planId}
-          renderItem={(row) => (
-            <PlanCard
-              row={row}
-              actionFor={actionFor}
-              actionMode={actionMode}
-              actionReason={actionReason}
-              approvePending={approveMutation.isPending}
-              rejectPending={rejectMutation.isPending}
-              dispatchPending={dispatchMutation.isPending}
-              replanPending={replanMutation.isPending}
-              onStartAction={startAction}
-              onCancelAction={cancelAction}
-              onActionReasonChange={setActionReason}
-              onHandleAction={handleAction}
-              onDispatch={(r) => dispatchMutation.mutate(r)}
-              onReplan={(r) => replanMutation.mutate(r)}
-              onNavigate={(route) => navigate(route)}
-            />
-          )}
-          className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3"
-          itemClassName="min-w-0"
-        />
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          {filteredRows.map((row) => (
+            <div key={row.planId} className="min-w-0">
+              <PlanCard
+                row={row}
+                actionFor={actionFor}
+                actionMode={actionMode}
+                actionReason={actionReason}
+                approvePending={approveMutation.isPending}
+                rejectPending={rejectMutation.isPending}
+                dispatchPending={dispatchMutation.isPending}
+                replanPending={replanMutation.isPending}
+                onStartAction={startAction}
+                onCancelAction={cancelAction}
+                onActionReasonChange={setActionReason}
+                onHandleAction={handleAction}
+                onDispatch={(r) => dispatchMutation.mutate(r)}
+                onReplan={(r) => replanMutation.mutate(r)}
+                onNavigate={(route) => navigate(route)}
+              />
+            </div>
+          ))}
+        </div>
       </QueryState>
     </div>
     </SchedulerRealtimeProvider>
