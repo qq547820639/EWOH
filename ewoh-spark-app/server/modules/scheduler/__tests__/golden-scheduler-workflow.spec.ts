@@ -166,7 +166,10 @@ async function runScenario(scenario: Scenario): Promise<{ scenarioId: string; op
         worldState.assertFreshForApprove.mockRejectedValueOnce(new Error('PLAN_STALE'));
       }
       try {
-        await planService.approvePlan(String(params.planId ?? 'PLAN-1'), { version, snapshotVersion }, ctx);
+        // B5 审批独立性：审批人换用 u2（生成人 u1 不可自批；golden 结果与
+        // 审批人身份无关——outcomes 只记录 status/outbox 等，不记录 userId）。
+        const approverCtx = { ...ctx, userId: 'u2' };
+        await planService.approvePlan(String(params.planId ?? 'PLAN-1'), { version, snapshotVersion }, approverCtx);
         outcomes.push({
           op: 'approve',
           outcome: {

@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
   Optional,
   forwardRef,
 } from '@nestjs/common';
@@ -116,6 +117,9 @@ export class PlanService {
             : null) as unknown as Record<string, unknown>[] | null,
           // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
           orgId: ctx.primaryOrgId || null,
+          // B5 审批独立性（standalone_069）：生成操作者取服务端权威口径 actor.userId
+          //（前端 operator 可伪造，不参与回避比较）。NULL=存量/legacy 行。
+          createdBy: ctx.userId || null,
           createdAt: new Date(plan.createdAt),
         });
 
@@ -319,6 +323,15 @@ export class PlanService {
     // P4-SHADOW：Shadow Plan 服务端 hard guard——不可 approve（不靠前端隐藏按钮）。
     if (plan.isShadow) {
       throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be approved');
+    }
+
+    // B5 审批独立性（standalone_069 / 决策单 D-3 核实）：生成人回避——
+    // 比较用服务端权威口径 actor.userId（body.operator 可伪造，不参与）。
+    // createdBy 为 NULL（存量/legacy 行）时放行，避免历史方案被永久锁死。
+    if (plan.createdBy && ctx.userId && plan.createdBy === ctx.userId) {
+      throw new ForbiddenException(
+        `SELF_APPROVAL_FORBIDDEN: plan ${planId} was created by the requesting operator (B5 审批独立性)`,
+      );
     }
 
     if (plan.version !== body.version) {
@@ -1117,6 +1130,9 @@ export class PlanService {
       planName: plan.planName ?? undefined,
       // ADR-071：读模型组织归属透出（NULL=standalone_025 存量/全局过渡行）。
       orgId: plan.orgId ?? undefined,
+      // B5 审批独立性（standalone_069）：生成操作者透出（NULL=存量/legacy 行），
+      // 前端据此预判"自批"并给出明确说明（而非点击后 403）。
+      createdBy: plan.createdBy ?? undefined,
       version: plan.version ?? 1,
       status: (plan.status ?? 'shadow') as PlanStatus,
       trigger: {

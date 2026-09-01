@@ -115,10 +115,12 @@ describe('智能调度执行闭环 - 集成链路', () => {
     expect(state.plans.get('PLAN-1')?.status).toBe('shadow');
 
     // 4) 审批（快照新鲜时成功）。
+    // B5 审批独立性：审批人必须不同于生成人（u1 生成 → u2 审批）——
+    // 同人审批会被 SELF_APPROVAL_FORBIDDEN hard guard 拒绝（治理后的预期行为）。
     await planService.approvePlan(
       'PLAN-1',
       { version: shadowPlan.version, snapshotVersion: shadowPlan.snapshotVersion },
-      ctx,
+      { ...ctx, userId: 'u2' },
     );
     expect(state.plans.get('PLAN-1')?.status).toBe('approved');
     expect(state.assignments.every((a) => a.status === 'approved')).toBe(true);

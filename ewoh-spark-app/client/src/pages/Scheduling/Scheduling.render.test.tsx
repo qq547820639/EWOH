@@ -26,7 +26,11 @@ jest.mock('../../api/scheduler', () => ({}));
 jest.mock('../../hooks/queryKeys', () => ({ queryKeys: { schedulerActivePlans: ['plans'], schedulerRuns: () => ['runs'] } }));
 jest.mock('../../hooks/queryConfig', () => ({ OPERATIONAL_REFETCH_INTERVAL_MS: 5000, QUERY_STALE_TIME_MS: 30000 }));
 jest.mock('../../scheduler/SchedulerRealtimeProvider', () => ({ SchedulerRealtimeProvider: ({ children }: { children: unknown }) => children }));
-jest.mock('../../lib/auth', () => ({ getCurrentOperator: () => 'test-op' }));
+jest.mock('../../lib/auth', () => ({
+  getCurrentOperator: () => 'test-op',
+  // B5 审批独立性：Scheduling.tsx 现依赖 getAuthUser 判定自批（createdBy 对比）
+  getAuthUser: () => ({ userId: 'test-user', username: 'test-op', roles: ['dispatcher'], orgId: 'org-1' }),
+}));
 jest.mock('../../components/LazyPlanList', () => ({ LazyPlanList: () => null }));
 jest.mock('../../components/QueryState', () => ({ __esModule: true, default: ({ children }: { children: unknown }) => children }));
 jest.mock('sonner', () => ({ toast: { success: jest.fn(), error: jest.fn() } }));

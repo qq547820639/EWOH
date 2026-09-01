@@ -21,6 +21,7 @@ import QueryState from '../../components/QueryState';
 import { AlertWorkbenchContent } from './AlertWorkbenchContent';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
 import { JourneyRail } from '@client/src/components/app-shell/JourneyRail';
+import { getAuthUser } from '../../lib/auth';
 import {
   PLAN_STATUS_BADGE,
   TRIGGER_LABELS,
@@ -270,8 +271,18 @@ const ObjectWorkbench = (): React.ReactElement => {
     }
   };
 
+  // B5 审批独立性：生成人不得自批（动作过滤 + 明确说明，避免点击后 403）。
+  const isSelfApproval = Boolean(
+    plan?.createdBy && plan.createdBy === getAuthUser()?.userId,
+  );
   const actions = useMemo(
-    () => (plan ? planActions(plan.status, plan.planId) : []),
+    () =>
+      plan
+        ? planActions(plan.status, plan.planId, {
+            createdBy: plan.createdBy,
+            currentUserId: getAuthUser()?.userId ?? null,
+          })
+        : [],
     [plan],
   );
 
@@ -417,7 +428,13 @@ const ObjectWorkbench = (): React.ReactElement => {
                   </dl>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* B5 审批独立性：生成人不可自批——给明确说明而非隐藏原因 */}
+                  {isSelfApproval && (
+                    <span className="inline-flex items-center rounded-md border border-risk-degraded-border bg-risk-degraded-soft px-2 py-0.5 text-xs text-risk-degraded-foreground">
+                      本方案由你生成，需他人审批
+                    </span>
+                  )}
                   {actions.map((action) => (
                     <Button
                       key={action.kind}

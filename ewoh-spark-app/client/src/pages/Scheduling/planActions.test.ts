@@ -185,3 +185,38 @@ describe('PLAN_STATUS_BADGE（横切 X-3 语义 Token）', () => {
     expect(className).not.toMatch(/\b(emerald|amber|cyan|red|blue|rose|sky|orange|teal)-\d/);
   });
 });
+
+describe('planActions B5 审批独立性（自批过滤）', () => {
+  const SELF = { createdBy: 'user-1', currentUserId: 'user-1' };
+  const OTHER = { createdBy: 'user-1', currentUserId: 'user-2' };
+
+  it('draft/shadow：生成人被过滤 approve，保留 reject（撤回是合理业务）', () => {
+    const kinds = planActions('draft', PLAN_ID, SELF).map((a) => a.kind);
+    expect(kinds).not.toContain('approve');
+    expect(kinds).toContain('reject');
+  });
+
+  it('他人审批不受影响', () => {
+    const kinds = planActions('draft', PLAN_ID, OTHER).map((a) => a.kind);
+    expect(kinds).toContain('approve');
+    expect(kinds).toContain('reject');
+  });
+
+  it('createdBy 为 null（存量行）不触发过滤', () => {
+    const kinds = planActions('draft', PLAN_ID, {
+      createdBy: null,
+      currentUserId: 'user-1',
+    }).map((a) => a.kind);
+    expect(kinds).toContain('approve');
+  });
+
+  it('approved 态（下发执行）不受自批过滤影响——独立性只约束审批环节', () => {
+    const kinds = planActions('approved', PLAN_ID, SELF).map((a) => a.kind);
+    expect(kinds).toContain('dispatch');
+  });
+
+  it('guard 缺省时行为不变（向后兼容）', () => {
+    const kinds = planActions('draft', PLAN_ID).map((a) => a.kind);
+    expect(kinds).toContain('approve');
+  });
+});

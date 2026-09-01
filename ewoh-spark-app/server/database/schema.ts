@@ -667,6 +667,8 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   metricsJson: jsonb("metrics_json"),
   reason: text("reason"),
   createdAt: customTimestamptz("created_at", { precision: 6 }).default(sql`CURRENT_TIMESTAMP`),
+  // B5 审批独立性（standalone_069）：方案生成操作者；NULL=存量/legacy 行（回避校验放行）。
+  createdBy: varchar("created_by", { length: 255 }),
   confirmedBy: varchar("confirmed_by", { length: 255 }),
   confirmedAt: customTimestamptz("confirmed_at", { precision: 6 }),
   confirmReason: text("confirm_reason"),

@@ -119,6 +119,18 @@ runDescribe(
       console.warn(`[J1 SKIP] runs 201 无方案（debounced=${String((run.body as { debounced?: boolean }).debounced)}），本轮显式跳过`);
       return;
     }
+    // B5 审批独立性适配：本测试目标是并发 dispatch 的 CAS 行为，非审批独立性。
+    // 生成与审批用同一 bootstrap token（userId 相同），会触发 SELF_APPROVAL_FORBIDDEN——
+    // 置空 created_by 模拟存量行（守卫对 NULL 放行是 standalone_069 设计语义）。
+    {
+      const pg0 = (await import('postgres')).default;
+      const conn0 = pg0(e2eConfig.runtimeDatabaseUrl, { max: 1 });
+      try {
+        await conn0`UPDATE ewoh_schedule_plan SET created_by = NULL WHERE plan_id = ${plan.planId}`;
+      } finally {
+        await conn0.end();
+      }
+    }
     const approve = await apiRequest(baseUrl, `/api/scheduler/plans/${plan.planId}/approve`, {
       method: 'POST',
       headers: jsonHeaders(token),

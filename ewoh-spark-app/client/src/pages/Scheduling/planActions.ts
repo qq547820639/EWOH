@@ -46,18 +46,32 @@ export const WRITE_ACTIONS: ReadonlySet<PlanActionKind> = new Set<PlanActionKind
  * 状态枚举见 `shared/scheduler.ts:77-85`（8 态）。
  * 注意：**没有 `stale` 态**——「已过期」来自 409 `PLAN_STALE` 响应
  * （`Scheduling.tsx:117-123`），属于 mutation 错误分支，不在此处声明。
+ *
+ * B5 审批独立性：`createdBy`（服务端权威口径 actor.userId）等于当前用户时
+ * 过滤 approve 动作——生成人不得自批；驳回（reject）保留，生成人撤回自己
+ * 的方案是合理业务。后端有同语义 hard guard（SELF_APPROVAL_FORBIDDEN），
+ * 此处过滤只为体验预判（说明原因而非点击后报错）。
  */
-export function planActions(status: PlanStatus, planId: string): PlanAction[] {
+export function planActions(
+  status: PlanStatus,
+  planId: string,
+  guard?: { createdBy?: string | null; currentUserId?: string | null },
+): PlanAction[] {
+  const selfApproval = Boolean(
+    guard?.createdBy && guard?.currentUserId && guard.createdBy === guard.currentUserId,
+  );
   const execution = `/work-orchestration?plan=${encodeURIComponent(planId)}`;
   const history = `/decision-history?plan=${encodeURIComponent(planId)}`;
 
   switch (status) {
     case 'draft':
     case 'shadow':
-      return [
-        { kind: 'approve', label: '审批通过', variant: 'primary' },
-        { kind: 'reject', label: '驳回', variant: 'danger' },
-      ];
+      return selfApproval
+        ? [{ kind: 'reject', label: '驳回', variant: 'danger' }]
+        : [
+            { kind: 'approve', label: '审批通过', variant: 'primary' },
+            { kind: 'reject', label: '驳回', variant: 'danger' },
+          ];
     case 'approved':
       return [
         { kind: 'dispatch', label: '下发执行', variant: 'primary' },

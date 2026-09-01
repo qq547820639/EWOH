@@ -26,7 +26,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
-import { getCurrentOperator } from '../../lib/auth';
+import { getCurrentOperator, getAuthUser } from '../../lib/auth';
 import { LazyPlanList } from '../../components/LazyPlanList';
 import { PlanMetricGrid } from '@client/src/components/business-ui/MetricCard';
 import { deriveNarrationStatus } from '../../lib/narration';
@@ -283,8 +283,17 @@ export function PlanCard({
       ) : (
         // OD-5：动作区由 planActions 单一事实源驱动（与对象工作台共用同一份定义）。
         // 终态不再只剩一行静态文本——每个终态至少 1 个后继入口，闭合"派工黑洞"。
-        <div className="mt-3 flex flex-wrap gap-2">
-          {planActions(row.status, row.planId).map((action) => {
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {/* B5 审批独立性：生成人不可自批——给明确说明而非隐藏原因 */}
+          {row.createdBy && row.createdBy === getAuthUser()?.userId && (
+            <span className="mr-1 inline-flex items-center rounded-md border border-risk-degraded-border bg-risk-degraded-soft px-2 py-0.5 text-xs text-risk-degraded-foreground">
+              本方案由你生成，需他人审批
+            </span>
+          )}
+          {planActions(row.status, row.planId, {
+            createdBy: row.createdBy,
+            currentUserId: getAuthUser()?.userId ?? null,
+          }).map((action) => {
             const pending =
               (action.kind === 'approve' && approvePending) ||
               (action.kind === 'reject' && rejectPending) ||
@@ -456,6 +465,12 @@ const Scheduling = (): React.ReactElement => {
     onError: (err) => {
       if (isPlanStaleError(err)) {
         toast.error('该方案生成后现场状态已发生变化，请重新计算');
+      } else if (
+        err instanceof Error &&
+        err.message.includes('SELF_APPROVAL_FORBIDDEN')
+      ) {
+        // B5 审批独立性：后端 hard guard（前端已预判过滤，此处为深链/并发兜底）。
+        toast.error('本方案由你生成，不能由本人审批，请交由其他有权限的同事审批');
       } else {
         toast.error('方案审批失败', {
           description: errorDescription(err),

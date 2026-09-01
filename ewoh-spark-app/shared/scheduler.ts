@@ -1164,6 +1164,9 @@ export interface SchedulingPlanV2 {
   planName?: string;
   /** 方案归属租户（ADR-071；ewoh_schedule_plan.org_id；缺省=standalone_025 存量/全局过渡行）。 */
   orgId?: string;
+  /** 方案生成操作者（B5 审批独立性 / standalone_069；服务端权威口径 actor.userId；
+   *  缺省=存量/legacy 行）。前端据此预判"自批"并给出明确说明而非点击后 403。 */
+  createdBy?: string;
   version: number;
   status: PlanStatus;
   trigger: { type: SchedulingTrigger | string; entityId: string | null };

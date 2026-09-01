@@ -159,6 +159,17 @@ if (!e2eConfig) {
       expect(plan).toBeDefined();
 
       // 2) 审批（携带 version + snapshotVersion；stale 场景见 E）。
+      // B5 适配：置空 created_by 模拟存量行（生成/审批同一 bootstrap token，
+      // 否则触发 SELF_APPROVAL_FORBIDDEN；守卫对 NULL 放行是设计语义）。
+      {
+        const pg0 = (await import('postgres')).default;
+        const conn0 = pg0(e2eConfig.runtimeDatabaseUrl, { max: 1 });
+        try {
+          await conn0`UPDATE ewoh_schedule_plan SET created_by = NULL WHERE plan_id = ${plan!.planId}`;
+        } finally {
+          await conn0.end();
+        }
+      }
       const approve = await apiRequest(
         baseUrl,
         `/api/scheduler/plans/${plan!.planId}/approve`,
@@ -215,6 +226,16 @@ if (!e2eConfig) {
       expect(baseline.status).toBe(201);
       const plan0 = baseline.body.plans?.[0];
       if (plan0) {
+        // B5 适配：同上（同 token 生成+审批，置空 created_by 走存量行语义）。
+        {
+          const pg0 = (await import('postgres')).default;
+          const conn0 = pg0(e2eConfig.runtimeDatabaseUrl, { max: 1 });
+          try {
+            await conn0`UPDATE ewoh_schedule_plan SET created_by = NULL WHERE plan_id = ${plan0.planId}`;
+          } finally {
+            await conn0.end();
+          }
+        }
         const approve0 = await apiRequest(
           baseUrl,
           `/api/scheduler/plans/${plan0.planId}/approve`,
