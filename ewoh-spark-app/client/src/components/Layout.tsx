@@ -259,7 +259,7 @@ const Layout = () => {
       <main
         id="main-content"
         tabIndex={-1}
-        className="flex min-w-0 flex-1 flex-col overflow-auto outline-none"
+        className="flex min-w-0 min-h-0 flex-1 flex-col overflow-auto outline-none"
       >
         {/* R2-CC2-002：顶栏表面色 bg-card→bg-card 令牌（dark 主题下可读）。 */}
         <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
