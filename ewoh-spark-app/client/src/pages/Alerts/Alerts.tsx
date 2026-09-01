@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,6 +13,8 @@ import QueryState from '../../components/QueryState';
 import OfflineState from '../../components/OfflineState';
 import { Button } from '@client/src/components/ui/button';
 import { errorDescription } from '@client/src/lib/errorContract';
+import { getAuthUser } from '../../lib/auth';
+import { availableAlertActions } from './alertActions';
 
 const statusLabel: Record<string, string> = {
   open: '待确认',
@@ -21,23 +24,16 @@ const statusLabel: Record<string, string> = {
   reopened: '已重开',
 };
 
-const actionFor = (status: string | null): { label: string; action: string } => {
-  switch (status) {
-    case 'open':
-      return { label: '确认', action: 'acknowledge' };
-    case 'acknowledged':
-      return { label: '处置', action: 'process' };
-    case 'processing':
-      return { label: '关闭', action: 'close' };
-    case 'closed':
-      return { label: '重开', action: 'reopen' };
-    default:
-      return { label: '确认', action: 'acknowledge' };
-  }
-};
+// 注：原 `actionFor(status)` 只按状态返回动作、不看角色，而后端状态机是角色感知
+// fail-closed 的，导致「按钮可点、点击必 400」，且 `reopened` 态漏掉了「处置」。
+// 已整体移除，改用 `./alertActions` 的 availableAlertActions()——
+// 判定委托给 @shared/alert-state-machine（与后端同一套规则），不硬编码角色矩阵。
 
 const Alerts = (): React.ReactElement => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  // 仅用于前端动作可用性判定，授权仍以服务端为准（lib/auth 注释：roles 只驱动 UI 展示）。
+  const userRoles = getAuthUser()?.roles ?? null;
   const [isOffline, setIsOffline] = useState(() =>
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
   );
@@ -91,8 +87,9 @@ const Alerts = (): React.ReactElement => {
         />
       )}
 
+      {/* 语义 Token（横切 X-3）：使暗色 / 高对比 / 反色三套主题对该区域生效。 */}
       {transitionMutation.isError && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="flex items-start gap-2 rounded-lg border border-risk-blocked-border bg-risk-blocked-soft p-4 text-sm text-risk-blocked-foreground">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           {transitionMutation.error instanceof Error
             ? transitionMutation.error.message
@@ -124,31 +121,58 @@ const Alerts = (): React.ReactElement => {
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row) => {
-                const next = actionFor(row.status);
-                const busy =
-                  transitionMutation.isPending && transitionMutation.variables?.eventId === row.eventId;
+                // 按「状态 × 当前用户角色」派生，不展示必被后端拒绝的动作。
+                const actions = availableAlertActions(row.status, userRoles);
+                const busyFor = (action: string): boolean =>
+                  transitionMutation.isPending &&
+                  transitionMutation.variables?.eventId === row.eventId &&
+                  transitionMutation.variables?.action === action;
                 return (
                   <tr key={row.id} className="hover:bg-muted">
                     <td className="px-5 py-3">
-                      <p className="font-medium text-foreground">{row.title ?? row.eventId}</p>
+                      {/* RK-3：行标题下钻对象工作台（J2）；角色感知动作仍在本页内联 */}
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/o/alert/${encodeURIComponent(row.eventId)}`)}
+                        className="text-left font-medium text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline"
+                      >
+                        {row.title ?? row.eventId}
+                      </button>
                       <p className="text-xs text-muted-foreground">{row.deviceId ?? '-'}</p>
                     </td>
                     <td className="px-5 py-3">{row.severity ?? '-'}</td>
                     <td className="px-5 py-3">{statusLabel[row.status ?? 'open'] ?? row.status}</td>
                     <td className="px-5 py-3">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          transitionMutation.mutate({ eventId: row.eventId, action: next.action })
-                        }
-                        className="inline-flex items-center gap-1.5"
-                      >
-                        {busy && <Loader2 className="size-3 animate-spin" />}
-                        {busy ? '处理中' : next.label}
-                      </Button>
+                      {actions.length === 0 ? (
+                        // 无可用动作时给出明确说明，而不是留白或堆叠禁用按钮。
+                        <span className="text-xs text-muted-foreground">
+                          当前角色无可执行操作
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {actions.map((action) => (
+                            <Button
+                              key={action.action}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busyFor(action.action)}
+                              onClick={() =>
+                                transitionMutation.mutate({
+                                  eventId: row.eventId,
+                                  action: action.action,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5"
+                            >
+                              {busyFor(action.action) && (
+                                <Loader2 className="size-3 animate-spin" />
+                              )}
+                              {busyFor(action.action) ? '处理中' : action.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

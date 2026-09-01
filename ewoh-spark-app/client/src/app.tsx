@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import PageSkeleton from './components/app-shell/PageSkeleton';
 import { getAuthUser, isAuthenticated } from './lib/auth';
 import { getAllowedRoles, hasRoleAccess } from './lib/navigation';
+import { ingestTelemetry } from './api/telemetry';
+import { installBatchedTelemetrySink, track } from './lib/telemetry';
 
 const CommandCenter = React.lazy(() => import('./pages/CommandCenter/CommandCenter'));
 const DigitalWorld = React.lazy(() => import('./pages/DigitalWorld/DigitalWorld'));
@@ -28,6 +30,7 @@ const WorkOrchestration = React.lazy(() => import('./pages/WorkOrchestration/Wor
 const NotFound = React.lazy(() => import('./pages/NotFound/NotFound'));
 const Login = React.lazy(() => import('./pages/Login/Login'));
 const Forbidden = React.lazy(() => import('./pages/Forbidden/Forbidden'));
+const ObjectWorkbench = React.lazy(() => import('./pages/ObjectWorkbench/ObjectWorkbench'));
 
 const RequireAuth = ({ children }: { children: React.ReactElement }) => {
   const location = useLocation();
@@ -59,6 +62,21 @@ const PageFallback = () => (
 );
 
 const RoutesComponent = () => {
+  const location = useLocation();
+  // 埋点批量上报：挂载时安装一次，返回清理函数以便卸载时冲刷剩余事件。
+  // 上报失败由 sink 内部静默吞掉，不影响任何业务路径。
+  useEffect(() => installBatchedTelemetrySink(ingestTelemetry), []);
+
+  // 页面 PV 采集（路线图 A1 / D2 驾驶舱决策的数据基础）：
+  // 路由变化即记一条 nav_source（事件名已在后端白名单，零后端改动）。
+  // 登录页/禁止页跳转也计入——它们反映真实到达路径。
+  useEffect(() => {
+    const to = location.pathname;
+    if (!to || to === '/login') return;
+    track('nav_source', { to });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
   return (
     <React.Suspense fallback={<PageFallback />}>
       <Routes>
@@ -80,6 +98,10 @@ const RoutesComponent = () => {
           <Route path="command-center" element={<RequireRole path="/command-center"><CommandCenter /></RequireRole>} />
           <Route path="digital-world" element={<RequireRole path="/digital-world"><DigitalWorld /></RequireRole>} />
           <Route path="scheduling" element={<RequireRole path="/scheduling"><Scheduling /></RequireRole>} />
+          {/* OD-2 对象工作台：深链入口（不进侧边栏导航，故不套 RequireRole——
+              未注册路径会 fail-closed 拒绝所有人）。租户隔离由后端
+              getPlanDetail（ADR-071/073，跨租户 404）保证。 */}
+          <Route path="o/:objectType/:objectId" element={<ObjectWorkbench />} />
           <Route path="ai-decision" element={<RequireRole path="/ai-decision"><AiDecision /></RequireRole>} />
           <Route path="simulation" element={<RequireRole path="/simulation"><SimulationConsole /></RequireRole>} />
           <Route path="approval-console" element={<RequireRole path="/approval-console"><ApprovalConsole /></RequireRole>} />

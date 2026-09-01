@@ -1,4 +1,5 @@
 import { axiosForBackend } from '../lib/http';
+import type { ObjectDescriptor } from '@shared/api.interface';
 
 /** ADR-030 / NO-12f：审批交互面 API 客户端（待批清单 + 通知读写）。 */
 
@@ -7,6 +8,11 @@ export interface SchedulerPendingApproval {
   entityType: string | null;
   entityId: string | null;
   createdAt: string | null;
+  /**
+   * OD-1：对象描述符快照（后端 `listPending` 从 evidenceJson 读出）。
+   * 可选且向后兼容——老审批行不含该字段，消费方须回退到 entityType + entityId 渲染。
+   */
+  subject?: ObjectDescriptor;
 }
 
 export interface AgentPendingApproval {

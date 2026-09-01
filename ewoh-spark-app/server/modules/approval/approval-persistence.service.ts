@@ -21,7 +21,25 @@ import type {
   ApprovalStepAction,
   ApprovalStepStatus,
   CreateApprovalRequest,
+  ObjectDescriptor,
 } from '@shared/api.interface';
+
+/**
+ * OD-1：从 evidenceJson 还原对象描述符快照。
+ *
+ * evidenceJson 是无 `$type` 约束的 jsonb（见 `server/database/schema.ts`），
+ * 老数据不含 subject，故一律以 undefined 返回，由消费方回退到 entityType+entityId 渲染。
+ */
+function readSubject(evidence: Record<string, unknown>): ObjectDescriptor | undefined {
+  const raw = evidence.subject;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const subject = raw as Partial<ObjectDescriptor>;
+  if (typeof subject.objectType !== 'string' || typeof subject.objectId !== 'string') {
+    return undefined;
+  }
+  if (typeof subject.title !== 'string') return undefined;
+  return subject as ObjectDescriptor;
+}
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
@@ -143,11 +161,14 @@ export class ApprovalPersistenceService {
       .limit(200);
     return rows.map((r) => {
       const evidence = (r.evidenceJson ?? {}) as Record<string, unknown>;
+      const subject = readSubject(evidence);
       return {
         approvalId: r.eventId,
         entityType: evidence.entityType ?? null,
         entityId: evidence.entityId ?? null,
         createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        // OD-1：老数据无 subject → undefined，前端回退既有渲染，不允许白屏。
+        ...(subject ? { subject } : {}),
       };
     });
   }
@@ -183,6 +204,8 @@ export class ApprovalPersistenceService {
       role,
       status: 'pending',
     }));
+    // OD-1：对象描述符快照（可选，向后兼容）。未登记的 entityType 已在上面 fail-closed 拒绝。
+    const subject = input.subject;
 
     // R2-SMI-004：instance（ewoh_event）与 steps（ewoh_event_chain）同事务
     // 提交——chain 失败不再留下无 steps 的孤儿 instance 行。
@@ -190,7 +213,8 @@ export class ApprovalPersistenceService {
       await tx.insert(ewohEvent).values({
         eventId: id,
         eventType: 'approval_instance',
-        title: `Approval for ${entityType} ${entityId}`,
+        // OD-1：优先存人类可读标题，缺失时回退既有文案（避免 DB 里落裸 ID）。
+        title: subject?.title?.trim() || `Approval for ${entityType} ${entityId}`,
         status: 'pending',
         createdAt: now,
         // ADR-009 / standalone_066: Event Envelope fields.
@@ -209,6 +233,8 @@ export class ApprovalPersistenceService {
           createdAt: now.toISOString(),
           // NEST-405：记录发起人（cancel/发起人回避的 initiator 校验依据）。
           createdBy: actor?.userId ?? 'system',
+          // OD-1：对象描述符快照（jsonb 无 $type 约束，加字段无需 DB 迁移）。
+          ...(subject ? { subject } : {}),
         },
       });
       await tx.insert(ewohEventChain).values(
@@ -229,6 +255,7 @@ export class ApprovalPersistenceService {
       status: 'pending',
       steps,
       createdAt: now.toISOString(),
+      ...(subject ? { subject } : {}),
     };
   }
 
@@ -583,6 +610,7 @@ export class ApprovalPersistenceService {
           : typeof evidence.createdAt === 'string'
             ? evidence.createdAt
             : new Date().toISOString();
+    const subject = readSubject(evidence);
     return {
       id: event.eventId,
       entityType:
@@ -591,6 +619,8 @@ export class ApprovalPersistenceService {
       status: event.status as ApprovalInstance['status'],
       steps,
       createdAt,
+      // OD-1：对象描述符快照；老数据缺失时为 undefined，消费方回退渲染。
+      ...(subject ? { subject } : {}),
     };
   }
 }

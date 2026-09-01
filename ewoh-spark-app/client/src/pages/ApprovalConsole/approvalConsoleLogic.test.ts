@@ -69,6 +69,72 @@ describe('approvalConsoleLogic（NO-12f 客户端审批台）', () => {
     expect(rows[1]?.title).toContain('propose_plan');
   });
 
+  // ---- OD-1：对象描述符渲染（消除审批台裸 UUID）----
+
+  it('有 subject 时用人类可读标题与中文类型标签，且在标题中呈现对象名', () => {
+    const rows = buildApprovalRows(
+      [],
+      [
+        schedulerApproval({
+          entityType: 'control_request',
+          subject: {
+            objectType: 'control_request',
+            objectId: 'ctl-9',
+            title: '3 号产线急停指令',
+            summary: '延期 42.6min · 负荷 87%',
+          },
+        }),
+      ],
+    );
+    const row = rows[0];
+    expect(row?.title).toContain('3 号产线急停指令');
+    expect(row?.title).toContain('高危控制指令');
+    expect(row?.detail).toBe('延期 42.6min · 负荷 87%');
+  });
+
+  it('有 subject 时生成深链；未显式给 deepLink 时按 objectType/objectId 兜底', () => {
+    const rows = buildApprovalRows(
+      [],
+      [
+        schedulerApproval({
+          subject: { objectType: 'task', objectId: 'T-1', title: '任务 A' },
+        }),
+      ],
+    );
+    expect(rows[0]?.deepLink).toBe('/o/task/T-1');
+  });
+
+  it('subject 自带 deepLink 时优先使用', () => {
+    const rows = buildApprovalRows(
+      [],
+      [
+        schedulerApproval({
+          subject: {
+            objectType: 'task',
+            objectId: 'T-1',
+            title: '任务 A',
+            deepLink: '/o/task/T-1?tab=evidence',
+          },
+        }),
+      ],
+    );
+    expect(rows[0]?.deepLink).toBe('/o/task/T-1?tab=evidence');
+  });
+
+  it('无 subject（老数据）时回退且不带深链，不白屏', () => {
+    const rows = buildApprovalRows([], [schedulerApproval({ entityType: 'task' })]);
+    expect(rows[0]?.title).toContain('生产任务');
+    expect(rows[0]?.detail).toContain('appr-s1');
+    expect(rows[0]?.deepLink).toBeUndefined();
+    expect(rows[0]?.subject).toBeUndefined();
+  });
+
+  it('未登记类型不再被一律标成「调度审批」（F-3 文案误导修复）', () => {
+    const rows = buildApprovalRows([], [schedulerApproval({ entityType: 'dangerous_action' })]);
+    expect(rows[0]?.title).not.toContain('调度审批');
+    expect(rows[0]?.title).toContain('危险作业');
+  });
+
   it('agentApprovalActionable：过期显式禁用（§33 过期不静默可操作）', () => {
     expect(agentApprovalActionable(agentApproval())).toBe(true);
     expect(agentApprovalActionable(agentApproval({ expired: true, remainingMs: 0 }))).toBe(false);

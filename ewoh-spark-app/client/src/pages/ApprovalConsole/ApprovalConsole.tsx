@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, ShieldCheck, XCircle, Bell } from 'lucide-react';
 import {
@@ -21,6 +22,7 @@ import {
   notificationSummary,
 } from './approvalConsoleLogic';
 import { Button } from '@client/src/components/ui/button';
+import { track } from '../../lib/telemetry';
 import { toast } from 'sonner';
 import { errorMessage } from '@client/src/lib/errorContract';
 
@@ -34,6 +36,7 @@ import { errorMessage } from '@client/src/lib/errorContract';
  */
 const ApprovalConsole = (): React.ReactElement => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const agentQuery = useQuery({
@@ -197,6 +200,23 @@ const ApprovalConsole = (): React.ReactElement => {
                         {expanded === row.approvalId ? '收起' : '查看详情'}
                       </Button>
                     )}
+                    {/* OD-1/US-3：对象描述符提供深链，审批人可先看对象再决策，
+                        不必再回侧边栏逐页找。老数据无描述符时不渲染该入口。 */}
+                    {row.deepLink ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          track('approval_deeplink_click', {
+                            approvalId: row.approvalId,
+                            objectType: row.subject?.objectType ?? 'unknown',
+                          });
+                          navigate(row.deepLink as string);
+                        }}
+                      >
+                        查看对象
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
                 {row.kind === 'scheduler' && expanded === row.approvalId && (

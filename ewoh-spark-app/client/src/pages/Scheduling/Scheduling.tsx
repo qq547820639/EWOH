@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
@@ -27,6 +28,10 @@ import {
 import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
 import { getCurrentOperator } from '../../lib/auth';
 import { LazyPlanList } from '../../components/LazyPlanList';
+import { PlanMetricGrid } from '@client/src/components/business-ui/MetricCard';
+import { deriveNarrationStatus } from '../../lib/narration';
+import { track } from '../../lib/telemetry';
+import { PLAN_STATUS_BADGE, TRIGGER_LABELS, planActions } from './planActions';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
 import { errorDescription } from '@client/src/lib/errorContract';
 import { Button } from '@client/src/components/ui/button';
@@ -42,18 +47,7 @@ const STATUS_FILTERS: Array<{ label: string; value: StatusFilter }> = [
   { label: '已审批', value: 'approved' },
 ];
 
-const TRIGGER_LABELS: Record<string, string> = {
-  MANUAL: '手动',
-  TASK_CREATED: '任务创建',
-  TASK_UPDATED: '任务更新',
-  PERSON_UNAVAILABLE: '人员不可用',
-  DEVICE_OFFLINE: '设备离线',
-  DEVICE_LOW_BATTERY: '设备低电量',
-  BOTTLENECK_DETECTED: '瓶颈检测',
-  DEADLINE_AT_RISK: '交期风险',
-  SAFETY_EVENT: '安全事件',
-  ZONE_RESTRICTED: '区域受限',
-};
+// TRIGGER_LABELS 已收敛至 ./planActions（与对象工作台共用，避免术语漂移）。
 
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -71,45 +65,57 @@ function isPendingStatus(status: PlanStatus): boolean {
   return status === 'draft' || status === 'shadow';
 }
 
+/**
+ * 方案状态徽章（横切 X-3）：状态色一律取自语义 Token `risk-*`，
+ * 替换原先的 Tailwind 默认色族（emerald/cyan/amber），从而响应
+ * 暗色 / 高对比 / 反色三套主题——此前这些区域对三套主题全部无响应。
+ */
 function statusBadge(status: PlanStatus): React.ReactElement {
-  switch (status) {
-    case 'approved':
-      return (
-        <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700">已审批</Badge>
-      );
-    case 'dispatched':
-    case 'executing':
-      return (
-        <Badge className="border-cyan-200 bg-cyan-100 text-cyan-700">已下发</Badge>
-      );
-    case 'completed':
-      return (
-        <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700">已完成</Badge>
-      );
-    case 'rejected':
-      return <Badge variant="destructive">已驳回</Badge>;
-    case 'superseded':
-      return <Badge variant="outline">已替代</Badge>;
-    default:
-      return (
-        <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-          待审批
-        </Badge>
-      );
-  }
+  const cfg = PLAN_STATUS_BADGE[status] ?? {
+    label: status,
+    className: 'border-border bg-muted text-muted-foreground',
+  };
+  return (
+    <Badge variant="outline" className={`border ${cfg.className}`}>
+      {cfg.label}
+    </Badge>
+  );
 }
 
+/**
+ * 运行记录状态徽章（横切 X-3）：同样收敛到语义 Token，使暗色 / 高对比 / 反色
+ * 三套主题对该区域生效（此前 emerald / blue 硬编码对三套主题全部无响应）。
+ */
 function runBadge(status: string): React.ReactElement {
   if (status === 'succeeded') {
     return (
-      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700">成功</Badge>
+      <Badge
+        variant="outline"
+        className="border border-risk-normal-border bg-risk-normal-soft text-risk-normal-foreground"
+      >
+        成功
+      </Badge>
     );
   }
   if (status === 'failed') {
-    return <Badge variant="destructive">失败</Badge>;
+    return (
+      <Badge
+        variant="outline"
+        className="border border-risk-blocked-border bg-risk-blocked-soft text-risk-blocked-foreground"
+      >
+        失败
+      </Badge>
+    );
   }
   if (status === 'running') {
-    return <Badge className="border-blue-200 bg-blue-100 text-blue-700">运行中</Badge>;
+    return (
+      <Badge
+        variant="outline"
+        className="border border-risk-offline-border bg-risk-offline-soft text-risk-offline-foreground"
+      >
+        运行中
+      </Badge>
+    );
   }
   return <Badge variant="outline">排队中</Badge>;
 }
@@ -138,6 +144,10 @@ export interface PlanCardProps {
   onHandleAction: (row: SchedulingPlanV2) => void;
   onDispatch: (row: SchedulingPlanV2) => void;
   onReplan: (row: SchedulingPlanV2) => void;
+  /** OD-5：导航型动作（查看执行态势 / 决策历史）的路由回调；缺省时该类动作点击无副作用。 */
+  onNavigate?: (route: string) => void;
+  /** OD-6：AI 解读状态派生基准时间，由调用方注入以保证可测试；缺省取渲染时刻。 */
+  nowMs?: number;
 }
 
 /** ADR-082：导出供渲染 smoke 测试（纯展示，无内部状态）。 */
@@ -156,7 +166,10 @@ export function PlanCard({
   onHandleAction,
   onDispatch,
   onReplan,
+  onNavigate,
+  nowMs,
 }: PlanCardProps): React.ReactElement {
+  const narrationStatus = deriveNarrationStatus(row, nowMs ?? Date.now());
   return (
     <div className="min-w-0 rounded-lg border border-border bg-card p-5">
       <div className="flex items-start justify-between gap-2">
@@ -180,8 +193,9 @@ export function PlanCard({
         {row.metrics.stationWaitMinutes.toFixed(0)}min · 负荷{' '}
         {(row.metrics.maxWorkload * 100).toFixed(0)}%
       </p>
-      {/* AI 调度说明层（2026-08-21）：LLM/规则模板生成的自然语言方案解读 */}
-      {row.aiNarration && (
+      {/* OD-6：AI 调度说明层。此前未生成时整块不渲染，用户看到的是永久空白，
+          无法区分「生成中 / 生成失败 / 未启用」；现按派生状态给出明确呈现。 */}
+      {narrationStatus === 'done' ? (
         <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
           <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-primary">
             <Sparkles className="size-3" />
@@ -191,10 +205,38 @@ export function PlanCard({
             {row.aiNarration}
           </p>
         </div>
+      ) : narrationStatus === 'pending' ? (
+        <div
+          className="mt-3 rounded-lg border border-border bg-muted p-3"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            AI 方案解读生成中
+          </p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            通常需要 30–90 秒，完成后自动填充。
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-border bg-muted p-3">
+          <p className="text-[10px] text-muted-foreground">
+            本方案暂无 AI 解读（未启用或生成未成功），指标仍可正常评估。
+          </p>
+        </div>
       )}
-      <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs">
-        {JSON.stringify(row.metrics, null, 2)}
-      </pre>
+
+      {/* OD-7：原始 metrics 不再以 JSON 直出给最终用户，改为结构化指标卡。
+          折叠呈现以免在列表视图中撑高卡片。 */}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-muted-foreground">
+          指标详情
+        </summary>
+        <div className="mt-2">
+          <PlanMetricGrid metrics={row.metrics} />
+        </div>
+      </details>
 
       {actionFor === row.planId ? (
         <div className="mt-3 space-y-2">
@@ -239,69 +281,74 @@ export function PlanCard({
           </div>
         </div>
       ) : (
+        // OD-5：动作区由 planActions 单一事实源驱动（与对象工作台共用同一份定义）。
+        // 终态不再只剩一行静态文本——每个终态至少 1 个后继入口，闭合"派工黑洞"。
         <div className="mt-3 flex flex-wrap gap-2">
-          {isPendingStatus(row.status) && (
-            <>
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={() => onStartAction(row.planId, 'approve')}
-                disabled={approvePending}
-              >
+          {planActions(row.status, row.planId).map((action) => {
+            const pending =
+              (action.kind === 'approve' && approvePending) ||
+              (action.kind === 'reject' && rejectPending) ||
+              (action.kind === 'dispatch' && dispatchPending) ||
+              (action.kind === 'replan' && replanPending);
+            const icon =
+              action.kind === 'approve' ? (
                 <CheckCircle2 className="size-3" />
-                审批通过
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onStartAction(row.planId, 'reject')}
-                disabled={rejectPending}
-              >
+              ) : action.kind === 'reject' ? (
                 <X className="size-3" />
-                驳回
-              </Button>
-            </>
-          )}
-          {row.status === 'approved' && (
-            <>
-              <Button
-                size="sm"
-                className="flex-1"
-                onClick={() => onDispatch(row)}
-                disabled={dispatchPending}
-              >
-                {dispatchPending ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <Send className="size-3" />
-                )}
-                {dispatchPending ? '下发中...' : '下发执行'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onReplan(row)}
-                disabled={replanPending}
-              >
+              ) : action.kind === 'dispatch' ? (
+                <Send className="size-3" />
+              ) : action.kind === 'replan' ? (
                 <RotateCcw className="size-3" />
-                重新排程
+              ) : null;
+            return (
+              <Button
+                key={action.kind}
+                size="sm"
+                variant={
+                  action.variant === 'primary'
+                    ? 'default'
+                    : action.variant === 'danger'
+                      ? 'destructive'
+                      : action.variant === 'secondary'
+                        ? 'outline'
+                        : 'ghost'
+                }
+                className={action.variant === 'primary' ? 'flex-1' : undefined}
+                disabled={pending}
+                onClick={() => {
+                  // 埋点：终态出口点击率（PRD §8 驱动指标，目标 ≥ 25%）。
+                  // 仅统计终态（已下发/已驳回/已完成/已替代）的后继入口。
+                  if (action.route) {
+                    track('terminal_action_click', {
+                      action: action.kind,
+                      status: row.status,
+                    });
+                    onNavigate?.(action.route);
+                    return;
+                  }
+                  switch (action.kind) {
+                    case 'approve':
+                      onStartAction(row.planId, 'approve');
+                      break;
+                    case 'reject':
+                      onStartAction(row.planId, 'reject');
+                      break;
+                    case 'dispatch':
+                      onDispatch(row);
+                      break;
+                    case 'replan':
+                      onReplan(row);
+                      break;
+                    default:
+                      break;
+                  }
+                }}
+              >
+                {pending ? <Loader2 className="size-3 animate-spin" /> : icon}
+                {action.label}
               </Button>
-            </>
-          )}
-          {(row.status === 'dispatched' || row.status === 'executing') && (
-            <p className="w-full text-xs text-cyan-700">方案已下发执行</p>
-          )}
-          {row.status === 'rejected' && (
-            <p className="w-full text-xs text-red-600">方案已驳回</p>
-          )}
-          {row.status === 'completed' && (
-            <p className="w-full text-xs text-emerald-700">方案已完成</p>
-          )}
-          {row.status === 'superseded' && (
-            <p className="w-full text-xs text-muted-foreground">
-              方案已被替代（superseded）
-            </p>
-          )}
+            );
+          })}
         </div>
       )}
     </div>
@@ -310,6 +357,7 @@ export function PlanCard({
 
 const Scheduling = (): React.ReactElement => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   // 注意：SSE 实时订阅由本页根部的 SchedulerRealtimeProvider（单例）拥有。
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -549,7 +597,7 @@ const Scheduling = (): React.ReactElement => {
       </div>
 
       {mutationError && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="flex items-start gap-2 rounded-lg border border-risk-blocked-border bg-risk-blocked-soft p-4 text-sm text-risk-blocked-foreground">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           {mutationError}
         </div>
@@ -591,6 +639,7 @@ const Scheduling = (): React.ReactElement => {
               onHandleAction={handleAction}
               onDispatch={(r) => dispatchMutation.mutate(r)}
               onReplan={(r) => replanMutation.mutate(r)}
+              onNavigate={(route) => navigate(route)}
             />
           )}
           className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3"
@@ -622,7 +671,9 @@ const Scheduling = (): React.ReactElement => {
                   {TRIGGER_LABELS[run.triggerType] ?? run.triggerType} ·{' '}
                   {formatTime(run.createdAt)} · 方案 {run.planIds.length} 个
                 </p>
-                {run.error && <p className="mt-1 text-xs text-red-600">{run.error}</p>}
+                {run.error && (
+                  <p className="mt-1 text-xs text-risk-blocked-foreground">{run.error}</p>
+                )}
               </div>
             ))
           )}

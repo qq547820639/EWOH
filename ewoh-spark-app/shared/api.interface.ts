@@ -947,6 +947,35 @@ export interface ApprovalStep {
   delegateTo?: string;
 }
 
+/**
+ * 对象描述符（Object Descriptor）——跨对象引用的统一展示契约。
+ *
+ * 背景（PRD-对象工作台 OD-1）：审批/通知/告警等处此前只能拿到 `entityType` + `entityId`
+ * 两个自由字符串，服务层无反查路径，前端只能渲染裸 UUID（见
+ * `docs/product/PRD-object-workbench-dev-feasibility.md` E-3）。
+ *
+ * 约定：
+ *   - `objectType` 必须已在 `APPROVAL_ROLE_POLICY` 登记（fail-closed，未登记创建即 400）。
+ *   - 全部字段均为快照：创建时固化，后续源对象变更不回写，避免展示与决策时点不一致。
+ *   - 可选且向后兼容：缺失时消费方一律回退到 `entityType` + `entityId` 渲染，禁止白屏。
+ */
+export interface ObjectDescriptor {
+  objectType: string;
+  objectId: string;
+  /** 人类可读标题，替代裸 UUID 呈现给用户。 */
+  title: string;
+  /** 一句话摘要（如"延期 42.6min · 负荷 87%"），供审批人快速判断。 */
+  summary?: string;
+  /** 快照时的对象状态。 */
+  status?: string;
+  /** 决策所需关键指标（键为业务语义，值为已格式化或原始数值）。 */
+  metrics?: Record<string, number | string>;
+  /** 发起人（沿用既有 operator 口径，不含个人敏感信息）。 */
+  requestedBy?: string;
+  /** 前端路由，供下钻直达对象工作台。 */
+  deepLink?: string;
+}
+
 /** 审批实例 */
 export interface ApprovalInstance {
   id: string;
@@ -955,6 +984,8 @@ export interface ApprovalInstance {
   status: ApprovalInstanceStatus;
   steps: ApprovalStep[];
   createdAt: string;
+  /** 对象描述符快照（OD-1）；创建时未携带则为 undefined，消费方须回退渲染。 */
+  subject?: ObjectDescriptor;
 }
 
 /** 创建审批实例请求 */
@@ -962,6 +993,8 @@ export interface CreateApprovalRequest {
   entityType: string;
   entityId: string;
   roles: string[];
+  /** 对象描述符快照（OD-1，可选）；与 entityType/entityId 一并落 evidenceJson。 */
+  subject?: ObjectDescriptor;
 }
 
 /** 审批步骤操作 */
