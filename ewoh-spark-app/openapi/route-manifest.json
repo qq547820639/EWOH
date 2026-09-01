@@ -169,7 +169,6 @@
     "GET /api/system/feature-flags/{key}",
     "GET /api/tasks",
     "GET /api/tasks/{id}",
-    "GET /api/telemetry/summary",
     "GET /api/timeline/events",
     "GET /api/work/agents",
     "GET /api/work/catalog",
@@ -574,7 +573,6 @@
     "GET /api/system/feature-flags/{key}",
     "GET /api/tasks",
     "GET /api/tasks/{id}",
-    "GET /api/telemetry/summary",
     "GET /api/timeline/events",
     "GET /api/work/agents",
     "GET /api/work/catalog",
@@ -810,9 +808,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 403,
-  "specOperations": 597,
-  "documentedControllerOperations": 403,
+  "controllerOperations": 402,
+  "specOperations": 595,
+  "documentedControllerOperations": 402,
   "undocumented": [],
   "unimplemented": []
 }

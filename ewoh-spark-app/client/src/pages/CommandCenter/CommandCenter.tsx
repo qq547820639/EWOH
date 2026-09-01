@@ -8,6 +8,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+import { PageDutyHeader } from '../../components/app-shell/PageDutyHeader';
 import { CommandCenterView, EVENT_PAGE_SIZE_OPTIONS } from './CommandCenterView';
 
 const CommandCenter = (): React.ReactElement => {
@@ -59,6 +60,8 @@ const CommandCenter = (): React.ReactElement => {
     // 2026-08-21 响应式：根容器撑满 main（flex-1 flex-col），内部 flex 布局
     // 管理滚动，避免内容不足时底部大片空白。
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-hidden p-4 sm:p-6">
+      {/* DR-1 轻量收敛：页头职责条（j2-design-spec-addendum §4） */}
+      <PageDutyHeader currentPath="/command-center" />
       <header className="flex flex-wrap items-end justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-foreground">指挥中心</h1>

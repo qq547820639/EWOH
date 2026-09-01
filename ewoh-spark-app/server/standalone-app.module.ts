@@ -21,6 +21,7 @@ import { TaskModule } from './modules/task/task.module';
 import { AlertModule } from './modules/alert/alert.module';
 import { ControlModule } from './modules/control/control.module';
 import { ApprovalModule } from './modules/approval/approval.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { ResourceModule } from './modules/resource/resource.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorldCursorModule } from './modules/world-cursor/world-cursor.module';
@@ -84,6 +85,7 @@ import { ExoSessionModule } from './modules/exo/exo-session.module';
     AlertModule,
     ControlModule,
     ApprovalModule,
+    TelemetryModule,
     ResourceModule,
     AiModule,
     WorldCursorModule,

@@ -26,6 +26,7 @@ import { TaskModule } from './modules/task/task.module';
 import { AlertModule } from './modules/alert/alert.module';
 import { ControlModule } from './modules/control/control.module';
 import { ApprovalModule } from './modules/approval/approval.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { ResourceModule } from './modules/resource/resource.module';
 import { AiModule } from './modules/ai/ai.module';
 import { WorldCursorModule } from './modules/world-cursor/world-cursor.module';
@@ -72,6 +73,7 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
     AlertModule,
     ControlModule,
     ApprovalModule,
+    TelemetryModule,
     ResourceModule,
     AiModule,
     WorldCursorModule,
@@ -88,6 +90,8 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
     ExoSessionModule,
     // NEST-507/515：MetricsModule 提供 MetricsInterceptor 依赖（最小集补齐）。
     MetricsModule,
+    // UX 埋点（J2 Gate G-1）：复用 ewoh_event 表，无新增表与迁移。
+    TelemetryModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

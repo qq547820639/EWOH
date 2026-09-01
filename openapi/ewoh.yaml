@@ -10521,6 +10521,74 @@ paths:
       responses:
         '200':
           description: Rolled back activation record
+  /api/telemetry/batch:
+    post:
+      tags:
+        - telemetry
+      summary: Batch-ingest UI telemetry events (fire-and-forget, silent failure)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                        enum:
+                          - object_workbench_view
+                          - approval_deeplink_click
+                          - terminal_action_click
+                          - nav_source
+                      at: { type: number, description: 'Epoch ms of the event' }
+                      props:
+                        type: object
+                        description: 'Event properties (object ids / action names / statuses only)'
+      responses:
+        '200':
+          description: Accepted count (never throws; invalid events are skipped)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: { type: integer }
+  /api/telemetry/summary:
+    get:
+      tags:
+        - telemetry
+      summary: Aggregate UI telemetry by event name (org-scoped, default last 30 days)
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Aggregated counts by event name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from: { type: string }
+                  to: { type: string }
+                  total: { type: integer }
+                  byName:
+                    type: object
+                    additionalProperties: { type: integer }
 components:
   securitySchemes:
     BearerAuth:

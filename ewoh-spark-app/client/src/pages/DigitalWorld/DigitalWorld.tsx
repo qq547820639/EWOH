@@ -4,6 +4,7 @@ import { getHierarchy } from '../../api/spatial';
 import { getWorldState } from '../../api/world';
 import type { SpatialEntity, SpatialHierarchyNode, CurrentWorldState } from '@shared/api.interface';
 import { queryKeys } from '../../hooks/queryKeys';
+import { PageDutyHeader } from '../../components/app-shell/PageDutyHeader';
 import {
   OPERATIONAL_REFETCH_INTERVAL_MS,
   QUERY_STALE_TIME_MS,
@@ -87,6 +88,8 @@ const DigitalWorld = (): React.ReactElement => {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
+      {/* DR-1 轻量收敛：页头职责条（j2-design-spec-addendum §4） */}
+      <PageDutyHeader currentPath="/digital-world" />
       <header>
         <h1 className="text-2xl font-bold text-foreground">数字世界</h1>
         <p className="mt-1 text-sm text-muted-foreground">空间层级、实体与当前世界状态。</p>

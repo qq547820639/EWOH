@@ -114,6 +114,9 @@ window.addEventListener('unhandledrejection', (event) => {
   captureUnhandledError(event.reason, 'unhandledrejection');
 });
 startWebVitalsCollection();
+// 埋点 HTTP 上报由 app.tsx 的 RoutesComponent 统一挂载
+// （installBatchedTelemetrySink(ingestTelemetry)，走 axiosForBackend 带 token）。
+// ⚠️ 勿在此处用裸 fetch 另接一路——不带 Authorization 会被全局守卫 401 静默吞掉。
 // 会话安全：空闲计时随用户活动重置；收到其它标签页登出广播时同步退出（清令牌并回登录页）。
 // 同时把 offlineLeader 的缓选举状态登记进会话生命周期，登出时统一释放。
 sessionLifecycle.registerResource(

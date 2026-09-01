@@ -35,7 +35,6 @@ const RisksPanel = (): React.ReactElement => {
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-border text-xs text-muted-foreground">
               <tr>
-                <th className="px-5 py-3 font-medium">ID</th>
                 <th className="px-5 py-3 font-medium">风险</th>
                 <th className="px-5 py-3 font-medium">等级</th>
                 <th className="px-5 py-3 font-medium">缓解</th>
@@ -45,11 +44,14 @@ const RisksPanel = (): React.ReactElement => {
             <tbody className="divide-y divide-border">
               {(risksQuery.data ?? []).map((risk) => (
                 <tr key={risk.id} className="hover:bg-muted">
-                  <td className="px-5 py-3 font-mono text-xs">{risk.id}</td>
+                  {/* RK-5（设计核查修正）：title 本就存在（api/work.ts:73），此前 FA-5
+                      「裸 ID 误判」实际是列序问题——第一眼是 ID 而非标题。现标题提前，
+                      ID 降为标题下方的等宽辅助信息。 */}
                   <td className="px-5 py-3">
                     <div className="font-medium text-foreground">{risk.title}</div>
+                    <div className="font-mono text-[11px] text-muted-foreground">{risk.id}</div>
                     {risk.trigger && (
-                      <div className="text-xs text-muted-foreground">{risk.trigger}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{risk.trigger}</div>
                     )}
                   </td>
                   <td className="px-5 py-3">
