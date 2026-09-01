@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, ShieldCheck, XCircle, Bell } from 'lucide-react';
+import { CheckCircle2, Loader2, ShieldCheck, XCircle, Bell, RotateCcw } from 'lucide-react';
 import {
   getApprovalDetail,
   listAgentPendingApprovals,
@@ -13,6 +13,7 @@ import {
   stepApprovalAction,
   type ApprovalDetail,
 } from '../../api/approvals';
+import { getRuns } from '../../api/scheduler';
 import {
   agentApprovalActionable,
   buildApprovalRows,
@@ -21,6 +22,8 @@ import {
   notificationState,
   notificationSummary,
 } from './approvalConsoleLogic';
+import { TRIGGER_LABELS } from '../Scheduling/planActions';
+import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
 import { track } from '../../lib/telemetry';
 import { toast } from 'sonner';
@@ -34,6 +37,40 @@ import { errorMessage } from '@client/src/lib/errorContract';
  * - 通知中心：未读通知列表 + 标记已读；
  * - 过期审批显式禁用操作（§33：过期不静默可操作）。
  */
+function formatRunTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function RunBadge({ status }: { status: string }): React.ReactElement {
+  if (status === 'succeeded') {
+    return (
+      <Badge variant="outline" className="border border-risk-normal-border bg-risk-normal-soft text-risk-normal-foreground">
+        成功
+      </Badge>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <Badge variant="outline" className="border border-risk-blocked-border bg-risk-blocked-soft text-risk-blocked-foreground">
+        失败
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border border-risk-degraded-border bg-risk-degraded-soft text-risk-degraded-foreground">
+      {status}
+    </Badge>
+  );
+}
+
 const ApprovalConsole = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -52,6 +89,11 @@ const ApprovalConsole = (): React.ReactElement => {
   const notificationQuery = useQuery({
     queryKey: ['notifications'],
     queryFn: () => listNotifications(),
+    refetchInterval: 30000,
+  });
+  const runsQuery = useQuery({
+    queryKey: ['scheduler', 'runs'],
+    queryFn: getRuns,
     refetchInterval: 30000,
   });
   const detailQuery = useQuery({
@@ -314,6 +356,47 @@ const ApprovalConsole = (): React.ReactElement => {
                 );
               })}
             </ul>
+          </div>
+        )}
+      </section>
+
+      {/* ── 调度运行记录 ─────────────────────────────────────── */}
+      <section>
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-foreground">
+          <RotateCcw className="h-5 w-5" />
+          调度运行记录
+        </h2>
+        {runsQuery.isLoading ? (
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            加载运行记录…
+          </div>
+        ) : !runsQuery.data?.runs || runsQuery.data.runs.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+            暂无运行记录。
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {runsQuery.data.runs.map((run) => (
+              <div
+                key={run.runId}
+                className="rounded-lg border border-border bg-card p-4"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate font-mono text-xs text-foreground">
+                    {run.runId}
+                  </p>
+                  <RunBadge status={run.status} />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {TRIGGER_LABELS[run.triggerType] ?? run.triggerType} ·{' '}
+                  {formatRunTime(run.createdAt)} · 方案 {run.planIds.length} 个
+                </p>
+                {run.error && (
+                  <p className="mt-1 text-xs text-risk-blocked-foreground">{run.error}</p>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>
