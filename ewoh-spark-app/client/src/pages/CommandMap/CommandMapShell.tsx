@@ -961,10 +961,10 @@ const CommandMapShell = (): React.ReactElement => {
             <button
               type="button"
               onClick={() => setActiveTab('brain')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium text-violet-200 bg-violet-500/15 border border-violet-400/30 hover:bg-violet-500/25 transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition-colors whitespace-nowrap"
               title="查看并采纳 AI 生成的调度建议"
             >
-              <Brain className="w-3 h-3 text-violet-300" />
+              <Brain className="w-3 h-3 text-primary" />
               {brainCount} 条 AI 建议待查看
             </button>
           )}

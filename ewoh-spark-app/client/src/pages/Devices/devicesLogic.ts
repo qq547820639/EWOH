@@ -25,10 +25,10 @@ export type OrderBy =
 
 // ── 纯函数 ───────────────────────────────────────────────────────────────
 
-/** 电量颜色：>50% 绿、>20% 黄、≤20% 红。 */
-export function batteryColor(pct: number): string {
-  return pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : '#ef4444';
-}
+// 注：原 batteryColor(pct)（返回三档电量 hex 色值）已删除（2026-09-01）——
+// 全仓零生产调用（Devices.tsx 与 ResourcePoolPanel.tsx 均为本地定义服务于 Recharts
+// 图表 fill，数据可视化色与 UI 语义色分属不同体系）。如需电量等级语义色，
+// 使用 risk-normal / risk-degraded / risk-blocked 语义 Token。
 
 /** 数据过期判定：超过 60s 未成功更新即视为过期。 */
 export function isDataStale(dataUpdatedAt: number, staleMs = 60000): boolean {

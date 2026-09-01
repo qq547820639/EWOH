@@ -2,7 +2,6 @@
  * devicesLogic.test.ts — Devices 数据页纯逻辑测试（ADR-083，§17/§33）。
  */
 import {
-  batteryColor,
   isDataStale,
   buildDeviceSearchQuery,
   buildBatteryChartData,
@@ -12,22 +11,7 @@ import {
 import type { DeviceInfo } from '@shared/api.interface';
 
 describe('devicesLogic', () => {
-  describe('batteryColor', () => {
-    it('>50% returns green', () => {
-      expect(batteryColor(75)).toBe('#22c55e');
-      expect(batteryColor(51)).toBe('#22c55e');
-    });
-
-    it('21-50% returns yellow', () => {
-      expect(batteryColor(50)).toBe('#eab308');
-      expect(batteryColor(21)).toBe('#eab308');
-    });
-
-    it('≤20% returns red', () => {
-      expect(batteryColor(20)).toBe('#ef4444');
-      expect(batteryColor(0)).toBe('#ef4444');
-    });
-  });
+  // batteryColor 的测试已随死函数删除（2026-09-01：全仓零生产调用）。
 
   describe('isDataStale', () => {
     it('returns false when dataUpdatedAt is 0 (never fetched)', () => {
