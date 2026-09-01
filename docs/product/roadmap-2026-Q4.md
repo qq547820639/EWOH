@@ -53,7 +53,7 @@
 | # | 事项 | 类型 | 成本 | 影响 | 收益 | 说明与依据 |
 |---|------|------|------|------|------|-----------|
 | **A1** | **埋点上线与基线采集**（J2 Gate G-1） | 使能 | 0.5d | 高 | **极高** | ✅ **真正完成**（2026-09-01 中午二次修复）：首轮实现有三处断裂（裸 fetch 无 token 被 401 静默吞 / 既有接线指向不存在端点 / 双 sink），**埋点从未落库**——已统一单链路（app.tsx → axiosForBackend → `POST /api/telemetry/batch`）、补 `GET /api/telemetry/summary`、**新增页面 PV 采集**（`nav_source` 自动记录路由，支撑 DR-1 驾驶舱决策）。**剩余动作：部署后累计 2 周基线**（日历时间） |
-| **A2** | **用户访谈 5 场 + 任务走查**（J2 Gate G-2） | 研究 | 2 周 | 高 | **极高** | 方案已就绪：`docs/product/user-research-plan-object-workbench.md`。验证 H1–H4，**阻塞 J2**，并决定"对象中心"范式是否成立 |
+| **A2** | **用户访谈 5 场 + 任务走查**（J2 Gate G-2） | 研究 | 2 周 | 高 | **极高** | 方案已就绪（`user-research-plan-object-workbench.md`）+ **访谈主持人指南已就绪**（`interview-guide-A2.md`：逐字话术 + 任务走查环境清单 + 观察记录表 + 招募邮件模板 + 常见坑应对）。验证 H1–H4，**阻塞 J2**，并决定"对象中心"范式是否成立 |
 | **B1** | **修复告警角色盲区** | **缺陷** | 1d | **高** | 高 | ✅ **已完成并合入**（附录 A-1）。`Alerts.tsx` 的 `actionFor(status)` 不看角色，后端却角色感知 fail-closed。三处表现：① `safety_admin` 看到确认/处置/关闭按钮但点击必 400；② 非 `safety_admin` 点「重开」必 400；③ `reopened` 漏掉「处置」入口。修复：改用 `alertStateTransitionAllowed`，零后端改动 |
 | **B2** | **审批台标签文案修正** | 缺陷 | 0.5d | 中 | 高 | `approvalConsoleLogic.ts` 曾把所有非 agent 审批一律标为「调度审批」，实际是 `task`/`dangerous_action`/`control_request`。**文案误导 + 安全关键**。前端类型与渲染已支持，仅需确认是否随本版发布（J1 Q-8） |
 | **B3** | **核实审批独立性** | 核实 | 0.5d | 待定 | 待定 | ✅ **已核实，结论确凿**（决策单 D-3 已回填）：`ewoh_schedule_plan` **没有** `createdBy` 字段（`schema.ts:658-686`）——方案生成人根本不落库；`approvePlanV2` 无回避校验。→ "自己生成、自己批准"是**结构性必然**。修复（迁移 + 记录 + 校验，1–2d）**建议列入 Next**，安全相关，优先级高于 J2 |
