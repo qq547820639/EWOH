@@ -4,6 +4,12 @@
 
 ruff      # 代码风格、import 排序与静态检查（替代 flake8/isort 的统一工具）
 bandit==1.8.6  # Python AST 静态安全扫描，CI 中以 -ll（低噪音）级别运行；版本固定以锁定扫描行为（Task 7）
+#   ⚠ 解释器约束（2026-09-10 发现）：bandit 1.8.6 在 Python 3.14 上对**每个文件**
+#   抛 "exception while scanning file"，results 为空且退出码为 0 —— 即"未扫描"被
+#   呈现为"无问题"。本仓库因此把安全门禁改为 `scripts/bandit-gate.py`（读 JSON 报告，
+#   报告 errors 非空即失败，退出码 4）。要得到真正的扫描结论，请在 bandit 1.8.6
+#   支持的 Python（3.9–3.13）下运行该门禁。不要仅为消除该提示而放宽 bandit 版本：
+#   版本固定是审计决定，换版会改变扫描行为，需单独评估。
 pytest    # 可选集成测试框架；主测试仍使用标准库 unittest，pytest 仅在需要时启用
 coverage  # 代码覆盖率测量（行覆盖/分支覆盖/函数覆盖）
 pytest-cov  # pytest 覆盖率插件，与 pytest 集成

@@ -9,6 +9,9 @@
 纯 Python 标准库实现。
 """
 
+import json
+from hashlib import sha256
+
 from edge_platform.spatial import new_id
 
 
@@ -108,23 +111,87 @@ class SchedulingRepository:
     # ---- 方案 ----
 
     def save_plan(self, plan):
-        """保存方案（SchedulePlan 对象或 dict）：先存方案主表，再逐条存 assignments。"""
+        """Atomically replace a SQLite plan and its children under the storage lock."""
         self._assert_writable()
-        d = dict(self._as_dict(plan))
-        plan_id = d.pop("plan_id")
-        self.storage.save_schedule_plan(plan_id, **d)
-        assignments = d.get("assignments") or []
-        for assign in assignments:
-            self.storage.save_plan_assignment(plan_id, self._as_dict(assign))
-        return d
+        data = dict(self._as_dict(plan))
+        plan_id = data.pop("plan_id")
+        assignments = [dict(self._as_dict(assignment)) for assignment in data.get("assignments") or []]
+        data["assignments"] = assignments
+        with self.storage._lock, self.storage._db:
+            self.storage._db.execute(
+                "INSERT INTO scheduling_plan (plan_id, request_id, version, objective_score,"
+                " objective_breakdown_json, constraint_summary_json, world_state_version, valid_until,"
+                " status, created_at, confirmed_at, confirmed_by, confirm_reason, assignments_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(plan_id) DO UPDATE SET request_id=excluded.request_id,"
+                " version=excluded.version, objective_score=excluded.objective_score,"
+                " objective_breakdown_json=excluded.objective_breakdown_json,"
+                " constraint_summary_json=excluded.constraint_summary_json,"
+                " world_state_version=excluded.world_state_version, valid_until=excluded.valid_until,"
+                " status=excluded.status, created_at=excluded.created_at,"
+                " confirmed_at=excluded.confirmed_at, confirmed_by=excluded.confirmed_by,"
+                " confirm_reason=excluded.confirm_reason, assignments_json=excluded.assignments_json",
+                (
+                    plan_id,
+                    data.get("request_id", ""),
+                    int(data.get("version", 1) or 1),
+                    float(data.get("objective_score", 0.0) or 0.0),
+                    json.dumps(data.get("objective_breakdown", {}), ensure_ascii=False),
+                    json.dumps(data.get("constraint_summary", {}), ensure_ascii=False),
+                    data.get("world_state_version", ""),
+                    data.get("valid_until", ""),
+                    data.get("status", "shadow"),
+                    data.get("created_at", ""),
+                    data.get("confirmed_at", ""),
+                    data.get("confirmed_by", ""),
+                    data.get("confirm_reason", ""),
+                    json.dumps(assignments, ensure_ascii=False),
+                ),
+            )
+            self.storage._db.execute("DELETE FROM scheduling_plan_assignment WHERE plan_id=?", (plan_id,))
+            for assignment in assignments:
+                assignment_id = assignment.get("assignment_id") or "PLA-" + sha256(
+                    json.dumps([plan_id, assignment.get("task_id", "")], ensure_ascii=False).encode("utf-8")
+                ).hexdigest()
+                self.storage._db.execute(
+                    "INSERT INTO scheduling_plan_assignment (plan_id, assignment_id, task_id, person_id,"
+                    " device_id, station_id, route_json, route_distance_m, eta_sec, planned_start,"
+                    " planned_end, hard_constraints_json, soft_score_json, score, explanation_json)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        plan_id,
+                        assignment_id,
+                        assignment.get("task_id", ""),
+                        assignment.get("person_id", ""),
+                        assignment.get("device_id", ""),
+                        assignment.get("station_id", ""),
+                        json.dumps(assignment.get("route", {}), ensure_ascii=False),
+                        float(assignment.get("route_distance_m", 0.0) or 0.0),
+                        int(assignment.get("eta_sec", 0) or 0),
+                        assignment.get("planned_start", ""),
+                        assignment.get("planned_end", ""),
+                        json.dumps(assignment.get("hard_constraint_results", []), ensure_ascii=False),
+                        json.dumps(assignment.get("soft_score_breakdown", {}), ensure_ascii=False),
+                        float(assignment.get("score", 0.0) or 0.0),
+                        json.dumps(assignment.get("explanation", {}), ensure_ascii=False),
+                    ),
+                )
+        return data
 
     def get_plan(self, plan_id):
         """按 plan_id 取方案：基础信息 + 补全 assignments，返回 dict。"""
-        d = self.storage.get_schedule_plan(plan_id)
-        if d is None:
-            return None
-        d["assignments"] = self.storage.list_plan_assignments(plan_id)
-        return d
+        with self.storage._lock, self.storage._db:
+            self.storage._db.execute("BEGIN")
+            data = self.storage._schedule_plan_row(
+                self.storage._db.execute("SELECT * FROM scheduling_plan WHERE plan_id=?", (plan_id,)).fetchone()
+            )
+            if data is None:
+                return None
+            rows = self.storage._db.execute(
+                "SELECT * FROM scheduling_plan_assignment WHERE plan_id=? ORDER BY id ASC", (plan_id,)
+            ).fetchall()
+            data["assignments"] = [self.storage._plan_assignment_row(row) for row in rows]
+            return data
 
     def list_plans(self, status=None):
         """列出方案（可选按 status 过滤），返回 dict 列表。"""

@@ -160,6 +160,74 @@ describe('offlineDb', () => {
     expect(await pending.count()).toBe(0);
   });
 
+  // 攻击面 b：离线队列回放顺序。真实 IndexedDB 的 getAll 按**主键**（随机 UUID
+  // 字符串）排序返回，而不是入队顺序。页面刷新/崩溃恢复后，同一工单的
+  // start→report 若按主键序乱序投递，后置动作会撞服务端状态机 409
+  // （STATE_CONFLICT），把本来有效的操作序列变成"假冲突"，逼用户手工处置。
+  // 回放顺序必须等于操作发生顺序（queuedAt 升序），与存储返回顺序无关。
+  it('flushOfflineQueue 按 queuedAt（FIFO）回放，不依赖存储返回顺序', async () => {
+    const values = new Map<string, StoredPendingAction>();
+    const pending: SimpleStore<StoredPendingAction> = {
+      async getAll() {
+        // 模拟 IDB 语义：按主键（key 字符串）升序返回。
+        return Array.from(values.values()).sort((a, b) => (a.key < b.key ? -1 : 1));
+      },
+      async get(key) {
+        return values.get(key);
+      },
+      async put(value) {
+        values.set(value.key, value);
+      },
+      async delete(key) {
+        values.delete(key);
+      },
+      async clear() {
+        values.clear();
+      },
+      async count() {
+        return values.size;
+      },
+    };
+    // key='b-…' 的 start 先做（queuedAt 更早）；key='a-…' 的 report 后做。
+    // 主键序会把 report 排在 start 之前——这正是真实 IDB 的返回顺序。
+    const start: StoredPendingAction = {
+      key: 'b-first-op',
+      id: 'b-first-op',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'start',
+      idempotencyKey: 'k-start',
+      queuedAt: '2026-09-10T10:00:00.000Z',
+      status: 'local',
+    };
+    const report: StoredPendingAction = {
+      key: 'a-second-op',
+      id: 'a-second-op',
+      type: 'transition',
+      orderId: 'WO-1',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-report',
+      queuedAt: '2026-09-10T10:05:00.000Z',
+      status: 'local',
+    };
+    await pending.put(report);
+    await pending.put(start);
+
+    const calls: string[] = [];
+    const summary = await flushOfflineQueue(
+      async (item) => {
+        calls.push(item.action ?? '');
+      },
+      pending,
+    );
+
+    expect(calls).toEqual(['start', 'report']);
+    expect(summary.synced).toEqual(['b-first-op', 'a-second-op']);
+    expect(await pending.count()).toBe(0);
+  });
+
   it('flushOfflineQueue surfaces conflicts and does not retry them', async () => {
     const pending = createMemoryStore<StoredPendingAction>();
     await pending.put({
@@ -251,6 +319,48 @@ describe('offlineDb', () => {
     expect(remaining[0].status).toBe('failed');
     expect(remaining[0].error?.code).toBe('AUTH_REQUIRED');
     expect(remaining[0].error?.retryable).toBe(false);
+  });
+
+  it('re-login auto flush re-delivers AUTH_REQUIRED failures (but not business failures)', async () => {
+    // 401 会话失效把队列项标成 failed(AUTH_REQUIRED)。UI 承诺"重新登录后继续
+    // 同步"——自动 flush（不带 includeManual）必须重新投递这类项，否则用户只能
+    // 逐条手动重试、承诺落空。业务失败（SYNC_ERROR）仍保持手动。
+    const pending = createMemoryStore<StoredPendingAction>();
+    await pending.put({
+      key: 'auth-1',
+      id: 'auth-1',
+      type: 'transition',
+      orderId: 'WO-2',
+      stepId: 'S1',
+      action: 'report',
+      idempotencyKey: 'k-a1',
+      queuedAt: new Date().toISOString(),
+      status: 'failed',
+      error: { code: 'AUTH_REQUIRED', message: 'Request failed with status code 401', retryable: false },
+      retryCount: 1,
+    });
+    await pending.put({
+      key: 'biz-1',
+      id: 'biz-1',
+      type: 'transition',
+      orderId: 'WO-2',
+      stepId: 'S2',
+      action: 'report',
+      idempotencyKey: 'k-b1',
+      queuedAt: new Date().toISOString(),
+      status: 'failed',
+      error: { code: 'SYNC_ERROR', message: 'boom', retryable: true },
+    });
+
+    const syncOne = jest.fn().mockResolvedValue(undefined);
+    // 不传 includeManual —— 模拟重新登录后 online 事件触发的自动 flush。
+    const summary = await flushOfflineQueue(syncOne, pending);
+
+    expect(summary.synced).toEqual(['auth-1']);
+    expect(summary.failed).toEqual([]);
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    const remaining = await pending.getAll();
+    expect(remaining.map((item) => item.id)).toEqual(['biz-1']);
   });
 
   it('queued items restore after a reload (re-hydration from persisted store)', async () => {

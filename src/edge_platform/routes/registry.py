@@ -11,6 +11,7 @@
 """
 
 from . import NOT_HANDLED
+from .actuators import handle_actuators
 from .admin import handle_admin
 from .andon import handle_andon
 from .auth import handle_auth
@@ -33,6 +34,7 @@ ROUTE_TABLE = {
         handle_auth,
         handle_admin,
         handle_exo,
+        handle_actuators,
         handle_replay,
     ],
     "POST": [
@@ -43,6 +45,7 @@ ROUTE_TABLE = {
         handle_auth,
         handle_exo,
         handle_andon,
+        handle_actuators,
         handle_replay,
     ],
     "PATCH": [

@@ -82,7 +82,7 @@ export class FrontendMetricsController {
     }
     return {
       orgId,
-      summary: this.service.summary(),
+      summary: this.service.summary(orgId),
       metrics: this.service.query(orgId, {
         limit: limit ? parseInt(limit, 10) : 100,
         metricName: metric,

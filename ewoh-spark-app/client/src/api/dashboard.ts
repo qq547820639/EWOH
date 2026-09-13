@@ -1,17 +1,23 @@
 import { axiosForBackend } from '../lib/http';
+import {
+  DEVICE_CAPABILITY_CHANGE_APPROVAL_ENTITY_TYPE,
+  buildCapabilityRestoreApprovalSubject,
+} from '@shared/capability-requirements';
 import type {
+  BindDeviceRequest,
+  CreateDeviceDto,
+  DeviceBinding,
   DeviceInfo,
   DeviceSearchQuery,
-  CreateDeviceDto,
-  UpdateDeviceDto,
-  DeviceBinding,
-  BindDeviceRequest,
-  EventInfo,
-  TelemetryInfo,
-  OverviewStats,
-  EventStats,
-  WorkerLoad,
   EnvironmentReading,
+  EventInfo,
+  EventStats,
+  OverviewStats,
+  SetDeviceCapabilityStatusRequest,
+  SetDeviceCapabilityStatusResponse,
+  TelemetryInfo,
+  UpdateDeviceDto,
+  WorkerLoad,
 } from '@shared/api.interface';
 
 export async function getOverview(): Promise<OverviewStats> {
@@ -31,9 +37,75 @@ export async function searchDevices(query?: DeviceSearchQuery): Promise<DeviceIn
   if (query?.batteryMin !== undefined) params.batteryMin = String(query.batteryMin);
   if (query?.batteryMax !== undefined) params.batteryMax = String(query.batteryMax);
   if (query?.sourceType) params.sourceType = query.sourceType;
+  if (query?.category) params.category = query.category;
   if (query?.model) params.model = query.model;
   if (query?.orderby) params.orderby = query.orderby;
   const res = await axiosForBackend({ url: '/api/dashboard/devices', method: 'GET', params });
+  return res.data;
+}
+
+/**
+ * 设备详情（含能力清单）。
+ *
+ * 路由说明（真实后端 E2E 抓到 2026-09-10）：详情只有 `/api/devices/:id`
+ * （DeviceContractController → DashboardService，与 dashboard 同源），
+ * dashboard 控制器**没有** `devices/:id` 详情路由——此前写错路径，
+ * mock 用例因为拦截的是 mock 自己的路径而未能发现。
+ */
+export async function getDeviceDetail(deviceId: string): Promise<DeviceInfo> {
+  const res = await axiosForBackend({
+    url: `/api/devices/${encodeURIComponent(deviceId)}`,
+    method: 'GET',
+  });
+  return res.data;
+}
+
+/**
+ * 人工停用 / 恢复设备能力（唯一人工写入口；理由必填，后端 fail-closed 校验）。
+ * 返回体含 changed（幂等 no-op 时为 false）与 contractValid。
+ */
+export async function setDeviceCapabilityStatus(
+  deviceId: string,
+  capabilityName: string,
+  body: SetDeviceCapabilityStatusRequest,
+): Promise<SetDeviceCapabilityStatusResponse> {
+  const res = await axiosForBackend({
+    url: `/api/devices/${encodeURIComponent(deviceId)}/capabilities/${encodeURIComponent(capabilityName)}/status`,
+    method: 'POST',
+    data: body,
+  });
+  return res.data;
+}
+
+/**
+ * NO-21b：为"恢复高风险设备能力"发起安全管理员审批。
+ *
+ * 与任务侧（`requestCapabilityRelaxationApproval`）同一套审批模块，只是 entityType 换成
+ * `device_capability_change`、entityId 换成 `capability:<能力名>`；一次审批可覆盖一批设备
+ * （subject.metrics.deviceIds 为排序后的逗号列表，后端逐字核对指纹）。
+ */
+export async function requestDeviceCapabilityRestoreApproval(params: {
+  capabilityKey: string;
+  deviceIds: string[];
+  reason?: string | null;
+}): Promise<{
+  id: string;
+  status: string;
+  /** NO-22a：通过时间（时效展示；新建时为 undefined）。 */
+  approvedAt?: string;
+  steps?: Array<{ id: string; role: string; status: string }>;
+}> {
+  const subject = buildCapabilityRestoreApprovalSubject(params);
+  const res = await axiosForBackend({
+    url: '/api/approvals',
+    method: 'POST',
+    data: {
+      entityType: DEVICE_CAPABILITY_CHANGE_APPROVAL_ENTITY_TYPE,
+      entityId: subject.objectId,
+      roles: ['safety_admin'],
+      subject,
+    },
+  });
   return res.data;
 }
 
@@ -155,4 +227,36 @@ export async function getEnvironmentSummary(): Promise<EnvironmentReading[]> {
     method: 'GET',
   });
   return res.data;
+}
+
+
+/* ── NO-57b：预计 vs 实际 对账（只读口径）──────────────────────────────── */
+
+export interface PlannedVsActualSummaryDto {
+  windowDays: number;
+  totalRows: number;
+  comparableRows: number;
+  coverage: number | null;
+  meanAbsPctError: number | null;
+  medianAbsPctError: number | null;
+  p90AbsPctError: number | null;
+  meanSignedMs: number | null;
+  overrunCount: number;
+  underrunCount: number;
+  onTimeCount: number;
+  byReason: Record<string, number>;
+  byDeviationType: Record<string, number>;
+  biasNote: string | null;
+  notes: string[];
+  generatedAt: string;
+}
+
+/** 执行事实的对账口径（样本不足时比率字段为 null，页面必须显示"证据不足"）。 */
+export async function getPlannedVsActual(windowDays = 30): Promise<PlannedVsActualSummaryDto> {
+  const res = await axiosForBackend({
+    url: '/api/scheduler/planned-vs-actual',
+    method: 'GET',
+    params: { windowDays },
+  });
+  return res.data as PlannedVsActualSummaryDto;
 }

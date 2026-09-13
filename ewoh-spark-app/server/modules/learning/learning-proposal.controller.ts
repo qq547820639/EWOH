@@ -16,6 +16,11 @@ import type { OrgContext } from '../shared/org-context.interceptor';
  *
  * 读写带租户上下文 + DB 层 RLS（standalone_045）双保险。不存在自动批准分支
  * （§2：策略激活一律人审，绝不隐式自动执行）。
+ *
+ * B5 同族审批独立性（standalone_073）：propose 记录提议人（服务端 userContext
+ * 口径，请求体不可伪造），approve 拒绝同一身份自批（SELF_APPROVAL_FORBIDDEN），
+ * DB 层 chk_ewoh_learning_proposal_generator_avoidance 兜底同一不变量。
+ * 阈值基线读面在 LearningController（GET /api/learning/thresholds）。
  */
 @Controller('api/learning/proposals')
 @Roles(...ANY_AUTHENTICATED_ROLES)
@@ -27,7 +32,15 @@ export class LearningProposalController {
     @Body() body: ProposeLearningInput,
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.proposalService.propose(body, this.currentOrgId(request));
+    // B5 同族审批独立性（standalone_073）：提议人取服务端 userContext.userId
+    // （请求体不可伪造），approve 侧据此执行生成人回避。
+    const proposedBy = request.userContext?.userId?.trim();
+    if (!proposedBy) {
+      throw new BadRequestException(
+        'propose 必须带操作者身份（userContext.userId 缺失，§2 人审阶梯 + 生成人回避 fail-closed）',
+      );
+    }
+    return this.proposalService.propose(body, this.currentOrgId(request), proposedBy);
   }
 
   @Get()

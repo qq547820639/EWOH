@@ -7,10 +7,10 @@ const NotFound = () => {
         <p className="text-4xl font-bold text-foreground">404</p>
         <p className="mt-2 text-sm text-muted-foreground">页面不存在或已被移动。</p>
         <Link
-          to="/command-center"
+          to="/factory-operations"
           className="mt-4 inline-flex rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
         >
-          返回指挥中心
+          返回工厂运行台
         </Link>
       </div>
     </div>

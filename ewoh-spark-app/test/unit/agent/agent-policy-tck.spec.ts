@@ -103,6 +103,9 @@ function build(manifest: Record<string, unknown>) {
         }),
       })),
     })),
+    // NO-47a：台账 CAS 与"待审批提醒终态"同事务 → 假 db 提供事务句柄
+    // （本 spec 不构造通知行：提醒侧行为由 agent.service.spec.ts 覆盖）。
+    transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   };
   const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
   const worldState = { getCurrentWorldState: jest.fn().mockResolvedValue({ events: [], stations: [], devices: [], persons: [] }) };
@@ -268,14 +271,14 @@ describe('Agent Policy TCK（NO-06c 决策表）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const approved = await service.resolveApproval('ORG-TCK', proposed.approvalId!, true);
+    const approved = await service.resolveApproval('ORG-TCK', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(approved.executed).toBe(true);
 
     const proposed2 = await service.executeCommand('ORG-TCK', AGENT_ID, {
       command: 'propose_plan',
       payload: {},
     });
-    const rejected = await service.resolveApproval('ORG-TCK', proposed2.approvalId!, false);
+    const rejected = await service.resolveApproval('ORG-TCK', proposed2.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(rejected.outcome).toBe('rejected');
   });
 });

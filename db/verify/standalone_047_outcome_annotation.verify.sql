@@ -42,7 +42,7 @@ BEGIN
   SELECT count(*) INTO at_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_outcome_annotation'
       AND policyname = 'outcome_annotation_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF at_policy <> 1 THEN
     missing := missing || format('policy at=%s ', at_policy);
   END IF;

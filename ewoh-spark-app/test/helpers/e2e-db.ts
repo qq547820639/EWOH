@@ -4,6 +4,81 @@ import postgres from 'postgres';
 
 export type OwnerSql = ReturnType<typeof postgres>;
 
+export interface SchedulerFixture {
+  taskId: string;
+  personId: string;
+  deviceIds: [string, string];
+  stationId: string;
+}
+
+/** Real persisted, explicitly simulated resources; no application security overrides. */
+export async function seedSchedulerFixture(
+  owner: OwnerSql,
+  orgId: string,
+): Promise<SchedulerFixture> {
+  const suffix = randomUUID().slice(0, 8);
+  const taskId = randomUUID();
+  const personId = randomUUID();
+  const stationId = `WS-E2E-${suffix}`;
+  const deviceBusinessIds: [string, string] = [
+    `EXO-E2E-${suffix}-A`,
+    `EXO-E2E-${suffix}-B`,
+  ];
+  const deviceIds: [string, string] = [randomUUID(), randomUUID()];
+  const start = Date.now() + 120_000;
+  await owner.begin(async (tx) => {
+    await tx.unsafe(
+      `insert into public.ewoh_spatial_entity
+       (org_id, entity_id, entity_type, name, x, y, status, source_type, capacity, coordinate_type)
+       values ($1::uuid, $2, 'workstation', $2, 10, 20, 'active', 'simulated', 1, 'FACTORY_CARTESIAN')`,
+      [orgId, stationId],
+    );
+    await tx.unsafe(
+      `insert into public.ewoh_personnel
+       (id, org_id, name, employee_no, status, health_status, spatial_entity_id, skills, workload)
+       values ($1::uuid, $2::uuid, $3, $3, 'available', 'normal', $4, '["lifting"]'::jsonb, 0)`,
+      [personId, orgId, `E2E Worker ${suffix}`, personId],
+    );
+    await tx.unsafe(
+      `insert into public.ewoh_spatial_entity
+       (org_id, entity_id, entity_type, name, x, y, status, source_type, coordinate_type)
+       values ($1::uuid, $2, 'person', $3, 10, 20, 'active', 'simulated', 'FACTORY_CARTESIAN')`,
+      [orgId, personId, `E2E Worker ${suffix}`],
+    );
+    for (const [index, deviceId] of deviceBusinessIds.entries()) {
+      await tx.unsafe(
+        `insert into public.ewoh_device
+         (id, org_id, device_id, device_model, device_category, online, battery_pct, source_type,
+          lifecycle_status, runtime_status, health_status, capabilities,
+          last_telemetry_at, telemetry_updated_at, location_lat, location_lng,
+          location_updated_at, location_confidence, location_coordinate_type)
+         values ($3::uuid, $1::uuid, $2, 'EXO-E2E', 'exoskeleton', true, 95, 'simulated',
+          'active', 'idle', 'normal', '["lifting_assist"]'::jsonb,
+          now(), now(), 10, 20, now(), 1, 'FACTORY_CARTESIAN')`,
+        [orgId, deviceId, deviceIds[index]],
+      );
+    }
+    await tx.unsafe(
+      `insert into public.ewoh_production_task
+       (id, org_id, title, task_type, priority, base_priority, status, source, spatial_entity_id,
+        plan_start, plan_end, earliest_start_ms, latest_finish_ms,
+        required_skills, required_device_capabilities)
+       values ($1::uuid, $2::uuid, $3, 'production', 'high', 'P1', 'pending_dispatch', 'simulated', $4,
+        to_timestamp($5::double precision / 1000), to_timestamp(($5::double precision + 60000) / 1000),
+        $5::bigint, $6::bigint, '["lifting"]'::jsonb, '["lifting_assist"]'::jsonb)`,
+      [
+        taskId,
+        orgId,
+        `E2E Lift ${suffix}`,
+        stationId,
+        start,
+        start + 3_600_000,
+      ],
+    );
+  });
+  return { taskId, personId, deviceIds, stationId };
+}
+
 export interface E2EOrg {
   id: string;
   name: string;
@@ -20,6 +95,7 @@ export interface E2EFixture {
   viewerA: E2ECredentials;
   globalAdminA: E2ECredentials;
   dispatcherA: E2ECredentials;
+  approverA: E2ECredentials;
   viewerB: E2ECredentials;
   globalAdminB: E2ECredentials;
   dispatcherB: E2ECredentials;
@@ -90,6 +166,45 @@ const ORG_SCOPED_TABLES = [
   'ewoh_factory_template',
   'ewoh_factory_profile',
   'ewoh_asset_package',
+  'ewoh_assignment_event',
+  'ewoh_scheduling_execution',
+  'ewoh_scheduling_feedback',
+  'ewoh_scheduling_plan_assignment',
+  'ewoh_scheduling_run',
+  'ewoh_scheduling_policy',
+  'ewoh_scheduling_conflict',
+  'ewoh_scheduling_constraint',
+  'ewoh_scheduling_kpi',
+  'ewoh_policy_replay',
+  'ewoh_policy_activation',
+  'ewoh_replan_trigger',
+  'ewoh_resource_reservation',
+  'ewoh_world_state_snapshot',
+  'ewoh_route_cost_matrix',
+  'ewoh_route_edge',
+  'ewoh_route_node',
+  'prediction_shadow_observation',
+  'ewoh_agent_approval',
+  'ewoh_agent_manifest',
+  'ewoh_agent_task',
+  'ewoh_dead_letter',
+  'ewoh_exo_config',
+  'ewoh_exo_session',
+  'ewoh_factory_replication_sessions',
+  'ewoh_idempotency_keys',
+  'ewoh_identity_mapping',
+  'ewoh_inference_result',
+  'ewoh_ingest_event_dedup',
+  'ewoh_learning_evaluation',
+  'ewoh_learning_proposal',
+  'ewoh_maintenance_condition',
+  'ewoh_outbox',
+  'ewoh_outcome_annotation',
+  'ewoh_quality_finding',
+  'ewoh_resource_locks',
+  'ewoh_simulation_run',
+  'ewoh_trace_span',
+  'ewoh_work_order',
 ];
 
 export async function connectOwner(url: string): Promise<OwnerSql> {
@@ -126,6 +241,10 @@ export async function createE2EFixture(owner: OwnerSql): Promise<E2EFixture> {
     username: `e2e_a_dispatch_${suffix}`,
     password: `E2E-Dispatch-A-${suffix}-Aa1!`,
   };
+  const approverA: E2ECredentials = {
+    username: `e2e_a_approver_${suffix}`,
+    password: `E2E-Approver-A-${suffix}-Aa1!`,
+  };
   const viewerB: E2ECredentials = {
     username: `e2e_b_viewer_${suffix}`,
     password: `E2E-Viewer-B-${suffix}-Bb2@`,
@@ -139,17 +258,25 @@ export async function createE2EFixture(owner: OwnerSql): Promise<E2EFixture> {
     password: `E2E-Dispatch-B-${suffix}-Bb2@`,
   };
 
-  const [viewerAHash, globalAdminAHash, dispatcherAHash, viewerBHash, globalAdminBHash, dispatcherBHash] =
-    await Promise.all(
-      [
-        viewerA.password,
-        globalAdminA.password,
-        dispatcherA.password,
-        viewerB.password,
-        globalAdminB.password,
-        dispatcherB.password,
-      ].map((password) => bcrypt.hash(password, 10)),
-    );
+  const [
+    viewerAHash,
+    globalAdminAHash,
+    dispatcherAHash,
+    approverAHash,
+    viewerBHash,
+    globalAdminBHash,
+    dispatcherBHash,
+  ] = await Promise.all(
+    [
+      viewerA.password,
+      globalAdminA.password,
+      dispatcherA.password,
+      approverA.password,
+      viewerB.password,
+      globalAdminB.password,
+      dispatcherB.password,
+    ].map((password) => bcrypt.hash(password, 10)),
+  );
 
   const users: UserSeed[] = [
     {
@@ -158,6 +285,14 @@ export async function createE2EFixture(owner: OwnerSql): Promise<E2EFixture> {
       displayName: 'E2E Viewer A',
       orgId: orgA.id,
       roles: ['viewer'],
+      isGlobalAdmin: false,
+    },
+    {
+      username: approverA.username,
+      passwordHash: approverAHash,
+      displayName: 'E2E Approver A',
+      orgId: orgA.id,
+      roles: ['workshop_lead'],
       isGlobalAdmin: false,
     },
     {
@@ -234,6 +369,7 @@ export async function createE2EFixture(owner: OwnerSql): Promise<E2EFixture> {
     viewerA,
     globalAdminA,
     dispatcherA,
+    approverA,
     viewerB,
     globalAdminB,
     dispatcherB,
@@ -246,15 +382,24 @@ export async function cleanupE2EFixture(
 ): Promise<void> {
   const orgIds = [fixture.orgA.id, fixture.orgB.id];
   await owner.begin(async (tx) => {
-    for (const table of ORG_SCOPED_TABLES) {
+    const existingOrgTables = await tx.unsafe<{ table_name: string }[]>(
+      `select table_name
+       from information_schema.columns
+       where table_schema = 'public'
+         and column_name = 'org_id'
+         and table_name = any($1::text[])`,
+      [ORG_SCOPED_TABLES],
+    );
+    for (const { table_name: table } of existingOrgTables) {
       await tx.unsafe(
-        `delete from public.${table} where org_id = any($1::uuid[])`,
+        `delete from public.${table} where org_id::text = any($1::text[])`,
         [orgIds],
       );
     }
-    await tx.unsafe('delete from public.ewoh_user where org_id = any($1::uuid[])', [
-      orgIds,
-    ]);
+    await tx.unsafe(
+      'delete from public.ewoh_user where org_id::text = any($1::text[])',
+      [orgIds],
+    );
     await tx.unsafe(
       'delete from public.ewoh_organization where id = any($1::uuid[])',
       [orgIds],

@@ -32,8 +32,25 @@ plan_assignment 契约：{person_id: {station_id, task_id, device_id}}
 """
 
 from dataclasses import dataclass, field
+from math import isfinite
 
 from edge_platform.spatial import distance
+
+
+def predicted_battery(device, remaining_hours):
+    if not device or device.get("faulty"):
+        return None
+    try:
+        battery = float(device["battery_pct"])
+        drain = float(device["drain_per_hour"])
+        hours = float(remaining_hours)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(isfinite(value) for value in (battery, drain, hours)):
+        return None
+    if not 0 <= battery <= 1 or drain < 0 or hours < 0:
+        return None
+    return battery - drain * hours
 
 
 @dataclass
@@ -50,6 +67,7 @@ class PlanMetrics:
     affected_persons: list = field(default_factory=list)  # 受影响人员 ID 列表
     key_assumptions: dict = field(default_factory=dict)  # 关键假设与公式说明
     confidence: float = 0.0  # 置信度 0..1
+    unknown_battery_devices: list = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -63,6 +81,7 @@ class PlanMetrics:
             "affected_persons": list(self.affected_persons),
             "key_assumptions": dict(self.key_assumptions),
             "confidence": self.confidence,
+            "unknown_battery_devices": list(self.unknown_battery_devices),
         }
 
 
@@ -150,16 +169,17 @@ def compute_metrics(plan_assignment, ctx):
 
     # 低电量/故障设备（仅统计方案中分配到的设备）
     low_battery_devices = []
+    unknown_battery_devices = []
     assigned_device_set = {a.get("device_id", "") for a in (plan_assignment or {}).values() if a and a.get("device_id")}
     for device_id in assigned_device_set:
         dstate = devices_state.get(device_id, {}) or {}
         if dstate.get("faulty"):
             low_battery_devices.append(device_id)
             continue
-        battery = float(dstate.get("battery_pct", 1.0) or 1.0)
-        drain = float(dstate.get("drain_per_hour", 0.0) or 0.0)
-        predicted_battery = battery - drain * remaining_hours
-        if predicted_battery < battery_low_threshold + 1e-9:
+        battery_at_end = predicted_battery(dstate, remaining_hours)
+        if battery_at_end is None:
+            unknown_battery_devices.append(device_id)
+        elif battery_at_end < battery_low_threshold + 1e-9:
             low_battery_devices.append(device_id)
 
     # 拥堵变化 = sum(新占用人数 − 当前占用人数) 各方案涉及工位
@@ -174,6 +194,8 @@ def compute_metrics(plan_assignment, ctx):
     delay_risk = max(0.0, min(1.0, delay_risk_sum))
     confidence = sum(confidence_factors) / len(confidence_factors) if confidence_factors else 0.0
     confidence = max(0.0, min(1.0, confidence))
+    if unknown_battery_devices:
+        confidence *= 1 - len(unknown_battery_devices) / len(assigned_device_set)
 
     # 关键假设与公式说明（可解释、可追溯）
     assumptions["产量公式"] = "sum(任务预期产量 × 人员速度系数)"
@@ -192,6 +214,7 @@ def compute_metrics(plan_assignment, ctx):
         high_load_persons=sorted(high_load_persons),
         total_travel_distance_m=total_travel,
         low_battery_devices=sorted(low_battery_devices),
+        unknown_battery_devices=sorted(unknown_battery_devices),
         congestion_delta=congestion_delta,
         affected_persons=sorted(affected_persons),
         key_assumptions=assumptions,

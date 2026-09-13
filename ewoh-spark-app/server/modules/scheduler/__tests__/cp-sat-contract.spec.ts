@@ -183,6 +183,39 @@ describe('P0-2: CP-SAT 请求契约（skillMatchMode / effectivePriorityScore）
     expect(t.mustFinishByMs).toBe(1_700_360_000_000);
   });
 
+  it.each([null, undefined, NaN, Infinity, -Infinity, -1, 101, 0, 15, 100])(
+    'preserves battery truth for %p in the worker request',
+    async (batteryPct) => {
+      const fetch = stubFetchReturning(OPTIMAL_RESPONSE);
+      const { solver } = makeCpSatSolver({ fetch });
+      const device = Object.assign({}, snapshot.devices[0], { batteryPct });
+      await solver.solve({ ...snapWithMode, devices: [device] }, [], opts);
+      const request = JSON.parse((fetch as jest.Mock).mock.calls[0][1].body);
+      const expected = typeof batteryPct === 'number' && Number.isFinite(batteryPct)
+        && batteryPct >= 0 && batteryPct <= 100 ? batteryPct : null;
+      expect(request.devices[0].batteryPct).toBe(expected);
+      const blocked = expected == null || expected < defaultConfig().minBatteryPct;
+      expect(request.safetyBlockedDeviceIds.includes('d1')).toBe(blocked);
+      expect(request.tasks[0].eligibleDeviceIds.includes('d1')).toBe(!blocked);
+    },
+  );
+
+  it.each([null, NaN, Infinity, -1, 101, 0])(
+    'rejects worker assignments that bypass battery safety for %p', async (batteryPct) => {
+      const fetch = stubFetchReturning(OPTIMAL_RESPONSE);
+      const { solver } = makeCpSatSolver({ fetch });
+      const invalid = {
+        ...snapWithMode,
+        devices: [{ ...snapshot.devices[0], batteryPct, capabilities: ['lift'] }],
+        tasks: [{ ...snapWithMode.tasks[0], requiredDeviceCapabilities: ['lift'] }],
+      };
+      const plan = await solver.solve(invalid, [], opts);
+      expect(plan.solverStatus).toBe('FALLBACK');
+      expect(plan.fallbackReason).toBe('cpsat_device_battery_unavailable_or_low');
+      expect(plan.assignments).toEqual([]);
+    },
+  );
+
   it('请求体包含 candidateCosts（P0-4 权威 RouteCost 矩阵透传）', async () => {
     const fetch = jest.fn() as unknown as typeof globalThis.fetch;
     (fetch as unknown as jest.Mock).mockImplementation(

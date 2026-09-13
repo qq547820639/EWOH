@@ -10,9 +10,11 @@ import {
   ewohWorldState,
   ewohMaintenanceCondition,
   ewohQualityFinding,
+  ewohExoSession,
 } from '@server/database/schema';
-import { eq, isNull, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { normalizeBatteryPct } from '@shared/api.interface';
 import type {
   CoordinateReference,
   FreshnessPolicy,
@@ -34,7 +36,11 @@ import {
   ResourceReservationService,
   type ReservationResult,
 } from './resource-reservation.service';
-import { deriveDeviceCapabilities } from './device-capabilities';
+import {
+  loadDeviceCapabilityLedger,
+  resolveDeviceCapabilities,
+  type DeviceCapabilityLedger,
+} from './device-capabilities';
 
 /** 数据新鲜度阈值（ms）：sourceTs 距今超过该值则标 STALE。保留向后兼容常量。 */
 export const DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
@@ -128,6 +134,7 @@ export class ResourceProjectionService {
           : spatialQuery,
         this.reservationService.listActive(ctx),
       ]);
+
     this.logger.debug(
       `resource projection: personnel=${personnelRows.length} device=${deviceRows.length} spatial=${spatialRows.length} reservations=${reservations.length}`,
     );
@@ -276,6 +283,16 @@ export class ResourceProjectionService {
       };
     });
 
+    // NO-14f：设备能力以**权威台账**（ewoh_device_capability，摄入路径写入的
+    // Canonical CapabilityRecord）为准；`ewoh_device.capabilities` 列与型号白名单
+    // 只是历史兜底。此前台账没有任何消费方，`capabilities` 列又全为空 →
+    // 调度侧的 `requiredDeviceCapabilities` 匹配实际上永远匹配不到任何设备。
+    const capabilityLedger = await loadDeviceCapabilityLedger(
+      this.db,
+      ctx?.primaryOrgId,
+      deviceRows.map((d) => d.deviceId).filter((id): id is string => typeof id === 'string' && id !== ''),
+    );
+
     // ewohDevice 无 spatialEntityId 列；设备空间位置通过
     // ewohSpatialEntity(entityType='device', entityId=deviceId) 关联解析。
     const deviceResources: ResourceState[] = deviceRows.map((d) => {
@@ -291,16 +308,28 @@ export class ResourceProjectionService {
           : null;
       const deviceDataQuality = this.classifyFreshness(sourceTs, now, 'device', 'telemetry');
       const derived: string[] = [];
-      // 能力：与 world-state 统一读 ewoh_device.capabilities 列（SSOT，消除 [deviceModel]
-      // 裸串语义不一致）；列无值才按型号白名单派生并标记 derived。
-      const columnCaps = this.asStringArray(d.capabilities);
-      const capabilities =
-        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
-      if (columnCaps.length === 0) derived.push('capabilities');
+      // 能力优先级（NO-14f，逐级显式，绝不混用）：
+      //   1) 权威台账（摄入路径声明的 Canonical CapabilityRecord，仅 active）
+      //   2) ewoh_device.capabilities 列（历史/人工登记）
+      //   3) 型号白名单派生（兜底，标记 derived）
+      const ledger: DeviceCapabilityLedger | undefined = d.deviceId
+        ? capabilityLedger.get(d.deviceId)
+        : undefined;
+      const resolved = resolveDeviceCapabilities({
+        ledger,
+        columnCapabilities: this.asStringArray(d.capabilities),
+        deviceModel: d.deviceModel,
+      });
+      const capabilities = resolved.capabilities;
+      if (resolved.derivedFromModelWhitelist) derived.push('capabilities');
       // 位置：设备自身 location_lat/lng（真实遥测）；缺失则显式 UNKNOWN(null)，绝不借人员坐标。
       const hasDeviceLocation = d.locationLat != null && d.locationLng != null;
       return {
+        // 调度域主键 = ewoh_device.id（uuid）；业务设备号（`ewoh_device.device_id`，
+        // 如 EXO-001 / ENV-SIM-x）单列透出：边缘遥测、能力台账、批次事件都以业务号
+        // 标识设备，世界模型必须能 join 两者（此前快照只给 uuid，无法关联）。
         id: d.id,
+        deviceId: d.deviceId ?? null,
         entityId: `device:${d.id}`,
         type: 'device',
         // ADR-007：投影状态收敛为 Canonical Resource 六态（fault→DEGRADED、
@@ -313,6 +342,26 @@ export class ResourceProjectionService {
               : 'OFFLINE',
         ),
         capabilities,
+        // NO-14g：观测能力（mode='observation'）单列——世界模型/AI 用它知道
+        // 设备"能看到"什么，调度匹配只用 capabilities（设备"能做什么"）。
+        ...(resolved.observedCapabilities.length > 0
+          ? { observedCapabilities: resolved.observedCapabilities }
+          : {}),
+        // NO-15b：人工停用的能力也是事实（缺失 ≠ 停用），随世界模型透出
+        ...(resolved.disabledCapabilities && resolved.disabledCapabilities.length > 0
+          ? {
+              disabledCapabilities: resolved.disabledCapabilities,
+              disabledCapabilityLifecycle: resolved.disabledCapabilityLifecycle,
+            }
+          : {}),
+        // 台账记录（含 subject/evidence/providerType）随资源视图透出：
+        // 快照据此携带契约记录，无需再从名称反推。
+        ...(resolved.capabilityRecords && resolved.capabilityRecords.length > 0
+          ? { capabilityRecords: resolved.capabilityRecords }
+          : {}),
+        ...(resolved.capabilityLedgerIssues
+          ? { capabilityLedgerIssues: resolved.capabilityLedgerIssues }
+          : {}),
         certifications: [],
         location: {
           stationId: se ? (se.parentId ?? null) : null,
@@ -328,7 +377,7 @@ export class ResourceProjectionService {
           endMs: r.endMs,
         })),
         telemetry: {
-          batteryPct: d.batteryPct ?? null,
+          batteryPct: normalizeBatteryPct(d.batteryPct),
           loadLevel: null,
           fatigueLevel: null,
           healthStatus: null,
@@ -707,7 +756,12 @@ export class ResourceProjectionService {
     resourceType?: string,
     signalType?: string,
   ): 'FRESH' | 'STALE' | 'UNKNOWN' {
-    if (sourceTs == null) return 'UNKNOWN';
+    if (
+      sourceTs == null ||
+      !Number.isFinite(sourceTs) ||
+      !Number.isFinite(now) ||
+      sourceTs > now
+    ) return 'UNKNOWN';
     if (now - sourceTs > this.resolveFreshnessMs(resourceType, signalType)) {
       return 'STALE';
     }
@@ -775,7 +829,22 @@ export class ResourceProjectionService {
     const personnelQuery = this.db.select().from(ewohPersonnel);
     const deviceQuery = this.db.select().from(ewohDevice);
     const spatialQuery = this.db.select().from(ewohSpatialEntity);
-    const [personnelRows, deviceRows, spatialRows, reservations] =
+    // NO-34a：活跃外骨骼会话（佩戴中的设备不可同时派给他人）。
+    // 与其它查询并行；org 作用域与设备一致（有 ctx 才过滤 org，保持能力测试替身兼容）。
+    // 与上面三条查询同构：**有 ctx 才加 where**（无 where 的能力测试替身兼容）。
+    // 无 ctx 时状态过滤退到内存里做（语义等价，见下方 for 循环）。
+    const sessionQuery = ctx?.primaryOrgId
+      ? this.db
+          .select()
+          .from(ewohExoSession)
+          .where(
+            and(
+              eq(ewohExoSession.status, 'active'),
+              this.orgCondition(ewohExoSession.orgId, ctx) as SQL,
+            ) as SQL,
+          )
+      : this.db.select().from(ewohExoSession);
+    const [personnelRows, deviceRows, spatialRows, reservations, activeSessions] =
       await Promise.all([
         ctx?.primaryOrgId
           ? personnelQuery.where(
@@ -791,7 +860,31 @@ export class ResourceProjectionService {
             )
           : spatialQuery,
         this.reservationService.listActive(ctx),
+        sessionQuery,
       ]);
+
+    // 会话的 exoId 是规范身份 `device:<业务设备号>`（ADR-032），而世界模型设备键是
+    // 业务设备号 → 显式剥离映射；形状不符的会话不猜、直接忽略（宁可不加约束也不误判）。
+    const activeSessionByDeviceId = new Map<
+      string,
+      { sessionId: string; personId: string; startedAt: string }
+    >();
+    for (const session of activeSessions) {
+      // 无 ctx 分支未在 SQL 里过滤状态 → 这里补上（终态会话不构成"佩戴中"）
+      if (String(session.status ?? '') !== 'active') continue;
+      const exoId = String(session.exoId ?? '');
+      if (!exoId.startsWith('device:')) continue;
+      const businessId = exoId.slice('device:'.length).trim();
+      if (!businessId) continue;
+      activeSessionByDeviceId.set(businessId, {
+        sessionId: String(session.sessionId),
+        personId: String(session.personId ?? ''),
+        startedAt:
+          session.startedAt instanceof Date
+            ? session.startedAt.toISOString()
+            : String(session.startedAt ?? ''),
+      });
+    }
 
     const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
     for (const se of spatialRows) spatialByEntityId.set(se.entityId, se);
@@ -892,6 +985,16 @@ export class ResourceProjectionService {
       };
     });
 
+    // NO-14f：快照路径同样以权威台账为准（与 project() 共用同一解析器——
+    // 此前两条路径各写一份设备能力语义，接线只改一处会让快照仍然读空列）。
+    const snapshotCapabilityLedger = await loadDeviceCapabilityLedger(
+      this.db,
+      ctx?.primaryOrgId,
+      deviceRows
+        .map((d) => d.deviceId)
+        .filter((id): id is string => typeof id === 'string' && id !== ''),
+    );
+
     // P1-B：devices 附带字段来源维度（source）+ 维护时间窗（maintenanceWindows），
     // 与 WorldStateSnapshot 形状兼容（可选超集）。
     const devices: Array<
@@ -908,10 +1011,14 @@ export class ResourceProjectionService {
       const dataQuality = this.classifyFreshness(sourceTs, now, 'device', 'telemetry');
       const stale = dataQuality !== 'FRESH';
       const derived: string[] = [];
-      const columnCaps = this.asStringArray(d.capabilities);
-      const capabilities =
-        columnCaps.length > 0 ? columnCaps : deriveDeviceCapabilities(d.deviceModel);
-      if (columnCaps.length === 0) derived.push('capabilities');
+      const ledger = d.deviceId ? snapshotCapabilityLedger.get(d.deviceId) : undefined;
+      const resolved = resolveDeviceCapabilities({
+        ledger,
+        columnCapabilities: this.asStringArray(d.capabilities),
+        deviceModel: d.deviceModel,
+      });
+      const capabilities = resolved.capabilities;
+      if (resolved.derivedFromModelWhitelist) derived.push('capabilities');
       const lat = d.locationLat ?? null;
       const lng = d.locationLng ?? null;
       const hasDeviceLocation = lat != null && lng != null;
@@ -925,12 +1032,32 @@ export class ResourceProjectionService {
         maintenance,
       );
       return {
+        // 调度主键 = uuid；业务设备号单列透出（世界模型 join 边缘事实的显式键）
         id: d.id,
+        deviceId: d.deviceId ?? null,
         entityId: `device:${d.id}`,
         workerName: d.workerName ?? null,
         deviceModel: d.deviceModel ?? null,
-        batteryPct: d.batteryPct ?? 100,
+        batteryPct: normalizeBatteryPct(d.batteryPct),
+        // NO-34a：活跃会话随世界模型透出（无会话 → null，不伪造）
+        activeExoSession: (d.deviceId ? activeSessionByDeviceId.get(d.deviceId) : undefined) ?? null,
         capabilities,
+        ...(resolved.observedCapabilities.length > 0
+          ? { observedCapabilities: resolved.observedCapabilities }
+          : {}),
+        // NO-15b：人工停用的能力也是事实（缺失 ≠ 停用），随世界模型透出
+        ...(resolved.disabledCapabilities && resolved.disabledCapabilities.length > 0
+          ? {
+              disabledCapabilities: resolved.disabledCapabilities,
+              disabledCapabilityLifecycle: resolved.disabledCapabilityLifecycle,
+            }
+          : {}),
+        ...(resolved.capabilityRecords && resolved.capabilityRecords.length > 0
+          ? { capabilityRecords: resolved.capabilityRecords }
+          : {}),
+        ...(resolved.capabilityLedgerIssues
+          ? { capabilityLedgerIssues: resolved.capabilityLedgerIssues }
+          : {}),
         // NO-05c：critical 维护 → 离线（fail-closed）；STALE 与 fault 语义不变。
         online: stale ? false : degradedStatus === 'OFFLINE' ? false : (d.online ?? false),
         status: degradedStatus,

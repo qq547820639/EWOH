@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AgentService } from '../../../server/modules/agent/agent.service';
 import {
   ewohAgentApproval,
@@ -6,6 +6,8 @@ import {
   ewohEvent,
   ewohNotification,
 } from '@server/database/schema';
+import { makeConditionMatcher } from '../../helpers/drizzle-fake-matcher';
+import { classifyNotificationKind } from '@shared/notification-metrics';
 import { validateDecision } from '@shared/decision';
 
 const AGENT_ID = 'agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11';
@@ -69,6 +71,13 @@ function createAgentDb(
     if (ids.length > 0 && !ids.includes(String(row.approvalId))) return false;
     return true;
   }
+  const notificationMatches = makeConditionMatcher({
+    org_id: 'orgId',
+    notification_id: 'notificationId',
+    external_ref: 'externalRef',
+    status: 'status',
+    resolution: 'resolution',
+  });
   const db = {
     select: jest.fn(() => ({
       from: jest.fn((table: unknown) => ({
@@ -99,10 +108,18 @@ function createAgentDb(
             for (const r of hit) Object.assign(r, patch);
             return { returning: jest.fn(async () => hit) };
           }
+          if (table === ewohNotification) {
+            // NO-47a：Agent 待批命令被处置后，待审批提醒随之了结（同一事务）。
+            const hit = notifications.filter((r) => notificationMatches(cond, r));
+            for (const r of hit) Object.assign(r, patch);
+            return { returning: jest.fn(async () => hit) };
+          }
           return { returning: jest.fn(async () => []) };
         }),
       })),
     })),
+    // NO-47a：台账 CAS 与提醒终态同事务 → 假 db 需要提供事务句柄。
+    transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   };
   const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
   const worldState = {
@@ -346,7 +363,7 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: { kind: 'advisory' },
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(result.executed).toBe(true);
     expect(result.outcome).toBe('executed');
     expect(events.some((e) => e.eventType === 'AgentDecisionRecorded')).toBe(true);
@@ -362,11 +379,66 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(result.executed).toBe(false);
     expect(result.outcome).toBe('rejected');
     const decisionEvents = events.filter((e) => e.eventType === 'AgentDecisionRecorded');
     expect(decisionEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  /* ── NO-47a：待审批提醒的确定性身份与处置终态 ───────────────────────── */
+  it('待审批提醒用确定性通知号（NTF-AGENT-<审批号>-pending-app），重复写入不重复打扰', async () => {
+    const { notifications, service } = createAgentDb([
+      registeredRow(makeManifest({
+        approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
+      })),
+    ]);
+    const proposed = await service.executeCommand('ORG-1', AGENT_ID, {
+      command: 'propose_plan',
+      payload: {},
+    });
+    const mine = notifications.filter((n) => n.externalRef === proposed.approvalId);
+    expect(mine).toHaveLength(1);
+    expect(String(mine[0]?.notificationId)).toBe(`NTF-AGENT-${proposed.approvalId}-pending-app`);
+    // 可分类：治理度量能把它归到"Agent 命令待审批"
+    expect(classifyNotificationKind(String(mine[0]?.notificationId))).toBe('agent_approval');
+  });
+
+  it('审批被处理 → 待审批提醒同事务了结（agent_approval_decided）', async () => {
+    const { notifications, service } = createAgentDb([
+      registeredRow(makeManifest({
+        approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
+      })),
+    ]);
+    const proposed = await service.executeCommand('ORG-1', AGENT_ID, {
+      command: 'propose_plan',
+      payload: {},
+    });
+    await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    const mine = notifications.find((n) => n.externalRef === proposed.approvalId);
+    expect(mine).toMatchObject({
+      status: 'resolved',
+      resolution: 'agent_approval_decided',
+      resolvedBy: 'lead.chen',
+      resolutionRef: proposed.approvalId,
+    });
+  });
+
+  it('审批超时作废 → 提醒以 agent_approval_expired 了结（与"人处理过"可区分）', async () => {
+    const { approvals, notifications, service } = createAgentDb([
+      registeredRow(makeManifest({
+        approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
+      })),
+    ]);
+    const proposed = await service.executeCommand('ORG-1', AGENT_ID, {
+      command: 'propose_plan',
+      payload: {},
+    });
+    const row = approvals.find((a) => a.approvalId === proposed.approvalId);
+    (row as Record<string, unknown>).createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    const mine = notifications.find((n) => n.externalRef === proposed.approvalId);
+    expect(mine).toMatchObject({ status: 'resolved', resolution: 'agent_approval_expired' });
   });
 
   it('工厂主管 Agent 端到端：世界状态 → 建议 → propose_plan → 审批', async () => {
@@ -507,7 +579,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     // 推进台账 created_at 模拟 25h 前创建（过期是台账事实，跨重启同样生效）
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     (row as Record<string, unknown>).createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(result.outcome).toBe('rejected');
     expect(result.detail).toContain('approval_expired');
     expect(row?.status).toBe('expired'); // 台账落 expired（§33 显式不静默）
@@ -526,7 +598,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'u1' });
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'u1', roles: ['workshop_lead'] });
     expect(result.outcome).toBe('executed');
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
@@ -553,7 +625,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2' });
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] });
     expect(result.outcome).toBe('rejected');
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
@@ -562,7 +634,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     expect((decision.selected as Record<string, unknown>).optionId).toBe('opt:reject');
     expect(validateDecision(decision)).toEqual([]);
     // 重复解析 CAS 未命中 → 不再追加第二条决策（确定性幂等）。
-    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2' }))
+    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] }))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -579,7 +651,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     });
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     (row as Record<string, unknown>).createdAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(result.outcome).toBe('rejected');
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
     expect(decision.status).toBe('rejected');
@@ -642,7 +714,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     expect(proposed.outcome).toBe('proposed');
     expect(knowledge.registerEntry).not.toHaveBeenCalled();
     expect(approvals.some((a) => a.approvalId === proposed.approvalId && a.status === 'pending')).toBe(true);
-    const executed = await service.resolveApproval('ORG-1', proposed.approvalId!, true);
+    const executed = await service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(executed.outcome).toBe('executed');
     expect(knowledge.registerEntry).toHaveBeenCalledWith(payload, 'ORG-1');
     expect(approvals.some((a) => a.approvalId === proposed.approvalId && a.status === 'approved')).toBe(true);
@@ -765,9 +837,55 @@ describe('AgentService（NO-12f/ADR-030：待批清单 + 通知闭环）', () =>
     expect(mine).toHaveLength(1);
     expect((mine[0] as Record<string, unknown>).approvalId).toBe(proposed.approvalId);
     // 跨重启可解析（批准 → 执行闭环）
-    const resolved = await restarted.service.resolveApproval('ORG-1', proposed.approvalId!, true);
+    const resolved = await restarted.service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(resolved.outcome).toBe('executed');
     expect(restarted.approvals[0]?.status).toBe('approved');
+  });
+
+  // FR5（2026-09-13）：审批角色强制回归——台账 rolesJson 非空时，
+  // 无资格角色的解析必须 403，且不得留下任何决策/副作用。
+  it('NO-12f：无资格角色解析审批 → 403（fail-closed，不留下副作用）', async () => {
+    const ctx = createAgentDb([
+      registeredRow(makeManifest({
+        approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
+      })),
+    ]);
+    const proposed = await ctx.service.executeCommand('ORG-1', AGENT_ID, {
+      command: 'propose_plan',
+      payload: {},
+    });
+    // viewer（角色不在 rolesJson）→ 403
+    await expect(
+      ctx.service.resolveApproval('ORG-1', proposed.approvalId!, true, { userId: 'viewer.wang', roles: ['viewer'] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // 完全不带角色（直构内部调用）→ 同样 403（有约束就必须验角色）
+    await expect(
+      ctx.service.resolveApproval('ORG-1', proposed.approvalId!, true),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // 无副作用：台账仍是 pending、无决策记录
+    const row = ctx.approvals.find((a) => a.approvalId === proposed.approvalId);
+    expect(row?.status).toBe('pending');
+    expect((row as Record<string, unknown>).decisionJson).toBeUndefined();
+  });
+
+  it('NO-12f：rolesJson 为空 = 未声明约束 → 任意已认证角色可解析（不发明约束）', async () => {
+    const ctx = createAgentDb([
+      registeredRow(makeManifest({
+        approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
+      })),
+    ]);
+    const proposed = await ctx.service.executeCommand('ORG-1', AGENT_ID, {
+      command: 'propose_plan',
+      payload: {},
+    });
+    // 台账行 rolesJson 清空（模拟部署未声明审批角色约束）
+    const row = ctx.approvals.find((a) => a.approvalId === proposed.approvalId);
+    (row as Record<string, unknown>).rolesJson = [];
+    const result = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, true, {
+      userId: 'worker.li',
+      roles: ['worker'],
+    });
+    expect(result.outcome).toBe('executed');
   });
 
   it('重复解析 → 显式拒绝（CAS 未命中，§20 幂等不静默）', async () => {
@@ -780,9 +898,9 @@ describe('AgentService（NO-12f/ADR-030：待批清单 + 通知闭环）', () =>
       command: 'propose_plan',
       payload: {},
     });
-    const first = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false);
+    const first = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
     expect(first.outcome).toBe('rejected');
-    await expect(ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false))
+    await expect(ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 });

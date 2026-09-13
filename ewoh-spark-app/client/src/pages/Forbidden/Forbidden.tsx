@@ -32,10 +32,10 @@ const Forbidden = (): React.ReactElement => {
         </p>
         <div className="mt-6 flex items-center justify-center gap-2">
           <Link
-            to="/command-center"
+            to="/factory-operations"
             className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-90"
           >
-            返回指挥中心
+            返回工厂运行台
           </Link>
           <button
             type="button"

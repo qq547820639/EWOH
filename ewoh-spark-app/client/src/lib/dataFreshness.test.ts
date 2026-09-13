@@ -38,6 +38,13 @@ describe('classifyFreshness：阈值分类', () => {
   it('lagMs 优先于 lastUpdatedAt 计算', () => {
     expect(classifyFreshness(input({ lastUpdatedAt: NOW - 1_000, lagMs: 60_000 }))).toBe('STALE');
   });
+
+  it.each([NaN, Infinity, -Infinity, NOW + 1])(
+    '无效或未来时间戳 %p → STALE（不误报 LIVE）',
+    (lastUpdatedAt) => {
+      expect(classifyFreshness(input({ lastUpdatedAt }))).toBe('STALE');
+    },
+  );
 });
 
 describe('classifyFreshness：SSE 断开不得误报 LIVE（关键规则）', () => {

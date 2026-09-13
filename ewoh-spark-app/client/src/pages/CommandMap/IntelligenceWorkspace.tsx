@@ -27,6 +27,21 @@ interface IntelligenceWorkspaceProps {
   onToggleWorkspace: () => void;
   onSelectTask: (taskId: string | null) => void;
   onCloseIntelligence: () => void;
+  /** NO-16a：保存任务能力要求（能力模型的唯一人工写入口，见 TaskService）。 */
+  onSaveRequirements?: (
+    taskId: string,
+    deviceNames: string[],
+    stationNames: string[],
+    approvalId?: string,
+  ) => void;
+  savingRequirements?: boolean;
+  requirementWarnings?: string[];
+  approvalRequired?: { message: string; relaxedHighRisk: string[] } | null;
+  onRequestApproval?: (taskId: string, deviceNames: string[], stationNames: string[]) => void;
+  pendingApprovalId?: string | null;
+  /** NO-22a：任务侧审批时效文案（"还有多久能用"）。 */
+  pendingApprovalFreshness?: string | null;
+  onRefreshApproval?: () => void;
 }
 
 const IntelligenceWorkspace = ({
@@ -42,6 +57,14 @@ const IntelligenceWorkspace = ({
   onToggleWorkspace,
   onSelectTask,
   onCloseIntelligence,
+  onSaveRequirements,
+  savingRequirements,
+  requirementWarnings,
+  approvalRequired,
+  onRequestApproval,
+  pendingApprovalId,
+  pendingApprovalFreshness,
+  onRefreshApproval,
 }: IntelligenceWorkspaceProps): ReactElement => (
   <>
     {/* 智能调度驾驶舱：开关 + 叠加层（仅调度模式且有方案时展示后端数据图层） */}
@@ -67,6 +90,14 @@ const IntelligenceWorkspace = ({
             selectedTaskId={selectedTaskId}
             onSelectTask={onSelectTask}
             onClose={onCloseIntelligence}
+            onSaveRequirements={onSaveRequirements}
+            savingRequirements={savingRequirements}
+            requirementWarnings={requirementWarnings}
+            approvalRequired={approvalRequired}
+            onRequestApproval={onRequestApproval}
+            pendingApprovalId={pendingApprovalId}
+          pendingApprovalFreshness={pendingApprovalFreshness}
+            onRefreshApproval={onRefreshApproval}
           />
         </React.Suspense>
       </div>

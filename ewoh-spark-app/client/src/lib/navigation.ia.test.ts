@@ -32,9 +32,10 @@ describe('navigation IA（UX-IA-2026-08）', () => {
     expect(duplicates).toEqual([]);
   });
 
-  it('指挥地图位于驾驶舱组首位（全角色核心入口不再埋入基础设施）', () => {
+  it('工厂运行台位于驾驶舱组首位（全局默认入口与导航一致）', () => {
     const cockpit = navGroups.find((group) => group.label === '驾驶舱');
-    expect(cockpit?.items[0]?.to).toBe('/command-map');
+    expect(cockpit?.items[0]?.to).toBe('/factory-operations');
+    expect(cockpit?.items.some((item) => item.to === '/command-map')).toBe(true);
     const infra = navGroups.find((group) => group.label === '基础设施');
     expect(infra).toBeUndefined();
   });
@@ -67,16 +68,25 @@ describe('navigation IA（UX-IA-2026-08）', () => {
       expect(defaultLandingPath(['device_ops'])).toBe('/mobile-workbench');
     });
 
-    it('管理角色直达指挥地图', () => {
-      expect(defaultLandingPath(['global_admin'])).toBe('/command-map');
-      expect(defaultLandingPath(['workshop_lead'])).toBe('/command-map');
+    it('管理角色直达工厂运行台', () => {
+      expect(defaultLandingPath(['global_admin'])).toBe('/factory-operations');
     });
 
-    it('其余角色回退指挥中心；无角色安全回退', () => {
-      expect(defaultLandingPath(['safety_admin'])).toBe('/command-center');
-      expect(defaultLandingPath(['dispatcher'])).toBe('/command-center');
-      expect(defaultLandingPath([])).toBe('/command-center');
-      expect(defaultLandingPath(null)).toBe('/command-center');
+    it('班组长直达班次工作台（FE-2：工厂运行台的主查询不放行班组长，落地即 403）', () => {
+      expect(defaultLandingPath(['workshop_lead'])).toBe('/shift-workbench');
+    });
+
+    it('只读访客直达实时风险（FE-2：viewer 的唯一只读落点，侧栏不再为空）', () => {
+      expect(defaultLandingPath(['viewer'])).toBe('/reasoning');
+      // 多角色时高级角色优先：viewer 只是兜底，不抢占一线/管理角色的任务域。
+      expect(defaultLandingPath(['worker', 'viewer'])).toBe('/mobile-workbench');
+    });
+
+    it('其余管理角色与无角色均回退工厂运行台', () => {
+      expect(defaultLandingPath(['safety_admin'])).toBe('/factory-operations');
+      expect(defaultLandingPath(['dispatcher'])).toBe('/factory-operations');
+      expect(defaultLandingPath([])).toBe('/factory-operations');
+      expect(defaultLandingPath(null)).toBe('/factory-operations');
     });
   });
 

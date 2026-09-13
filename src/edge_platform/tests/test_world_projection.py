@@ -178,5 +178,45 @@ class TelemetryWorldProjectorCatalogEventTest(unittest.TestCase):
         self.assertEqual(counters["states_projected"], 2)
 
 
+    def test_restart_with_restored_declarations_still_projects(self):
+        """UR8（2026-09-13 审查）：重启恢复后投影不得永久 declaration_rejected。
+
+        run.py 重启用 worldstate.json from_dict 还原 ContractWorldStore（声明
+        version≥1 回到持久层），而投影器内存 _declared 清空；旧实现照旧以
+        version=1 重复声明会被 declaration_version_not_increasing 永久拒绝，
+        重启后该实体所有帧无法投影（世界模型冻结在重启前）。修复后：持久层
+        已有 kind/tenant/factory 一致的声明 → 直接采纳，不再重复声明。
+        """
+        self.assertTrue(self.projector.handle(_row("EXO-001", timestamp="2026-09-13T08:00:00Z"))["projected"])
+        restored_store = ContractWorldStore.from_dict(self.store.to_dict())
+        revived = TelemetryWorldProjector(
+            restored_store, self.bus, tenant_id=TENANT, factory_id=FACTORY, kind_map=KIND_MAP
+        )
+        out = revived.handle(_row("EXO-001", timestamp="2026-09-13T08:00:01Z"))
+        self.assertTrue(out["projected"], out)
+        counters = revived.health()["counters"]
+        self.assertEqual(counters["declarations"], 0, "持久层声明已存在，不得（也不能）重复声明")
+        self.assertEqual(counters["states_projected"], 1, "重启后第一帧即应恢复状态投影")
+        self.assertEqual(counters["rejected_contract"], 0)
+        state = restored_store.current("exo:EXO-001", "exo")
+        self.assertEqual(state.version, 2, "状态版本跨越重启继续单调")
+        self.assertEqual(state.state_json["battery_pct"], 80)
+
+    def test_restart_with_changed_tenant_still_fail_closed(self):
+        """重启采纳仅限 kind/tenant/factory 一致：配置变更必须仍被契约拒绝。"""
+        self.assertTrue(self.projector.handle(_row("EXO-001"))["projected"])
+        restored_store = ContractWorldStore.from_dict(self.store.to_dict())
+        revived = TelemetryWorldProjector(
+            restored_store,
+            self.bus,
+            tenant_id="org-2",
+            factory_id=FACTORY,
+            kind_map=KIND_MAP,
+        )
+        out = revived.handle(_row("EXO-001"))
+        self.assertFalse(out["projected"])
+        self.assertEqual(out["skipped_reason"], "declaration_rejected")
+
+
 if __name__ == "__main__":
     unittest.main()

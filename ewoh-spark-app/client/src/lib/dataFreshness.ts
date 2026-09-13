@@ -99,6 +99,15 @@ export function classifyFreshness(input: FreshnessInput): FreshnessStatus {
     }
   }
   if (lag == null || !Number.isFinite(lag)) return 'STALE';
+  // A future timestamp is invalid evidence, not zero lag. Keep it conservative.
+  const timestamp = input.lastUpdatedAt;
+  if (
+    timestamp != null &&
+    (!Number.isFinite(timestamp) ||
+      (input.now != null ? timestamp > input.now : timestamp > Date.now()))
+  ) {
+    return 'STALE';
+  }
   if (lag <= FRESHNESS_LIVE_LAG_MS) return 'LIVE';
   if (lag <= FRESHNESS_STALE_LAG_MS) return 'DELAYED';
   return 'STALE';

@@ -15,6 +15,7 @@ import {
   Inject,
   Logger,
   Optional,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -51,6 +52,8 @@ import type {
   ExecutionUpdateRequest,
   ExecutionListResponse,
 } from '@shared/api.interface';
+import { eq } from 'drizzle-orm';
+import { ewohPersonnel } from '@server/database/schema';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -81,6 +84,7 @@ import { SchedulerReplanApplicationService } from './scheduler-replan-applicatio
 import { SchedulerConstraintApplicationService } from './scheduler-constraint-application.service';
 import { SchedulerEventApplicationService } from './scheduler-event-application.service';
 import { SchedulerDispatchApplicationService } from './scheduler-dispatch-application.service';
+import { ExecutionReceiptApplicationService } from './execution-receipt-application.service';
 
 @Injectable()
 export class SchedulerService {
@@ -93,6 +97,10 @@ export class SchedulerService {
   private readonly constraintApplication: SchedulerConstraintApplicationService;
   private readonly eventApplication: SchedulerEventApplicationService;
   private readonly dispatchApplication: SchedulerDispatchApplicationService;
+  /** 少量只读展示查询（myFieldWork 人员名回填）；业务写路径仍走专职服务。 */
+  private readonly db: PostgresJsDatabase;
+  /** NO-62c：过期诊断委托目标（PlanService 持有世界快照新鲜度实现）。 */
+  private readonly planService: PlanService;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) db: PostgresJsDatabase,
@@ -122,7 +130,11 @@ export class SchedulerService {
     private readonly schedulingContextService?: SchedulingContextService,
     /** AI 调度说明层（2026-08-21）：orchestrator 为手动 new，必须在此注入后透传。 */
     @Optional() private readonly narratorService?: SchedulingNarratorService,
+    @Optional() receiptService?: ExecutionReceiptApplicationService,
   ) {
+    this.db = db;
+    // NO-62c：过期诊断委托 PlanService（与审批路径同一实现）。
+    this.planService = planService;
     this.queryService = new SchedulerQueryService(
       db,
       worldStateSnapshotService,
@@ -136,7 +148,6 @@ export class SchedulerService {
       conflictService,
       policyReplayService,
       executionService,
-      outboxService,
     );
     this.runOrchestrator = new SchedulerRunOrchestrator(
       db,
@@ -175,9 +186,11 @@ export class SchedulerService {
       feedbackService,
       // 调用时求值：兼容旧单测（batch10-shadow-eval）构造后替换 svc.comparePolicyVersion 为 spy。
       (...args) => this.comparePolicyVersion(...args),
+      receiptService,
     );
     this.dispatchApplication = new SchedulerDispatchApplicationService(
       executionService,
+      receiptService,
     );
   }
 
@@ -219,6 +232,11 @@ export class SchedulerService {
 
   async getSnapshot(actor?: OrgContext): Promise<WorldStateSnapshot> {
     return this.queryService.getSnapshot(actor);
+  }
+
+  /** NO-62c：方案过期诊断（与审批 409 同一实现；委托 PlanService，避免第二套口径）。 */
+  async explainPlanStaleness(planId: string, actor?: OrgContext) {
+    return this.planService.explainPlanStaleness(planId, actor);
   }
 
   async getPlanDetail(planId: string, actor?: OrgContext): Promise<SchedulingPlanV2> {
@@ -267,8 +285,51 @@ export class SchedulerService {
     return this.queryService.getConflictDetail(conflictId, actor);
   }
 
+  /**
+   * 现场作业台只读投影（按人收敛，服务端推导范围）。
+   *
+   * 关键不变量：范围来自**签名令牌里的账号↔人员绑定**（ctx.personId），
+   * 不接受客户端传入 personId。未绑定 → 403 fail-closed，而不是返回全厂数据
+   * 或空列表充数（空列表会让工人误以为"我没有任务"）。
+   */
+  async myFieldWork(actor?: OrgContext): Promise<{
+    personId: string;
+    /** 绑定人员姓名（展示用；查不到为 null，UI 显示"未知"，不伪造）。 */
+    personName?: string | null;
+    executions: ExecutionListResponse['executions'];
+    total: number;
+  }> {
+    if (!actor?.primaryOrgId || !actor.userId) {
+      throw new ForbiddenException('FIELD_WORK_CONTEXT_REQUIRED');
+    }
+    const personId = actor.personId?.trim();
+    if (!personId) {
+      throw new ForbiddenException(
+        'FIELD_WORK_PERSON_UNBOUND: 当前账号未绑定业务人员，无法确定"我的任务"。'
+          + '请由管理员经 owner 通道绑定（db/runner/create-operator.js --person-id）。',
+      );
+    }
+    const result = await this.queryService.executionList({ personId }, actor);
+    // 展示名解析（2026-09-11）：优先直查人员域（executions 为空时也有名字）；
+    // db 句柄不可用（单测替身构造）时退回执行记录的回填值，再退 null——
+    // 解析不到如实返回 null，UI 显示"未知"，绝不伪造。
+    let personName: string | null = result.executions.find((e) => e.personName)?.personName ?? null;
+    if (this.db) {
+      const [row] = await this.db
+        .select({ name: ewohPersonnel.name })
+        .from(ewohPersonnel)
+        .where(eq(ewohPersonnel.id, personId))
+        .limit(1);
+      personName = row?.name ?? personName;
+    }
+    return { personId, personName, executions: result.executions, total: result.total };
+  }
+
   async executionList(
-    query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+    query: {
+      planId?: string; taskId?: string; status?: string; personId?: string;
+      limit?: number; offset?: number;
+    },
     actor?: OrgContext,
   ): Promise<ExecutionListResponse> {
     return this.queryService.executionList(query, actor);
@@ -315,8 +376,18 @@ export class SchedulerService {
   async dispatchPlanV2(
     planId: string,
     actor?: OrgContext,
+    wave?: { assignmentIds?: string[] },
   ): Promise<SchedulingPlanV2> {
-    return this.planApplication.dispatchPlanV2(planId, actor);
+    return this.planApplication.dispatchPlanV2(planId, actor, wave);
+  }
+
+  /** DR-5 方案取消/回滚（standalone_077）：受控部分回退。 */
+  async cancelPlanV2(
+    planId: string,
+    body: { reason?: string },
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    return this.planApplication.cancelPlanV2(planId, body, actor);
   }
 
   async applyOverrides(

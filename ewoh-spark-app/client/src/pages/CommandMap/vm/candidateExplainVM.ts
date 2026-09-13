@@ -7,6 +7,7 @@
  * 前端不判资格、不重算优先级，只透传后端字段。
  */
 import type { TaskCandidatesResponse, TaskCandidateResource } from '@shared/api.interface';
+import { rejectReasonLabel } from '@shared/reject-reason';
 
 export interface CandidateExplainItem {
   personId: string;
@@ -27,6 +28,10 @@ export interface CandidateExplainItem {
   reasons: string[];
   /** 结构化拒绝原因（后端 rejectReasons，透传不重算；eligible=false 时非空）。 */
   rejectReasons: string[];
+  /** 能力相关拒绝的可读细节（可空；后端生成的解释，前端不重算）。 */
+  capabilityNotes: string[];
+  /** NO-38b：会话相关的前向说明（人机同体配对；后端生成，前端只透传）。 */
+  sessionNotes: string[];
   /** 评分分解（后端 scoreBreakdown，透传不重算；不可行候选为 null）。 */
   scoreBreakdown: TaskCandidateResource['scoreBreakdown'];
   /** 工位维度候选明细（后端 stationOptions，透传不重算）。 */
@@ -70,6 +75,10 @@ export function candidateExplainVM(res: TaskCandidatesResponse): CandidateExplai
     distanceMeters: c.distanceMeters ?? 0,
     reasons: Array.isArray(c.reasons) ? c.reasons : [],
     rejectReasons: Array.isArray(c.rejectReasons) ? c.rejectReasons : [],
+    // NO-15b：能力拒绝的可读细节（哪个能力、谁/何时/为何停用）——后端生成，前端只透传
+    capabilityNotes: Array.isArray(c.capabilityNotes) ? c.capabilityNotes : [],
+    // NO-38b：会话相关的正向说明（该设备正由本候选人员佩戴 = 人机同体）
+    sessionNotes: Array.isArray(c.sessionNotes) ? c.sessionNotes : [],
     scoreBreakdown: c.scoreBreakdown ?? null,
     stationOptions: Array.isArray(c.stationOptions) ? c.stationOptions : [],
     isLockedAssignee: Boolean(res.lockedAssigneeId) && c.personId === res.lockedAssigneeId,
@@ -103,19 +112,12 @@ export function candidateExplainVM(res: TaskCandidatesResponse): CandidateExplai
   };
 }
 
-/** 候选行的可读 reason 文案（仅映射已知原因，未知原因原样透传）。 */
+/**
+ * 候选行的可读 reason 文案。
+ *
+ * 文案唯一来源 = `shared/reject-reason.ts`（穷尽词表 + 未登记键显式标记）。
+ * 此前本文件自建 11 条映射，既与其它面板不一致，也漏掉维护/质量/连续负荷等键。
+ */
 export function candidateReasonLabel(reason: string): string {
-  const LABELS: Record<string, string> = {
-    missing_skill: '缺少技能',
-    missing_certification: '缺少证书',
-    route_infeasible: '路径不可行',
-    coords_unknown: '坐标未知',
-    safety_blocked: '安全封锁',
-    forbidden_zone: '禁入区',
-    device_offline: '设备离线',
-    low_battery: '电量不足',
-    reservation_conflict: '预占冲突',
-    unavailable: '人员不可用',
-  };
-  return LABELS[reason] ?? reason;
+  return rejectReasonLabel(reason);
 }

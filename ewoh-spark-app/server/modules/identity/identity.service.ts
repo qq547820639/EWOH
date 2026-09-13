@@ -100,19 +100,39 @@ export class IdentityService {
         const record = this.toRecord(updated[0]);
         return { record, created: false, superseded: false };
       }
-      // 目标身份变更：旧 active → superseded（历史留痕，不静默覆盖）。
+      // 目标身份变更（UR4 审查 2026-09-13）：uq_ewoh_identity_mapping_source 是
+      // (org, system, source_id) 的**非部分**唯一约束——原实现"旧行 superseded +
+      // 插入新行"必然撞 23505（被替代的行仍占着三元组），改绑恒 400，且 NEST-435
+      // 处理器把它误报成"并发冲突请重试"（重试永远同样失败）。约束不改的前提下
+      // 改绑只能**就地**完成：version+1 + 显式写 EntityIdentityMapped 事件（旧→新
+      // 目标进事件台账留痕），fail-closed 语义不变（绝不静默改身份——变更可审计）。
+      const row0 = active ?? existing[0];
+      const previousTargetEntityId = row0.targetEntityId;
       await this.db
         .update(ewohIdentityMapping)
-        .set({ status: 'superseded', updatedAt: now })
-        .where(
-          and(
-            eq(ewohIdentityMapping.orgId, orgId),
-            eq(ewohIdentityMapping.sourceSystem, input.source.system),
-            eq(ewohIdentityMapping.sourceId, input.source.id),
-            eq(ewohIdentityMapping.status, 'active'),
-          ),
-        );
-      superseded = true;
+        .set({
+          version: Math.max(row0.version, input.version) + 1,
+          status: 'active',
+          authority: input.authority,
+          targetEntityId: input.target.entityId,
+          targetKind: kind,
+          recordedAt: now,
+          // 改绑是新的一次租约：未显式给时间窗时不继承旧绑定窗口（旧 validTo
+          // 若已过会让新绑定落地即失效，等于改绑被静默丢弃）。
+          validFrom: input.validFrom ? new Date(input.validFrom) : null,
+          validTo: input.validTo ? new Date(input.validTo) : null,
+          evidenceId: input.evidenceId ?? row0.evidenceId,
+          updatedAt: now,
+        })
+        .where(and(eq(ewohIdentityMapping.orgId, orgId), eq(ewohIdentityMapping.id, row0.id)));
+      const updated = await this.db
+        .select()
+        .from(ewohIdentityMapping)
+        .where(and(eq(ewohIdentityMapping.orgId, orgId), eq(ewohIdentityMapping.id, row0.id)))
+        .limit(1);
+      const record = this.toRecord(updated[0]);
+      await this.recordEvent(orgId, record, previousTargetEntityId);
+      return { record, created: false, superseded };
     }
 
     const row = {
@@ -181,7 +201,10 @@ export class IdentityService {
         ),
       );
     if (rows.length === 0) return null;
-    return resolveIdentityMapping(system, id, rows.map((r) => this.toRecord(r)));
+    // UR4 审查（2026-09-13）：必须传 now 使 validFrom/validTo 时间窗生效——
+    // 缺省时共享解析器整体跳过窗口判定，**已过期**的映射仍会解析成功
+    // （与 resolveBatch 口径不一致：批量路径传了 now，过期映射正确落空）。
+    return resolveIdentityMapping(system, id, rows.map((r) => this.toRecord(r)), new Date().toISOString());
   }
 
   /** ingest 批量解析：一次 IN 查询（≤BATCH_LIMIT），返回 Map<sourceId, entityId>。 */
@@ -262,8 +285,16 @@ export class IdentityService {
     };
   }
 
-  /** 事件落库：eventType=EntityIdentityMapped（目录契约 contracts/events/event-catalog.yaml）。 */
-  private async recordEvent(orgId: string, record: IdentityMappingRecord): Promise<void> {
+  /**
+   * 事件落库：eventType=EntityIdentityMapped（目录契约 contracts/events/event-catalog.yaml）。
+   * UR4 审查（2026-09-13）：改绑（就地更新）没有"被替代行"可留痕，旧目标必须
+   * 进事件证据——否则身份变更在台账里不可审计（"绝不静默改身份"的载体）。
+   */
+  private async recordEvent(
+    orgId: string,
+    record: IdentityMappingRecord,
+    previousTargetEntityId?: string,
+  ): Promise<void> {
     const eventId = `EVT-${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
     const now = new Date();
     const nowIso = now.toISOString();
@@ -317,6 +348,11 @@ evidenceJson: {
         sourceSystem: record.source.system,
         sourceId: record.source.id,
         entityId: record.target.entityId,
+        // UR4 审查（2026-09-13）：改绑（就地更新）没有"被替代行"可留痕，
+        // 旧目标必须进事件证据——身份变更在台账可审计（"绝不静默改身份"的载体）。
+        ...(previousTargetEntityId != null && previousTargetEntityId !== record.target.entityId
+          ? { previousTargetEntityId }
+          : {}),
         authority: record.authority,
         recordedAt: record.recordedAt,
         envelope: envelopeRecord.envelope,

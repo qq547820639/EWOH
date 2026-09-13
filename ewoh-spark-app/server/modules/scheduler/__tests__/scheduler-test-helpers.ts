@@ -241,6 +241,7 @@ export function makeSolver(
     metricsService,
     undefined as unknown as import('../candidate-engine.service').CandidateEngineService,
     extras?.shadowEvaluatorService,
+    undefined, // durationPrediction（默认 off，测试不消费；需要测模型消费的用例自建 solver）
     extras?.outboxService,
   );
   return { solver, routing, policy, routeCostProvider, metricsService };

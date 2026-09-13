@@ -127,13 +127,15 @@ describe('M05 decisionExplainVM', () => {
     expect(vm!.priorityLevel).toBe('urgent');
     expect(vm!.rejectedHard).toHaveLength(2);
     expect(vm!.rejectedHard[0].reasonLabels).toContain('缺少证书');
-    expect(vm!.rejectedHard[1].reasonLabels).toContain('电量不足');
+    // MIN_BATTERY 现在同时覆盖"电量低"与"电量未知"（未知电量 fail-closed 不派工），
+    // 文案必须如实反映两种情形，不能只说"不足"。
+    expect(vm!.rejectedHard[1].reasonLabels).toContain('电量不足或未知');
     expect(vm!.hardConstraints).toContain('MIN_BATTERY');
   });
 
-  it('decisionReasonLabel：未知原因原样透传（不重算不臆造）', () => {
+  it('decisionReasonLabel：已知码映射中文，未知码显式标注未登记（不重算不臆造）', () => {
     expect(decisionReasonLabel('REQUIRED_CERTIFICATION')).toBe('缺少证书');
-    expect(decisionReasonLabel('SOME_UNKNOWN_REASON')).toBe('SOME_UNKNOWN_REASON');
+    expect(decisionReasonLabel('SOME_UNKNOWN_REASON')).toBe('未登记原因（SOME_UNKNOWN_REASON）');
   });
 
   it('null DecisionTrace → null', () => {

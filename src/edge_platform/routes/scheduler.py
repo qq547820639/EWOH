@@ -263,7 +263,10 @@ def api_create_scheduling_request(ctx, h, payload):
     policy_id = payload.get("policy_id") or ""
     created_by = resolve_actor(h, payload, "created_by")
     req = sched.create_request(task_ids, trigger_type, policy_id, created_by)
-    plans = sched.generate_plans(req.request_id, storage=ctx.storage)
+    try:
+        plans = sched.generate_plans(req.request_id, storage=ctx.storage)
+    except ValueError as error:
+        return h._new_error(getattr(error, "code", "INVALID_REQUEST"), str(error), 409)
     return h.send_json(
         {
             "ok": True,
@@ -316,7 +319,9 @@ def _plan_action(ctx, h, plan_id, action, payload):
     actor = resolve_actor(h, payload, "actor_id")
     reason = payload.get("reason", "")
     try:
-        if action == "confirm":
+        if action == "simulate":
+            plan = ctx.scheduler.simulate(plan_id, actor, reason)
+        elif action == "confirm":
             plan = ctx.scheduler.confirm(
                 plan_id,
                 actor,
@@ -356,7 +361,7 @@ def api_execute_plan(ctx, h, plan_id, payload):
     if ctx.scheduler is None:
         return h._new_error("not_ready", "调度服务未启用", 503)
     try:
-        assignments = ctx.scheduler.execute(plan_id)
+        assignments = ctx.scheduler.execute(plan_id, resolve_actor(h, payload, "actor_id"))
     except KeyError:
         return h._new_error("not_found", "方案不存在", 404)
     except Exception as e:
@@ -484,6 +489,29 @@ def route_plan_confirm(ctx, h, req_meta):
     return api_confirm_plan(ctx, h, p[len("/api/scheduling/plans/") : -len("/confirm")], req_meta.body)
 
 
+def route_plan_simulate(ctx, h, req_meta):
+    plan_id = req_meta.path[len("/api/scheduling/plans/") : -len("/simulate")]
+    return _plan_action(ctx, h, plan_id, "simulate", req_meta.body)
+
+
+def route_plan_feedback(ctx, h, req_meta):
+    if ctx.scheduler is None:
+        return h._new_error("not_ready", "调度服务未启用", 503)
+    plan_id = req_meta.path[len("/api/scheduling/plans/") : -len("/feedback")]
+    try:
+        feedback = ctx.scheduler.record_execution_feedback(
+            plan_id,
+            resolve_actor(h, req_meta.body, "actor_id"),
+            req_meta.body.get("idempotency_key"),
+        )
+    except KeyError:
+        return h._new_error("not_found", "方案不存在", 404)
+    except (ValueError, RuntimeError) as error:
+        code = getattr(error, "code", "INVALID_REQUEST")
+        return h._new_error(code, str(error), 403 if code == "SCHEDULING_READ_ONLY" else 409)
+    return h.send_json({"ok": True, "feedback": feedback.to_dict()})
+
+
 def route_plan_execute(ctx, h, req_meta):
     p = req_meta.path
     return api_execute_plan(ctx, h, p[len("/api/scheduling/plans/") : -len("/execute")], req_meta.body)
@@ -590,6 +618,18 @@ DOMAIN_ROUTES = [
     Route("POST", "/api/tasks/confirm", exact("/api/tasks/confirm"), route_confirm),
     Route("POST", "/api/tasks", exact("/api/tasks"), route_create_task),
     Route("POST", "/api/scheduling/requests", exact("/api/scheduling/requests"), route_create_sched_request),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/simulate",
+        affix("/api/scheduling/plans/", "/simulate"),
+        route_plan_simulate,
+    ),
+    Route(
+        "POST",
+        "/api/scheduling/plans/{id}/feedback",
+        affix("/api/scheduling/plans/", "/feedback"),
+        route_plan_feedback,
+    ),
     Route(
         "POST",
         "/api/scheduling/plans/{id}/confirm",

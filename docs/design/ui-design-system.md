@@ -75,7 +75,7 @@
 | 暗色主题适配 | ✅ `tokens.css:219-233` 提亮 | ❌ 不响应 |
 | 高对比模式 | ✅ `:246-248` 加深 | ❌ 不响应 |
 | 反色表面（指挥地图深色壳） | ✅ `:88-96` 重定向 | ❌ 不响应 |
-| 无障碍专项修复 | ✅ `--destructive-on-soft` | ❌ 不适用 |
+| 无障碍专项修复 | ✅ `--*-on-soft`（destructive/warning/info/primary） | ❌ 不适用 |
 
 **结论**：368 处 Tailwind 色所在的区域，三套主题**完全失效**。
 车间暗光环境、需要高对比的弱视用户、指挥地图深色面板——这些场景当前是断的。
@@ -96,7 +96,22 @@
 | **文字** | `-foreground` | `--risk-normal-foreground` | **≥ 4.5:1** |
 
 ⚠️ **禁止**用主色（如 `--risk-normal`）直接作文字色叠在 `-soft` 底上——
-这正是 `tokens.css:71-75` 修复过的问题（`--destructive-on-soft` 的存在原因）。
+这正是 `tokens.css` 中 `--destructive-on-soft` 修复过的问题。同一规则覆盖
+非 risk 色板：`bg-warning/*`、`bg-info/*`、`bg-primary/*` 等软底上的文字必须用
+`text-warning-on-soft` / `text-info-on-soft` / `text-primary-on-soft`，
+**不得**写 `text-warning` / `text-info` / `text-primary`。
+
+实测（axe，2026-09）：深色外壳（`data-inverse-surface`）上 `bg-warning/20 text-warning`
+= **4.16:1**（serious）、`bg-info/20 text-info` = 2.70:1、`bg-primary/20 text-primary`
+= 2.70:1；改用 on-soft 令牌后分别 7.92 / 6.92 / 6.92:1。该门的回归测试是
+`client/src/lib/softSurfaceContrast.test.ts`（数值计算 + 类名策略扫描）与
+`test/browser/ux009-command-map-axe.spec.js`（真实 axe 运行）。
+
+另外：**状态色调徽标禁用颜色过渡**。reduced-motion 全局规则只把 `transition-duration`
+压到 0.01ms，而 `transition-property` 仍取初始值 `all`，于是每次换色都会生成一条
+CSSTransition；帧饥饿时 `currentTime` 停在 0，computed style 会长时间返回**上一种
+色调**的颜色（axe 因此偶发失败，也是"界面在说谎"）。新鲜度徽标用
+`[transition-property:none]` 显式关闭过渡——色调是事实指示，必须立即生效。
 
 ### 4.2 收敛映射表
 

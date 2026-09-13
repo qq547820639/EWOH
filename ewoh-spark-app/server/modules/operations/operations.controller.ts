@@ -149,6 +149,12 @@ export class OperationsController {
       `attachment; filename="workbench-export-${id}.csv"`,
     );
     const stream = createReadStream(file);
+    // 流式下载必须挂 error 兜底：检查存在与打开之间的删除竞态会让流发出
+    // 'error'，pipe 不转发错误且无人监听 ⇒ uncaught exception ⇒ 进程退出。
+    // 此时 headers 已发出，只能掐断连接。
+    stream.on('error', () => {
+      reply.destroy();
+    });
     stream.pipe(reply);
   }
 

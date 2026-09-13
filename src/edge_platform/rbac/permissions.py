@@ -233,6 +233,9 @@ def _action_for_get(p):
         or p == "/api/me"
     ):
         return VIEW_TELEMETRY
+    if p.startswith("/api/actuators"):
+        # NO-59b：执行机构状态属机器态读（与设备/遥测同域）。
+        return VIEW_TELEMETRY
     if (
         p.startswith("/api/tasks")
         or p.startswith("/api/scheduling")
@@ -274,6 +277,11 @@ def _action_for_write(p):
     if p.startswith("/api/andon/"):  # EDGE-039：安灯开灯收敛为显式动作
         return RAISE_ANDON
     if p.startswith("/api/exo/"):  # 绑定/解绑属设备管理域
+        return MANAGE_DEVICES
+    if p.startswith("/api/actuators/"):
+        # NO-59b：执行机构命令面 = 设备管理域（RBAC 第一道闸）；
+        # 高危命令（让设备动起来/解除安全停机）在适配器层**再要求平台授权号**（第二道闸）；
+        # `stop` 是安全动作，只需要 RBAC，不被授权链卡住。
         return MANAGE_DEVICES
     return None
 

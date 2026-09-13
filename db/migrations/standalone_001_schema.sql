@@ -1,21 +1,7 @@
 -- EWOH managed tables migration (AG-10)
--- R2-DBM-016（修正，2026-08-18）：本文件为 standalone 链事实源，角色名
--- 固定为无后缀 anon/authenticated/service_role（SQL-036/037 裁决）；
--- __EWOH_ROLE_*__ schema 后缀占位符仅用于 legacy 001_ewoh_managed_tables.sql。
 -- Schema placeholder: public
 -- Re-entrant: CREATE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DROP POLICY IF EXISTS.
 -- No physical foreign keys. RLS is org-scoped; direct DML is revoked from user roles.
---
--- DEPRECATED（Batch 8.2 裁定）：本文件为 legacy 基线，与 standalone_001_schema.sql 重叠。
--- 唯一事实源为 db/migrations/standalone_00*.sql（README 明示）。
--- 保留仅供旧部署环境回滚/兼容；新增迁移一律走 standalone 链，本文件冻结不再更新。
---
--- ⚠️ 禁止混用（审计 SQL-036/037 裁定，spec 已裁决项，2026-08-17）：
--- 本文件（legacy 双轨）与 standalone_* 链使用两套不同的角色命名
--- （legacy：public 后缀角色；standalone：anon /
--- authenticated / service_role / ewoh_api）。在同一数据库上混用两条链会导致
--- REVOKE/GRANT 目标角色不存在、RLS policy 绑定到错误角色，造成权限丢失或
--- 隔离失效。任何数据库实例只能选择其中一条链，不得交叉执行。
 
 CREATE SCHEMA IF NOT EXISTS public;
 SELECT set_config('search_path', 'public, pg_temp', false);
@@ -72,8 +58,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_ai_suggestion (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device (
@@ -92,8 +77,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device (
   protocol_version varchar(50),
   temperature_c real,
   fault_code varchar(100),
-  last_raw_ref varchar(128),
-  org_id varchar(255)
+  last_raw_ref varchar(128)
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device_binding (
@@ -111,8 +95,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device_binding (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_device_config (
@@ -129,8 +112,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_device_config (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_environment (
@@ -146,8 +128,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_environment (
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   source_type varchar(50) DEFAULT 'simulated',
   record_id varchar(64),
-  data_confidence real DEFAULT 1.0,
-  org_id varchar(255)
+  data_confidence real DEFAULT 1.0
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_event (
@@ -176,8 +157,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_event_chain (
   description text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_model_registry (
@@ -189,8 +169,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_model_registry (
   status varchar(50) DEFAULT 'active',
   card_json jsonb,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_organization (
@@ -203,8 +182,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_organization (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_personnel (
@@ -242,8 +220,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_production_task (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by uuid DEFAULT NULL,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by uuid DEFAULT NULL,
-  org_id varchar(255)
+  _updated_by uuid DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_schedule_audit (
@@ -255,8 +232,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_schedule_audit (
   reason text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_schedule_plan (
@@ -332,8 +308,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_telemetry (
   fault_code varchar(100),
   packet_loss_pct real DEFAULT 0,
   data_confidence real DEFAULT 1.0,
-  data_quality varchar(20) DEFAULT 'good',
-  org_id varchar(255)
+  data_quality varchar(20) DEFAULT 'good'
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_topology (
@@ -343,8 +318,7 @@ CREATE TABLE IF NOT EXISTS public.ewoh_topology (
   relation varchar(100) DEFAULT 'adjacent',
   distance real DEFAULT 0,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS public.ewoh_world_state (
@@ -1321,28 +1295,6 @@ BEGIN
 END
 $ewoh_personnel$;
 
--- 审计回归修复（2026-08-18 部署）：其余 legacy 表 org_id varchar→uuid 条件转换
--- （与 ewoh_personnel 同模式；缺失时下方 COALESCE(org_id, v_default_org) 会报
---  "COALESCE types character varying and uuid cannot be matched"）。
-DO $ewoh_legacy_org_uuid$
-DECLARE
-  t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'ewoh_ai_suggestion','ewoh_device','ewoh_device_binding','ewoh_device_config',
-    'ewoh_environment','ewoh_event_chain','ewoh_model_registry','ewoh_organization',
-    'ewoh_production_task','ewoh_schedule_audit','ewoh_telemetry','ewoh_topology'
-  ] LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = t AND column_name = 'org_id' AND data_type <> 'uuid'
-    ) THEN
-      EXECUTE format('ALTER TABLE public.%I ALTER COLUMN org_id TYPE uuid USING (CASE WHEN org_id ~ ''^[0-9a-fA-F-]{36}$'' THEN org_id::uuid ELSE NULL END)', t);
-    END IF;
-  END LOOP;
-END
-$ewoh_legacy_org_uuid$;
-
 -- Table 79 detailed ALTERs.
 ALTER TABLE public.ewoh_spatial_entity ADD COLUMN IF NOT EXISTS z real DEFAULT 0;
 ALTER TABLE public.ewoh_spatial_entity ADD COLUMN IF NOT EXISTS roll real DEFAULT 0;
@@ -1610,117 +1562,117 @@ DROP POLICY IF EXISTS ewoh_audit_select ON public.ewoh_audit_log;
 CREATE POLICY ewoh_audit_select ON public.ewoh_audit_log FOR SELECT TO service_role USING (public.ewoh_org_visible(org_id) OR (org_id IS NULL AND coalesce(current_setting('app.is_global_admin', true), '') = 'true'));
 
 -- Grants: only the trusted backend role gets DML; audit_log is write-only via function.
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_ai_suggestion FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_ai_suggestion FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_ai_suggestion TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_device TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_binding FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_binding FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_device_binding TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_config FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_config FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_device_config TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_environment FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_environment FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_environment TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_event TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_chain FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_chain FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_event_chain TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_registry FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_registry FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_model_registry TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_organization FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_organization FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_organization TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_personnel FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_personnel FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_personnel TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_production_task FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_production_task FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_production_task TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_audit FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_audit FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_schedule_audit TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_plan FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_plan FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_schedule_plan TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_scheduler_config FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_scheduler_config FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_scheduler_config TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_entity FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_entity FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_spatial_entity TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_telemetry FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_telemetry FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_telemetry TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_topology FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_topology FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_topology TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_state FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_state FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_world_state TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_person_skill FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_person_skill FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_person_skill TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_skill FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_skill FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_skill TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_role FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_role FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_role TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_person_role FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_person_role FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_person_role TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_capability FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_device_capability FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_device_capability TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_relation FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_relation FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_spatial_relation TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_hierarchy FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_spatial_hierarchy FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_spatial_hierarchy TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_asset FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_asset FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_model_asset TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_binding FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_model_binding FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_model_binding TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_workstation TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_device FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_device FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_workstation_device TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_person FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_person FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_workstation_person TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_skill FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_skill FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_workstation_skill TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_relation FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_workstation_relation FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_workstation_relation TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_template FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_template FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_task_template TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_step FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_step FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_task_step TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_skill_req FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_task_skill_req FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_task_skill_req TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_task FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_task FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_schedule_task TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_task_step FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_task_step FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_schedule_task_step TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_assignment FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_schedule_assignment FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_schedule_assignment TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_resource_preorder FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_resource_preorder FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_resource_preorder TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_resource_binding FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_resource_binding FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_resource_binding TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_request FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_request FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_control_request TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_command FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_command FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_control_command TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_result FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_control_result FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_control_result TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_rule FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_rule FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_event_rule TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_action FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_action FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_event_action TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_subscription FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_event_subscription FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_event_subscription TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_snapshot FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_snapshot FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_world_snapshot TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_delta_log FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_world_delta_log FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_world_delta_log TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_system_config FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_system_config FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_system_config TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_knowledge_base FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_knowledge_base FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_knowledge_base TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_knowledge_entry FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_knowledge_entry FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_knowledge_entry TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_notification FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_notification FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_notification TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_template FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_template FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_factory_template TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_profile FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_factory_profile FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_factory_profile TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_asset_package FROM anon, authenticated;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_asset_package FROM anon, authenticated, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ewoh_asset_package TO service_role;
-REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.ewoh_audit_log FROM anon, authenticated, authenticated, service_role;
 GRANT SELECT ON TABLE public.ewoh_audit_log TO service_role;
 REVOKE ALL PRIVILEGES ON FUNCTION public.ewoh_append_audit_log FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ewoh_append_audit_log TO service_role;

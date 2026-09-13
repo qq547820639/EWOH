@@ -18,6 +18,13 @@ export interface OutboxEnqueueOpts {
   occurredAt?: string | null;
   // Phase 4 / P4-SSE：统一 Envelope 关联 ID（run/plan/execution/policy 全链路）。
   correlationId?: string | null;
+  /**
+   * NO-62c：显式写入句柄。**错误路径上的入队**必须传独立事务句柄——
+   * `OrgContextInterceptor` 把每个请求包在一个事务里，handler 抛 409/404 时
+   * 该事务整体回滚，同事务写入的 outbox 事件会**静默消失**
+   * （实测：审批拒绝路径上的 `stale_plan` 事件从未真正落库）。
+   */
+  executor?: PostgresJsDatabase;
 }
 
 /** Outbox：可靠领域事件，先写 outbox 再发布，保证 dispatch 与事件一致。 */
@@ -64,7 +71,8 @@ export class OutboxService {
     if (sequence !== undefined) {
       insertValues.sequence = sequence;
     }
-    const [row] = await this.db
+    const executor = opts?.executor ?? this.db;
+    const [row] = await executor
       .insert(ewohOutbox)
       .values(insertValues)
       .returning();

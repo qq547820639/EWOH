@@ -23,7 +23,7 @@ jest.mock('lucide-react', () =>
 
 // Scheduling.tsx 间接导入 api/scheduler（import.meta），需 mock。
 jest.mock('../../api/scheduler', () => ({}));
-jest.mock('../../hooks/queryKeys', () => ({ queryKeys: { schedulerActivePlans: ['plans'], schedulerRuns: () => ['runs'] } }));
+jest.mock('../../hooks/queryKeys', () => ({ queryKeys: { schedulerActivePlans: ['plans'], schedulerRuns: () => ['runs'], schedulerPlan: (planId: string) => ['scheduler-plan', 'org-1', planId] } }));
 jest.mock('../../hooks/queryConfig', () => ({ OPERATIONAL_REFETCH_INTERVAL_MS: 5000, QUERY_STALE_TIME_MS: 30000 }));
 jest.mock('../../scheduler/SchedulerRealtimeProvider', () => ({ SchedulerRealtimeProvider: ({ children }: { children: unknown }) => children }));
 jest.mock('../../lib/auth', () => ({
@@ -134,5 +134,115 @@ describe('PlanCard 渲染 smoke（ADR-082）', () => {
     );
     expect(markup).toContain('已审批');
     expect(markup).not.toContain('待审批');
+  });
+});
+
+/* ===== NO-62c：方案过期诊断面板渲染 ===== */
+
+describe('PlanStalenessPanel（NO-62c：过期可解释 + 一键重排）', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PlanStalenessPanel } = require('./PlanStalenessPanel');
+
+  const REPORT = {
+    snapshotVersion: 'WS-7',
+    snapshotFound: true,
+    stale: true,
+    summary: '检测到 2 项外部变化，另有 1 项本方案自身效果',
+    checkedAt: '2026-09-12T03:00:00.000Z',
+    externalChangeCount: 2,
+    selfInflictedCount: 1,
+    changes: [
+      {
+        kind: 'entity_version',
+        entityKey: 'task:T-1',
+        entityType: 'task',
+        entityId: 'T-1',
+        change: 'changed',
+        selfInflicted: false,
+        label: 'task 版本 3 → 4',
+      },
+      {
+        kind: 'entity_version',
+        entityKey: 'device:AGV-9',
+        entityType: 'device',
+        entityId: 'AGV-9',
+        change: 'removed',
+        selfInflicted: true,
+        label: 'device 消失（快照后被移除）',
+      },
+    ],
+  };
+
+  const PROPS = {
+    planId: 'plan-001',
+    report: REPORT,
+    onReplan: NO_OP,
+    onDismiss: NO_OP,
+  };
+
+  it('摊开差异事实：摘要 + 计数 + 逐项标签 + 自身效果标注', () => {
+    const markup = renderToStaticMarkup(<PlanStalenessPanel {...PROPS} />);
+    expect(markup).toContain('方案已过期：世界状态在生成之后发生了变化');
+    expect(markup).toContain(REPORT.summary);
+    expect(markup).toContain('WS-7');
+    expect(markup).toContain('外部变化 2');
+    expect(markup).toContain('本方案自身效果 1');
+    expect(markup).toContain('task 版本 3 → 4');
+    expect(markup).toContain('（本方案自身）');
+  });
+
+  it('提供一键重排，并明确"重排不绕过审批"（执行边界不被按钮弱化）', () => {
+    const markup = renderToStaticMarkup(<PlanStalenessPanel {...PROPS} />);
+    expect(markup).toContain('按最新状态重新排程');
+    expect(markup).toContain('重排不绕过审批');
+  });
+
+  it('不支持重排的状态：按钮禁用但仍解释原因', () => {
+    const markup = renderToStaticMarkup(
+      <PlanStalenessPanel {...PROPS} replanAvailable={false} />,
+    );
+    expect(markup).toContain('disabled');
+    expect(markup).toContain('该状态不支持直接重排');
+  });
+
+  it('没有差异明细时显式说明"后端未提供差异明细"，不假装有诊断', () => {
+    const markup = renderToStaticMarkup(
+      <PlanStalenessPanel
+        {...PROPS}
+        report={{ ...REPORT, changes: [], externalChangeCount: 0, selfInflictedCount: 0 }}
+      />,
+    );
+    expect(markup).toContain('后端未提供差异明细');
+  });
+
+  it('NO-64a：分档可见——事实变化 / 依赖资源证据过期 / 仅证据老化', () => {
+    const markup = renderToStaticMarkup(
+      <PlanStalenessPanel
+        {...PROPS}
+        report={{
+          ...REPORT,
+          contentChangeCount: 1,
+          blockedEvidenceCount: 1,
+          evidenceAgedCount: 3,
+          reason: 'EVIDENCE_STALE',
+          changes: [
+            { ...REPORT.changes[0], severity: 'content' as const },
+            { ...REPORT.changes[1], severity: 'blocked_evidence' as const, usedByPlan: true },
+          ],
+        }}
+      />,
+    );
+    expect(markup).toContain('事实变化 1');
+    expect(markup).toContain('依赖资源证据过期 1');
+    expect(markup).toContain('仅证据老化 3（不阻断）');
+    expect(markup).toContain('（事实变化）');
+    expect(markup).toContain('（方案依赖，证据已过期）');
+  });
+
+  it('快照已不可比时给出显式徽章（不许看起来像"有差异可比"）', () => {
+    const markup = renderToStaticMarkup(
+      <PlanStalenessPanel {...PROPS} report={{ ...REPORT, snapshotFound: false }} />,
+    );
+    expect(markup).toContain('快照已不可比');
   });
 });

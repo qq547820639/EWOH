@@ -36,7 +36,7 @@ BEGIN
   SELECT count(*) INTO dedup_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_ingest_event_dedup'
       AND policyname = 'ingest_event_dedup_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF dedup_policy <> 1 THEN
     missing := missing || format('policy dedup=%s ', dedup_policy);
   END IF;

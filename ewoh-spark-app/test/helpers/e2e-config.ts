@@ -11,12 +11,14 @@ export interface E2EConfig {
 
 const DEFAULT_OWNER_DATABASE_URL =
   process.env.EWOH_E2E_OWNER_DATABASE_URL ??
-  'postgresql://postgres:ewoh-test-only@127.0.0.1:55432/postgres';
+  'postgresql://postgres:ewoh-local-audit-only@127.0.0.1:55432/ewoh';
 
 function readProcessEnvironment(pid: string): string | null {
   try {
     if (process.platform === 'darwin') {
-      const output = execFileSync('ps', ['eww', '-p', pid], { encoding: 'utf8' });
+      const output = execFileSync('ps', ['eww', '-p', pid], {
+        encoding: 'utf8',
+      });
       const match = output.match(/(?:^|\s)DATABASE_URL=(\S+)/);
       return match?.[1] ?? null;
     }

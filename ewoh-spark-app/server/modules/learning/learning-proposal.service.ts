@@ -1,15 +1,17 @@
-import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { ewohLearningProposal, ewohEvent, ewohTelemetry, ewohLearningEvaluation } from '@server/database/schema';
 import {
+  THRESHOLD_RULES,
   validateLearningProposal,
   proposalTransitionAllowed,
   evaluateRuleThresholdShadow,
   type ShadowEval,
   type ThresholdChange,
 } from '@shared/learning-proposal';
+import { DEFAULT_WORKLOAD_THRESHOLD, REASONING_ENGINE_VERSION } from '@shared/reasoning-trace';
 import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
 import { currentTraceId } from '@server/common/request-context';
 import { projectLearningProposalActivationDecision } from '../scheduler/decision-projection';
@@ -30,6 +32,44 @@ export interface ActiveThresholds {
   workload?: number;
   fatigue?: number;
   ergonomicRisk?: number;
+}
+
+/**
+ * 引擎内置阈值常量登记表（键 = `ruleId\u0000parameter`）。
+ * 单一事实来源：值从 @shared/reasoning-trace 导出（与规则求值同源），
+ * 基线读面只做登记与透出，绝不在此重复字面量。
+ */
+const ENGINE_THRESHOLD_DEFAULTS: Readonly<Record<string, number>> = {
+  'rule:worker-overload\u0000workloadThreshold': DEFAULT_WORKLOAD_THRESHOLD,
+};
+
+/** 阈值基线单条（决策原则 5：来源 / 生效值 / 更新时间 / 影响面）。 */
+export interface ThresholdBaselineEntry {
+  ruleId: string;
+  parameter: string;
+  /** 引擎内置常量；null = 未登记（source=engine_default_unknown，显式未知）。 */
+  engineDefault: number | null;
+  /** 当前生效值（approved 覆盖 ?? 内置常量；二者皆无则 null）。 */
+  effective: number | null;
+  source: 'approved_proposal' | 'engine_default' | 'engine_default_unknown';
+  provenance: {
+    proposalId: string;
+    baselineValue: number;
+    candidateValue: number;
+    approvedBy: string | null;
+    approvedAt: string | null;
+    proposedBy: string | null;
+    shadowEval: ShadowEval | null;
+    shadowFactsProvenance: ShadowFactsProvenance | null;
+  } | null;
+  counts: { pending: number; approved: number; rejected: number; rolledBack: number };
+}
+
+/** 阈值基线读面返回值（readAt = 本响应的事实读取时间，供 UI 标注新鲜度）。 */
+export interface ThresholdBaseline {
+  readAt: string;
+  engineVersion: string;
+  entries: ThresholdBaselineEntry[];
 }
 
 /**
@@ -76,9 +116,22 @@ export class LearningProposalService {
 
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
-  async propose(input: ProposeLearningInput, orgId: string) {
+  /**
+   * 提案落账（幂等 by proposalId）。
+   *
+   * B5 同族审批独立性（standalone_073）：proposedBy 必填且由服务端
+   * userContext 注入（请求体不可伪造）——无提议人归属的提案既无法执行
+   * 「生成人回避」，也无审计追溯对象，故 fail-closed 拒绝。
+   */
+  async propose(input: ProposeLearningInput, orgId: string, proposedBy?: string) {
     if (!orgId?.trim()) {
       throw new BadRequestException('orgId 缺失：学习提案必须带租户上下文');
+    }
+    const proposer = proposedBy?.trim();
+    if (!proposer) {
+      throw new BadRequestException(
+        'propose 必须带非空 proposedBy（服务端 userContext.userId 注入，§2 人审阶梯 + B5 生成人回避的数据前提）',
+      );
     }
     const proposalId = input.proposalId?.trim() || `lp:${randomUUID().slice(0, 12)}`;
     // R2-SBZ-004：影子评估证据一律由服务端从库内事实源重建（org 作用域
@@ -135,6 +188,7 @@ export class LearningProposalService {
       baselineValue: change.baselineValue,
       candidateValue: change.candidateValue,
       shadowEvalJson: (record.shadowEval as ShadowEval | undefined) ?? null,
+      proposedBy: proposer,
       approvedBy: null,
       approvedAt: null,
       rejectedBy: null,
@@ -144,7 +198,24 @@ export class LearningProposalService {
       evaluationRefJson: (input.evaluationRef ?? null) as { evalId: string } | null,
       recordJson: record,
     };
-    const inserted = (await this.db.insert(ewohLearningProposal).values(row).returning())[0];
+    let inserted: typeof ewohLearningProposal.$inferSelect;
+    try {
+      inserted = (await this.db.insert(ewohLearningProposal).values(row).returning())[0];
+    } catch (err) {
+      // NEST-332 同族收口：select 幂等预检与 insert 之间存在 TOCTOU——并发同
+      // proposalId 的落败方撞 (org_id, proposal_id) 唯一键，此处捕获后回读既有行
+      // （幂等语义 created=false，不重复发事件），不再把并发幂等误报为 500。
+      const code = (err as { code?: string }).code;
+      if (code !== '23505') throw err;
+      const [raced] = await this.db
+        .select()
+        .from(ewohLearningProposal)
+        .where(and(eq(ewohLearningProposal.orgId, orgId), eq(ewohLearningProposal.proposalId, proposalId)))
+        .limit(1);
+      if (!raced) throw err;
+      this.logger.debug(`学习提案并发幂等命中: ${proposalId}`);
+      return { proposal: this.toProposal(raced), created: false };
+    }
     await this.recordEvent(this.db, inserted, orgId, 'LearningProposalCreated', status);
     return { proposal: this.toProposal(inserted), created: true };
   }
@@ -218,12 +289,26 @@ export class LearningProposalService {
     return this.toProposal(updated);
   }
 
-  /** 人审批准：shadow_evaluated→approved（§2 激活阶梯唯一入口，绝不自动批准）。 */
+  /**
+   * 人审批准：shadow_evaluated→approved（§2 激活阶梯唯一入口，绝不自动批准）。
+   *
+   * B5 同族审批独立性（standalone_073）：提议人不得审批自己的提案——
+   * 「同一人提议 + 同一人批准」在形式上满足人审阶梯，实质上等于自批。
+   * 比较用服务端权威口径（approve 的 approvedBy 由 controller 从
+   * userContext.userId 注入，非请求体）；proposedBy 为 NULL 的存量行放行，
+   * 避免历史提案被永久锁死（与 plan.service SELF_APPROVAL_FORBIDDEN 同语义）。
+   * DB 层 chk_ewoh_learning_proposal_generator_avoidance 兜底同一不变量。
+   */
   async approve(orgId: string, proposalId: string, approvedBy: string) {
     const current = await this.mustGet(orgId, proposalId);
     this.requireTransition(current.status, 'approved');
     if (!approvedBy?.trim()) {
       throw new BadRequestException('approve 必须带非空 approvedBy（§2 人审阶梯）');
+    }
+    if (current.proposedBy && current.proposedBy === approvedBy.trim()) {
+      throw new ForbiddenException(
+        `SELF_APPROVAL_FORBIDDEN: proposal ${proposalId} was proposed by the requesting operator (B5 审批独立性)`,
+      );
     }
     const now = new Date();
     // NO-13n / ADR-063：激活决策与状态终态同 UPDATE 原子落库（缺口显式不阻断）。
@@ -390,6 +475,74 @@ export class LearningProposalService {
     return thresholds;
   }
 
+  /**
+   * 阈值基线读面（提议者可解释性，决策原则 5）：当前生效值 + 数据来源 +
+   * 更新时间 + 在途/历史提案计数——提议者据此决定候选值，不必猜测基线。
+   *
+   * 诚实口径：无 approved 覆盖时生效值 = 引擎内置常量（source=engine_default，
+   * 标注常量出处），绝不把内置常量冒充为「已激活的策略」；若某参数没有登记
+   * 内置常量，engineDefault 返回 null 且 source=engine_default_unknown（显式
+   * 未知，不编造数字）。
+   */
+  async getThresholdBaseline(orgId: string): Promise<ThresholdBaseline> {
+    if (!orgId?.trim()) {
+      throw new BadRequestException('orgId 缺失：学习阈值基线查询必须带租户上下文');
+    }
+    const rows = await this.db
+      .select()
+      .from(ewohLearningProposal)
+      .where(eq(ewohLearningProposal.orgId, orgId))
+      .orderBy(desc(ewohLearningProposal.createdAt))
+      .limit(500);
+    const readAt = new Date().toISOString();
+    const entries: ThresholdBaselineEntry[] = THRESHOLD_RULES.map(([ruleId, parameter]) => {
+      const relevant = rows.filter((r) => r.ruleId === ruleId && r.parameter === parameter);
+      const approved = relevant
+        .filter((r) => r.status === 'approved')
+        .sort((a, b) => (b.approvedAt?.getTime() ?? 0) - (a.approvedAt?.getTime() ?? 0));
+      const active = approved[0];
+      const engineDefault = ENGINE_THRESHOLD_DEFAULTS[`${ruleId}\u0000${parameter}`] ?? null;
+      const source: ThresholdBaselineEntry['source'] = active
+        ? 'approved_proposal'
+        : engineDefault === null ? 'engine_default_unknown' : 'engine_default';
+      const effective = active ? active.candidateValue : engineDefault;
+      return {
+        ruleId,
+        parameter,
+        engineDefault,
+        effective,
+        source,
+        provenance: active
+          ? {
+              proposalId: active.proposalId,
+              baselineValue: active.baselineValue,
+              candidateValue: active.candidateValue,
+              approvedBy: active.approvedBy,
+              approvedAt: active.approvedAt ? active.approvedAt.toISOString() : null,
+              proposedBy: active.proposedBy ?? null,
+              shadowEval: (active.shadowEvalJson as ShadowEval | null) ?? null,
+              shadowFactsProvenance:
+                ((active.recordJson as Record<string, unknown>).shadowFactsProvenance as
+                  | ShadowFactsProvenance
+                  | undefined) ?? null,
+            }
+          : null,
+        counts: {
+          // 在途（尚未生效）+ 历史（已终态），供 UI 明确区分「候选」与「生效」
+          pending: relevant.filter((r) => r.status === 'proposed' || r.status === 'shadow_evaluated').length,
+          approved: approved.length,
+          rejected: relevant.filter((r) => r.status === 'rejected').length,
+          rolledBack: relevant.filter((r) => r.status === 'rolled_back').length,
+        },
+      };
+    });
+    return {
+      readAt,
+      engineVersion: REASONING_ENGINE_VERSION,
+      entries,
+    };
+  }
+
   private async mustGet(orgId: string, proposalId: string) {
     const rows = await this.db
       .select()
@@ -546,6 +699,8 @@ export class LearningProposalService {
       // R2-SBZ-004：透出影子证据数据来源标注（服务端库内窗口 + 字段级来源）。
       shadowFactsProvenance: record.shadowFactsProvenance ?? undefined,
       clientFactsReconciliation: record.clientFactsReconciliation ?? undefined,
+      // B5 同族审批独立性：提议人透出（UI 据此提示「需他人审批」，非仅靠后端拒绝）。
+      proposedBy: row.proposedBy ?? undefined,
       approvedBy: row.approvedBy ?? undefined,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : undefined,
       rejectedBy: row.rejectedBy ?? undefined,

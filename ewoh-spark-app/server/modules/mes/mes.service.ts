@@ -9,8 +9,9 @@ import {
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { parseDateInput } from '../shared/parse-date-input';
+import { computeFingerprint } from '../shared/idempotency.service';
 import {
   ewohAssetPackage,
   ewohEvent,
@@ -712,6 +713,13 @@ export class MesService {
    *    server state stands and `applied` is `false` so the caller is never
    *    silently overwritten.
    * Repeated calls with the same `idempotencyKey` return the recorded result.
+   *
+   * 缺省 key（客户端未显式传 idempotencyKey 时）必须绑定"本次冲突的本地操作"
+   * （action + payload 指纹），不能只用 orderId/stepId/resolution——否则同一工序
+   * 稍后的另一次冲突会 lookup 命中上一次的记录，把过期的 serverValue 当"当前
+   * 服务端状态"返回（调用方按过期状态裁决 = 伪造确定事实）。同 payload 的重放
+   * （离线客户端未收到响应时的重试）仍命中同 key → 幂等保留。org 归属校验
+   * （getWorkOrder）前移到 lookup 之前：缓存命中也必须先过租户可见性。
    */
   async forceResolveStep(
     orderId: string,
@@ -728,19 +736,23 @@ export class MesService {
     if (resolution !== 'local' && resolution !== 'server') {
       throw new BadRequestException('resolution must be local or server');
     }
+    const workOrder = await this.getWorkOrder(orderId, actor);
+    const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
+    }
+    const conflictOpFingerprint = createHash('sha256')
+      .update(computeFingerprint({ action: body?.action ?? null, payload: body?.payload ?? {} }))
+      .digest('hex')
+      .slice(0, 16);
     const idempotencyKey =
       body?.idempotencyKey?.trim() ||
-      `force-resolve:${orderId}:${stepId}:${resolution}`;
+      `force-resolve:${orderId}:${stepId}:${resolution}:${body?.action ?? ''}:${conflictOpFingerprint}`;
     const recorded = await this.idempotencyService.lookup<ForceResolveResult>(
       idempotencyKey,
     );
     if (recorded) {
       return recorded;
-    }
-    const workOrder = await this.getWorkOrder(orderId, actor);
-    const step = workOrder.steps.find((candidate) => candidate.stepId === stepId);
-    if (!step) {
-      throw new NotFoundException(`Step ${stepId} not found in work order ${orderId}`);
     }
     const resolvedAt = new Date().toISOString();
     let applied = false;
@@ -1323,15 +1335,30 @@ export class MesService {
     const stepOrgCond = this.orgCondition(ewohScheduleTaskStep.orgId, actor);
     // NEST-321：step 更新与 quality 事件同事务落库（部分失败不再产生
     // 「结果已写、事件缺失」的不一致）。
+    // 状态 CAS：resultJson 是整体读-改-写（基于读取时的 step 快照）。若不带
+    // eq(status, 读取时状态) 守卫，与 report/pause 等工序转移并发时，本更新会在
+    // 锁等待后命中已前移的行，用旧快照覆写整份 resultJson——并发方刚写入的
+    // report/pause 记录被静默抹掉（状态已 reported 而报工记录消失 = 伪造事实）。
+    // CAS 未命中显式 409（与 doTransitionStep 同语义），调用方以新状态重试；
+    // 状态未变的复检不受影响（质检不改状态，同状态重复检验仍可写）。
     await this.db.transaction(async (tx) => {
-      await tx
+      const [updatedStep] = await tx
         .update(ewohScheduleTaskStep)
         .set({ resultJson })
         .where(
-          stepOrgCond
-            ? and(eq(ewohScheduleTaskStep.stepId, body.stepId), stepOrgCond)
-            : eq(ewohScheduleTaskStep.stepId, body.stepId),
-        );
+          and(
+            eq(ewohScheduleTaskStep.stepId, body.stepId),
+            eq(ewohScheduleTaskStep.status, step.status),
+            ...(stepOrgCond ? [stepOrgCond] : []),
+          ),
+        )
+        .returning({ stepId: ewohScheduleTaskStep.stepId });
+      if (!updatedStep) {
+        throw new ConflictException({
+          message: 'STATE_CONFLICT',
+          serverValue: step,
+        });
+      }
       await tx.insert(ewohEvent).values({
         eventId,
         deviceId: step.assignedDeviceId ?? null,

@@ -4,10 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Send,
   Sparkles,
   TriangleAlert,
+  Undo2,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +17,9 @@ import {
   approvePlan,
   createRun,
   dispatchPlanV2,
+  cancelPlanV2,
   getActivePlans,
+  getPlanStaleness,
   getRuns,
   rejectPlanV2,
   replan,
@@ -26,11 +30,18 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import { SchedulerRealtimeProvider } from '../../scheduler/SchedulerRealtimeProvider';
+import WaveDispatchPanel from './WaveDispatchPanel';
 import { getCurrentOperator, getAuthUser } from '../../lib/auth';
 import { PlanMetricGrid } from '@client/src/components/business-ui/MetricCard';
 import { deriveNarrationStatus } from '../../lib/narration';
 import { track } from '../../lib/telemetry';
 import { PLAN_STATUS_BADGE, TRIGGER_LABELS, planActions } from './planActions';
+import {
+  isPlanStaleError,
+  stalenessFromError,
+  type StalenessReportView,
+} from './schedulingLogic';
+import { PlanStalenessPanel } from './PlanStalenessPanel';
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
 import { errorDescription } from '@client/src/lib/errorContract';
 import { Button } from '@client/src/components/ui/button';
@@ -119,30 +130,27 @@ function runBadge(status: string): React.ReactElement {
   return <Badge variant="outline">排队中</Badge>;
 }
 
-function isPlanStaleError(err: unknown): boolean {
-  const e = err as { response?: { status?: number; data?: unknown }; message?: string };
-  const status = e.response?.status;
-  const dataMsg = (e.response?.data as { message?: string } | undefined)?.message;
-  const msg = dataMsg ?? e.message ?? '';
-  return status === 409 && msg.includes('PLAN_STALE');
-}
+// isPlanStaleError 已收敛至 ./schedulingLogic（单一事实源：过期判定只有一份实现）。
 
 /** 单个方案卡片（LazyPlanList 的 renderItem 渲染体；ADR-082 导出供渲染 smoke）。 */
 export interface PlanCardProps {
   row: SchedulingPlanV2;
   actionFor: string | null;
-  actionMode: 'approve' | 'reject';
+  actionMode: 'approve' | 'reject' | 'cancel';
   actionReason: string;
   approvePending: boolean;
   rejectPending: boolean;
   dispatchPending: boolean;
   replanPending: boolean;
-  onStartAction: (planId: string, mode: 'approve' | 'reject') => void;
+  cancelPending: boolean;
+  onStartAction: (planId: string, mode: 'approve' | 'reject' | 'cancel') => void;
   onCancelAction: () => void;
   onActionReasonChange: (value: string) => void;
   onHandleAction: (row: SchedulingPlanV2) => void;
   onDispatch: (row: SchedulingPlanV2) => void;
   onReplan: (row: SchedulingPlanV2) => void;
+  /** NO-62c：主动检查方案新鲜度（GET /plans/:id/staleness），不等到审批被拒才发现过期。 */
+  onCheckFreshness?: (row: SchedulingPlanV2) => void;
   /** OD-5：导航型动作（查看执行态势 / 决策历史）的路由回调；缺省时该类动作点击无副作用。 */
   onNavigate?: (route: string) => void;
   /** OD-6：AI 解读状态派生基准时间，由调用方注入以保证可测试；缺省取渲染时刻。 */
@@ -159,12 +167,14 @@ export function PlanCard({
   rejectPending,
   dispatchPending,
   replanPending,
+  cancelPending,
   onStartAction,
   onCancelAction,
   onActionReasonChange,
   onHandleAction,
   onDispatch,
   onReplan,
+  onCheckFreshness,
   onNavigate,
   nowMs,
 }: PlanCardProps): React.ReactElement {
@@ -243,7 +253,11 @@ export function PlanCard({
             value={actionReason}
             onChange={(e) => onActionReasonChange(e.target.value)}
             placeholder={
-              actionMode === 'reject' ? '驳回理由（必填）' : '审批理由（可选）'
+              actionMode === 'reject'
+                ? '驳回理由（必填）'
+                : actionMode === 'cancel'
+                  ? '取消/回滚原因（必填）：为什么回退本次派工'
+                  : '审批理由（可选）'
             }
             className="h-8 text-xs"
           />
@@ -254,24 +268,29 @@ export function PlanCard({
               disabled={
                 approvePending ||
                 rejectPending ||
-                (actionMode === 'reject' && !actionReason.trim())
+                cancelPending ||
+                ((actionMode === 'reject' || actionMode === 'cancel') && !actionReason.trim())
               }
               onClick={() => onHandleAction(row)}
             >
-              {approvePending || rejectPending ? (
+              {approvePending || rejectPending || cancelPending ? (
                 <Loader2 className="size-3 animate-spin" />
-              ) : actionMode === 'reject' ? (
+              ) : actionMode === 'reject' || actionMode === 'cancel' ? (
                 <X className="size-3" />
               ) : (
                 <CheckCircle2 className="size-3" />
               )}
-              {approvePending || rejectPending
+              {approvePending || rejectPending || cancelPending
                 ? actionMode === 'reject'
                   ? '驳回中...'
-                  : '审批中...'
+                  : actionMode === 'cancel'
+                    ? '回滚中...'
+                    : '审批中...'
                 : actionMode === 'reject'
                   ? '确认驳回'
-                  : '确认审批'}
+                  : actionMode === 'cancel'
+                    ? '确认取消/回滚'
+                    : '确认审批'}
             </Button>
             <Button size="sm" variant="outline" onClick={onCancelAction}>
               <X className="size-3" />
@@ -297,7 +316,8 @@ export function PlanCard({
               (action.kind === 'approve' && approvePending) ||
               (action.kind === 'reject' && rejectPending) ||
               (action.kind === 'dispatch' && dispatchPending) ||
-              (action.kind === 'replan' && replanPending);
+              (action.kind === 'replan' && replanPending) ||
+              (action.kind === 'cancel' && cancelPending);
             const icon =
               action.kind === 'approve' ? (
                 <CheckCircle2 className="size-3" />
@@ -307,6 +327,10 @@ export function PlanCard({
                 <Send className="size-3" />
               ) : action.kind === 'replan' ? (
                 <RotateCcw className="size-3" />
+              ) : action.kind === 'cancel' ? (
+                <Undo2 className="size-3" />
+              ) : action.kind === 'checkFreshness' ? (
+                <RefreshCw className="size-3" />
               ) : null;
             return (
               <Button
@@ -347,6 +371,12 @@ export function PlanCard({
                     case 'replan':
                       onReplan(row);
                       break;
+                    case 'cancel':
+                      onStartAction(row.planId, 'cancel');
+                      break;
+                    case 'checkFreshness':
+                      onCheckFreshness?.(row);
+                      break;
                     default:
                       break;
                   }
@@ -359,6 +389,11 @@ export function PlanCard({
           })}
         </div>
       )}
+
+      {/* 分波派工（部分执行）：仅在"已审批"方案上提供——shadow 不可派工，
+          终态（已派发）本就没有待派工任务。面板自行读取方案详情，避免把整份
+          assignment 列表塞进卡片行视图模型。 */}
+      {row.status === 'approved' && <WaveDispatchPanel planId={row.planId} />}
     </div>
   );
 }
@@ -369,8 +404,14 @@ const Scheduling = (): React.ReactElement => {
   // 注意：SSE 实时订阅由本页根部的 SchedulerRealtimeProvider（单例）拥有。
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // NO-62c：过期诊断面板（来源：审批 409 体 或 主动"检查新鲜度"）
+  const [staleness, setStaleness] = useState<{
+    planId: string;
+    report: StalenessReportView;
+    replanAvailable: boolean;
+  } | null>(null);
   const [actionFor, setActionFor] = useState<string | null>(null);
-  const [actionMode, setActionMode] = useState<'approve' | 'reject'>('approve');
+  const [actionMode, setActionMode] = useState<'approve' | 'reject' | 'cancel'>('approve');
   const [actionReason, setActionReason] = useState('');
 
   // 活跃方案列表（V2）：来自 React Query 缓存，由 createRun 结果 + SSE 事件流维护。
@@ -459,9 +500,17 @@ const Scheduling = (): React.ReactElement => {
       setActionReason('');
       refreshPlan(plan);
     },
-    onError: (err) => {
+    onError: (err, variables) => {
       if (isPlanStaleError(err)) {
-        toast.error('该方案生成后现场状态已发生变化，请重新计算');
+        // NO-62c：不再只弹一句"请重新计算"——把 409 里的**差异事实**摊给用户，
+        // 并给出一键重排出口（诊断拿不到时降级为显式文案，不编造）。
+        const report = stalenessFromError(err);
+        if (report) {
+          setStaleness({ planId: variables.plan.planId, report, replanAvailable: true });
+          toast.error('该方案已过期：世界状态发生了变化，请查看差异后重新排程');
+        } else {
+          toast.error('该方案生成后现场状态已发生变化，请重新计算');
+        }
       } else if (
         err instanceof Error &&
         err.message.includes('SELF_APPROVAL_FORBIDDEN')
@@ -473,6 +522,29 @@ const Scheduling = (): React.ReactElement => {
           description: errorDescription(err),
         });
       }
+    },
+  });
+
+  /**
+   * NO-62c：主动新鲜度检查（只读）。结果直接进诊断面板——
+   * 新鲜时面板显示"与生成时一致"（不制造焦虑），过期时列出差异并可一键重排。
+   */
+  const freshnessMutation = useMutation({
+    mutationFn: (plan: SchedulingPlanV2) => getPlanStaleness(plan.planId),
+    onSuccess: (result) => {
+      setStaleness({
+        planId: result.planId,
+        report: result.staleness,
+        replanAvailable: result.replanAvailable,
+      });
+      if (result.stale) {
+        toast.warning('该方案已过期：请查看差异后重新排程');
+      } else {
+        toast.success('方案与当前世界状态一致，可以审批');
+      }
+    },
+    onError: (err) => {
+      toast.error('新鲜度检查失败', { description: errorDescription(err) });
     },
   });
 
@@ -535,7 +607,32 @@ const Scheduling = (): React.ReactElement => {
     },
   });
 
-  const startAction = (planId: string, mode: 'approve' | 'reject') => {
+  // DR-5 方案取消/回滚：受控部分回退（未开始 assignment 取消 + 预占释放 +
+  // 任务回退 pending_dispatch；已开始的不可回退项由响应如实回报）。
+  const cancelMutation = useMutation({
+    mutationFn: ({ plan, reason }: { plan: SchedulingPlanV2; reason: string }) =>
+      cancelPlanV2(plan.planId, reason),
+    onSuccess: (plan) => {
+      const c = plan.cancel;
+      if (c && c.irreversibleAssignmentIds.length > 0) {
+        toast.warning('方案已取消，部分执行不可回退', {
+          description: `已回退 ${c.cancelledAssignmentIds.length} 项；${c.irreversibleAssignmentIds.length} 项已开始执行、不可撤销（需现场处置）`,
+        });
+      } else {
+        toast.success('方案已取消/回滚');
+      }
+      setActionFor(null);
+      setActionReason('');
+      refreshPlan(plan);
+    },
+    onError: (err) => {
+      toast.error('取消/回滚失败', {
+        description: errorDescription(err),
+      });
+    },
+  });
+
+  const startAction = (planId: string, mode: 'approve' | 'reject' | 'cancel') => {
     setActionFor(planId);
     setActionMode(mode);
     setActionReason('');
@@ -553,6 +650,12 @@ const Scheduling = (): React.ReactElement => {
         return;
       }
       rejectMutation.mutate({ plan, reason: actionReason });
+    } else if (actionMode === 'cancel') {
+      if (!actionReason.trim()) {
+        toast.error('请填写取消/回滚原因（回滚必须可解释、可审计）');
+        return;
+      }
+      cancelMutation.mutate({ plan, reason: actionReason });
     } else {
       approveMutation.mutate({ plan, reason: actionReason.trim() || '调度中心审批' });
     }
@@ -615,6 +718,28 @@ const Scheduling = (): React.ReactElement => {
         </div>
       )}
 
+      {staleness && (
+        <div className="mb-3">
+          <PlanStalenessPanel
+            planId={staleness.planId}
+            report={staleness.report}
+            replanAvailable={staleness.replanAvailable}
+            replanPending={replanMutation.isPending}
+            onReplan={(planId) => {
+              // 重排在页面里是按方案行触发的；这里从当前列表找到该行并复用同一条重排链路
+              // （不新开第二条重排实现——同一动作只有一条路径）。
+              const target = rows.find((row) => row.planId === planId);
+              if (!target) {
+                toast.error('找不到该方案（可能已被替代），请刷新列表');
+                return;
+              }
+              replanMutation.mutate(target);
+            }}
+            onDismiss={() => setStaleness(null)}
+          />
+        </div>
+      )}
+
       <QueryState
         isLoading={plansQuery.isLoading}
         isFetching={plansQuery.isFetching}
@@ -643,12 +768,14 @@ const Scheduling = (): React.ReactElement => {
                 rejectPending={rejectMutation.isPending}
                 dispatchPending={dispatchMutation.isPending}
                 replanPending={replanMutation.isPending}
+                cancelPending={cancelMutation.isPending}
                 onStartAction={startAction}
                 onCancelAction={cancelAction}
                 onActionReasonChange={setActionReason}
                 onHandleAction={handleAction}
                 onDispatch={(r) => dispatchMutation.mutate(r)}
                 onReplan={(r) => replanMutation.mutate(r)}
+                onCheckFreshness={(r) => freshnessMutation.mutate(r)}
                 onNavigate={(route) => navigate(route)}
               />
             </div>

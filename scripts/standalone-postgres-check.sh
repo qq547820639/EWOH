@@ -17,56 +17,15 @@ echo "== generate standalone DDL =="
 node scripts/generate-ddl-package.js
 node scripts/generate-standalone-ddl.js
 
-# SCR-023: 专项迁移清单单一来源——后缀在此定义一次，apply 按序展开、
-# rollback 由同一列表逆序派生（apply-standalone-<x> ↔ rollback-standalone-<x>）。
-# 新增迁移只需在 STANDALONE_SUFFIXES 追加一项，不再手工同步回滚清单。
-STANDALONE_SUFFIXES=(
-  identity-mapping
-  maintenance-quality
-  work-order
-  event-dedup
-  agent-manifest
-  agent-task
-  knowledge-entry
-  inference-result
-  learning-evaluation
-  trace-span
-  dead-letter
-  simulation-run
-  learning-proposal
-  exo-session
-  outcome-annotation
-  shadow-plan-isolation
-  agent-approval
-  decision-records
-  exo-config
-  agent-approval-decision
-  learning-proposal-decision
-  policy-activation-decision
-  route-org-isolation
-  audit-log-authenticated-read
-  event-envelope-columns
-)
-
 apply_and_verify() {
   echo "== apply standalone schema =="
-  node db/runner/run_migrations.js --apply-standalone
-  for s in "${STANDALONE_SUFFIXES[@]}"; do
-    node db/runner/run_migrations.js "--apply-standalone-${s}"
-  done
+  node db/runner/standalone-chain.js --apply
   node db/runner/run_migrations.js --verify-standalone
   node db/runner/run_migrations.js --seed-standalone
-  node db/runner/run_migrations.js --apply-standalone-users
   node db/runner/run_migrations.js --seed-standalone-admin
-  node db/runner/run_migrations.js --apply-standalone-runtime-role
 
   echo "== idempotent reapply =="
-  node db/runner/run_migrations.js --apply-standalone
-  for s in "${STANDALONE_SUFFIXES[@]}"; do
-    node db/runner/run_migrations.js "--apply-standalone-${s}"
-  done
-  node db/runner/run_migrations.js --apply-standalone-users
-  node db/runner/run_migrations.js --apply-standalone-runtime-role
+  node db/runner/standalone-chain.js --apply
   node db/runner/run_migrations.js --verify-standalone
 
   echo "== RLS, auth lookup, and audit chain =="
@@ -76,14 +35,7 @@ apply_and_verify() {
 apply_and_verify
 
 echo "== destructive rollback =="
-node db/runner/run_migrations.js --rollback-standalone-runtime-role
-node db/runner/run_migrations.js --rollback-standalone-users
-# 专项迁移由独立 apply 创建，必须显式成对回滚（SCR-023：逆序派生自 STANDALONE_SUFFIXES）——
-# 否则 base --rollback-standalone 之后仍有 EWOH 对象残留，破坏"回滚到 0 对象"断言。
-for ((i=${#STANDALONE_SUFFIXES[@]}-1; i>=0; i--)); do
-  node db/runner/run_migrations.js "--rollback-standalone-${STANDALONE_SUFFIXES[i]}"
-done
-node db/runner/run_migrations.js --rollback-standalone
+node db/runner/standalone-chain.js --rollback
 
 node --input-type=module - <<'NODE'
 import postgres from './ewoh-spark-app/node_modules/postgres/src/index.js';

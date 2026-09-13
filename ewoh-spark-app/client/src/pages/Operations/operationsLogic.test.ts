@@ -16,6 +16,9 @@ import {
   taskPriorityLabel,
   calcEfficiencyPercent,
   efficiencyGrade,
+  buildOrderChainRows,
+  orderChainGapLabel,
+  orderChainSummaryLabel,
 } from './operationsLogic';
 import type { WorkCenterFlags } from './operationsLogic';
 
@@ -125,5 +128,65 @@ describe('operationsLogic', () => {
       expect(efficiencyGrade(50)).toBe('需改进');
       expect(efficiencyGrade(0)).toBe('需改进');
     });
+  });
+});
+
+
+/* ── NO-57a：订单链展示口径 ───────────────────────────────────────────── */
+
+describe('buildOrderChainRows / orderChainSummaryLabel（订单链）', () => {
+  const chain = (overrides: Record<string, unknown> = {}) => ({
+    orderNo: 'WO-1001',
+    status: 'scheduled',
+    dueAt: '2026-09-13T08:00:00.000Z',
+    overdue: false,
+    tasks: [{ taskId: 'WO-1001', stepCount: 3, openStepCount: 2 }],
+    materials: [{ materialId: 'MAT-1', shortage: 20, belowThreshold: false }],
+    gaps: [],
+    notes: ['未完成工序 2 道（共 3 道）', '物料缺口 1 项（短缺合计 20）'],
+    ...overrides,
+  });
+
+  it('完整链路：任务/工序/物料/备注逐条可读，无缺口', () => {
+    const [row] = buildOrderChainRows({ chains: [chain()] });
+    expect(row.orderNo).toBe('WO-1001');
+    expect(row.taskLabel).toContain('待做工序 2 道');
+    expect(row.materialLabel).toContain('缺料/低于阈值 1 项');
+    expect(row.gapLabels).toEqual([]);
+    expect(row.noteLabels).toHaveLength(2);
+    expect(row.tone).toBe('neutral');
+  });
+
+  it('逾期优先标红；断链显式成文字（不静默）', () => {
+    const [row] = buildOrderChainRows({
+      chains: [chain({ overdue: true, tasks: [], materials: [], gaps: ['task_link_missing', 'material_link_missing', 'due_at_missing'], notes: [] })],
+    });
+    expect(row.tone).toBe('critical');
+    expect(row.taskLabel).toBe('无任务');
+    expect(row.materialLabel).toBe('无物料需求证据');
+    expect(row.gapLabels.join(' ')).toContain('没有排产任务');
+    expect(row.gapLabels.join(' ')).toContain('缺交付期限');
+  });
+
+  it('未取到数据 → 空数组 + "尚未取到"（不显示成 0 单）', () => {
+    expect(buildOrderChainRows(undefined)).toEqual([]);
+    expect(orderChainSummaryLabel(undefined)).toContain('尚未取到');
+  });
+
+  it('摘要口径：逾期数、断链数、待做工序、缺料都出现；扫描触顶说明原样带出', () => {
+    const label = orderChainSummaryLabel({
+      summary: { orders: 3, overdue: 1, withGaps: 2, materialsInShortage: 2, openSteps: 5 },
+      notes: ['订单扫描触顶（200 单）：列表可能不完整（不假装是全部）'],
+    });
+    expect(label).toContain('未完工订单 3 单');
+    expect(label).toContain('已逾期 1 单');
+    expect(label).toContain('链路不完整 2 单');
+    expect(label).toContain('待做工序 5 道');
+    expect(label).toContain('扫描触顶');
+  });
+
+  it('缺口文案未知值原样透出（不猜）', () => {
+    expect(orderChainGapLabel('task_link_missing')).toContain('没有排产任务');
+    expect(orderChainGapLabel('magic_gap')).toBe('magic_gap');
   });
 });

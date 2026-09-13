@@ -1,9 +1,10 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   Logger,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { currentRequestContext } from '../../common/request-context';
@@ -16,10 +17,8 @@ import {
   ewohSchedulingFeedback,
   ewohSchedulePlan,
   ewohSchedulingPlanAssignment,
-  ewohProductionTask,
-  ewohAssignmentEvent,
 } from '@server/database/schema';
-import { and, eq, inArray, or, isNull } from 'drizzle-orm';
+import { and, eq, or, isNull } from 'drizzle-orm';
 import type {
   SchedulingFeedback,
   SchedulingFeedbackKpis,
@@ -28,27 +27,26 @@ import type {
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
-import { ShadowEvaluatorService } from './prediction/shadow-evaluator.service';
-import { TaskService, taskActionPath } from '../task/task.service';
+import { ShadowEvaluatorService, shadowCorrelationId, stableSampleSeed } from './prediction/shadow-evaluator.service';
+import {
+  PREDICTION_PROVIDER,
+  type EmpiricalDurationPredictionProvider,
+} from './prediction/empirical-duration-prediction-provider';
+import { TaskService } from '../task/task.service';
+import { ExecutionReceiptApplicationService } from './execution-receipt-application.service';
+import type { ExecutionReceiptSummary, FeedbackActualsReceiptRequest } from '@shared/execution-receipt';
 
-/**
- * 调度反馈（SchedulingFeedback，Task 7）+ 执行反馈完成腿（NO-13a / ADR-050）。
- *
- * 观测型记录 planned-vs-actual 执行数据与调度 KPI；NO-13a 起，recordActuals
- * 在回填真实执行事实（actualStart/actualEnd）后追加**状态推进**：
- *  - assignment：dispatched→executing（start）/ {dispatched,executing}→completed（end），
- *    CAS + ewohAssignmentEvent 事件（ADR-050 决策 1）；
- *  - task：taskActionPath 最短合法链逐动作 transitionTaskState（task.yaml 锁步，
- *    ADR-049），边界显式（ADR-050 决策 2）——exception 不隐式 resolve、
- *    pending_dispatch 不收 start、终态 no-op、非法 skip+log。
- * 推进失败只显式 log，绝不阻断反馈写入、绝不伪造状态（§33）；策略/评分/
- * 派工规则不受本服务影响。
- *
- * 生命周期埋点（由调用方在既有钩子处触发）：
- *  - recordBaseline   —— dispatch 时记录 planned 基线（每 assignment 一行）；
- *  - recordAcceptance —— plan 审批 / 驳回时标记 accepted；
- *  - recordActuals    —— 任务实际开始 / 完成时回填 actual 数据 + 状态推进。
- */
+/** R-3：shadow 观测的预测维度（时长预测；与 shadow-evaluator 的 aggregate/回填键约定一致）。 */
+const SHADOW_PREDICTION_TYPE = 'task_duration';
+
+/** recordActuals 的入参形状（与公开签名逐字一致，供内部回填辅助方法复用）。 */
+type RecordActualsInput = Omit<FeedbackActualsReceiptRequest, 'actualStart' | 'actualEnd'> & {
+  actualStart?: Date | string | null;
+  actualEnd?: Date | string | null;
+};
+
+/** Planned baselines, acceptance and KPI reads. Actuals delegate exclusively to the
+ * canonical receipt application; missing composition fails closed before writes. */
 @Injectable()
 export class SchedulingFeedbackService {
   private readonly logger = new Logger(SchedulingFeedbackService.name);
@@ -58,8 +56,12 @@ export class SchedulingFeedbackService {
     private readonly requestDatabaseContext: RequestDatabaseContext,
     // M05：Prediction Shadow Learning 回填点（可选注入；缺失时静默跳过，不改变反馈写入）。
     private readonly shadowEvaluatorService?: ShadowEvaluatorService,
-    // NO-13a / ADR-050：执行反馈完成腿（可选注入——既有构造兼容；缺失时只回填不推进）。
+    // Retained constructor position for existing baseline-only compositions.
     private readonly taskService?: TaskService,
+    @Optional() private readonly receiptService?: ExecutionReceiptApplicationService,
+    // R-3（2026-09-13）：shadow 采样腿的预测来源（shadow only，ADR-056 决策 2）。
+    // 可选注入：未装配时显式不采样（不伪造 prediction），既有直构测试不受影响。
+    @Optional() @Inject(PREDICTION_PROVIDER) private readonly predictionProvider?: EmpiricalDurationPredictionProvider,
   ) {}
 
   /**
@@ -150,6 +152,8 @@ export class SchedulingFeedbackService {
     }
 
     let written = 0;
+    /** 本次调用**新增**基线的 assignment（R-3 自查修正：采样只发生在首基线）。 */
+    const newlyBaselinedAssignmentIds = new Set<string>();
     await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
       const targets = assignments.length > 0 ? assignments : [null];
 
@@ -251,6 +255,7 @@ export class SchedulingFeedbackService {
             ts,
             orgId,
           });
+          if (assignmentId) newlyBaselinedAssignmentIds.add(assignmentId);
         }
         written += 1;
       }
@@ -259,7 +264,109 @@ export class SchedulingFeedbackService {
     this.logger.log(
       `scheduling feedback baseline recorded for plan ${planId} (${written} row${written === 1 ? '' : 's'})`,
     );
+
+    // R-3（2026-09-13）：shadow 采样腿。放在反馈事务**之外**——观测是 advisory-only，
+    // 绝不能因为预测提供者变慢/抛错而污染或回滚反馈写入；默认 canary=0 时该方法首个判断
+    // 即返回（不调用预测提供者、不写观测行），行为与接线前逐字节一致。
+    try {
+      await this.sampleShadowPredictions(planId, plan, assignments, ctx, newlyBaselinedAssignmentIds);
+    } catch (err) {
+      this.logger.warn(
+        `shadow sampling skipped for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     return written;
+  }
+
+  /**
+   * R-3（2026-09-13）Prediction Shadow Learning 采样腿（advisory-only）。
+   *
+   * 为什么落在这里：本方法持有 plan（snapshotVersion/policyVersion 溯源）与 assignments
+   * （taskId/assignmentId/plannedStart/plannedEnd），且本类早就注入了 ShadowEvaluatorService
+   * （此前是零使用的死依赖，注释明写"M05：Prediction Shadow Learning 回填点"）——
+   * 采样与回填必须共用同一 correlationId，放在同一个类里才能保证不漂移。
+   *
+   * 语义边界（ADR-056 决策 2 / empirical-duration-prediction-provider 头注释，shadow-only）：
+   *  - 只写内存缓冲 + prediction_shadow_observation（advisory 观测表），绝不写回
+   *    ewoh_schedule_plan / ewoh_scheduling_plan_assignment，绝不改变求解输出；
+   *  - prediction = 经验时长模型对任务的预测（PREDICTION_PROVIDER）。模型未训练或无 org
+   *    上下文时提供者自身回退确定性基线，并以 modelVersion=deterministic-v1 标注——这类样本
+   *    会被 aggregate 计入 fallbackRate（不粉饰、不冒充 ml 来源）；
+   *  - baseline = 确定性基线，即求解器本次实际采用的时长（plannedEnd − plannedStart, ms）；
+   *  - 采样比例由 shouldSample(种子, ctx) 决定，种子 = correlationId 的确定性哈希。
+   *
+   * 自查修正（2026-09-13）：只对**本次新增基线**的 assignment 采样（newlyBaselined）。
+   * recordBaseline 对同一 plan 是可重入的——分波派工（dispatch wave）每波成功后都会
+   * 调一次本方法，而已派波次的 feedback 行走 update 分支；若不做首基线限定，同一
+   * correlationId 会重复写入多条**永远无法回填**的开放样本（一条回执只关一条，
+   * 实测两波 ×2 assignment → 4 条样本），coverage 被永久钉在 ≤1/波数，canary 被迫回退，
+   * 观测表也被无意义行灌满。
+   */
+  private async sampleShadowPredictions(
+    planId: string,
+    plan: typeof ewohSchedulePlan.$inferSelect,
+    assignments: Array<typeof ewohSchedulingPlanAssignment.$inferSelect>,
+    ctx?: OrgContext,
+    newlyBaselinedAssignmentIds?: ReadonlySet<string>,
+  ): Promise<void> {
+    const shadow = this.shadowEvaluatorService;
+    if (!shadow) return;
+    // 默认 canary=0 → 立即返回：不采样、不调用预测提供者（接线前的行为逐字节保持）。
+    if (shadow.getCanaryFraction(ctx) <= 0) return;
+    const provider = this.predictionProvider;
+    if (!provider) return; // 无预测提供者 → 显式不采样（§33 不伪造 prediction）。
+
+    const orgId = ctx?.primaryOrgId ?? plan.orgId;
+    const snapshotVersion = plan.snapshotVersion ?? undefined;
+    for (const a of assignments) {
+      // 首基线限定：已基线过的 assignment（重复基线/后续波次）不再采样——
+      // 每 assignment 同时至多存在一条开放样本，才可能与回执一一对应。
+      if (!a.assignmentId || !newlyBaselinedAssignmentIds?.has(a.assignmentId)) continue;
+      // 无稳定关联键（缺 assignment/task）→ 回填必然失配，宁可不采样也不留不可回填的观测。
+      const correlationId = shadowCorrelationId(planId, a.assignmentId, a.taskId);
+      if (!correlationId) continue;
+      if (!shadow.shouldSample(stableSampleSeed(correlationId), ctx)) continue;
+      // 缺计划窗口 → 没有确定性基线可比，跳过（不补 0、不猜默认时长）。
+      if (!a.plannedStart || !a.plannedEnd) continue;
+      const baselineMs = a.plannedEnd.getTime() - a.plannedStart.getTime();
+      if (!Number.isFinite(baselineMs) || baselineMs <= 0) continue;
+
+      let result: { value: number; modelVersion: string; confidence: number };
+      try {
+        result = await provider.predictTaskDuration({
+          taskId: a.taskId ?? undefined,
+          orgId,
+        });
+      } catch (err) {
+        // 预测失败 → 不写样本（宁可无观测，不可伪造预测值）。
+        this.logger.warn(
+          `shadow sample skipped (predict failed) ${correlationId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        continue;
+      }
+      if (!Number.isFinite(result.value)) continue;
+
+      shadow.recordSample(
+        {
+          modelVersion: result.modelVersion,
+          predictionType: SHADOW_PREDICTION_TYPE,
+          // 未知快照版本显式写 'unknown'（观测溯源字段，不冒充具体版本）。
+          inputVersion: snapshotVersion ?? 'unknown',
+          prediction: result.value,
+          baseline: baselineMs,
+          confidence: result.confidence,
+          createdAt: new Date().toISOString(),
+          taskId: a.taskId ?? undefined,
+          correlationId,
+          policyVersion: plan.policyVersion ?? undefined,
+          snapshotVersion,
+          // 回填到期判据：计划窗口结束时刻（evaluateCanary 的 coverage 判定用，
+          // 见 shadow-evaluator BACKFILL_DUE_GRACE_MS——在途样本不算"应回填而未回填"）。
+          expectedActualAt: a.plannedEnd.toISOString(),
+        },
+        ctx,
+      );
+    }
   }
 
   /** 记录 plan 审批结果（accepted）。观测型，不影响审批流程。NEST-117：org 条件。 */
@@ -293,322 +400,115 @@ export class SchedulingFeedbackService {
 
   /**
    * 回填任务实际执行数据（实际开始/结束、实际 travel/wait、实际资源）。
-   * 观测型，不改变任务或调度状态。
+   * 与 execution、assignment/task 和 outbox 原子更新。
    */
   async recordActuals(
-    input: {
-      planId?: string;
-      assignmentId?: string;
-      taskId?: string;
-      actualStart?: Date | string | null;
-      actualEnd?: Date | string | null;
-      actualTravel?: number | null;
-      actualWait?: number | null;
-      actualResource?: SchedulingFeedbackResource | null;
-    },
+    input: RecordActualsInput,
     ctx?: OrgContext,
-  ): Promise<{
-    advancedAssignments: number;
-    advancedTaskSteps: number;
-    skips: string[];
-  }> {
-    const gucSettings = buildGucSettings(
-      ctx ?? { userId: 'system', primaryOrgId: '' },
-    );
-    const toDate = (v: Date | string | null | undefined): Date | null =>
-      v == null || v === '' ? null : new Date(v);
-
-    const summary = {
+  ): Promise<ExecutionReceiptSummary> {
+    if (!this.receiptService) {
+      throw new ServiceUnavailableException('Canonical receipt service is required for recordActuals');
+    }
+    const result = await this.receiptService.applyFromActuals({
+      ...input,
+      actualStart: input.actualStart instanceof Date ? input.actualStart.toISOString() : input.actualStart,
+      actualEnd: input.actualEnd instanceof Date ? input.actualEnd.toISOString() : input.actualEnd,
+    }, ctx);
+    const receipt = result?.receipt ?? {
+      matchedRows: 0,
       advancedAssignments: 0,
       advancedTaskSteps: 0,
-      skips: [] as string[],
-      // NEST-121（2026-08-17）：UPDATE ... RETURNING 真实命中行数（matched 事实）。
-      matchedRows: 0,
+      skips: ['receipt:not_matched'],
     };
-
-    await this.requestDatabaseContext.runInTransaction(gucSettings, async () => {
-      const conditions: any[] = [];
-      if (input.assignmentId) {
-        conditions.push(eq(ewohSchedulingFeedback.assignmentId, input.assignmentId));
-      }
-      if (input.planId) {
-        conditions.push(eq(ewohSchedulingFeedback.planId, input.planId));
-      }
-      if (input.taskId) {
-        conditions.push(eq(ewohSchedulingFeedback.taskId, input.taskId));
-      }
-      // NEST-160 修复（2026-08-17）：回填 UPDATE 按 org 过滤（ctx 携带 org 时
-      // 仅本 org 行 + NULL 存量；此前任意 planId/taskId 可跨租户改反馈行）。
-      if (ctx?.primaryOrgId) {
-        conditions.push(
-          or(
-            isNull(ewohSchedulingFeedback.orgId),
-            eq(ewohSchedulingFeedback.orgId, ctx.primaryOrgId),
-          ),
-        );
-      }
-      if (conditions.length === 0) return;
-
-      const patch: Record<string, unknown> = {
-        actualStart: toDate(input.actualStart),
-        actualEnd: toDate(input.actualEnd),
-      };
-      if (input.actualTravel != null) patch.actualTravel = input.actualTravel;
-      if (input.actualWait != null) patch.actualWait = input.actualWait;
-      if (input.actualResource != null) {
-        patch.actualResourceJson = input.actualResource as unknown as Record<string, unknown>;
-      }
-
-      // NEST-121：RETURNING 统计命中行数（matched 事实，供响应 matched 字段）。
-      const updatedRows = await this.db
-        .update(ewohSchedulingFeedback)
-        .set(patch)
-        .where(and(...conditions))
-        .returning({ id: ewohSchedulingFeedback.id });
-      summary.matchedRows = updatedRows.length;
-
-      // NO-13a / ADR-050：执行反馈完成腿——真实执行事实推进 assignment/task 状态
-      //（CAS + 事件 + 契约状态机最短合法链；失败只 log 不阻断反馈写入，§33）。
-      await this.applyExecutionAdvancement(input, ctx ?? { userId: 'system', primaryOrgId: '' }, summary);
-
-      // M05：Prediction Shadow Learning 回填——任务实际完成时回填 shadow 样本 actual。
-      // 观测型：失败仅记日志，绝不阻断 feedback 写入；不改变任何生产调度。
-      if (this.shadowEvaluatorService && input.actualEnd != null) {
-        try {
-          const actualMs =
-            typeof input.actualEnd === 'string' || input.actualEnd instanceof Date
-              ? new Date(input.actualEnd).getTime()
-              : null;
-          if (actualMs != null && Number.isFinite(actualMs)) {
-            // 回填"任务时长"预测：actual = actualEnd − actualStart（有 start 时），
-            // 否则用计划/实际 end 与 now 的差值不可靠 → 仅回填有 start 的样本。
-            if (input.actualStart != null) {
-              const startMs =
-                typeof input.actualStart === 'string' || input.actualStart instanceof Date
-                  ? new Date(input.actualStart).getTime()
-                  : null;
-              if (startMs != null && Number.isFinite(startMs)) {
-                const durationActual = Math.max(0, actualMs - startMs);
-                // 按 taskId 维度回填最近一条 task_duration 预测样本。
-                const samples = this.shadowEvaluatorService.listSamples(ctx);
-                for (const s of samples) {
-                  if (
-                    s.predictionType === 'task_duration' &&
-                    (s as unknown as { taskId?: string }).taskId === input.taskId &&
-                    s.actual == null
-                  ) {
-                    this.shadowEvaluatorService.backfillActual(
-                      'task_duration',
-                      durationActual,
-                      s.createdAt,
-                      ctx,
-                    );
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch (err) {
-          this.logger.warn(
-            `shadow sample backfill failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-    });
-    return summary;
+    // R-3（2026-09-13）：shadow 回填腿——真实回执落库成功之后才回填 actual。
+    // 观测型：失败只记日志，绝不改变 recordActuals 的返回值/语义。
+    this.backfillShadowActuals(input, receipt, ctx);
+    return receipt;
   }
 
   /**
-   * NO-13a / ADR-050：执行事实 → assignment/task 状态推进（recordActuals 内联调用）。
-   * 边界（ADR-050 决策 2）：start 源集 assignment={dispatched}、task={dispatched,received}；
-   * end 源集 assignment={dispatched,executing}、task={executing,received,paused}；
-   * exception 不隐式 resolve；终态/乱序 skip+log；CAS 幂等；推进失败不阻断反馈写入。
+   * R-3（2026-09-13）Prediction Shadow Learning 回填腿（advisory-only）。
+   *
+   * 为什么在这里：真实执行事实（actualStart/actualEnd）的唯一权威入口就是 recordActuals
+   * 委托的规范回执服务；只有回执真正命中行（matchedRows>0）才存在"实际值"，
+   * 未命中就回填等于凭空造 actual（§33 禁止）。
+   *
+   * 匹配键：shadowCorrelationId(planId, assignmentId, taskId)——与采样腿同一函数构造，
+   * 因此不受采样时刻（createdAt 无法在回填侧复现）影响；匹配不到静默跳过（既有语义）。
+   *
+   * 阈值判定：回填成功后按内存窗口聚合评估 canary（evaluateCanary）。回退只由**坏证据**
+   * 触发（相对误差/fallbackRate 超限、到期样本 coverage 不足）；缺证据（误差不可判定、
+   * 其余样本仍在途）只观测不回退。**只改采样比例**：不触碰 ewoh_schedule_plan/assignment、
+   * 不改变任何求解输出。
+   *
+   * 可见性（自查修正 2026-09-13）：public——规范回执路径
+   * （SchedulerEventApplicationService.recordTaskActuals → ExecutionReceiptApplication
+   * .applyFromActuals）绕过本类的 recordActuals 直达回执服务，必须显式回调本钩子，
+   * 否则生产回执永远不回填 shadow 样本（学习腿断链）。
    */
-  private async applyExecutionAdvancement(
-    input: {
-      planId?: string;
-      assignmentId?: string;
-      taskId?: string;
-      actualStart?: Date | string | null;
-      actualEnd?: Date | string | null;
-    },
-    ctx: OrgContext,
-    summary: { advancedAssignments: number; advancedTaskSteps: number; skips: string[] },
-  ): Promise<void> {
-    const hasStart = input.actualStart != null && input.actualStart !== '';
-    const hasEnd = input.actualEnd != null && input.actualEnd !== '';
-    if (!hasStart && !hasEnd) return;
+  backfillShadowActuals(
+    input: RecordActualsInput,
+    receipt: ExecutionReceiptSummary,
+    ctx?: OrgContext,
+  ): void {
+    const shadow = this.shadowEvaluatorService;
+    if (!shadow) return;
+    // 默认 canary=0 → 无采样窗口，无需回填/评估（接线前的行为逐字节保持）。
+    if (shadow.getCanaryFraction(ctx) <= 0) return;
+    // 回执未命中任何行 = 没有真实执行事实可回填（不伪造 actual）。
+    if (!receipt || receipt.matchedRows <= 0) return;
+    if (!input.planId) return;
+    const actualMs = this.actualDurationMs(input.actualStart, input.actualEnd);
+    if (actualMs == null) return;
+    const correlationId = shadowCorrelationId(input.planId, input.assignmentId, input.taskId);
+    if (!correlationId) return;
 
-    // 1) 匹配受影响 assignment（与反馈行同源条件）。
-    const assignmentConditions: any[] = [];
-    if (input.assignmentId) {
-      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.assignmentId, input.assignmentId));
-    }
-    if (input.planId) {
-      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.planId, input.planId));
-    }
-    if (input.taskId) {
-      assignmentConditions.push(eq(ewohSchedulingPlanAssignment.taskId, input.taskId));
-    }
-    if (assignmentConditions.length === 0) return;
-    const assignments = await this.db
-      .select()
-      .from(ewohSchedulingPlanAssignment)
-      .where(or(...assignmentConditions));
-
-    // R2-SSV-13（2026-08-17）：状态推进写副作用按"受派者/可信角色"授权——
-    // assignment/task 状态推进（含事件与 outbox 广播）远超观测回填，仅允许
-    // 受派人本人（ctx.userId === assignment.personId）或可信调用方
-    // （dispatcher / global_admin / device_ops / system）。非受派者对可推进
-    // assignment 的回填整体 403 fail-closed（观测回填与推进同请求原子拒绝，
-    // 杜绝同租户水平越权伪造 actualStart/actualEnd 推进他人任务）。
-    if (!this.isTrustedAdvancementActor(ctx)) {
-      const advancing = assignments.filter(
-        (a) =>
-          (hasStart && a.status === 'dispatched') ||
-          (hasEnd && (a.status === 'executing' || a.status === 'dispatched')),
+    try {
+      const matched = shadow.backfillActual(
+        SHADOW_PREDICTION_TYPE,
+        actualMs,
+        // 关联键存在时 createdAt 仅作末位回退键（两侧都不会用到）；用真实回执时间而非 now，
+        // 保持"回填时间"永远是真实事件时间。
+        this.toIso(input.actualEnd),
+        ctx,
+        { taskId: input.taskId ?? undefined, correlationId },
       );
-      const unauthorized = advancing.filter(
-        (a) => a.personId && a.personId !== ctx.userId,
-      );
-      if (unauthorized.length > 0) {
-        throw new ForbiddenException(
-          `ACTUALS_ADVANCEMENT_FORBIDDEN: ${
-            unauthorized.length
-          } assignment(s) not assigned to caller（R2-SSV-13：状态推进仅限受派人本人或 dispatcher/global_admin/device_ops）`,
+      if (!matched) {
+        this.logger.debug(
+          `shadow backfill missed for ${correlationId}（无对应未回填样本，静默跳过）`,
         );
+        return;
       }
-    }
-
-    const affectedTaskIds = new Set<string>();
-    for (const a of assignments) {
-      if (a.taskId) affectedTaskIds.add(a.taskId);
-    }
-    if (input.taskId) affectedTaskIds.add(input.taskId);
-
-    // 2) assignment 推进（CAS + 事件；幂等：已一致/乱序 skip）。
-    // R2-SSV-05（2026-08-17）：CAS UPDATE 校验 RETURNING 命中行数——仅命中>0
-    // 才发事件并计数（此前并发反馈后到者 0 行命中仍无条件插事件，产生重复
-    // assignment 事件与虚增 advancedAssignments）。
-    for (const a of assignments) {
-      const id = String(a.assignmentId ?? '');
-      if (hasStart && a.status === 'dispatched') {
-        const hit = await this.db
-          .update(ewohSchedulingPlanAssignment)
-          .set({ status: 'executing' })
-          .where(
-            and(
-              eq(ewohSchedulingPlanAssignment.assignmentId, id),
-              eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
-            ),
-          )
-          .returning({ id: ewohSchedulingPlanAssignment.id });
-        if (hit.length > 0) {
-          await this.insertAssignmentEvent(id, a.taskId ?? null, 'dispatched', 'executing', ctx, 'execution feedback actualStart');
-          summary.advancedAssignments += 1;
-        } else {
-          summary.skips.push(`assignment:${id}:start_cas_miss`);
-        }
-      } else if (hasEnd && (a.status === 'executing' || a.status === 'dispatched')) {
-        const fromStatus = a.status;
-        const hit = await this.db
-          .update(ewohSchedulingPlanAssignment)
-          .set({ status: 'completed' })
-          .where(
-            and(
-              eq(ewohSchedulingPlanAssignment.assignmentId, id),
-              eq(ewohSchedulingPlanAssignment.status, fromStatus),
-            ),
-          )
-          .returning({ id: ewohSchedulingPlanAssignment.id });
-        if (hit.length > 0) {
-          await this.insertAssignmentEvent(id, a.taskId ?? null, fromStatus, 'completed', ctx, 'execution feedback actualEnd');
-          summary.advancedAssignments += 1;
-        } else {
-          summary.skips.push(`assignment:${id}:end_cas_miss`);
-        }
-      } else if (hasStart && a.status === 'executing') {
-        // 已一致（幂等 no-op）
-        summary.skips.push(`assignment:${id}:start_already_executing`);
-      } else if (hasEnd && a.status === 'completed') {
-        summary.skips.push(`assignment:${id}:end_already_completed`);
-      } else {
-        summary.skips.push(`assignment:${id}:out_of_order_from_${a.status ?? 'unknown'}`);
-      }
-    }
-
-    // 3) task 推进（契约状态机最短合法链；边界见 ADR-050 决策 2）。
-    if (!this.taskService || affectedTaskIds.size === 0) return;
-    const tasks = await this.db
-      .select()
-      .from(ewohProductionTask)
-      .where(inArray(ewohProductionTask.id, [...affectedTaskIds]));
-    for (const task of tasks) {
-      const id = String(task.id);
-      try {
-        if (hasStart && (task.status === 'dispatched' || task.status === 'received')) {
-          const path = taskActionPath(task.status, 'executing');
-          for (const action of path ?? []) {
-            await this.taskService.transitionTaskState(id, action, ctx);
-            summary.advancedTaskSteps += 1;
-          }
-        } else if (hasEnd && ['executing', 'received', 'paused'].includes(task.status)) {
-          const path = taskActionPath(task.status, 'completed');
-          for (const action of path ?? []) {
-            await this.taskService.transitionTaskState(id, action, ctx);
-            summary.advancedTaskSteps += 1;
-          }
-        } else if (hasStart && task.status === 'executing') {
-          summary.skips.push(`task:${id}:start_already_executing`);
-        } else if (hasEnd && (task.status === 'completed' || task.status === 'cancelled')) {
-          summary.skips.push(`task:${id}:end_already_terminal`);
-        } else {
-          summary.skips.push(`task:${id}:out_of_order_from_${task.status ?? 'unknown'}`);
-        }
-      } catch (err) {
-        // 推进失败显式留痕（§33 不吞异常——状态推进失败不阻断反馈主流程）。
+      // 窗口聚合 + 阈值判定：误差/回退率/覆盖率超限 → canary 归 0（advisory-only）。
+      const verdict = shadow.evaluateCanary(undefined, ctx);
+      if (verdict.rolledBack) {
         this.logger.warn(
-          `execution advancement task ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
+          `shadow canary auto-rollback (plan ${input.planId}): ${verdict.reasons.join('; ')}`,
         );
-        summary.skips.push(`task:${id}:advance_failed`);
       }
+    } catch (err) {
+      this.logger.warn(
+        `shadow backfill skipped for ${correlationId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
-  private async insertAssignmentEvent(
-    assignmentId: string,
-    taskId: string | null,
-    fromStatus: string,
-    toStatus: string,
-    ctx: OrgContext,
-    reason: string,
-  ): Promise<void> {
-    await this.db.insert(ewohAssignmentEvent).values({
-      // R2-SSV-20：Date.now()+Math.random（同毫秒碰撞）→ randomUUID。
-      eventId: `EVT-${randomUUID()}`,
-      assignmentId,
-      taskId,
-      fromStatus,
-      toStatus,
-      actor: ctx.userId || 'system',
-      reason,
-    });
+  /** 实际执行时长（ms）：actualEnd − actualStart；任一端缺失或倒序 → null（不补 0、不猜）。 */
+  private actualDurationMs(
+    start?: Date | string | null,
+    end?: Date | string | null,
+  ): number | null {
+    const s = start instanceof Date ? start.getTime() : start ? Date.parse(start) : NaN;
+    const e = end instanceof Date ? end.getTime() : end ? Date.parse(end) : NaN;
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+    const durationMs = e - s;
+    return durationMs >= 0 ? durationMs : null;
   }
 
-  /**
-   * R2-SSV-13：可信推进调用方判定——system（内部流）、dispatcher /
-   * global_admin / device_ops（调度/设备运维角色）可代录；其余调用方必须
-   * 是受派 assignment 的 personId 本人（见 applyExecutionAdvancement 内校验）。
-   */
-  private isTrustedAdvancementActor(ctx: OrgContext): boolean {
-    if (!ctx.userId || ctx.userId === 'system') return true;
-    if (ctx.isGlobalAdmin) return true;
-    const roles = new Set<string>([
-      ...(ctx.roles ?? []),
-      ...(ctx.role ? [ctx.role] : []),
-    ]);
-    return roles.has('dispatcher') || roles.has('global_admin') || roles.has('device_ops');
+  /** Date/ISO 字符串 → ISO 字符串；缺失 → ''（调用方仅在关联键存在时使用）。 */
+  private toIso(value?: Date | string | null): string {
+    if (value instanceof Date) return value.toISOString();
+    return value ?? '';
   }
 
   /** 读取指定 plan 的反馈行（离线评估视图）。 */

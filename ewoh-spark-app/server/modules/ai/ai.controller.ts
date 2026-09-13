@@ -3,7 +3,13 @@ import type { Response } from 'express';
 import { AiService } from './ai.service';
 import { ArkService } from './ark.service';
 import { Roles } from '../shared/roles.decorator';
-import type { OrgContext } from '../shared/org-context.interceptor';
+import {
+  buildGucSettings,
+  StreamingResponse,
+  type GucSetting,
+  type OrgContext,
+} from '../shared/org-context.interceptor';
+import { RequestDatabaseContext } from '../../database/request-database-context';
 
 const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:8765').replace(/\/+$/, '');
 
@@ -97,7 +103,58 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly arkService: ArkService,
+    private readonly requestDatabaseContext: RequestDatabaseContext,
   ) {}
+
+  /**
+   * 流式端点的租户 GUC 设置。
+   *
+   * 为什么流式端点还要自己开事务：OrgContextInterceptor 对 @StreamingResponse()
+   * 端点只豁免"把整条流包进一个长事务"，**不豁免租户收敛**——RLS 照常生效，
+   * ewoh_api 是 NOBYPASSRLS 的 service_role 成员，没有 app.current_org_ids 时
+   * ewoh_org_visible() 恒 false：读会静默读空、写会被 WITH CHECK 拒绝。所以
+   * 每个 DB 步都必须自带 GUC。
+   *
+   * 无 userId 时返回 undefined（调用方直通，绝不猜上下文）。
+   */
+  private streamTenantSettings(context?: OrgContext): GucSetting[] | undefined {
+    if (!context?.userId) {
+      return undefined;
+    }
+    if (context.primaryOrgId) {
+      return buildGucSettings(context);
+    }
+    // global_admin 允许无主 org（orgId=null）的全局视角：buildGucSettings 会下发
+    // 空值 app.current_org_id / current_org_ids，故只下发 user_id + is_global_admin。
+    return [
+      { name: 'app.user_id', value: context.userId },
+      {
+        name: 'app.is_global_admin',
+        value: context.isGlobalAdmin ? 'true' : 'false',
+      },
+    ];
+  }
+
+  /**
+   * 在带租户 GUC 的短事务里推进流式生成器**一步**。
+   *
+   * 为什么是"一步"而不是整条流：生成器首个 yield 之前的工作（AI 上下文采集、
+   * 建议落库）会经 DRIZZLE_DATABASE 走 RLS，需要 org GUC；但 LLM 的网络等待
+   * 发生在增量步之间——只包需要 DB 的那一步，才能避免一条连接被占满整条流
+   * （连接池 max=20，20 个并发问答即可打满 DB_POOL_MAX）。
+   */
+  private async advanceStreamStep<T>(
+    iterator: AsyncIterator<T>,
+    context?: OrgContext,
+  ): Promise<IteratorResult<T>> {
+    const settings = this.streamTenantSettings(context);
+    if (!settings) {
+      return iterator.next();
+    }
+    return this.requestDatabaseContext.runInTransaction(settings, () =>
+      iterator.next(),
+    );
+  }
 
   /** GET /api/ai/config/status — 查询全局 AI 配置是否可用（不返回密钥本值）。 */
   @Get('config/status')
@@ -135,8 +192,13 @@ export class AiController {
    * 采集系统实时上下文调用 Ark（stream:true），增量输出 `data: {delta}`
    * 事件，结束时输出 `data: {done, ok, model, answer}`；出错输出 `data: {error}`。
    * 前端用 fetch + ReadableStream 消费（POST + SSE，非 EventSource）。
+   *
+   * @StreamingResponse()：本端点手写 @Res() 且 for await 整条 LLM 流，若被
+   * OrgContextInterceptor 包进请求级事务，一条 DB 连接会被占满整条流（见
+   * org-context.interceptor.ts 的豁免分支）。建立步在下面显式补租户短事务。
    */
   @Post('chat')
+  @StreamingResponse()
   async chat(
     @Body() body: { question?: string },
     @Res() res: Response,
@@ -157,15 +219,35 @@ export class AiController {
     res.flushHeaders?.();
     try {
       let answer = '';
-      for await (const chunk of this.aiService.chatWithContextStream(question, orgId)) {
-        // AI 助手增强（2026-08-19）：thinking 模型思考链独立事件 {reasoning}，
-        // 正文增量事件 {delta}——前端分别渲染（思考区 + 打字机）。
-        if (chunk.reasoning) {
-          res.write(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`);
+      // 手动推进生成器（不用 for await 整条跑）：只有"建立步"要进租户短事务——
+      // collectSystemContext 的 3 个 RLS 读在首个 yield 之前执行，没有 org GUC
+      // 会静默读空（AI 实时上下文凭空变成"暂无实时数据"）。之后的 LLM 增量步
+      // 一律不持有事务/连接，长回答不再压住连接池。
+      const stream = this.aiService
+        .chatWithContextStream(question, orgId)
+        [Symbol.asyncIterator]();
+      try {
+        let step = await this.advanceStreamStep(stream, request?.userContext);
+        while (!step.done) {
+          const chunk = step.value;
+          // AI 助手增强（2026-08-19）：thinking 模型思考链独立事件 {reasoning}，
+          // 正文增量事件 {delta}——前端分别渲染（思考区 + 打字机）。
+          if (chunk.reasoning) {
+            res.write(`data: ${JSON.stringify({ reasoning: chunk.reasoning })}\n\n`);
+          }
+          if (chunk.delta) {
+            answer += chunk.delta;
+            res.write(`data: ${JSON.stringify({ delta: chunk.delta })}\n\n`);
+          }
+          step = await stream.next();
         }
-        if (chunk.delta) {
-          answer += chunk.delta;
-          res.write(`data: ${JSON.stringify({ delta: chunk.delta })}\n\n`);
+      } finally {
+        // for await 会在提前退出（写响应失败/客户端断开）时自动 return() 掉生成器；
+        // 改成手写推进后必须显式补上——否则内层 Ark 流的 reader 不解锁
+        // （ark.service chatStream 的 finally { reader.releaseLock() }），
+        // 出站连接会一直悬到对端自己结束。
+        if (typeof stream.return === 'function') {
+          await stream.return().catch(() => undefined);
         }
       }
       const model = await this.aiService.getArkModel();
@@ -208,8 +290,13 @@ export class AiController {
   }
 
   /** AI 接入优化（2026-08-18）：建议生成流式版——骨架先出 → LLM 打字机 → done 落库。
-   * 与 /api/ai/chat 同款 SSE 协议（data: {phase:…} 增量）。 */
+   * 与 /api/ai/chat 同款 SSE 协议（data: {phase:…} 增量）。
+   *
+   * @StreamingResponse()：同 /chat，避免被包进请求级长事务；但本端点的租户事务
+   * 无法只包 DB 部分（见下方注释），故由端点显式自持。
+   */
   @Post('suggestions/stream')
+  @StreamingResponse()
   async suggestionStream(
     @Body()
     body: {
@@ -233,7 +320,7 @@ export class AiController {
     const abort = new AbortController();
     const onClientClose = () => abort.abort();
     request?.on?.('close', onClientClose);
-    try {
+    const drive = async () => {
       for await (const evt of this.aiService.streamSuggestion({
         ...body,
         orgId: request.userContext?.primaryOrgId?.trim() || '',
@@ -241,6 +328,21 @@ export class AiController {
       })) {
         if (abort.signal.aborted) break;
         res.write(`data: ${JSON.stringify(evt)}\n\n`);
+      }
+    };
+    try {
+      // 本端点的落库在流末尾：ai.service streamSuggestion 的
+      // attachRuleBasisInference + persistSuggestion 与最后一次 LLM 网络等待在同一个
+      // 生成器步里，无法像 /chat 那样"只包建立步"（DB 与 LLM 尾步不可分，而在
+      // ai.service 之外拿不到拆分点）。RLS 下无 org GUC 会直接拒绝该 INSERT
+      // （不是降级读空），所以这里显式自持一个租户事务跑完整条流。
+      // 豁免的只是拦截器的"隐式长事务"（决策权回到端点，见 org-context.interceptor.ts），
+      // 租户收敛不受影响。后续把落库从 LLM 流里剥离（ai.service）后，这里可退化成短事务。
+      const settings = this.streamTenantSettings(request.userContext);
+      if (settings) {
+        await this.requestDatabaseContext.runInTransaction(settings, drive);
+      } else {
+        await drive();
       }
     } catch (error) {
       if (abort.signal.aborted) return;

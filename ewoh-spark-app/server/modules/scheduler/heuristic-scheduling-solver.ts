@@ -1,4 +1,7 @@
 import { Logger } from '@nestjs/common';
+import type { EmpiricalDurationPredictionProvider } from './prediction/empirical-duration-prediction-provider';
+import { resolveDurationModelMap } from './prediction/duration-resolution';
+import { normalizeBatteryPct } from '@shared/api.interface';
 import { qualityFindingsBlockDispatch } from '@shared/quality';
 import type {
   DecisionTrace,
@@ -35,6 +38,8 @@ import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interfa
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
 import type { CandidateEngineService } from './candidate-engine.service';
 import type { CandidateEvaluation, CandidateRejectReason } from '@shared/api.interface';
+/** 未派工条目的拒绝明细上限（与规则/MILP 求解器同口径，防 trace 膨胀）。 */
+const REJECTED_HARD_CAP = 12;
 
 /**
  * P0：decisionTrace.rejectedHard / violations.alternatives 的 trace 视图上限。
@@ -83,6 +88,8 @@ interface CompactReject {
   deviceId: string | null;
   stationId: string | null;
   rejectReasons: string[];
+  /** NO-15c：能力相关拒绝的可读细节（哪个能力、谁/何时/为何停用）。 */
+  capabilityNotes?: string[];
 }
 
 /**
@@ -114,6 +121,8 @@ interface ReuseContext {
   softDeadlineMs: number;
   mustFinishByMs: number | null;
   defaultDurationMs: number;
+  /** ADR-056 消费侧：taskId → 模型时长（ms）；null = 模式 off / 提供者缺位（回退默认）。 */
+  durationMsByTask: ReadonlyMap<string, number> | null;
   policy: SchedulingPolicy;
   config: SchedulingPolicyConfig;
   personById: Map<string, WorldStateSnapshot['persons'][number]>;
@@ -184,6 +193,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // P0-bench：run-local route-cost memo 命中统计注入（默认 off；仅 benchmark 使用，
     // 不改变 route-cost 语义——未注入时 memo 行为与历史完全一致）。
     private readonly routeMemoStats?: RouteCostMemoStats,
+    // ADR-056 消费侧（2026-09-13）：经验时长提供者（可选）。仅当策略
+    // prediction.durationModelMode='advisory' 且本提供者已注入时才消费；
+    // 缺位/未训练/置信度不足一律回退 defaultTaskDurationMs（绝不猜）。
+    // ⚠️ 刻意**不用**参数装饰器注入：本类历史上零装饰器，而 benchmark 脚本以
+    // ts-node（无 experimentalDecorators）重编译本文件——参数装饰器会让 benchmark
+    // 直接编译失败。DI 由 SolverService（@Inject(PREDICTION_PROVIDER)）承担后
+    // 位置传下来，与 candidateEngine 等既有可选参数同款。
+    private readonly durationPrediction?: EmpiricalDurationPredictionProvider,
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
@@ -194,6 +211,35 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
   /** 暴露策略配置（供外层组合求解器复用同一优先级/参数语义）。 */
   async loadConfig(): Promise<SchedulingPolicyConfig> {
     return this.policyService.getConfig();
+  }
+
+  /**
+   * ADR-056 消费侧：为本 run 可调度的任务预解析模型时长（taskId → ms）。
+   *
+   * 判定纪律（全部回退 = 拿不到就不消费，绝不猜）：
+   * - 只接受 `source === 'ml'` 且数值有限 > 0 且置信度达阈值的结果——
+   *   提供者内部的确定性回退（source='deterministic'）**不采纳**：
+   *   那条路的值就是默认时长的近似，采纳只会让"是否用了模型"变得不可审计；
+   * - 单任务预测失败（抛错/超时由调用方 catch）→ 该任务回退默认时长；
+   * - 顺序解析（每任务一次进程内查表，成本可忽略），保证遍历顺序确定。
+   *
+   * 返回映射只影响**没有计划窗且未锁定**的任务的时间窗（消费点见 solve 内两处
+   * 与候选引擎）；有 planStart/planEnd 的任务本就继承任务级真实事实，不叠加模型。
+   */
+  async resolveModelDurations(
+    snapshot: WorldStateSnapshot,
+    config: SchedulingPolicyConfig,
+    defaultDurationMs: number,
+    orgId: string | null,
+  ): Promise<Map<string, number>> {
+    // 共享解析器（heuristic / MILP 同源同判，shadow 双跑对比公平性的前提）。
+    return resolveDurationModelMap(
+      this.durationPrediction!,
+      snapshot,
+      defaultDurationMs,
+      orgId,
+      this.logger,
+    );
   }
 
   async solve(
@@ -207,6 +253,24 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const horizonMinutes = config.horizonMinutes ?? opts.horizonMinutes;
     const horizonEndMs = now + horizonMinutes * 60 * 1000;
     const defaultDurationMs = config.defaultTaskDurationMs;
+    // ADR-056 消费侧：把"没有计划窗的任务用什么时长"从写死的默认值变成
+    // **可切换的模型输入**。模式缺省 'off' → 不调提供者、不建映射，
+    // 求解行为与历史逐字节一致（确定性重放的默认护栏）。
+    const durationModelMode = config.prediction?.durationModelMode ?? 'off';
+    const durationMsByTask =
+      durationModelMode === 'advisory' && this.durationPrediction
+        ? await this.resolveModelDurations(
+            snapshot,
+            config,
+            defaultDurationMs,
+            opts.orgId ?? null,
+          )
+        : null;
+    if (durationModelMode === 'advisory' && !this.durationPrediction) {
+      this.logger.warn(
+        'durationModelMode=advisory 但求解器未注入预测提供者：本次 run 全部回退默认时长（不猜模型）',
+      );
+    }
 
     // 快照可能含有类型定义尚未覆盖的字段（如下游演进），通过受限联合访问。
     const snapshotExt = snapshot as WorldStateSnapshot & {
@@ -473,7 +537,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       };
       eligibleDeviceById.set(d.id, {
         id: d.id,
-        batteryPct: d.batteryPct,
+        batteryPct: normalizeBatteryPct(d.batteryPct),
         online: d.online,
         status: d.status,
         capabilities: d.capabilities ?? [],
@@ -803,6 +867,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           softDeadlineMs,
           mustFinishByMs,
           defaultDurationMs,
+          durationMsByTask,
           policy,
           config,
           personById,
@@ -863,6 +928,14 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       } else if (this.candidateEngine) {
         const enginePool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
           nowMs: now,
+          // R-6（2026-09-13）：透传本请求的租户 —— 候选引擎要为每个 (人员,任务) 组合
+          // 估一次路径成本；不透传时路由层拿不到租户键、只能走"读穿不缓存"，
+          // 每候选一次 route_node/route_edge 全图 SELECT（实测把 5 秒的排产拖到 3 分钟以上）。
+          // 透传后按租户分桶缓存，且图查询的租户谓词与缓存键同源，不会跨租户复用。
+          orgId: opts.orgId ?? null,
+          // ADR-056 消费侧：候选阶段的时间窗用同一份模型时长（与指派窗一致，
+          // 避免"候选阶段用默认窗、指派阶段用模型窗"的口径分裂）。
+          durationMsByTask,
           // R2-SCH-002：变体策略（solveVariants 权重缩放）必须作用于 engine 候选评分。
           policy,
           // R2-SCH-001：任务最早开始下界 + 人员/设备占用顺延（与内联分支同语义）。
@@ -940,6 +1013,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               deviceId: ev.deviceId,
               stationId: ev.stationId,
               rejectReasons: ev.rejectReasons,
+              ...(ev.capabilityNotes && ev.capabilityNotes.length > 0
+                ? { capabilityNotes: ev.capabilityNotes }
+                : {}),
             });
           }
         }
@@ -1019,7 +1095,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
               ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
               : task.planEnd && task.planStart
                 ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-                : defaultDurationMs;
+                : (durationMsByTask?.get(task.id) ?? defaultDurationMs);
             const endMs = startMs + Math.max(durationMs, 1);
 
             // P0-3：mustFinishBy 硬检查——候选 endMs 违反硬截止则不可分配
@@ -1162,9 +1238,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             const changeoverMs = changeover ? setupMinutes * 60 * 1000 : 0;
             const riskMs =
               this.riskFactor(routeCost.riskLevel, config) * travelMs;
-            const batteryPct = device ? device.batteryPct : 100;
+            const batteryPct = device ? normalizeBatteryPct(device.batteryPct) : null;
             const energyPenalty =
-              device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+              device == null ? 0 : batteryPct == null ? Number.POSITIVE_INFINITY : (1 - batteryPct / 100) * 60 * 1000;
 
             const score = this.computeCandidateScore(
               policy,
@@ -1255,7 +1331,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       if (!best) {
         // P0：violation alternatives 同样有界（trace 视图上限；
         // 全量计数经 rejectedHardTotal 透出，避免大规模场景 trace 内存爆炸）。
-        const violationAlternatives = rejectedList.entries.map((c) => ({
+        const bounded = rejectedList.entries.slice(0, REJECTED_HARD_CAP);
+        const violationAlternatives = bounded.map((c) => ({
           reasons: c.rejectReasons,
         }));
         violations.push({
@@ -1265,6 +1342,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
             : 'no_eligible_resource',
           type: 'infeasible',
           alternatives: violationAlternatives,
+          // NO-15c：与规则/MILP 求解器同源——方案解释不因求解器实现路径而不同。
+          // （此前只有 alternatives 嵌套结构，UI 的冲突层读的是平铺 rejectReasons，
+          // 于是启发式求解的方案一条原因都展示不出来。）
+          rejectReasons: bounded.flatMap((c) => c.rejectReasons),
+          capabilityNotes: [
+            ...new Set(bounded.flatMap((c) => c.capabilityNotes ?? [])),
+          ].slice(0, REJECTED_HARD_CAP),
         });
         continue;
       }
@@ -1510,7 +1594,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const changeCost =
       churnCostScore != null ? churnCostScore : (w.change * changeCostMs) / 60000;
     const risk = (w.risk * riskMs) / 60000;
-    const energyCost = (w.energy * energyPenalty) / 60000;
+    const energyCost = Number.isFinite(energyPenalty)
+      ? (w.energy * energyPenalty) / 60000
+      : Number.POSITIVE_INFINITY;
     return {
       lateness,
       travel,
@@ -1581,7 +1667,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const onlineDevices = Array.from(deviceById.values()).filter(
       (d) =>
         d.online &&
-        d.batteryPct >= minBatteryPct &&
+        normalizeBatteryPct(d.batteryPct) != null &&
+        d.batteryPct! >= minBatteryPct &&
         caps.every((cap) => (d.capabilities ?? []).includes(cap)) &&
         !this.isExcludedResource(
           taskId,
@@ -1779,7 +1866,8 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       ) {
         return null;
       }
-      if (!device.online || device.batteryPct < ctx.effectiveMinBattery) return null;
+      const batteryPct = normalizeBatteryPct(device.batteryPct);
+      if (!device.online || batteryPct == null || batteryPct < ctx.effectiveMinBattery) return null;
       if (device.status === 'fault' || device.status === 'maintenance') return null;
       // NO-05c / NO-05d：活跃维护/质量事实 → 不可复用（fail-closed）。
       if ((device.maintenance?.length ?? 0) > 0) return null;
@@ -1843,7 +1931,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
       : task.planEnd && task.planStart
         ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-        : ctx.defaultDurationMs;
+        : (ctx.durationMsByTask?.get(task.id) ?? ctx.defaultDurationMs);
     const endMs = startMs + Math.max(durationMs, 1);
 
     // mustFinishBy 硬截止。
@@ -1950,9 +2038,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const setupMinutes = ctx.config.setupMinutes ?? 15;
     const changeoverMs = changeover ? setupMinutes * 60 * 1000 : 0;
     const riskMs = this.riskFactor(routeCost.riskLevel, ctx.config) * travelMs;
-    const batteryPct = device ? device.batteryPct : 100;
+    const batteryPct = device ? normalizeBatteryPct(device.batteryPct) : null;
     const energyPenalty =
-      device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+      device == null ? 0 : batteryPct == null ? Number.POSITIVE_INFINITY : (1 - batteryPct / 100) * 60 * 1000;
     const score = this.computeCandidateScore(
       ctx.policy,
       lateMs,

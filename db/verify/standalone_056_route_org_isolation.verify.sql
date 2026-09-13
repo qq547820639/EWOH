@@ -63,6 +63,11 @@ BEGIN
       VALUES ('verify-056-node-a', 'waypoint', 0, 0, probe_a),
              ('verify-056-node-b', 'waypoint', 1, 1, probe_b);
 
+    -- RLS 只对**非属主**生效：本 verify 以 owner（superuser）连接，属主/超级用户绕过 RLS，
+    -- 因此在 owner 身份下探针永远"两行都可见"（vis_a/vis_b/vis_none 全 false，2026-09-12 定位）。
+    -- 可见性探针必须切到运行时角色 ewoh_api（service_role 成员、NOBYPASSRLS），
+    -- 探针结束后 RESET ROLE 再清理（清理需要在无 GUC 时仍能看到两行）。
+    SET LOCAL ROLE ewoh_api;
     PERFORM set_config('app.current_org_id', probe_a, true);
     PERFORM set_config('app.primary_org_id', '', true);
     vis_a_ok := EXISTS (SELECT 1 FROM ewoh_route_node WHERE node_id = 'verify-056-node-a')
@@ -76,6 +81,7 @@ BEGIN
     PERFORM set_config('app.primary_org_id', '', true);
     PERFORM set_config('app.is_global_admin', 'false', true);
     vis_none_ok := NOT EXISTS (SELECT 1 FROM ewoh_route_node WHERE node_id LIKE 'verify-056-node-%');
+    RESET ROLE;
 
     DELETE FROM ewoh_route_node WHERE node_id LIKE 'verify-056-node-%';
   EXCEPTION WHEN OTHERS THEN

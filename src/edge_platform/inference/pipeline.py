@@ -30,7 +30,7 @@ from edge_platform.runtime.protocols import (
     STREAM_TELEMETRY,
 )
 
-from . import SAMPLE_HZ, STEP_SEC, WINDOW_SEC, new_id
+from . import SAMPLE_HZ, STEP_SEC, WINDOW_SEC, new_id, ts_to_ms_safe
 from .events import EventEngine
 from .features import extract_features
 
@@ -316,7 +316,7 @@ class InferencePipeline:
             # EDGE-107（2026-08-17 审计整改）：授权服务异常时 fail-closed——
             # 授权态不可判定即跳过该帧（隐私优先），并记录审计计数便于诊断；
             # 授权服务恢复后自动回到正常判定路径。
-            self.consent_denied_log.append(
+            self._append_denied(
                 {
                     "ts": _now_iso(),
                     "person_id": person_id,
@@ -328,7 +328,9 @@ class InferencePipeline:
             )
             return False
         if not allowed:
-            self.consent_denied_log.append(
+            # UR8：统一走 _append_denied（环形满时计数 consent_denied_dropped）——
+            # 直接 append 会绕过丢弃计数，R2-ESC-005 承诺的"丢弃可观测"失效。
+            self._append_denied(
                 {
                     "ts": _now_iso(),
                     "person_id": person_id,
@@ -406,6 +408,11 @@ class InferencePipeline:
     # ---- 单窗推理 ----
     def _infer(self, dev, window):
         t0 = time.perf_counter()
+        # UR8（2026-09-13 审查）：乱序/补传帧按到达序进窗，直接取首尾会把混序窗
+        # 伪装成单调 2s 窗口（ts_end 早于 ts_start），且"最新一条"（firmware 校验/
+        # 关键通道缺失检查/source_type）会取到任意迟到帧。按帧时间戳排序后再取
+        # 证据元数据；特征统计（mean/std/max）与顺序无关，判定语义不受影响。
+        window = sorted(window, key=lambda m: ts_to_ms_safe(m.get("timestamp")) or 0)
         feats = extract_features(window)
         model, meta = self._get_model()
         is_rule = False

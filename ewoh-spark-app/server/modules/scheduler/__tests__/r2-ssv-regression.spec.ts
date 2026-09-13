@@ -9,10 +9,12 @@
  *   - R2-SSV-13：recordActuals 状态推进受派者/可信角色授权。
  */
 /// <reference types="jest" />
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { makeCanonicalReceiptHarness } from './canonical-receipt-test-harness';
 import type { SQL } from 'drizzle-orm';
 import {
   ewohSchedulingPolicy,
+  ewohSchedulingPlanAssignment,
   ewohMaintenanceCondition,
   ewohQualityFinding,
 } from '@server/database/schema';
@@ -20,8 +22,7 @@ import { SchedulingPolicyService } from '../scheduling-policy.service';
 import { KpiService } from '../kpi.service';
 import { ShadowPolicyService } from '../shadow-policy.service';
 import { ResourceProjectionService } from '../resource-projection.service';
-import { SchedulingFeedbackService } from '../scheduling-feedback.service';
-import { makeFakeDb, testOrgContext } from './dispatch-test-harness';
+import { testOrgContext } from './dispatch-test-harness';
 import type { RequestDatabaseContext } from '../../../database/request-database-context';
 
 /**
@@ -330,120 +331,61 @@ describe('R2-SSV-04: 维护/质量附着 org 过滤', () => {
 });
 
 // ===========================================================================
-// R2-SSV-05 / R2-SSV-13：feedback 推进 CAS + 受派者授权
+// Canonical receipt regression: authorization, CAS/lock failure and conjunctive matching.
 // ===========================================================================
-describe('R2-SSV-13: recordActuals 状态推进受派者/可信角色授权', () => {
-  function buildService(seed: Parameters<typeof makeFakeDb>[0] = {}) {
-    const { db, state } = makeFakeDb(seed);
-    const requestDatabaseContext = {
-      runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
-        await cb();
-      }),
-    };
-    const svc = new SchedulingFeedbackService(
-      db,
-      requestDatabaseContext as unknown as RequestDatabaseContext,
+describe('canonical receipt authorization and concurrency invariants', () => {
+  it('non-assignee cannot advance a receipt', async () => {
+    const h = makeCanonicalReceiptHarness({ personId: 'worker-1' });
+    await expect(h.feedback.recordActuals({ assignmentId: h.assignmentId, actualStart: '2026-08-17T08:00:00Z' }, { userId: 'intruder', primaryOrgId: 'org1' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.state.assignments[0].status).toBe('dispatched'); expect(h.state.feedback).toHaveLength(0);
+  });
+  it('assignee and dispatcher are both accepted by the canonical path', async () => {
+    const worker = makeCanonicalReceiptHarness(); await worker.feedback.recordActuals({ assignmentId: worker.assignmentId, actualStart: '2026-08-17T08:00:00Z' }, worker.actor); expect(worker.state.assignments[0].status).toBe('executing');
+    const dispatcher = makeCanonicalReceiptHarness(); await dispatcher.feedback.recordActuals({ assignmentId: dispatcher.assignmentId, actualStart: '2026-08-17T08:00:00Z' }, { userId: 'dispatcher', primaryOrgId: 'org1', role: 'dispatcher' }); expect(dispatcher.state.assignments[0].status).toBe('executing');
+  });
+  it('CAS loss aborts writes and emits no assignment event', async () => {
+    const h = makeCanonicalReceiptHarness(); h.faults.casMiss = ewohSchedulingPlanAssignment;
+    await expect(h.feedback.recordActuals({ assignmentId: h.assignmentId, actualStart: '2026-08-17T08:00:00Z' }, h.actor)).rejects.toBeInstanceOf(ConflictException);
+    expect(h.state.events).toHaveLength(0); expect(h.state.outbox).toHaveLength(0); expect(h.state.executions[0].status).toBe('DISPATCHED');
+  });
+  /**
+   * 2026-09-10 回归：回执的"本人可报"必须比较**同一标识空间**。
+   *
+   * 旧实现 `assignment.personId !== ctx.userId` 比较人员域与登录账号域，于是
+   * 现场 worker 永远回执不了自己的任务，只能借特权角色。以下三个用例把修复
+   * 钉死：绑定匹配才放行、未绑定 fail-closed、登录 id 与人员 id 相同也不算数。
+   */
+  it('账号已绑定该人员 → 允许本人回执', async () => {
+    const h = makeCanonicalReceiptHarness({ personId: 'worker-1', actorUserId: 'acct-1' });
+    await h.feedback.recordActuals(
+      { assignmentId: h.assignmentId, actualStart: '2026-08-17T08:00:00Z' },
+      { userId: 'acct-1', primaryOrgId: 'org1', personId: 'worker-1' },
     );
-    return { svc, db, state };
-  }
-
-  const seedDispatched = () => ({
-    assignments: [
-      {
-        assignmentId: 'ASG-1',
-        planId: 'PLAN-1',
-        taskId: 'TASK-1',
-        personId: 'p1',
-        deviceId: null,
-        stationId: null,
-        status: 'dispatched',
-        orgId: 'org1',
-      },
-    ],
+    expect(h.state.assignments[0].status).toBe('executing');
   });
 
-  it('非受派者（userId ≠ personId、无可信角色）推进 dispatched assignment → 403', async () => {
-    const { svc } = buildService(seedDispatched());
-    await expect(
-      svc.recordActuals(
-        { assignmentId: 'ASG-1', actualStart: '2026-08-17T08:00:00Z' },
-        { userId: 'intruder', primaryOrgId: 'org1' },
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+  it('账号未绑定人员（即使 userId 恰好等于 personId）→ fail-closed 拒绝', async () => {
+    const h = makeCanonicalReceiptHarness({ personId: 'worker-1' });
+    await expect(h.feedback.recordActuals(
+      { assignmentId: h.assignmentId, actualStart: '2026-08-17T08:00:00Z' },
+      // 这正是旧实现赖以通过的形状：userId === assignment.personId，但无绑定事实。
+      { userId: 'worker-1', primaryOrgId: 'org1', personId: null },
+    )).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.state.assignments[0].status).toBe('dispatched');
   });
 
-  it('受派人本人（userId === personId）回填 → 推进成功', async () => {
-    const { svc, state } = buildService(seedDispatched());
-    const res = await svc.recordActuals(
-      { assignmentId: 'ASG-1', actualStart: '2026-08-17T08:00:00Z' },
-      { userId: 'p1', primaryOrgId: 'org1' },
-    );
-    expect(res.advancedAssignments).toBe(1);
-    expect(state.assignments[0].status).toBe('executing');
+  it('账号绑定的是别人 → 拒绝（不能回执他人任务）', async () => {
+    const h = makeCanonicalReceiptHarness({ personId: 'worker-1' });
+    await expect(h.feedback.recordActuals(
+      { assignmentId: h.assignmentId, actualStart: '2026-08-17T08:00:00Z' },
+      { userId: 'acct-2', primaryOrgId: 'org1', personId: 'worker-2' },
+    )).rejects.toBeInstanceOf(ForbiddenException);
+    expect(h.state.assignments[0].status).toBe('dispatched');
   });
 
-  it('dispatcher 可信角色代录 → 推进成功', async () => {
-    const { svc } = buildService(seedDispatched());
-    const res = await svc.recordActuals(
-      { assignmentId: 'ASG-1', actualEnd: '2026-08-17T08:30:00Z' },
-      { userId: 'dispatcher-1', primaryOrgId: 'org1', role: 'dispatcher' },
-    );
-    expect(res.advancedAssignments).toBe(1);
+  it('cross-key mismatch is conjunctive and cannot broaden to another assignment', async () => {
+    const h = makeCanonicalReceiptHarness(); h.state.assignments.push({ ...h.state.assignments[0], id: 'assignment-row-2', assignmentId: 'ASG-OTHER', taskId: 'other-task' });
+    await expect(h.canonical.applyFromActuals({ assignmentId: h.assignmentId, taskId: 'other-task', actualStart: '2026-08-17T08:00:00Z' }, h.actor)).resolves.toBeNull();
+    expect(h.state.assignments.every(a => a.status === 'dispatched')).toBe(true);
   });
-
-  it('无可推进 assignment（非 dispatched/executing）→ 不触发授权拦截', async () => {
-    const { svc } = buildService({
-      assignments: [{ ...seedDispatched().assignments[0], status: 'proposed' }],
-    });
-    const res = await svc.recordActuals(
-      { assignmentId: 'ASG-1', actualStart: '2026-08-17T08:00:00Z' },
-      { userId: 'intruder', primaryOrgId: 'org1' },
-    );
-    expect(res.advancedAssignments).toBe(0);
-  });
-});
-
-describe('R2-SSV-05: applyExecutionAdvancement CAS 0 命中不发事件', () => {
-  it('并发后到者 CAS miss → 不插 assignment 事件、不计推进', async () => {
-    const { db, state } = makeFakeDb(seedR2Ssv05());
-    const requestDatabaseContext = {
-      runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
-        await cb();
-      }),
-    };
-    // 覆盖 assignment UPDATE：CAS 谓词未命中（并发已推进）→ returning []。
-    (db as { update: unknown }).update = () => ({
-      set: () => ({
-        where: () => ({ returning: () => Promise.resolve([]) }),
-      }),
-    });
-    const svc = new SchedulingFeedbackService(
-      db,
-      requestDatabaseContext as unknown as RequestDatabaseContext,
-    );
-    const res = await svc.recordActuals(
-      { assignmentId: 'ASG-1', actualStart: '2026-08-17T08:00:00Z' },
-      testOrgContext(),
-    );
-    expect(res.advancedAssignments).toBe(0);
-    expect(res.skips).toEqual(expect.arrayContaining([expect.stringContaining('start_cas_miss')]));
-    expect(state.events).toHaveLength(0);
-  });
-
-  function seedR2Ssv05(): Parameters<typeof makeFakeDb>[0] {
-    return {
-      assignments: [
-        {
-          assignmentId: 'ASG-1',
-          planId: 'PLAN-1',
-          taskId: 'TASK-1',
-          personId: 'u1',
-          deviceId: null,
-          stationId: null,
-          status: 'dispatched',
-          orgId: 'org1',
-        },
-      ],
-    };
-  }
 });

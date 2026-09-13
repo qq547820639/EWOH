@@ -14,14 +14,16 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './test/browser',
+  globalSetup: './test/browser/browser-global-setup.ts',
+  outputDir: `${process.env.EWOH_BROWSER_RESULTS_DIR || 'test-results'}/artifacts`,
   timeout: 120_000,
   fullyParallel: false,
   workers: 1,
   reporter: [
     ['list'],
-    ['json', { outputFile: 'test-results/playwright.json' }],
-    ['junit', { outputFile: 'test-results/junit.xml' }],
-    ['html', { outputFile: 'test-results/playwright-report' }],
+    ['json', { outputFile: `${process.env.EWOH_BROWSER_RESULTS_DIR || 'test-results'}/playwright.json` }],
+    ['junit', { outputFile: `${process.env.EWOH_BROWSER_RESULTS_DIR || 'test-results'}/junit.xml` }],
+    ['html', { outputFolder: `${process.env.EWOH_BROWSER_RESULTS_DIR || 'test-results'}/playwright-report`, open: 'never' }],
   ],
   projects: [
     {

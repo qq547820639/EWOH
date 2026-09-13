@@ -356,7 +356,10 @@ describe('MesService quality schemes', () => {
       })),
       update: jest.fn(() => ({
         set: jest.fn(() => ({
-          where: jest.fn().mockResolvedValue([]),
+          where: jest.fn(() => ({
+            // 服务端 CAS（returning 判命中行）：命中 1 行 = 前置状态未被并发改写。
+            returning: jest.fn().mockResolvedValue([{ stepId: 'ST-1' }]),
+          })),
         })),
       })),
       insert: jest.fn((_table: unknown) => ({
@@ -613,7 +616,10 @@ describe('MesService materials and quality', () => {
       resultJson: null,
     };
     const { db } = createGetDb([workOrder], [step], []);
-    const updateWhere = jest.fn().mockResolvedValue([]);
+    const updateWhere = jest.fn(() => ({
+      // 服务端 CAS（returning 判命中行）：命中 1 行 = 前置状态未被并发改写。
+      returning: jest.fn().mockResolvedValue([{ stepId: 'S1' }]),
+    }));
     const dbWithUpdate = {
       ...db,
       update: jest.fn(() => ({

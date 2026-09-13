@@ -54,6 +54,9 @@ function makeQuery(rowsProvider: () => Array<Record<string, unknown>>) {
   q.where = () => makeQuery(rowsProvider);
   q.limit = (n?: number) => Promise.resolve(run().slice(0, n ?? run().length));
   q.orderBy = () => makeQuery(rowsProvider);
+  // NO-39a：派工事务会对设备行加锁（`SELECT ... FOR UPDATE`）——替身必须同形提供
+  // `.for()`，否则真实写路径在测试里直接 TypeError（与"替身漂移"同一类坑）。
+  q.for = () => makeQuery(rowsProvider);
   return q;
 }
 
@@ -254,6 +257,8 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
   };
   const worldStateSnapshotService = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn().mockResolvedValue(undefined),
     // v0.7 Batch6.3 SAFETY 熔断：默认无阻断资源（空集）
     getCurrentWorldState: jest.fn().mockResolvedValue({
       safetyBlockedPersonIds: [],
@@ -346,6 +351,8 @@ export function makePlanService(seed: FakeDbSeed = {}) {
   };
   const worldStateSnapshotService = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn().mockResolvedValue(undefined),
     buildSnapshot: jest.fn(),
     getCurrentWorldState: jest.fn().mockResolvedValue({
       safetyBlockedPersonIds: [],

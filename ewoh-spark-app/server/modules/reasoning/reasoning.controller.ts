@@ -29,6 +29,24 @@ export class ReasoningController {
     return this.reasoningService.evaluate(body, orgId);
   }
 
+  /**
+   * NO-25a：从**实时世界模型**评估（不手供事实）。
+   *
+   * 读权威快照 + 最近环境读数 → 投影事实（新鲜度/置信度/能力声明三道闸）→
+   * 同一套确定性规则评估与 L4 落账。响应同时给出依据（evidence）与未采用的数据
+   * （skipped），现场可判断"结论为什么出现/为什么没出现"。
+   */
+  @Post('evaluate-live')
+  evaluateLive(@Req() request: { userContext?: OrgContext }) {
+    return this.reasoningService.evaluateLive(request.userContext);
+  }
+
+  /** NO-25a：只读事实视图（不评估、不落账）——排障与 AI 解释的事实来源。 */
+  @Get('live-facts')
+  liveFacts(@Req() request: { userContext?: OrgContext }) {
+    return this.reasoningService.listLiveFacts(request.userContext);
+  }
+
   @Get('rules')
   rules() {
     return this.reasoningService.listRules();

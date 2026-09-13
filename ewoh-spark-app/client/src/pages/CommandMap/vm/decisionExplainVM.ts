@@ -5,6 +5,7 @@
  * 纯函数、无 React 依赖、可 node 单测。禁止 import 任何 hard 判定逻辑。
  */
 import type { DecisionTrace } from '@shared/api.interface';
+import { rejectReasonLabel } from '@shared/reject-reason';
 
 export interface RejectedHardItem {
   personId: string | null;
@@ -59,40 +60,12 @@ export function decisionExplainVM(trace: DecisionTrace | null | undefined): Deci
   };
 }
 
-/** 拒绝原因可读文案（仅映射已知原因；未知原样透传，禁止前端判定）。 */
+/**
+ * 拒绝原因可读文案（唯一来源 `shared/reject-reason.ts`）。
+ *
+ * 词表同时覆盖：候选拒绝原因（snake）、冲突类型、决策痕迹硬约束（UPPER_SNAKE）
+ * 与历史键；未登记键返回"未登记原因（key）"而不是裸英文键（原则 5/7）。
+ */
 export function decisionReasonLabel(reason: string): string {
-  const LABELS: Record<string, string> = {
-    REQUIRED_SKILL: '缺少技能',
-    REQUIRED_CERTIFICATION: '缺少证书',
-    PERSON_AVAILABLE: '人员不可用',
-    DEVICE_AVAILABLE: '设备不可用',
-    RESOURCE_TIME_WINDOW: '时间窗冲突',
-    NO_DOUBLE_BOOKING: '重复占用',
-    PREDECESSOR: '前置未完成',
-    FORBIDDEN_ZONE: '禁入区',
-    MIN_BATTERY: '电量不足',
-    MAX_WORKLOAD: '负荷超限',
-    SAFETY_BLOCK: '安全封锁',
-    LOCKED_PERSON: '人员锁定',
-    LOCKED_DEVICE: '设备锁定',
-    LOCKED_STATION: '工位锁定',
-    LOCKED_TIME: '时间锁定',
-    LOCKED_ASSIGNMENT: '分配锁定',
-    STATION_CAPABILITY: '工位能力不足',
-    STATION_CAPACITY: '工位容量已满',
-    EXCLUDED_RESOURCE: '资源已排除',
-    ROUTE_BLOCKED: '路线阻断',
-    ROUTE_CONGESTED: '路线拥塞',
-    route_infeasible: '路径不可行',
-    missing_skill: '缺少技能',
-    missing_certification: '缺少证书',
-    device_offline: '设备离线',
-    low_battery: '电量不足',
-    safety_blocked: '安全封锁',
-    forbidden_zone: '禁入区',
-    time_conflict: '时间冲突',
-    station_capacity_exceeded: '工位容量超限',
-    must_finish_by_violation: '违反硬截止',
-  };
-  return LABELS[reason] ?? reason;
+  return rejectReasonLabel(reason);
 }

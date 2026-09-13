@@ -24,7 +24,9 @@ BEGIN
   SELECT count(*) INTO rls_enabled FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = current_schema()
-     AND c.relname = ANY (expected_tables)
+     -- relname 是 name 类型：与 text[] 比较必须显式转换（PG 不做 name = text 的数组蕴含转换，
+     -- 全新库跑 verify 实测报 `operator does not exist: name[] = text[]`）。
+     AND c.relname::text = ANY (expected_tables)
      AND c.relrowsecurity = true;
   IF rls_enabled != 5 THEN
     RAISE EXCEPTION 'standalone_067 verify failed: expected 5 tables with RLS enabled, got %', rls_enabled;
@@ -33,7 +35,7 @@ BEGIN
   -- 2) policy：5/5 存在，且全部 TO service_role
   SELECT count(*) INTO policy_count FROM pg_policies
    WHERE schemaname = current_schema()
-     AND tablename = ANY (expected_tables)
+     AND tablename::text = ANY (expected_tables)
      AND policyname IN (
        'scheduling_execution_org_isolation',
        'scheduling_conflict_org_isolation',
@@ -41,8 +43,16 @@ BEGIN
        'route_cost_matrix_org_isolation',
        'policy_activation_org_isolation'
      )
-     AND roles = ARRAY['service_role'];
+     -- pg_policies.roles 是 name[]：与 text 字面量数组比较要显式转型，
+     -- 否则报 `operator does not exist: name[] = text[]`（全新库实测）。
+     AND roles = ARRAY['service_role']::name[];
   IF policy_count != 5 THEN
     RAISE EXCEPTION 'standalone_067 verify failed: expected 5 org isolation policies TO service_role, got %', policy_count;
   END IF;
 END $$;
+
+-- 验证出口标记：迁移 runner 以该列判定"verify 通过"。
+-- 缺陷背景（NO-58d）：本文件此前**没有出口标记**，于是无论断言是否通过，
+-- runner 都报 "did not return standalone_067_verified=1" → 被登记进基线；
+-- 补上标记后它才真正开始验证 RLS/策略（全新库实测修复）。
+SELECT 1 AS standalone_067_verified;

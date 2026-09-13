@@ -4,7 +4,10 @@
 import {
   formatTime,
   isPendingStatus,
+  extractStalenessReport,
   isPlanStaleError,
+  orderStalenessChanges,
+  stalenessFromError,
   buildPlanSubtitle,
   buildMetricsSummary,
   filterPlansByStatus,
@@ -205,5 +208,72 @@ describe('schedulingLogic', () => {
       expect(Object.keys(TRIGGER_LABELS)).toContain('DEVICE_OFFLINE');
       expect(Object.keys(TRIGGER_LABELS)).toContain('SAFETY_EVENT');
     });
+  });
+});
+
+describe('NO-62c 方案过期诊断（客户端解析与排序）', () => {
+  const report = {
+    snapshotVersion: 'WS-1',
+    snapshotFound: true,
+    stale: true,
+    summary: '检测到 2 项外部变化，另有 1 项本方案自身效果',
+    checkedAt: '2026-09-12T03:00:00.000Z',
+    externalChangeCount: 2,
+    selfInflictedCount: 1,
+    changes: [
+      {
+        kind: 'entity_version' as const,
+        entityKey: 'task:T-9',
+        entityType: 'task',
+        entityId: 'T-9',
+        change: 'changed' as const,
+        selfInflicted: true,
+        label: 'task 版本 1 → 2',
+      },
+      {
+        kind: 'entity_version' as const,
+        entityKey: 'device:AGV-2',
+        entityType: 'device',
+        entityId: 'AGV-2',
+        change: 'removed' as const,
+        selfInflicted: false,
+        label: 'device 消失（快照后被移除）',
+      },
+      {
+        kind: 'reservation' as const,
+        entityKey: 'reservation:person:P-1',
+        entityType: 'person',
+        entityId: 'P-1',
+        change: 'added' as const,
+        selfInflicted: false,
+        label: '新增资源预占 person:P-1',
+      },
+    ],
+  };
+
+  it('fromError：从 409 响应体里取出诊断（审批被拒时的现场可见性）', () => {
+    expect(stalenessFromError({ response: { status: 409, data: { staleness: report } } })?.summary)
+      .toBe(report.summary);
+  });
+
+  it('拿不到结构化诊断时返回 null（不编造"状态已变化"来假装有诊断）', () => {
+    expect(stalenessFromError({ response: { status: 409, data: { message: 'PLAN_STALE' } } })).toBeNull();
+    expect(stalenessFromError(new Error('boom'))).toBeNull();
+    expect(extractStalenessReport(null)).toBeNull();
+    // 直接传报告本身（GET /staleness 的响应体形状）也要认得
+    expect(extractStalenessReport(report)?.stale).toBe(true);
+  });
+
+  it('差异排序：外部变化排在本方案自身效果之前 + 截断计数', () => {
+    const { shown, hiddenCount } = orderStalenessChanges(report as never, 2);
+    expect(shown.map((c) => c.selfInflicted)).toEqual([false, false]);
+    expect(shown[0].entityKey < shown[1].entityKey).toBe(true);
+    expect(hiddenCount).toBe(1);
+  });
+
+  it('截断上限大于差异数时不丢项', () => {
+    const { shown, hiddenCount } = orderStalenessChanges(report as never, 10);
+    expect(shown).toHaveLength(3);
+    expect(hiddenCount).toBe(0);
   });
 });

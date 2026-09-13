@@ -114,7 +114,7 @@ describe('面包屑与路由映射', () => {
 
   it('未知路由回退为首页', () => {
     const crumbs = resolveBreadcrumb('/unknown');
-    expect(crumbs).toEqual([{ label: '首页', to: '/command-center' }]);
+    expect(crumbs).toEqual([{ label: '首页', to: '/factory-operations' }]);
   });
 
   it('resolveNavLabel 返回页面名或 null', () => {

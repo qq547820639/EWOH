@@ -108,6 +108,17 @@ function feedbackRow(i: number, durationMs: number, orgId = 'org1') {
     taskId: `t-${i}`,
     actualStart: new Date(1_700_000_000_000),
     actualEnd: new Date(1_700_000_000_000 + durationMs),
+    receiptSource: 'real',
+    productionTrainingEligible: true,
+    provenanceJson: {
+      policy: 'receipt-provenance-v1', source: 'real',
+      independentReceipt: {
+        policy: 'persisted-device-receipt-v1', source: 'device_receipt',
+        executionId: `exec-${i}`, assignmentId: `a-${i}`, planId: `p-${i}`, taskId: `t-${i}`, deviceId: `d-${i}`,
+        actualStartAt: new Date(1_700_000_000_000).toISOString(),
+        actualEndAt: new Date(1_700_000_000_000 + durationMs).toISOString(),
+      },
+    },
   };
 }
 

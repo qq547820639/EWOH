@@ -25,14 +25,14 @@ describe('静态页面级渲染 smoke（NO-13f / ADR-055）', () => {
     expect(markup).toContain('退出登录');
   });
 
-  it('NotFound：404 + 返回指挥中心链接（href 指向 /command-center）', () => {
+  it('NotFound：404 + 返回工厂运行台链接（href 指向 /factory-operations）', () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <NotFound />
       </MemoryRouter>,
     );
     expect(markup).toContain('404');
-    expect(markup).toContain('返回指挥中心');
-    expect(markup).toContain('/command-center');
+    expect(markup).toContain('返回工厂运行台');
+    expect(markup).toContain('/factory-operations');
   });
 });

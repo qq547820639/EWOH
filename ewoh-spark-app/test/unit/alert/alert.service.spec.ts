@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   AlertService,
   nextAlertStatus,
@@ -63,6 +63,51 @@ describe('alert state machine', () => {
   it('rejects illegal transitions', () => {
     expect(nextAlertStatus('open', 'close')).toBeNull();
     expect(nextAlertStatus('closed', 'acknowledge')).toBeNull();
+  });
+
+  // 为什么必须钉死：global_admin 的超管语义是"满足一切角色条件"（纯 global_admin
+  // 账号不含 handler/safety_admin 也能处置），不是"跳出状态机"——open→closed 在
+  // alert.yaml 里没有这条边，放行它等于确认/处置两步审计被整段跳过（非法转移被拒
+  // 的契约失效，且与 oee.transitionAndon 永远走转移表的行为分叉）。
+  it('global_admin 不豁免转移拓扑：open 上 close 仍被拒（非法转移，alert.yaml）', async () => {
+    const before = { eventId: 'EVT-GA-1', status: 'open', title: 'alert' };
+    const { db, updateWhere } = createDbMock([before], []);
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new AlertService(db, audit as never);
+
+    const error = await service
+      .transitionAlert('EVT-GA-1', 'close', {
+        userId: 'admin-1',
+        primaryOrgId: 'org-1',
+        // 纯 global_admin 账号（不含 handler/safety_admin 角色）
+        roles: ['global_admin'],
+        isGlobalAdmin: true,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect(error.message).toContain('not allowed');
+    // 非法转移必须在写库前被拒绝：状态行与审计都不能动
+    expect(updateWhere).not.toHaveBeenCalled();
+    expect(audit.appendAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('global_admin 仍可执行合法转移（豁免的是角色条件，无需 handler 角色）', async () => {
+    const before = { eventId: 'EVT-GA-2', status: 'acknowledged', title: 'alert' };
+    const after = { ...before, status: 'processing' };
+    const { db } = createDbMock([before], [after]);
+    const audit = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
+    const service = new AlertService(db, audit as never);
+
+    const result = await service.transitionAlert('EVT-GA-2', 'process', {
+      userId: 'admin-1',
+      primaryOrgId: 'org-1',
+      roles: ['global_admin'],
+      isGlobalAdmin: true,
+    });
+
+    // acknowledged→processing 是转移表里真实存在的边：超管免角色放行
+    expect(result.status).toBe('processing');
   });
 
   it('returns 409 STATE_CONFLICT when the conditional update affects zero rows', async () => {

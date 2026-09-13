@@ -12,6 +12,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
 from edge_platform.spatial import now_iso
@@ -132,6 +133,7 @@ class GreedyOptimizer(Optimizer):
         """
         persons = list(getattr(world_state, "persons", []) or [])
         devices = list(getattr(world_state, "devices", []) or [])
+        constraints = deepcopy(self.constraints)
         person_by_id = {}
         for p in persons:
             pid = p.get("person_id") if isinstance(p, dict) else getattr(p, "person_id", None)
@@ -139,7 +141,7 @@ class GreedyOptimizer(Optimizer):
                 person_by_id[pid] = p
 
         # 若调用方未注入 skills_registry，从真实世界状态构建（P0 修复）
-        if not getattr(self.constraints, "skills_registry", None):
+        if not getattr(constraints, "skills_registry", None):
             skills_registry = {}
             for p in persons:
                 pid = p.get("person_id") if isinstance(p, dict) else getattr(p, "person_id", None)
@@ -160,7 +162,7 @@ class GreedyOptimizer(Optimizer):
                 if isinstance(raw, (list, tuple, set)):
                     skills = [str(s) for s in raw]
                 skills_registry[pid] = set(skills)
-            self.constraints.skills_registry = skills_registry
+            constraints.skills_registry = skills_registry
 
         assignments = []
         violations = []
@@ -175,7 +177,7 @@ class GreedyOptimizer(Optimizer):
                     task,
                     [p for p in persons],
                     [d for d in devices],
-                    self.constraints,
+                    constraints,
                     {},
                 )
             passed = [c for c in cands if getattr(c, "passed", False)]

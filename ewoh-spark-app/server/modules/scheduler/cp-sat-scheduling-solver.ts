@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { normalizeBatteryPct } from '@shared/api.interface';
 import type {
   SchedulingAssignment,
   SchedulingConstraint,
@@ -160,6 +161,16 @@ export class CpSatSchedulingSolver {
 
     const policy = opts.policy ?? (await this.heuristicSolver.loadActivePolicy());
     const config = await this.heuristicSolver.loadConfig();
+    let minBatteryPct = config.minBatteryPct;
+    for (const constraint of constraints) {
+      if (constraint.type === 'MIN_BATTERY' && constraint.value != null) {
+        minBatteryPct = constraint.value;
+      }
+    }
+    const blockedBatteryDeviceIds = new Set(snapshot.devices.filter((device) => {
+      const batteryPct = normalizeBatteryPct(device.batteryPct);
+      return batteryPct == null || batteryPct < minBatteryPct;
+    }).map((device) => device.id));
     const nowMs = Date.now();
     const horizonEndMs = nowMs + (opts.horizonMinutes ?? 60) * 60 * 1000;
     // 统一优先级：CP-SAT 与 heuristic 消费同一 PriorityEngine 结果（含完整解释）。
@@ -178,6 +189,7 @@ export class CpSatSchedulingSolver {
     let reachable = false;
     // 15.1 fault-injection：Worker 可达但响应畸形（非 JSON / 形状越契约）→ 显式降级信号。
     let malformedResponse = false;
+    let batteryRejectedResponse = false;
     // P2-T1：候选可行性矩阵（TravelCostService SSOT）——只有矩阵判定 feasible 的
     // person/device 候选才进入求解请求（eligiblePersonIds/eligibleDeviceIds）；
     // 缺坐标候选在矩阵层已被排除（绝不把 UNKNOWN 坐标当作 0,0 伪坐标送入 Worker）。
@@ -292,17 +304,38 @@ export class CpSatSchedulingSolver {
       };
     }
     try {
-      const request = this.buildRequest(
+      // ADR-056 消费侧：解析一次，随请求传给 buildRequest（与 heuristic/MILP 同源）。
+      const durationMsByTask =
+        ((await this.heuristicSolver.loadConfig()).prediction?.durationModelMode ?? 'off') === 'advisory'
+          ? await this.heuristicSolver.resolveModelDurations(
+              snapshot,
+              await this.heuristicSolver.loadConfig(),
+              (await this.heuristicSolver.loadConfig()).defaultTaskDurationMs,
+              opts.orgId ?? null,
+            )
+          : null;
+      const request = await this.buildRequest(
         snapshot,
         constraints,
         opts,
         policy,
+        durationMsByTask,
         nowMs,
         effectiveScores,
         eligibleByTask,
         candidateCostsByTask,
       );
       // Task 6 / P1：全链路关联 ID（X-Request-ID 头；worker 回显 requestId 仅日志，不进共享契约）。
+      // The worker's safety list is an unconditional filter, including empty candidate matrices.
+      request.safetyBlockedDeviceIds = [...new Set([
+        ...(request.safetyBlockedDeviceIds ?? []),
+        ...blockedBatteryDeviceIds,
+      ])];
+      for (const task of request.tasks) {
+        if (task.eligibleDeviceIds) {
+          task.eligibleDeviceIds = task.eligibleDeviceIds.filter((id) => !blockedBatteryDeviceIds.has(id));
+        }
+      }
       const requestId = `req-${randomUUID()}`;
       response = await this.post(request, requestId);
       reachable = true;
@@ -360,6 +393,15 @@ export class CpSatSchedulingSolver {
       response = null; // 视为无效响应 → 走下方 FALLBACK 分支
     }
 
+    if (response?.assignments.some((assignment) =>
+      assignment.deviceId != null && blockedBatteryDeviceIds.has(assignment.deviceId)
+    )) {
+      batteryRejectedResponse = true;
+      this.logger.warn('CP-SAT response used a device with unavailable or low battery; rejecting plan');
+      this.circuitBreaker.recordFailure();
+      response = null;
+    }
+
     // Phase 2 / P2-T4：响应 well-formed（worker 正常应答，含 OPTIMAL/FEASIBLE/INFEASIBLE/TIMEOUT）
     // → 复位熔断（worker 健康）。
     if (response) {
@@ -389,7 +431,9 @@ export class CpSatSchedulingSolver {
 
     // 否则回退到启发式：Worker 可达但结果不可用 → FALLBACK；不可达 → UNAVAILABLE。
     const fallbackStatus: SolverStatus = reachable ? 'FALLBACK' : 'UNAVAILABLE';
-    const fallbackReason = malformedResponse
+    const fallbackReason = batteryRejectedResponse
+      ? 'cpsat_device_battery_unavailable_or_low'
+      : malformedResponse
       ? `CP-SAT worker 返回畸形响应（malformed response），回退启发式`
       : reachable
         ? `CP-SAT worker 返回非最优/不可用状态（${response?.solverStatus ?? 'unknown'}），回退启发式`
@@ -405,11 +449,12 @@ export class CpSatSchedulingSolver {
 
   // ---- 内部：构建 SolverRequest ----
 
-  private buildRequest(
+  private async buildRequest(
     snapshot: WorldStateSnapshot,
     constraints: SchedulingConstraint[],
     opts: SolveOptions,
     policy: SchedulingPolicy,
+    durationMsByTask: ReadonlyMap<string, number> | null,
     nowMs: number,
     effectiveScores: Map<string, number>,
     eligibleByTask?: Map<string, { personIds: string[]; deviceIds: string[] }>,
@@ -425,7 +470,7 @@ export class CpSatSchedulingSolver {
         fallbackReason: string | null;
       }>
     >,
-  ): SolverRequest {
+  ): Promise<SolverRequest> {
     const horizonMinutes = opts.horizonMinutes;
 
     // ---- 约束拆解：与 heuristic 语义一致，CP-SAT 主路径同样真实执行 ----
@@ -490,7 +535,7 @@ export class CpSatSchedulingSolver {
       const durationMs =
         Number.isFinite(planStart) && Number.isFinite(planEnd)
           ? Math.max(planEnd - planStart, 1)
-          : DEFAULT_DURATION_MS;
+          : (durationMsByTask?.get(t.id) ?? DEFAULT_DURATION_MS);
       return {
         taskId: t.id,
         // 统一优先级：来自共享 PriorityEngine（越小越紧急），禁止独立 priorityRank。
@@ -538,7 +583,7 @@ export class CpSatSchedulingSolver {
       status: d.status ?? 'online',
       online: d.online,
       capabilities: d.capabilities ?? [],
-      batteryPct: d.batteryPct ?? 100,
+      batteryPct: normalizeBatteryPct(d.batteryPct),
       x: d.x ?? null,
       y: d.y ?? null,
       availableFromMs: null,

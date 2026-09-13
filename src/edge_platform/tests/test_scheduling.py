@@ -136,7 +136,7 @@ class _FakeWorldStorage:
         return self.devices
 
     def list_tasks(self):
-        return []
+        return [_task("T1"), _task("T2")]
 
     def list_stations(self):
         return [{"station_id": "S1"}]
@@ -844,7 +844,13 @@ class PerformanceRegressionTests(unittest.TestCase):
             hc = HardConstraints(skills_registry={f"P{i}": {"焊接"} for i in range(20)})
             opt = _make_optimizer(constraints=hc)
             call_count[0] = 0
-            plan = opt.solve(ws, [_task("T1")], None, {})
+            # 任务必须真的要求"搬运"，否则技能约束根本不触发——原 fixture
+            # 用 _task("T1") 无 required_skills，与上方"全部失败"的说明不符，
+            # 于是测试实际测的是"候选全部成功"的路径。
+            plan = opt.solve(ws, [_task("T1", required_skills=["搬运"])], None, {})
+            assignments = getattr(plan, "assignments", None) or []
+            self.assertEqual(len(assignments), 0,
+                "所有候选均不满足硬约束时不应产生分配")
             # 20 persons × 10 devices = 200 个候选全部失败
             # 旧代码会生成 200 个 UUID；新代码应远少于此
             self.assertLess(call_count[0], 200,

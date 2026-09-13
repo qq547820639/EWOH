@@ -34,6 +34,12 @@ class SolverTask:
     # P0-3：硬性最晚完成时间（epoch ms；None=无硬截止）。与 dueMs（软 lateness）
     # 分离：dueMs 超时仅罚 lateness，mustFinishByMs 违反则任务不可分配。
     mustFinishByMs: int | None = None
+    # 任务状态透传（2026-09-13 契约修复）：Nest 侧任务节点故意携带 status 供
+    # worker 审计日志（cp-sat-scheduling-solver 注释"任务 status 透传 worker 供
+    # 审计"），但本契约字段缺失 → **kwargs 直接 TypeError → 400 → 熔断器打开
+    # → CP-SAT 永远 UNAVAILABLE。这是"从未在含 ortools 的环境验证"所掩盖的
+    # 真实 TCK 级缺陷；可选字段向后兼容（旧 worker 忽略、新 worker 留审计）。
+    status: str | None = None
 
 
 @dataclass
@@ -59,7 +65,7 @@ class SolverDevice:
     status: str
     online: bool
     capabilities: list[str] = field(default_factory=list)
-    batteryPct: float = 100.0
+    batteryPct: float | None = None
     x: float | None = None
     y: float | None = None
     availableFromMs: int | None = None

@@ -22,6 +22,8 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from edge_platform import server, stubs  # noqa: E402
+from edge_platform.routes import NOT_HANDLED, ReqMeta  # noqa: E402
+from edge_platform.routes.registry import dispatch  # noqa: E402
 from edge_platform.world_model.contract_store import ContractWorldStore  # noqa: E402
 
 PERSON_ID = "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
@@ -245,6 +247,48 @@ class WorldModelUnavailableTest(unittest.TestCase):
             status, body_out = self.fx.req(path, method, body)
             self.assertEqual(status, 503, path)
             self.assertEqual(body_out["error"]["code"], "world_store_unavailable", path)
+
+    def test_missing_store_handler_returns_one_response_without_dereference(self):
+        """A None-returning _new_error must still stop each matched route exactly once."""
+        class Handler:
+            path = ""
+            _audit_target_type = None
+            _audit_target_id = None
+
+            def __init__(self):
+                self.responses = []
+
+            def _new_error(self, code, message, status):
+                self.responses.append((code, status))
+                return None
+
+            def send_json(self, payload, status=200):
+                self.responses.append((payload, status))
+                return None
+
+            def arg(self, _name):
+                return None
+
+        cases = [
+            ("GET", "/api/world/snapshot", None),
+            ("POST", "/api/world/entities", _person_declaration()),
+            ("POST", "/api/world/states", {"entityId": PERSON_ID, "entityType": "person"}),
+            ("GET", "/api/world/replay", None),
+            ("POST", "/api/world/events", {"entityId": PERSON_ID, "nodeType": "ENTER_ZONE"}),
+            ("POST", "/api/world/predictions", {"kind": "fatigue", "params": {}}),
+        ]
+        # Empty payloads used to emit an additional invalid_params response after the 503.
+        cases.extend(("POST", path, {}) for path in ("/api/world/states", "/api/world/events"))
+        for method, path, body in cases:
+            with self.subTest(method=method, path=path, body=body):
+                handler = Handler()
+                req = ReqMeta(method, path, tuple(path.split("/")), {}, body, {}, None)
+                try:
+                    outcome = dispatch(self.fx.ctx, handler, method, req)
+                except AttributeError as exc:
+                    self.fail(f"missing-store route dereferenced None: {exc}")
+                self.assertIsNot(outcome, NOT_HANDLED)
+                self.assertEqual(handler.responses, [("world_store_unavailable", 503)])
 
 
 if __name__ == "__main__":

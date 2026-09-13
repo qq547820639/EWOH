@@ -8,6 +8,7 @@ import {
   Boxes,
   Square,
   MapPin,
+  Cpu,
   User,
   ChevronRight,
   Link2,
@@ -72,12 +73,25 @@ import {
   bindDevice,
   unbindDevice,
   getTelemetry,
+  getDeviceDetail,
 } from '@client/src/api/dashboard';
 import { getHierarchy, getEntities } from '@client/src/api/spatial';
+import { buildCapabilityViews, hasRegisteredLocation, formatDeviceCategory } from './devicesLogic';
 import { listPersonnel } from '@client/src/api/organization';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@client/src/components/ui/dialog';
+import { capabilityActionLabel, DISABLED_REVIEW_THRESHOLD_DAYS, type DeviceCapabilityView } from './devicesLogic';
+import {
+  describeApprovalFreshness,
+  describeRestoreApprovalStatus,
+  describeRestoreRejection,
+  restoreRequiresSafetyApproval,
+} from './devicesLogic';
+import { requestDeviceCapabilityRestoreApproval, setDeviceCapabilityStatus } from '../../api/dashboard';
+import { getApprovalDetail } from '@client/src/api/approvals';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import Timeline from '@client/src/components/Timeline';
 import { normalizeTimelineEvent } from '@client/src/lib/timelineModel';
+import ExecutionBoundaryPanel from './ExecutionBoundaryPanel';
 
 export interface DeviceConfigDrawerProps {
   open: boolean;
@@ -346,6 +360,15 @@ const DeviceConfigDrawer = ({
   });
 
   // ===== 状态历史 / 统一时间线（仅 edit 模式，复用现有遥测接口） =====
+  // 设备详情（含能力清单）：只在编辑模式打开抽屉时取，避免列表 N+1
+  const detailQuery = useQuery({
+    queryKey: ['device-detail', device?.deviceId],
+    queryFn: () => getDeviceDetail(device!.deviceId),
+    enabled: isEdit && open && !!device?.deviceId,
+    refetchOnWindowFocus: false,
+  });
+  const capabilityViews = buildCapabilityViews(detailQuery.data?.capabilities ?? null);
+
   const telemetryQuery = useQuery({
     queryKey: ['device-telemetry', device?.deviceId],
     queryFn: () => getTelemetry(device!.deviceId),
@@ -381,9 +404,121 @@ const DeviceConfigDrawer = ({
     [telemetryQuery.data, device?.deviceId],
   );
 
+  /** 待变更状态的能力（打开理由对话框；理由必填，与后端同口径）。 */
+  const [capabilityTarget, setCapabilityTarget] = useState<DeviceCapabilityView | null>(null);
+  const [capabilityReason, setCapabilityReason] = useState('');
+  /**
+   * NO-21b：高风险能力恢复的审批号与已取得的审批状态。
+   *
+   * 现场（班组长/设备员）不该自己去翻审批台：对话框内直接发起安全审批、
+   * 显示"还在等谁 / 已通过 / 已驳回"，获批后把审批号带进恢复请求。
+   */
+  const [capabilityApprovalId, setCapabilityApprovalId] = useState('');
+  const [capabilityApproval, setCapabilityApproval] = useState<{
+    id: string;
+    status: string;
+    steps?: Array<{ id: string; role: string; status: string }>;
+    /** NO-22a：审批通过时间（前端据此显示有效期剩余，不代替后端判定）。 */
+    approvedAt?: string | null;
+  } | null>(null);
+  const [capabilityGateNotice, setCapabilityGateNotice] = useState<string | null>(null);
+
+  const requestRestoreApprovalMutation = useMutation({
+    mutationFn: (params: { view: DeviceCapabilityView; reason: string }) =>
+      requestDeviceCapabilityRestoreApproval({
+        capabilityKey: params.view.name,
+        deviceIds: [device!.deviceId],
+        reason: params.reason,
+      }),
+    onSuccess: (data) => {
+      setCapabilityApproval(data);
+      setCapabilityApprovalId(data.id);
+      setCapabilityGateNotice(null);
+      const progress = describeRestoreApprovalStatus(data.status, data.steps);
+      toast.success('已提交安全审批申请', {
+        description: `${progress.label}。审批号：${data.id}`,
+      });
+    },
+    onError: (err: unknown) => {
+      toast.error('审批申请失败', { description: errorDescription(err) });
+    },
+  });
+
+  const checkRestoreApprovalMutation = useMutation({
+    mutationFn: (approvalId: string) => getApprovalDetail(approvalId),
+    onSuccess: (data) => {
+      const steps = (data.steps ?? []).map((step) => ({
+        id: step.id,
+        role: step.role,
+        status: step.status,
+      }));
+      setCapabilityApproval({
+        id: data.id,
+        status: data.status ?? 'unknown',
+        steps,
+        approvedAt: data.approvedAt ?? null,
+      });
+      const progress = describeRestoreApprovalStatus(data.status, steps);
+      if (progress.approved) {
+        toast.success('审批已通过', {
+          description: `${progress.label}；${describeApprovalFreshness(data.approvedAt ?? null).label}`,
+        });
+      } else {
+        toast.info('审批尚未放行', { description: progress.label });
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error('审批状态读取失败', { description: errorDescription(err) });
+    },
+  });
+
+  const capabilityMutation = useMutation({
+    mutationFn: (params: {
+      view: DeviceCapabilityView;
+      action: 'disable' | 'restore';
+      reason: string;
+      approvalId?: string;
+    }) =>
+      setDeviceCapabilityStatus(device!.deviceId, params.view.name, {
+        status: params.action === 'disable' ? 'disabled' : 'active',
+        reason: params.reason,
+        ...(params.approvalId ? { approvalId: params.approvalId } : {}),
+      }),
+    onSuccess: (data, params) => {
+      if (data.changed) {
+        toast.success(params.action === 'disable' ? '能力已停用' : '能力已恢复', {
+          description: '能力台账已更新并写入审计；调度按新状态重新判断派工资格。',
+        });
+      } else {
+        // 幂等 no-op：如实告知"没有发生变化"，不假装执行过
+        toast.info('能力状态未变化', { description: '当前状态与请求一致，未产生新的变更与审计记录。' });
+      }
+      setCapabilityTarget(null);
+      setCapabilityReason('');
+      setCapabilityApprovalId('');
+      setCapabilityApproval(null);
+      setCapabilityGateNotice(null);
+      // 详情（能力清单）与列表都要刷新：能力状态变化会改变世界模型对该设备的判断
+      queryClient.invalidateQueries({ queryKey: ['device-detail', device!.deviceId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.devices() });
+    },
+    onError: (err: unknown) => {
+      // 三类拒绝的下一步动作不同（无号 / 已过期 / 已用掉），必须分别说明，
+      // 并把"该做什么"留在对话框里，而不是只弹一条 toast 就消失
+      const rejection = describeRestoreRejection(err);
+      if (rejection.nextStep) setCapabilityGateNotice(rejection.nextStep);
+      if (rejection.kind === 'approval_stale' || rejection.kind === 'approval_consumed') {
+        // 旧审批号已无用：清空输入，避免现场反复用同一个号撞墙
+        setCapabilityApprovalId('');
+        setCapabilityApproval(null);
+      }
+      toast.error('能力状态变更失败', { description: errorDescription(err) });
+    },
+  });
+
   const invalidateBindingsAndDevices = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.deviceBindings(device?.deviceId) });
-    queryClient.invalidateQueries({ queryKey: ['devices'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.devices() });
   };
 
   const bindMutation = useMutation({
@@ -427,6 +562,25 @@ const DeviceConfigDrawer = ({
 
   const bindingPath = bindingsQuery.data?.hierarchyPath ?? [];
   const bindingLoading = bindingsQuery.isLoading;
+
+  /**
+   * NO-21b：高风险恢复的"为什么现在不能提交"。
+   *
+   * 三种情况分开说：没号 / 号已读但未放行 / 可以提交。既不做"点了没反应"的禁用按钮，
+   * 也不让未获批的审批看起来可用（后端仍会兜底拒绝）。
+   */
+  const capabilityNeedsApproval =
+    capabilityTarget !== null && restoreRequiresSafetyApproval(capabilityTarget);
+  const capabilityApprovalProgress = capabilityApproval
+    ? describeRestoreApprovalStatus(capabilityApproval.status, capabilityApproval.steps)
+    : null;
+  const capabilitySubmitBlockedReason = !capabilityNeedsApproval
+    ? null
+    : capabilityApprovalId.trim().length === 0
+      ? '高风险能力恢复必须带已获批的审批号（后端会拒绝无号恢复）'
+      : capabilityApprovalProgress && !capabilityApprovalProgress.approved
+        ? `审批尚未放行：${capabilityApprovalProgress.label}；此刻提交会被后端拒绝`
+        : null;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
@@ -488,6 +642,13 @@ const DeviceConfigDrawer = ({
                     className="h-9"
                   />
                 )}
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label className="text-xs text-muted-foreground">设备类别</Label>
+                <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted text-sm text-foreground">
+                  {formatDeviceCategory(device?.deviceCategory)}
+                </div>
               </div>
 
               <div className="col-span-2 space-y-1.5">
@@ -638,8 +799,10 @@ const DeviceConfigDrawer = ({
                       })}
                     </div>
                   ) : (
-                    <div className="text-xs text-muted-foreground">
-                      未绑定空间实体
+                    /* 位置未登记必须显式说清（而不是留白）：地图/空间约束/
+                       影响面分析都依赖空间实体，缺它等于这些能力对该设备不可用。 */
+                    <div className="text-xs text-muted-foreground" data-testid="device-location-unregistered">
+                      位置未登记（未绑定空间实体，地图与空间约束不覆盖该设备）
                     </div>
                   )}
                   {/* 绑定人员：档案下拉（姓名/工号搜索，2026-08-20 替代手动输入） */}
@@ -772,6 +935,115 @@ const DeviceConfigDrawer = ({
                   </Button>
                 </div>
 
+                {/* ===== 设备能力（2026-09-10 能力模型）：只读事实，来自摄入登记 ===== */}
+                <Separator />
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-sm font-semibold text-foreground">设备能力</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      （摄入路径自动登记；决定世界模型能用这台设备的哪些事实）
+                    </span>
+                  </div>
+                  {detailQuery.isLoading ? (
+                    <div className="text-xs text-muted-foreground">加载中...</div>
+                  ) : detailQuery.isError ? (
+                    <div className="text-xs text-risk-degraded-foreground" role="alert">
+                      能力清单读取失败：无法确认该设备能提供哪些事实。
+                    </div>
+                  ) : capabilityViews.length === 0 ? (
+                    <div className="text-xs text-muted-foreground" data-testid="device-capabilities-empty">
+                      尚未登记能力（该设备类别未声明可观测/可执行维度）
+                    </div>
+                  ) : (
+                    <ul className="space-y-1" data-testid="device-capabilities">
+                      {capabilityViews.map((capability) => (
+                        <li
+                          key={capability.key}
+                          className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2 py-1 text-xs"
+                          data-testid={`device-capability-${capability.key}`}
+                        >
+                          <span className="font-medium text-foreground">{capability.label}</span>
+                          {/* 权威契约字段：kind（谁的能力）+ mode（观测/交互）+ name */}
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {capability.kindLabel}
+                          </span>
+                          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {capability.modeLabel}
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {capability.name}
+                          </span>
+                          {/* NO-19a：安全等级必须可见（放宽高风险能力需安全负责人确认） */}
+                          <span
+                            className={
+                              capability.risk === 'high'
+                                ? 'rounded border border-risk-blocked-border px-1.5 py-0.5 text-[10px] text-risk-blocked-foreground'
+                                : 'rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground'
+                            }
+                            data-testid={`device-capability-risk-${capability.key}`}
+                            title={capability.riskLabel}
+                          >
+                            {capability.riskLabel}
+                          </span>
+                          <span
+                            className={
+                              capability.effective
+                                ? 'rounded border border-risk-normal-border px-1.5 py-0.5 text-[10px] text-risk-normal-foreground'
+                                : 'rounded border border-risk-blocked-border px-1.5 py-0.5 text-[10px] text-risk-blocked-foreground'
+                            }
+                            data-testid={`device-capability-status-${capability.key}`}
+                          >
+                            {capability.statusLabel}
+                          </span>
+                          {capability.note && (
+                            <span className="text-[10px] text-risk-degraded-foreground">
+                              {capability.note}
+                            </span>
+                          )}
+                          {/* 人工生命周期入口：能力决定派工资格，误声明必须可处置 */}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="ml-auto h-6 px-2 text-[10px]"
+                            data-testid={`device-capability-action-${capability.key}`}
+                            disabled={capabilityActionLabel(capability).blockedReason !== null}
+                            title={capabilityActionLabel(capability).blockedReason ?? undefined}
+                            onClick={() => setCapabilityTarget(capability)}
+                          >
+                            {capabilityActionLabel(capability).label}
+                          </Button>
+                          {capability.lifecycleNote && (
+                            <span
+                              className="w-full text-[10px] text-muted-foreground"
+                              data-testid={`device-capability-lifecycle-${capability.key}`}
+                            >
+                              {capability.lifecycleNote}
+                              {capability.disabledDays !== null && ` · 已停用 ${capability.disabledDays} 天`}
+                            </span>
+                          )}
+                          {capability.needsReview && (
+                            <span
+                              className="w-full text-[10px] text-risk-degraded-foreground"
+                              data-testid={`device-capability-review-${capability.key}`}
+                            >
+                              已停用超过 {DISABLED_REVIEW_THRESHOLD_DAYS} 天：请复核是否恢复，或确认该设备不再需要此能力
+                              （长期停用会让它一直无资格承接这类任务）。
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {capabilityViews.length > 0 && capabilityViews.some((c) => c.fields.length > 0) && (
+                    <p className="text-[10px] text-muted-foreground">
+                      来源字段：{capabilityViews.flatMap((c) => c.fields).join('、')}
+                    </p>
+                  )}
+                </div>
+
+
                 {showHierarchyPicker && (
                   <div className="rounded-md border border-border p-2 space-y-2">
                     <div className="text-[10px] text-muted-foreground">
@@ -816,6 +1088,10 @@ const DeviceConfigDrawer = ({
           {isEdit && step === 2 && (
             <>
               <Separator />
+              {/* NO-66a：执行边界（在飞/排队（设备忙）/撤回原因/授权可信度）——
+                  现场问题"这台设备为什么不动"的答案就在这里，而不是只有网关能读。
+                  放在「状态历史」而不是「绑定关系」：它是**运行状态**，不是绑定配置。 */}
+              {device?.deviceId && <ExecutionBoundaryPanel deviceId={device.deviceId} />}
               <div className="space-y-3">
                 <div className="flex items-center gap-1.5">
                   <History className="w-3.5 h-3.5 text-muted-foreground" />
@@ -879,6 +1155,185 @@ const DeviceConfigDrawer = ({
           </Button>
           </div>
         </DrawerFooter>
+
+      {/* 能力状态变更：理由必填（与后端同口径），并显式说明影响面 */}
+      <Dialog
+        open={capabilityTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setCapabilityTarget(null);
+            setCapabilityReason('');
+            setCapabilityApprovalId('');
+            setCapabilityApproval(null);
+            setCapabilityGateNotice(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px]" data-testid="capability-status-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {capabilityTarget && capabilityActionLabel(capabilityTarget).action === 'disable'
+                ? '停用设备能力'
+                : '恢复设备能力'}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              能力决定该设备能否被派工（<span className="font-mono">requiredDeviceCapabilities</span> 匹配）。
+              变更立即生效并写入审计；摄入路径**不会**自动恢复人工停用的能力。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-xs">
+            <div className="rounded-md border border-border px-2 py-1">
+              <span className="font-medium text-foreground">{capabilityTarget?.label}</span>
+              <span className="ml-2 font-mono text-[10px] text-muted-foreground">{capabilityTarget?.name}</span>
+            </div>
+            <label className="block space-y-1" htmlFor="capability-status-reason">
+              <span className="text-muted-foreground">
+                变更理由（必填，写入台账留痕与审计，现场据此追溯）
+              </span>
+              <textarea
+                id="capability-status-reason"
+                className="min-h-[64px] w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                value={capabilityReason}
+                onChange={(event) => setCapabilityReason(event.target.value)}
+                placeholder="例如：该设备实际未安装温度传感器（现场核对 2026-09-11）"
+              />
+            </label>
+            {capabilityTarget && capabilityActionLabel(capabilityTarget).blockedReason && (
+              <p className="text-[10px] text-risk-degraded-foreground" role="alert">
+                {capabilityActionLabel(capabilityTarget).blockedReason}
+              </p>
+            )}
+
+            {capabilityTarget && restoreRequiresSafetyApproval(capabilityTarget) && (
+              <div className="space-y-2 rounded-md border border-risk-degraded-border px-2 py-2">
+                <p className="text-[10px] text-risk-degraded-foreground" data-testid="capability-restore-approval-hint">
+                  该能力为高风险：恢复 = 设备重新具备高风险作业资格，属执行边界变更，
+                  必须由安全管理员审批（后端闸门 HIGH_RISK_CAPABILITY_RESTORE_REQUIRES_APPROVAL），
+                  现场不得单独放行。
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="capability-restore-request-approval"
+                    disabled={capabilityReason.trim().length === 0 || requestRestoreApprovalMutation.isPending}
+                    title={
+                      capabilityReason.trim().length === 0
+                        ? '请先填写变更理由：审批单会带上该理由，审批人据此判断'
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (!capabilityTarget) return;
+                      requestRestoreApprovalMutation.mutate({
+                        view: capabilityTarget,
+                        reason: capabilityReason.trim(),
+                      });
+                    }}
+                  >
+                    {requestRestoreApprovalMutation.isPending ? '提交中…' : '申请安全审批'}
+                  </Button>
+                  <label className="flex items-center gap-1" htmlFor="capability-restore-approval-id">
+                    <span className="text-muted-foreground">审批号</span>
+                    <input
+                      id="capability-restore-approval-id"
+                      data-testid="capability-restore-approval-input"
+                      className="w-[220px] rounded-md border border-border bg-background px-2 py-1 font-mono text-[10px]"
+                      value={capabilityApprovalId}
+                      onChange={(event) => setCapabilityApprovalId(event.target.value)}
+                      placeholder="批准后填入（或点上方按钮获取）"
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid="capability-restore-check-approval"
+                    disabled={capabilityApprovalId.trim().length === 0 || checkRestoreApprovalMutation.isPending}
+                    onClick={() => checkRestoreApprovalMutation.mutate(capabilityApprovalId.trim())}
+                  >
+                    刷新审批状态
+                  </Button>
+                </div>
+                {capabilityApproval && (
+                  <p className="text-[10px] text-muted-foreground" data-testid="capability-restore-approval-status">
+                    {describeRestoreApprovalStatus(capabilityApproval.status, capabilityApproval.steps).label}
+                    {' · '}
+                    <span className="font-mono">{capabilityApproval.id}</span>
+                  </p>
+                )}
+                {capabilityApproval && (
+                  // NO-22a：时效可见——"还有多久能用"直接决定现场是否要重新申请
+                  <p
+                    className={
+                      describeApprovalFreshness(capabilityApproval.approvedAt ?? null).valid
+                        ? 'text-[10px] text-muted-foreground'
+                        : 'text-[10px] text-risk-degraded-foreground'
+                    }
+                    data-testid="capability-restore-approval-freshness"
+                  >
+                    {describeApprovalFreshness(capabilityApproval.approvedAt ?? null).label}
+                  </p>
+                )}
+                {capabilityGateNotice && (
+                  <p className="text-[10px] text-risk-blocked-foreground" role="alert" data-testid="capability-restore-gate-notice">
+                    {capabilityGateNotice}
+                  </p>
+                )}
+                {capabilitySubmitBlockedReason && (
+                  <p
+                    className="text-[10px] text-risk-blocked-foreground"
+                    role="alert"
+                    data-testid="capability-restore-blocked-reason"
+                  >
+                    {capabilitySubmitBlockedReason}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCapabilityTarget(null);
+                setCapabilityReason('');
+                setCapabilityApprovalId('');
+                setCapabilityApproval(null);
+                setCapabilityGateNotice(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              data-testid="capability-status-confirm"
+              disabled={
+                capabilityReason.trim().length === 0 ||
+                capabilityMutation.isPending ||
+                capabilitySubmitBlockedReason !== null
+              }
+              title={capabilitySubmitBlockedReason ?? undefined}
+              onClick={() => {
+                if (!capabilityTarget) return;
+                capabilityMutation.mutate({
+                  view: capabilityTarget,
+                  action: capabilityActionLabel(capabilityTarget).action,
+                  reason: capabilityReason.trim(),
+                  approvalId: capabilityApprovalId.trim() || undefined,
+                });
+              }}
+            >
+              {capabilityTarget && capabilityActionLabel(capabilityTarget).action === 'disable'
+                ? '确认停用'
+                : '确认恢复'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </DrawerContent>
     </Drawer>
   );

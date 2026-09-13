@@ -121,10 +121,12 @@ const DigitalWorld = (): React.ReactElement => {
             <h2 className="mb-3 text-sm font-semibold">世界状态</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ['人员', world?.persons.length ?? 0],
-                ['设备', world?.devices.length ?? 0],
-                ['工位', world?.workstations.length ?? 0],
-                ['事件', world?.events.length ?? 0],
+                // 逐字段可选读取：世界状态响应缺字段（版本错配/半残响应）时
+                // 计数降级为 0，绝不整页白屏（现场可继续看空间层级）。
+                ['人员', world?.persons?.length ?? 0],
+                ['设备', world?.devices?.length ?? 0],
+                ['工位', world?.workstations?.length ?? 0],
+                ['事件', world?.events?.length ?? 0],
               ].map(([label, value]) => (
                 <div key={String(label)} className="rounded-lg border border-border p-4">
                   <p className="text-xs text-muted-foreground">{label}</p>

@@ -1,4 +1,6 @@
 import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
+import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { sql } from 'drizzle-orm';
 
 export const IDEMPOTENCY_STORE = Symbol('IDEMPOTENCY_STORE');
 export const IDEMPOTENCY_PAYLOAD_STORE = Symbol('IDEMPOTENCY_PAYLOAD_STORE');
@@ -52,6 +54,70 @@ export class InMemoryPayloadStore implements PayloadStore {
 
   get size(): number {
     return this.fingerprints.size;
+  }
+}
+
+/**
+ * 指纹写入的 scope——与 DbIdempotencyStore 的 DEFAULT_SCOPE 同值：指纹行必须与
+ * 它所守护的幂等行处在同一 (scope, key) 键空间，否则跨 scope 读回不到指纹，
+ * 409 防线又会退化成放行。
+ */
+const PAYLOAD_FINGERPRINT_SCOPE = 'default';
+
+/**
+ * 数据库支撑的 payload 指纹存储（跨进程重启 / 多实例 durable）。
+ *
+ * 为什么必须落库（本类要修掉的现场后果）：`executeWithPayload` 的"同 key 不同
+ * payload → 409"只靠 `payloadStore.get(key)` 读回指纹。指纹若只活在进程内 Map
+ * 里，进程重启或第二个实例接手同一次离线重放时读回 undefined，代码里
+ * `recordedFingerprint !== undefined` 的前置判断直接放行——改过 body 的离线重放
+ * 会被当成正常重放，静默拿到旧结果（离线工单/质检重放、高危危险动作确认都被
+ * 绕过，而注释还自称 durable fingerprint）。落库后读回的是持久事实，重启/多实例
+ * 都不再放行。
+ *
+ * 表 ewoh_idempotency_payload_fingerprint（standalone_097）：与 ewoh_idempotency_keys
+ * 同 (org_id, scope, idempotency_key) 键空间，org_id 由列 DEFAULT 取
+ * app.current_org_id GUC（RLS idempotency_payload_fingerprint_org_isolation 兜底租户
+ * 隔离），所以 HTTP 路径的写入与读回都落在本租户行上，跨租户既读不到也写不进。
+ *
+ * 为什么用 sql 模板而不是 drizzle 表对象：这里只碰两列，且 (org_id, scope, key)
+ * 的冲突语义必须与 ewoh_idempotency_keys 完全一致（097 里建的是同形唯一约束）；
+ * raw SQL + 显式 ON CONFLICT 让这条一致性在代码里可见，也不引入第二份需要与
+ * schema.ts 同步的表定义。
+ */
+@Injectable()
+export class DbPayloadStore implements PayloadStore {
+  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+
+  async get(key: string): Promise<string | undefined> {
+    // 读写同源（SR5/2026-09-13）：org 谓词与 DDL 的 org_id DEFAULT 表达式
+    // **逐字对齐**（COALESCE + 同一 fallback）——写入落进哪个 org，读就只在
+    // 同一个 org 里找。此前 get 不带 org：HTTP 通道靠 RLS（NOBYPASSRLS 的
+    // ewoh_api）兜底隔离，但无 GUC 的后台路径会把 A 租户指纹读给 B 租户，
+    // "同 key 不同 payload → 409" 的防篡改判断就建立在他租户的指纹上。
+    const rows = (await this.db.execute(sql`
+      SELECT fingerprint
+        FROM ewoh_idempotency_payload_fingerprint
+       WHERE scope = ${PAYLOAD_FINGERPRINT_SCOPE}
+         AND idempotency_key = ${key}
+         AND org_id = COALESCE(
+           NULLIF(current_setting('app.current_org_id', true), ''),
+           '00000000-0000-4000-8000-000000000001')
+       LIMIT 1
+    `)) as unknown as Array<{ fingerprint?: string | null }>;
+    const fingerprint = rows[0]?.fingerprint;
+    return typeof fingerprint === 'string' ? fingerprint : undefined;
+  }
+
+  async set(key: string, fingerprint: string): Promise<void> {
+    // upsert：首次写入 + 后续覆盖（同一 key 只有抢到占位的调用方会写一次，
+    // 占位释放后的重试会覆盖旧指纹——与幂等行同生命周期，不留悬挂指纹）。
+    await this.db.execute(sql`
+      INSERT INTO ewoh_idempotency_payload_fingerprint (scope, idempotency_key, fingerprint)
+      VALUES (${PAYLOAD_FINGERPRINT_SCOPE}, ${key}, ${fingerprint})
+      ON CONFLICT (org_id, scope, idempotency_key)
+      DO UPDATE SET fingerprint = EXCLUDED.fingerprint, _updated_at = CURRENT_TIMESTAMP
+    `);
   }
 }
 

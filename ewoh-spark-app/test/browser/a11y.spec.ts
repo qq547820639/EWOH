@@ -107,5 +107,5 @@ async function focusByTab(
     if (focused) return;
     await page.keyboard.press('Tab');
   }
-  await page.locator(selector).focus();
+  throw new Error(`Keyboard navigation did not reach ${selector} after 15 Tab presses`);
 }

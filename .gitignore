@@ -72,3 +72,12 @@ scripts/ecs-exec.sh
 
 # 测试覆盖率产物
 .coverage
+
+# 安全门禁专用隔离环境（bandit 1.8.6 需要 Python ≤3.13）
+.venv-security/
+
+# CP-SAT 真实运行时验证专用隔离环境（ortools 9.11.4210，仅本地验证用）
+.venv-cpsat/
+
+# 本地闭环验证 env（含本地数据库口令 / JWT / 接入密钥 / 指纹密钥，仅本地生成，禁止入库）
+ewoh-spark-app/.env.local-standalone

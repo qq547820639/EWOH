@@ -12,22 +12,19 @@ import type {
   ConflictAction,
 } from '../vm/conflictVM';
 import type { SchedulingConflict, SchedulingConflictType } from '@shared/api.interface';
+import { CONFLICT_TYPE_LABELS } from '@shared/reject-reason';
 
-export const TYPE_META: Record<SchedulingConflictType, { label: string }> = {
-  double_booking: { label: '资源重复预占' },
-  resource_stale: { label: '资源数据陈旧' },
-  person_unavailable: { label: '人员不可用' },
-  device_offline: { label: '设备离线' },
-  low_battery: { label: '设备低电量' },
-  predecessor_violation: { label: '前置任务未完成' },
-  station_capacity: { label: '工位容量超限' },
-  forbidden_zone: { label: '禁区进入' },
-  safety_block: { label: '安全阻断' },
-  blocked_route: { label: '路线阻断' },
-  stale_plan: { label: '方案已过期' },
-  reservation_conflict: { label: '预占资源不可用' },
-  reservation_expiring: { label: '预占即将过期' },
-};
+/**
+ * 冲突类型元数据：文案来自**唯一词表** `shared/reject-reason.ts`
+ * （此前本文件自建一张表，同一个键在不同面板有 3 种中文，见该模块头注释）。
+ * 这里只做"类型 → 展示形状"的适配，不再维护第二份文案。
+ */
+export const TYPE_META: Record<SchedulingConflictType, { label: string }> = Object.fromEntries(
+  (Object.keys(CONFLICT_TYPE_LABELS) as SchedulingConflictType[]).map((type) => [
+    type,
+    { label: CONFLICT_TYPE_LABELS[type] },
+  ]),
+) as Record<SchedulingConflictType, { label: string }>;
 
 const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 

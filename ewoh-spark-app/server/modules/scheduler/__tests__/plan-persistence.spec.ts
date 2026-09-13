@@ -102,6 +102,8 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
   const solverService = { solve: jest.fn(), solveVariants: jest.fn() };
   const worldStateSnapshotService = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn().mockResolvedValue(undefined),
     buildSnapshot: jest.fn(),
   };
   const dispatchCoordinator = { dispatch: jest.fn() };

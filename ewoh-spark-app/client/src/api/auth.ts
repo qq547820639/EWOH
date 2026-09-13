@@ -5,6 +5,12 @@ export interface AuthUser {
   username: string;
   roles: string[];
   orgId: string;
+  /**
+   * 业务人员 ID（人员域）——账号↔人员绑定，随签名令牌下发。
+   * `null` 表示未绑定：现场视角必须据此**拒绝推断**任务归属，
+   * 而不是回退去猜（猜错会把他人待办显示给当前用户）。
+   */
+  personId?: string | null;
 }
 
 /**

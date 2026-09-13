@@ -10,6 +10,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { and, desc, eq, inArray, isNotNull, like } from 'drizzle-orm';
 import { ewohSchedulingFeedback, ewohProductionTask, ewohModelRegistry } from '@server/database/schema';
 import {
+  DURATION_MODEL_MIN_SAMPLES,
   durationModelVersion,
   isEmpiricalModelId,
   orgIdFromModelId,
@@ -19,6 +20,11 @@ import {
   type DurationModel,
 } from './empirical-duration-model';
 import { PREDICTION_PROVIDER, type EmpiricalDurationPredictionProvider } from './empirical-duration-prediction-provider';
+import {
+  evaluateTrainingSample,
+  TRAINING_REJECTION_LABELS,
+  type TrainingRejectionReason,
+} from './training-sample-eligibility';
 
 /** NO-13r / ADR-067：per-taskType 分组训练结果（显式 skipped 不落版）。 */
 export interface TaskTypeRetrainEntry {
@@ -27,6 +33,23 @@ export interface TaskTypeRetrainEntry {
   model: DurationModel | null;
   version: string | null;
   notEnoughDataReason?: string;
+}
+
+/** 训练样本资格摘要（对应 GET predictions/task-duration/samples）。 */
+export interface TrainingSampleSummary {
+  orgId: string;
+  sampleLimit: number;
+  totalFeedbackRows: number;
+  /** 通过行级标记（real + eligible + 有 provenance）的行数。 */
+  flaggedEligible: number;
+  /** 训练实际可用样本数（额外通过独立设备回执证据校验）。 */
+  trainable: number;
+  minSamplesRequired: number;
+  fullyTrained: boolean;
+  rejected: Partial<Record<TrainingRejectionReason, number>>;
+  rejectedLabels: Record<string, string>;
+  /** 资格策略标识：只有独立设备回执可训练生产模型。 */
+  eligibilityPolicy: string;
 }
 
 export interface RetrainSummary {
@@ -60,6 +83,9 @@ export class DurationModelTrainingService {
       .from(ewohSchedulingFeedback)
       .where(and(
         eq(ewohSchedulingFeedback.orgId, orgId),
+        eq(ewohSchedulingFeedback.receiptSource, 'real'),
+        eq(ewohSchedulingFeedback.productionTrainingEligible, true),
+        isNotNull(ewohSchedulingFeedback.provenanceJson),
         isNotNull(ewohSchedulingFeedback.actualStart),
         isNotNull(ewohSchedulingFeedback.actualEnd),
       ))
@@ -78,15 +104,69 @@ export class DurationModelTrainingService {
     }
     const samples: Array<{ taskType: string | null; duration: number }> = [];
     for (const row of rows) {
-      const start = row.actualStart?.getTime();
-      const end = row.actualEnd?.getTime();
-      if (start == null || end == null) continue;
-      const duration = end - start;
-      if (Number.isFinite(duration) && duration >= 0) {
-        samples.push({ taskType: row.taskId ? (typeById.get(row.taskId) ?? null) : null, duration });
-      }
+      // Revalidate the persisted evidence at training time. Flags are derived
+      // metadata and may be stale or forged by old writers; only the canonical
+      // independent device receipt lineage can enter production training.
+      // 资格判定走共享纯函数（与资格统计同源；两处各写一份必然漂移，
+      // 会让界面显示"可训练 N 条"而训练报样本不足）。
+      const verdict = evaluateTrainingSample(row);
+      if (!verdict.trainable || verdict.durationMs == null) continue;
+      samples.push({ taskType: row.taskId ? (typeById.get(row.taskId) ?? null) : null, duration: verdict.durationMs });
     }
     return samples;
+  }
+
+  /**
+   * 训练样本资格摘要（学习控制台用）。
+   *
+   * 为什么需要它：重训只回一句 "retrain_not_enough_data: ..." 时，用户无法知道
+   * 是"没有真实回执"、"有真实回执但缺独立设备证据"，还是"设备证据与执行事实不一致"。
+   * 这三者的处置完全不同。本摘要按**稳定枚举原因**给出可解释的计数，
+   * 并明确区分两级资格（行级标记 vs 独立设备回执证据）——模拟/人工回执
+   * 永远不计入可训练样本，这是设计边界而非缺陷。
+   */
+  async summarizeTrainingSamples(orgId: string, limit = 2000): Promise<TrainingSampleSummary> {
+    const scoped = eq(ewohSchedulingFeedback.orgId, orgId);
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulingFeedback)
+      .where(scoped)
+      .orderBy(desc(ewohSchedulingFeedback.updatedAt))
+      .limit(limit);
+
+    const rejected: Partial<Record<TrainingRejectionReason, number>> = {};
+    let trainable = 0;
+    let flaggedEligible = 0;
+    for (const row of rows) {
+      if (row.receiptSource === 'real' && row.productionTrainingEligible === true && row.provenanceJson) {
+        flaggedEligible += 1;
+      }
+      const verdict = evaluateTrainingSample(row);
+      if (verdict.trainable) {
+        trainable += 1;
+        continue;
+      }
+      const reason = verdict.reason ?? 'flags_not_eligible';
+      rejected[reason] = (rejected[reason] ?? 0) + 1;
+    }
+
+    return {
+      orgId,
+      /** 参与统计的反馈行上限（超出部分不参与，避免无界扫描）。 */
+      sampleLimit: limit,
+      totalFeedbackRows: rows.length,
+      /** 通过行级标记的行数——**不等于**可训练数（还需独立设备证据）。 */
+      flaggedEligible,
+      /** 训练实际可用的样本数（与 retrain 的输入完全一致）。 */
+      trainable,
+      minSamplesRequired: DURATION_MODEL_MIN_SAMPLES,
+      fullyTrained: trainable >= DURATION_MODEL_MIN_SAMPLES,
+      rejected,
+      rejectedLabels: Object.fromEntries(
+        Object.keys(rejected).map((k) => [k, TRAINING_REJECTION_LABELS[k as TrainingRejectionReason]]),
+      ),
+      eligibilityPolicy: 'independent-device-receipt-required',
+    };
   }
 
   /** 注册表落版（每 modelId 独立版本链：supersede 旧 active + 版本递增）。 */

@@ -202,9 +202,39 @@ export class RoutingService {
     return typeof actor === 'string' ? actor : actor.primaryOrgId || undefined;
   }
 
-  /** 加载完整路由图（P1：TTL 缓存包裹，见 graphCache 注释）。 */
+  /**
+   * 路由图缓存的租户键。只承载**具体租户** orgId；返回 null 表示该调用没有
+   * 可安全隔离的租户键，loadGraph 据此走"读穿不缓存"。
+   *
+   * 为什么不能沿用 `orgIdOf(actor) ?? '__all__'`：graphCache 是进程级单例 Map，
+   * 而 actor 缺失（dispatch / 候选引擎 / 查询等内部流，见 TravelCostService.estimate
+   * 未传 opts.orgId 的调用点）时 loadGraphUncached 不加 org 谓词，结果完全由
+   * **当前请求连接**的 RLS GUC（app.current_org_id）决定；global_admin 请求
+   * （app.is_global_admin='true'）更会返回全部 org 的拓扑。把这种"随请求而变"的
+   * 结果写进一个进程级共享桶，下一个租户的同类调用就会命中，读到上一个租户的
+   * 工厂布局（跨租户拓扑泄漏）；RLS 无 GUC 时还会把空图写进去毒化后续所有租户。
+   * 正确性完全取决于"谁先写入"，因此该桶必须取消。
+   */
+  private graphCacheKey(actor?: OrgContext | string | null): string | null {
+    const orgId = this.orgIdOf(actor);
+    return orgId ? `tenant:${orgId}` : null;
+  }
+
+  /**
+   * 加载完整路由图（P1：TTL 缓存包裹，见 graphCache 注释）。
+   *
+   * WP-C（2026-09-13 审计）：
+   *   - 有具体租户 orgId → 按 `tenant:<orgId>` 分桶缓存。此时 org 谓词已由
+   *     loadGraphUncached 叠加，桶内容与该租户一一对应，不会与其它租户混用，
+   *     且保留原 TTL 缓存（消除 TravelCostService 候选矩阵的 N+1 全图读）。
+   *   - 无租户键（actor 缺失 / global_admin 无归属组织）→ **读穿不缓存**：
+   *     每个请求都拿到自己 RLS 视角的图，绝不落入任何可被其它租户读到的桶。
+   *     global_admin 的全量视图由 DB 层 RLS 现场界定，不抛错（管理员功能可用），
+   *     也不与租户桶混用——语义即"无具体租户 → 无缓存"。
+   */
   async loadGraph(actor?: OrgContext | string | null): Promise<RouteGraph> {
-    const cacheKey = this.orgIdOf(actor) ?? '__all__';
+    const cacheKey = this.graphCacheKey(actor);
+    if (!cacheKey) return this.loadGraphUncached(actor);
     const cached = this.graphCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.graph;
     const graph = await this.loadGraphUncached(actor);

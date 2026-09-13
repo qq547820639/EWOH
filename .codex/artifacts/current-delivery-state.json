@@ -1,0 +1,18 @@
+{
+  "trace_id": "EWOH-2026-09-10-product-delivery",
+  "project_root": "/Volumes/Extra/CodeProj/EWOH",
+  "intent_anchor": {
+    "objective": "Deliver the first runnable embodied factory product with perception, decision, authorization, execution, feedback and traceable learning",
+    "success_criteria": ["React and NestJS authoritative user workflow", "PostgreSQL runtime-role isolation verified", "Explicit simulated/real and shadow/authorized boundaries", "Known repairable defects corrected and reviewed"],
+    "constraints": ["No commits, remote PRs or production deployment", "No real equipment control", "Do not claim simulation as field evidence"]
+  },
+  "current_status": "Restored previous implementation; final integration and recursive repair underway",
+  "source_refs": ["Current user request", "Current active goal", "git status", "docs/architecture/embodied_factory.md", "ui/command_map/README.md"],
+  "trace_registry": {},
+  "decision_log": ["Preserve React/NestJS as production authority; Edge closed loop is integration evidence only"],
+  "risk_register": ["DemoSimulator stop race", "Edge plan child assignment collision", "Real PostgreSQL and browser verification pending"],
+  "restore_labels": {"older_state_json": "stale_or_unverified", "current_worktree": "confirmed_current", "previous_test_counts": "memory_derived", "colima_context_exists": "confirmed_current"},
+  "verification_state": {"docker_runtime": "29.5.2 confirmed; postgres image pull blocked by VM DNS"},
+  "subagent_state": {"edge_repair": "planned", "main_product_review": "planned"},
+  "next_entrypoint": "Repair Edge lifetime and persistence; assemble PostgreSQL and run production-path E2E"
+}

@@ -6,7 +6,9 @@
 纯 Python 标准库实现。
 """
 
+from copy import deepcopy
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from edge_platform.spatial import now_iso
 
@@ -64,10 +66,10 @@ class WorldStateService:
         self._seq = 0
 
     def _next_snapshot_id(self):
-        """生成 WS-YYYYMMDD-NNNN 格式快照 ID（日期 + 递增序号）。"""
+        """生成跨进程重启唯一的世界状态快照 ID。"""
         self._seq += 1
         day = datetime.now(timezone.utc).strftime("%Y%m%d")
-        return f"WS-{day}-{self._seq:04d}"
+        return f"WS-{day}-{self._seq:04d}-{uuid4().hex}"
 
     def build_snapshot(self, storage, ctx=None):
         """聚合 storage 各数据源生成 WorldStateSnapshot。
@@ -108,10 +110,10 @@ class WorldStateService:
             ],
             events=[e.to_dict() if hasattr(e, "to_dict") else e for e in events],
             topology_version=ctx.get("topology_version", "") or "",
+            source_timestamps=sources,
         )
         snapshot.station_ts_hint = sources.get("tasks_ts") or ""
-        snapshot.source_timestamps = sources
-        return snapshot
+        return deepcopy(snapshot)
 
     def is_stale(self, snapshot, max_age_sec=300):
         """根据 snapshot.timestamp 与当前时间差判断是否过期。"""
@@ -121,7 +123,7 @@ class WorldStateService:
         if ts is None:
             return True
         age = (datetime.now(timezone.utc) - ts).total_seconds()
-        return age > float(max_age_sec)
+        return age < -5 or age > float(max_age_sec)
 
     def key_changed(self, a, b):
         """比较两个快照的关键字段是否变化（人员/设备在线/任务/分配状态）。
@@ -131,7 +133,25 @@ class WorldStateService:
         if a is None or b is None:
             return True
         if getattr(a, "snapshot_id", None) == getattr(b, "snapshot_id", None):
-            return False
+            return a.to_dict() != b.to_dict()
+
+        def critical_rows(items, key):
+            ignored = {"last_seen", "updated_at", "timestamp", "created_at"}
+            return {
+                _item_id(item, key): {
+                    field: value for field, value in (
+                        item if isinstance(item, dict) else item.to_dict()
+                    ).items() if field not in ignored
+                }
+                for item in items
+            }
+
+        for field, key in (("persons", "person_id"), ("devices", "device_id"), ("tasks", "task_id"),
+                           ("stations", "station_id")):
+            if critical_rows(getattr(a, field, []), key) != critical_rows(getattr(b, field, []), key):
+                return True
+        if getattr(a, "topology_version", "") != getattr(b, "topology_version", ""):
+            return True
 
         def _id_set(items):
             return {_item_id(i, "person_id") or _item_id(i, "device_id") or _item_id(i, "task_id")

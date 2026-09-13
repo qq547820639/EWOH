@@ -1,7 +1,8 @@
 // panels/ConflictCenterPanel.tsx — 统一冲突中心（v0.7 A3 智能调度接线）
 //
 // 消费后端 `GET /api/scheduler/conflicts`（useSchedulerConflicts）：
-// 后端从真实世界状态/预占/活跃方案聚合推导 13 类冲突（含 v0.7 新增 reservation_expiring），
+// 后端从真实世界状态/预占/活跃方案聚合推导 14 类冲突（v0.7 新增 reservation_expiring、
+// NO-58b 新增 perception_inconsistent），
 // 本面板提供：类型/严重度过滤、冲突列表、详情展开、空态/加载/错误三态。
 // 冲突数据不虚构：无冲突即空态提示，不展示伪造信息。
 
@@ -67,6 +68,7 @@ const TYPE_ICONS: Record<SchedulingConflictType, React.ComponentType<{ className
   person_unavailable: Users,
   device_offline: WifiOff,
   low_battery: BatteryLow,
+  battery_unknown: CircleAlert,
   predecessor_violation: CircleAlert,
   station_capacity: Factory,
   forbidden_zone: ShieldAlert,
@@ -75,6 +77,8 @@ const TYPE_ICONS: Record<SchedulingConflictType, React.ComponentType<{ className
   stale_plan: RefreshCw,
   reservation_conflict: Clock,
   reservation_expiring: Clock,
+  // NO-58b：感知融合不可信（多源冲突/过期）——用"眼睛"图标，与设备离线/预占类区分开。
+  perception_inconsistent: Eye,
 };
 
 const SEVERITY_LABEL: Record<string, string> = {
@@ -319,7 +323,7 @@ export function ConflictCenterPanel({
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-white/60 text-sm">
           <WifiOff className="w-5 h-5 text-red-400" />
           冲突列表加载失败（后端不可用或鉴权失败）
-          <span className="text-xs text-white/40">请检查后端服务状态与登录鉴权是否有效</span>
+          <span className="text-xs text-white/60">请检查后端服务状态与登录鉴权是否有效</span>
         </div>
       ) : sorted.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-white/50 text-sm">
@@ -375,7 +379,7 @@ export function ConflictCenterPanel({
                           {conflictStatusLabel(status)}
                         </Badge>
                         {c.resourceId && (
-                          <span className="text-[10px] text-white/40 font-mono">{c.resourceId}</span>
+                          <span className="text-[10px] text-white/60 font-mono">{c.resourceId}</span>
                         )}
                       </div>
                       <p className="text-xs text-white/70 mt-0.5">{c.message}</p>

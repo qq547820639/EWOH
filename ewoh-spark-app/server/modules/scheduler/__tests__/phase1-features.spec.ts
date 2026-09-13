@@ -55,6 +55,56 @@ describe('Task 1.4 requiredDeviceCapabilities 硬约束', () => {
     expect(res.reasons).not.toContain('device_offline');
   });
 
+  /* NO-15b：缺失 ≠ 停用。设备"没有这个能力"和"能力被人停用"要给出不同原因——
+   * 前者现场去查设备/加装，后者去复核停用决定或恢复。 */
+  it('所需能力被人为停用 → capability_disabled（不是"缺少设备能力"）', () => {
+    const res = svc.check(
+      person,
+      { ...eligibleTask(seedTask({ id: 't1' })), requiredDeviceCapabilities: ['vacuum'] },
+      {
+        id: 'd1',
+        batteryPct: 100,
+        online: true,
+        status: 'AVAILABLE',
+        capabilities: [],
+        disabledCapabilities: ['vacuum'],
+      },
+      makeEligibilityCtx(),
+    );
+    expect(res.eligible).toBe(false);
+    expect(res.reasons).toContain('capability_disabled');
+    expect(res.reasons).not.toContain('missing_device_capability');
+  });
+
+  it('未声明且未停用 → missing_device_capability（如实区分两种缺失）', () => {
+    const res = svc.check(
+      person,
+      { ...eligibleTask(seedTask({ id: 't1' })), requiredDeviceCapabilities: ['vacuum'] },
+      { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [] },
+      makeEligibilityCtx(),
+    );
+    expect(res.reasons).toContain('missing_device_capability');
+    expect(res.reasons).not.toContain('capability_disabled');
+  });
+
+  it('同时缺多个能力且只有部分是停用 → 保守报"缺少设备能力"（不掩盖未声明的缺口）', () => {
+    const res = svc.check(
+      person,
+      { ...eligibleTask(seedTask({ id: 't1' })), requiredDeviceCapabilities: ['vacuum', 'crane'] },
+      {
+        id: 'd1',
+        batteryPct: 100,
+        online: true,
+        status: 'AVAILABLE',
+        capabilities: [],
+        disabledCapabilities: ['vacuum'],
+      },
+      makeEligibilityCtx(),
+    );
+    expect(res.reasons).toContain('missing_device_capability');
+    expect(res.reasons).not.toContain('capability_disabled');
+  });
+
   it('设备具备所需能力 → 可通过能力校验', () => {
     const res = svc.check(
       person,

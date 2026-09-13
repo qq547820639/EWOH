@@ -66,12 +66,14 @@ BEGIN
   END LOOP;
 
   SELECT count(*) INTO v_notnull_violations
+    -- 表名列表必须写成"括号化的行"：`VALUES 'x','y'` 在 PostgreSQL 里是语法错误
+    -- （基线里曾把这条失败误记为"psql 专属语法 \gexec"，实际是 SQL 写错，2026-09-12 烧账修正）。
     FROM (VALUES
-      'ewoh_scheduling_run', 'ewoh_scheduling_plan_assignment', 'ewoh_scheduling_constraint',
-      'ewoh_schedule_plan', 'ewoh_resource_reservation', 'ewoh_scheduling_policy',
-      'ewoh_scheduling_feedback', 'ewoh_scheduling_conflict', 'ewoh_route_cost_matrix',
-      'ewoh_policy_activation', 'ewoh_scheduling_kpi', 'ewoh_scheduling_execution',
-      'ewoh_policy_replay', 'ewoh_route_node', 'ewoh_route_edge'
+      ('ewoh_scheduling_run'), ('ewoh_scheduling_plan_assignment'), ('ewoh_scheduling_constraint'),
+      ('ewoh_schedule_plan'), ('ewoh_resource_reservation'), ('ewoh_scheduling_policy'),
+      ('ewoh_scheduling_feedback'), ('ewoh_scheduling_conflict'), ('ewoh_route_cost_matrix'),
+      ('ewoh_policy_activation'), ('ewoh_scheduling_kpi'), ('ewoh_scheduling_execution'),
+      ('ewoh_policy_replay'), ('ewoh_route_node'), ('ewoh_route_edge')
     ) AS t(name)
     JOIN information_schema.columns c
       ON c.table_schema = '__EWOH_SCHEMA__' AND c.table_name = t.name AND c.column_name = 'org_id'

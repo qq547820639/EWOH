@@ -5,6 +5,7 @@
  * 本文件不 import 任何资格/成本判定逻辑；所有 eligible/reject/score 均由后端透传。
  */
 import React from 'react';
+import { rejectReasonLabel } from '@shared/reject-reason';
 import type {
   CandidateExplainVM,
   CandidateExplainItem,
@@ -18,21 +19,12 @@ interface TaskIntelligencePanelProps {
   loading?: boolean;
 }
 
-const ELIGIBLE_LABEL: Record<string, string> = {
-  missing_skill: '缺少技能',
-  missing_certification: '缺少证书',
-  route_infeasible: '路径不可行',
-  coords_unknown: '坐标未知',
-  safety_blocked: '安全封锁',
-  forbidden_zone: '禁入区',
-  device_offline: '设备离线',
-  low_battery: '电量不足',
-  reservation_conflict: '预占冲突',
-  unavailable: '人员不可用',
-};
-
+/**
+ * 候选拒绝原因文案：唯一来源 `shared/reject-reason.ts`。
+ * （此前本面板自建一张 3 条的映射表，与 candidateExplainVM/conflict-panel 漂移。）
+ */
 function reasonLabel(reason: string): string {
-  return ELIGIBLE_LABEL[reason] ?? reason;
+  return rejectReasonLabel(reason);
 }
 
 /** 候选行（展示模型，后端字段透传）。 */
@@ -56,6 +48,17 @@ function CandidateRow({ c }: { c: CandidateExplainItem }) {
         {c.rejectReasons.length > 0
           ? c.rejectReasons.map(reasonLabel).join(', ')
           : '—'}
+        {c.capabilityNotes.length > 0 && (
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {c.capabilityNotes.join('；')}
+          </div>
+        )}
+        {/* NO-38b：人机同体配对的正向说明（为什么只有这位人员能承接该设备） */}
+        {c.sessionNotes.length > 0 && (
+          <div className="mt-0.5 text-[10px] text-muted-foreground" data-testid={`candidate-session-note-${c.personId}`}>
+            {c.sessionNotes.join('；')}
+          </div>
+        )}
       </td>
     </tr>
   );

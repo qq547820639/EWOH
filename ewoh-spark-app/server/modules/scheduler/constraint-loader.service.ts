@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import {
   DRIZZLE_DATABASE,
@@ -74,9 +74,17 @@ export class ConstraintLoaderService {
   /** 按方案继承 + 请求约束合并（迁移自 plan.service.loadEffectiveConstraints，行为等价）。 */
   async loadForPlan(
     planId: string,
-    requestConstraints: SchedulingConstraint[],
+    requestConstraints: SchedulingConstraint[] | null | undefined,
     ctx: OrgContext,
   ): Promise<SchedulingConstraint[]> {
+    // NO-62c（e2e 抓到的真缺陷）：`lockedConstraints` 是请求体的**可选**字段，
+    // 省略时 `undefined` 直接进 `[...requestConstraints]` → TypeError → 重排接口 500。
+    // 语义：缺省 = 这次重排没有新增人工约束（继承方案既有约束照旧），不是"数据缺失"；
+    // 但**非空非数组**是调用方契约错误，显式 400，绝不静默当空数组吞掉。
+    if (requestConstraints != null && !Array.isArray(requestConstraints)) {
+      throw new BadRequestException('requestConstraints 必须是约束数组');
+    }
+    const extras: SchedulingConstraint[] = requestConstraints ?? [];
     // NEST-004：同 loadGlobalActive——空串 orgId 显式等同无租户上下文；
     // 无租户上下文仅加载全局（NULL org）行（fail-closed，防跨租户加载）。
     const orgId = ctx?.primaryOrgId?.trim() ? ctx.primaryOrgId : null;
@@ -102,7 +110,7 @@ export class ConstraintLoaderService {
       .orderBy(asc(ewohSchedulingConstraint.createdAt));
     const inherited = rows.map((r) => this.rowToConstraint(r));
     // 请求约束优先（operator 来源显式标注）；同类型同目标时请求覆盖继承。
-    const merged = [...requestConstraints];
+    const merged = [...extras];
     for (const c of inherited) {
       const alreadyRequested = merged.some(
         (rc) =>

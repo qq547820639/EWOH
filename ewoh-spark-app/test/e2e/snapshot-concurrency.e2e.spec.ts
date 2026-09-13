@@ -48,19 +48,7 @@ runDescribe(
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig!.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 干净基线：仅清本 run fixture org 的快照行。R2-APT-009：原全表 DELETE
-      // （含 ewoh_snapshot_version_counter 全局按日计数器）会摧毁共享库其他
-      // 租户的同日快照并使其版本序列重置（与既有行冲突）——计数器为全局资产
-      // 不再删除，版本起点断言相应放宽为"连续无缺口"（见用例内注释）。
-      try {
-        const orgIds = [fixture.orgA.id, fixture.orgB.id];
-        const postgres = (await import('postgres')).default;
-        const runtime = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.end();
-      } catch {
-        // 清理失败不阻断
-      }
+      // Each fixture owns fresh UUID orgs; no pre-cleanup is necessary.
       handle = await startE2EApp(e2eConfig!, fixture.orgA.id);
       svc = handle.app.get(WorldStateSnapshotService, { strict: false });
       ctx.primaryOrgId = fixture.orgA.id;
@@ -107,10 +95,12 @@ runDescribe(
       const postgres = (await import('postgres')).default;
       const sql = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
       try {
-        const rows = await sql`
-          SELECT snapshot_version FROM ewoh_world_state_snapshot
-          WHERE org_id = ANY(${sql.array([fixture.orgA.id, fixture.orgB.id])}::text[])
-            AND snapshot_version LIKE ${`${dayPrefix}-%`}`;
+        const rows = await sql.unsafe(
+          `SELECT snapshot_version FROM ewoh_world_state_snapshot
+           WHERE org_id = ANY($1::text[])
+             AND snapshot_version LIKE $2`,
+          [[fixture.orgA.id, fixture.orgB.id], `${dayPrefix}-%`],
+        );
         expect(rows.length).toBe(N);
         expect(new Set(rows.map((r) => r.snapshot_version)).size).toBe(N);
         // 全表唯一性兜底断言（含历史行，防御唯一约束失效）。

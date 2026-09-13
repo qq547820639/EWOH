@@ -14,6 +14,7 @@
 import os
 import sys
 import unittest
+from dataclasses import asdict
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -50,6 +51,15 @@ def _base_request(tasks):
 
 
 class CpsatContractTest(unittest.TestCase):
+    def test_device_battery_unknown_and_zero_survive_request_roundtrip(self):
+        for fields in ({}, {"batteryPct": None}, {"batteryPct": 0}, {"batteryPct": 100}):
+            with self.subTest(fields=fields):
+                body = _base_request([])
+                body["devices"] = [{"id": "d1", "status": "available", "online": True, **fields}]
+                request = SolverRequest.from_dict(body)
+                self.assertEqual(request.devices[0].batteryPct, fields.get("batteryPct"))
+                self.assertEqual(asdict(request)["devices"][0]["batteryPct"], fields.get("batteryPct"))
+
     def test_skill_match_mode_no_longer_throws_type_error(self):
         """P0-2 核心回归：Nest 发送的 skillMatchMode 字段必须被契约声明。
 

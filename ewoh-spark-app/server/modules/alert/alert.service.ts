@@ -15,7 +15,7 @@ import { ewohEvent } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { assertTenantVisible } from '../scheduler/plan-tenant-guard';
-import { alertActionToState, alertStateTransitionAllowed } from '@shared/alert-state-machine';
+import { alertActionToState, alertStateTransitionAllowed, alertTransitionEdgeExists } from '@shared/alert-state-machine';
 
 /**
  * ADR-031：alert/andon 处置状态机收敛到 shared/alert-state-machine
@@ -51,8 +51,12 @@ function nextAlertStatusForActor(
   // 转移（确认/处置/关闭/重开）。与 model/task 状态机的 isGlobalAdmin override 一致，
   // 否则纯 global_admin 账号（如演示 admin）因不含 handler 角色被 fail-closed 拒绝，
   // 导致风险告警页「确认」按钮必报 400「Transition ... not allowed」。
+  // ⚠️ 豁免的是**角色条件**而不是**转移拓扑**（2026-09-13 对抗审查补口）：此前直接
+  // `return target.to` 连 alert.yaml 里不存在的边（open→closed、open→reopened…）
+  // 一并放行——确认/处置两步审计被整段跳过，"非法转移被拒"契约失效。因此超管
+  // 分支先用 alertTransitionEdgeExists 验拓扑（边必须真实存在），再免角色。
   if (actor?.isGlobalAdmin) {
-    return target.to;
+    return alertTransitionEdgeExists(current, target.to) ? target.to : null;
   }
   const roles = actor?.roles ?? [];
   for (const role of roles) {

@@ -7,6 +7,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { defer, lastValueFrom, Observable } from 'rxjs';
 import { SSE_METADATA } from '@nestjs/common/constants';
+import { isStreamingHandler } from '../shared/org-context.interceptor';
 import { withRequestContext } from '../../common/request-context';
 import { TracingService, type TraceRecord } from './tracing.service';
 
@@ -26,10 +27,15 @@ export class TracingInterceptor implements NestInterceptor {
     // SSE 端点不写 trace_span（无单一请求边界），租户隔离由应用层过滤保证。
     const routeHandler =
       typeof context.getHandler === 'function' ? context.getHandler() : undefined;
-    const handlerIsSse =
+    // 2026-09-13：豁免面从 @Sse 扩到显式 @StreamingResponse()（手写 @Res() 的
+    // LLM 流端点）。不豁免的后果与 SSE 同款：lastValueFrom 等整条流、流中途出错时
+    // 经 reject 触发全局过滤器对**已开始**的响应写 500（headers already sent）。
+    // 与 OrgContextInterceptor 的流式豁免同一判据（isStreamingHandler），两处口径同源。
+    const handlerIsStreaming =
       routeHandler != null &&
-      Reflect.getMetadata(SSE_METADATA, routeHandler) !== undefined;
-    if (handlerIsSse) {
+      (Reflect.getMetadata(SSE_METADATA, routeHandler) !== undefined ||
+        isStreamingHandler(routeHandler));
+    if (handlerIsStreaming) {
       return next.handle();
     }
     const http = context.switchToHttp();

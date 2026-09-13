@@ -19,6 +19,8 @@ interface AuthenticatedRequest {
     roles: string[];
     accessibleOrgIds: string[];
     isGlobalAdmin: boolean;
+    /** 业务人员绑定（来自签名令牌；未绑定为 null）。 */
+    personId?: string | null;
   };
 }
 
@@ -70,6 +72,10 @@ export class AccessTokenGuard implements CanActivate {
       roles: payload.roles,
       accessibleOrgIds,
       isGlobalAdmin: payload.roles.includes('global_admin'),
+      // 绑定随令牌下发，不接受请求体/查询参数自报。
+      personId: typeof payload.personId === 'string' && payload.personId.trim()
+        ? payload.personId.trim()
+        : null,
     };
     return true;
   }

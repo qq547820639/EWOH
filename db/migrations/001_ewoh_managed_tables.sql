@@ -2,17 +2,6 @@
 -- Schema placeholder: __EWOH_SCHEMA__
 -- Re-entrant: CREATE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DROP POLICY IF EXISTS.
 -- No physical foreign keys. RLS is org-scoped; direct DML is revoked from user roles.
---
--- DEPRECATED（Batch 8.2 裁定）：本文件为 legacy 基线，与 standalone_001_schema.sql 重叠。
--- 唯一事实源为 db/migrations/standalone_00*.sql（README 明示）。
--- 保留仅供旧部署环境回滚/兼容；新增迁移一律走 standalone 链，本文件冻结不再更新。
---
--- ⚠️ 禁止混用（审计 SQL-036/037 裁定，spec 已裁决项，2026-08-17）：
--- 本文件（legacy 双轨）与 standalone_* 链使用两套不同的角色命名
--- （legacy：workspace_aadknm4yzbyds 后缀角色；standalone：anon /
--- authenticated / service_role / ewoh_api）。在同一数据库上混用两条链会导致
--- REVOKE/GRANT 目标角色不存在、RLS policy 绑定到错误角色，造成权限丢失或
--- 隔离失效。任何数据库实例只能选择其中一条链，不得交叉执行。
 
 CREATE SCHEMA IF NOT EXISTS __EWOH_SCHEMA__;
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
@@ -64,8 +53,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_ai_suggestion (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device (
@@ -84,8 +72,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device (
   protocol_version varchar(50),
   temperature_c real,
   fault_code varchar(100),
-  last_raw_ref varchar(128),
-  org_id varchar(255)
+  last_raw_ref varchar(128)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device_binding (
@@ -103,8 +90,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device_binding (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device_config (
@@ -121,8 +107,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_device_config (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_environment (
@@ -138,8 +123,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_environment (
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   source_type varchar(50) DEFAULT 'simulated',
   record_id varchar(64),
-  data_confidence real DEFAULT 1.0,
-  org_id varchar(255)
+  data_confidence real DEFAULT 1.0
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_event (
@@ -168,8 +152,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_event_chain (
   description text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_model_registry (
@@ -181,8 +164,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_model_registry (
   status varchar(50) DEFAULT 'active',
   card_json jsonb,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_organization (
@@ -195,8 +177,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_organization (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_personnel (
@@ -234,8 +215,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_production_task (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_schedule_audit (
@@ -247,8 +227,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_schedule_audit (
   reason text,
   created_at timestamptz DEFAULT CURRENT_TIMESTAMP,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_schedule_plan (
@@ -324,8 +303,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_telemetry (
   fault_code varchar(100),
   packet_loss_pct real DEFAULT 0,
   data_confidence real DEFAULT 1.0,
-  data_quality varchar(20) DEFAULT 'good',
-  org_id varchar(255)
+  data_quality varchar(20) DEFAULT 'good'
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_topology (
@@ -335,8 +313,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_topology (
   relation varchar(100) DEFAULT 'adjacent',
   distance real DEFAULT 0,
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  org_id varchar(255)
+  _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_world_state (
@@ -650,8 +627,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_task_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_template_org ON __EWOH_SCHEMA__.ewoh_task_template (org_id);
@@ -671,8 +647,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_task_step (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_task_step_org ON __EWOH_SCHEMA__.ewoh_task_step (org_id);
@@ -1149,8 +1124,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_factory_template (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_template_lifecycle ON __EWOH_SCHEMA__.ewoh_factory_template (lifecycle_status);
@@ -1169,8 +1143,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_factory_profile (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_factory_profile_status ON __EWOH_SCHEMA__.ewoh_factory_profile (status);
@@ -1190,8 +1163,7 @@ CREATE TABLE IF NOT EXISTS __EWOH_SCHEMA__.ewoh_asset_package (
   _created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END),
-  org_id varchar(255)
+  _updated_by __EWOH_SCHEMA__.user_profile DEFAULT (CASE WHEN current_setting('app.user_id', true) = '' THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::__EWOH_SCHEMA__.user_profile END)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ewoh_asset_package_type ON __EWOH_SCHEMA__.ewoh_asset_package (package_type, status);
@@ -1585,117 +1557,117 @@ DROP POLICY IF EXISTS ewoh_audit_select ON __EWOH_SCHEMA__.ewoh_audit_log;
 CREATE POLICY ewoh_audit_select ON __EWOH_SCHEMA__.ewoh_audit_log FOR SELECT TO __EWOH_ROLE_SERVICE__ USING (__EWOH_SCHEMA__.ewoh_org_visible(org_id) OR (org_id IS NULL AND coalesce(current_setting('app.is_global_admin', true), '') = 'true'));
 
 -- Grants: only the trusted backend role gets DML; audit_log is write-only via function.
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_ai_suggestion FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_ai_suggestion FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_ai_suggestion TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_device TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_binding FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_binding FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_device_binding TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_config FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_config FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_device_config TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_environment FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_environment FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_environment TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_event TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_chain FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_chain FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_event_chain TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_registry FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_registry FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_model_registry TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_organization FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_organization FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_organization TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_personnel FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_personnel FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_personnel TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_production_task FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_production_task FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_production_task TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_audit FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_audit FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_schedule_audit TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_plan FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_plan FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_schedule_plan TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_scheduler_config FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_scheduler_config FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_scheduler_config TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_entity FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_entity FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_spatial_entity TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_telemetry FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_telemetry FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_telemetry TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_topology FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_topology FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_topology TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_state FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_state FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_world_state TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_person_skill FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_person_skill FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_person_skill TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_skill FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_skill FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_skill TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_role FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_role FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_role TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_person_role FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_person_role FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_person_role TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_capability FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_device_capability FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_device_capability TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_relation FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_relation FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_spatial_relation TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_hierarchy FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_spatial_hierarchy FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_spatial_hierarchy TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_asset FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_asset FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_model_asset TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_binding FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_model_binding FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_model_binding TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_workstation TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_device FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_device FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_workstation_device TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_person FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_person FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_workstation_person TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_skill FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_skill FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_workstation_skill TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_relation FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_workstation_relation FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_workstation_relation TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_template FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_template FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_task_template TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_step FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_step FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_task_step TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_skill_req FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_task_skill_req FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_task_skill_req TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task_step FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task_step FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_schedule_task_step TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_assignment FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_schedule_assignment FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_schedule_assignment TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_resource_preorder FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_resource_preorder FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_resource_preorder TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_resource_binding FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_resource_binding FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_resource_binding TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_request FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_request FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_control_request TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_command FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_command FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_control_command TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_result FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_control_result FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_control_result TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_rule FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_rule FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_event_rule TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_action FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_action FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_event_action TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_subscription FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_event_subscription FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_event_subscription TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_snapshot FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_snapshot FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_world_snapshot TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_delta_log FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_world_delta_log FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_world_delta_log TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_system_config FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_system_config FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_system_config TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_base FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_base FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_base TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_entry FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_entry FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_knowledge_entry TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_notification FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_notification FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_notification TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_factory_template FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_factory_template FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_factory_template TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_factory_profile FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_factory_profile FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_factory_profile TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_asset_package FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_asset_package FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE __EWOH_SCHEMA__.ewoh_asset_package TO __EWOH_ROLE_SERVICE__;
-REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_audit_log FROM anon_workspace_aadknm4yzbyds, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__, __EWOH_ROLE_SERVICE__;
+REVOKE ALL PRIVILEGES ON TABLE __EWOH_SCHEMA__.ewoh_audit_log FROM __EWOH_ROLE_ANON__, __EWOH_ROLE_AUTHENTICATED__, __EWOH_ROLE_USER_AUTHENTICATED__, __EWOH_ROLE_SERVICE__;
 GRANT SELECT ON TABLE __EWOH_SCHEMA__.ewoh_audit_log TO __EWOH_ROLE_SERVICE__;
 REVOKE ALL PRIVILEGES ON FUNCTION __EWOH_SCHEMA__.ewoh_append_audit_log FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION __EWOH_SCHEMA__.ewoh_append_audit_log TO __EWOH_ROLE_SERVICE__;

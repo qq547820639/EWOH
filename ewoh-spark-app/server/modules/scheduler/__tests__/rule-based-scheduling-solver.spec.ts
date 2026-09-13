@@ -165,6 +165,26 @@ describe('RuleBasedSchedulingSolver（ADR-053 / NO-13d）', () => {
     expect(a.reasons).toEqual(['rule-based:first-eligible']);
   });
 
+  /* NO-15c：方案级未派工条目必须带上候选层的**能力细节**——班组长需要知道
+   * 是哪个能力、谁在何时因何停用，才能决定"复核停用"还是"换设备/加装"。 */
+  it('未派工条目带上能力停用细节（去重 + 限量；信息不丢）', async () => {
+    const snapshot = snapshotWith([task({ id: 'task-1' })]);
+    const noteA = '任务要求的能力：exo-lift；该设备当前可用能力：（无）';
+    const noteB = '能力 exo-lift 已被人工停用：admin · 2026/9/11 10:00:00 · 理由：助力模块故障待修';
+    const { solver } = makeSolver({
+      'task-1': [
+        rejected('p1', ['capability_disabled'], { capabilityNotes: [noteA, noteB] }),
+        rejected('p2', ['capability_disabled'], { capabilityNotes: [noteA, noteB] }),
+      ],
+    });
+    const plan = await solver.solve(snapshot, [], OPTS);
+    expect(plan.assignments).toHaveLength(0);
+    const violation = plan.violations.find((v) => v.type === 'UNASSIGNED_RULE_BASED');
+    expect(violation).toBeDefined();
+    // 两个候选给同样的说明 → 去重后只留一份
+    expect((violation as Record<string, unknown>).capabilityNotes).toEqual([noteA, noteB]);
+  });
+
   it('DAG 前置：predecessor 未完成的任务不先行分配；前置无可行 → 显式 UNASSIGNED（§33 不伪造）', async () => {
     const snapshot = snapshotWith([
       task({ id: 'task-1' }),

@@ -104,6 +104,18 @@ def api_status(ctx, h, req_meta):
         if getattr(ctx, "event_uplink", None) is not None
         else {"enabled": False}
     )
+    # 2026-09-10：多源传感器帧上行健康（缺配置 enabled=false 如实上报）
+    sensor_uplink = (
+        ctx.sensor_uplink.health()
+        if getattr(ctx, "sensor_uplink", None) is not None
+        else {"enabled": False}
+    )
+    # 2026-09-10：帧死信计数（不可归一化帧的权威留痕在 SQLite frame_dead_letter 表；
+    # 这里只报计数——"0 条"必须有据可查，不能让健康页替存储说谎）。
+    try:
+        dead_letters = ctx.storage.count_frame_dead_letters()
+    except Exception:
+        dead_letters = None
     # NO-12d：Edge→Cloud 指标上行健康（缺配置 enabled=false 如实上报）
     metrics_uplink = (
         ctx.metrics_uplink.health()
@@ -126,6 +138,8 @@ def api_status(ctx, h, req_meta):
             "world_projection": world_projection,
             "event_uplink": event_uplink,
             "metrics_uplink": metrics_uplink,
+            "sensor_uplink": sensor_uplink,
+            "frame_dead_letters": dead_letters,
             "safety_boundary": "平台与大模型不得写入急停、限扭、关节实时控制等安全闭环参数。",
         }
     )

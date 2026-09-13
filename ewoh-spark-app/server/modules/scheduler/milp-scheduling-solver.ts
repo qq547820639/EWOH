@@ -23,7 +23,9 @@
  *  - 产出：status='shadow'，solverVersion='milp-v1'，solverStatus='OPTIMAL'；
  *    metrics/baselineDelta 经 SchedulingObjectiveEvaluator（§31 统一评估器）。
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { PREDICTION_PROVIDER, type EmpiricalDurationPredictionProvider } from './prediction/empirical-duration-prediction-provider';
+import { resolveDurationModelMap } from './prediction/duration-resolution';
 import type {
   SchedulingConstraint,
   SchedulingPlanV2,
@@ -123,6 +125,10 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     private readonly objectiveEvaluator: SchedulingObjectiveEvaluator,
     // 可注入加载器（测试注入失败态；生产缺省 = 真实 HiGHS WASM 加载）。
     private readonly highsLoaderFn: () => Promise<HighsInstance> = highsLoader,
+    // ADR-056 消费侧（2026-09-13）：经验时长提供者（可选；与 heuristic 同款纪律——
+    // 仅 durationModelMode='advisory' 且已注入时消费；缺位/未训练回退默认时长）。
+    @Optional() @Inject(PREDICTION_PROVIDER)
+    private readonly durationPrediction?: EmpiricalDurationPredictionProvider,
   ) {}
 
   /** HiGHS WASM 惰性加载（单例缓存；失败清除缓存并显式抛出，§33 不静默）。 */
@@ -146,6 +152,17 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     const now = Date.now();
     const policy: SchedulingPolicy = opts.policy ?? (await this.policyService.getActivePolicy());
     const config = await this.policyService.getConfig();
+    // ADR-056 消费侧：与 heuristic 同源同判（共享解析器）——shadow 双跑对比的公平性前提。
+    const durationMsByTask =
+      config.prediction?.durationModelMode === 'advisory' && this.durationPrediction
+        ? await resolveDurationModelMap(
+            this.durationPrediction,
+            snapshot,
+            config.defaultTaskDurationMs,
+            opts.orgId ?? null,
+            this.logger,
+          )
+        : null;
     const horizonMinutes = config.horizonMinutes ?? opts.horizonMinutes;
 
     const doneTaskIds = new Set<string>(
@@ -204,6 +221,11 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     for (const task of tasks) {
       const pool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
         nowMs: now,
+        // R-6（2026-09-13）：透传本请求租户，让路径成本估算复用按租户分桶的路由图缓存
+        // （不透传则每候选一次全图 SELECT，见 candidate-engine 的同一注释）。
+        orgId: opts.orgId ?? null,
+        // ADR-056 消费侧：候选阶段时间窗与指派阶段同源（同 heuristic）。
+        durationMsByTask,
         policy,
         bookedPersonFreeAt: personFreeAt,
         bookedDeviceFreeAt: deviceFreeAt,
@@ -517,6 +539,10 @@ export class MilpSchedulingSolver implements SchedulingSolver {
         rejectReasons: entry.rejected
           .slice(0, REJECTED_HARD_CAP)
           .flatMap((c) => c.rejectReasons),
+        // NO-15c：能力细节与规则求解器同源（方案解释不因求解器而不同）
+        capabilityNotes: [
+          ...new Set(entry.rejected.slice(0, REJECTED_HARD_CAP).flatMap((c) => c.capabilityNotes ?? [])),
+        ].slice(0, REJECTED_HARD_CAP),
       };
     }
     const unassignedPreds = (entry.task.predecessorIds ?? []).filter(

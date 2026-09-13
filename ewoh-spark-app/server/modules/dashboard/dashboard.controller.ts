@@ -36,6 +36,7 @@ export class DashboardController {
     @Query('batteryMin') batteryMin?: string,
     @Query('batteryMax') batteryMax?: string,
     @Query('sourceType') sourceType?: string,
+    @Query('category') category?: string,
     @Query('model') model?: string,
     @Query('orderby') orderby?: string,
     @Req() request?: { userContext?: OrgContext },
@@ -49,6 +50,7 @@ export class DashboardController {
     if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
     if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
+    if (category) query.category = category;
     if (model) query.model = model;
     if (orderby) query.orderby = orderby;
     return this.dashboardService.getDevices(query, request?.userContext);
@@ -61,6 +63,7 @@ export class DashboardController {
     @Query('batteryMin') batteryMin?: string,
     @Query('batteryMax') batteryMax?: string,
     @Query('sourceType') sourceType?: string,
+    @Query('category') category?: string,
     @Query('model') model?: string,
     @Query('firmwareVersion') firmwareVersion?: string,
     @Query('protocolVersion') protocolVersion?: string,
@@ -79,6 +82,7 @@ export class DashboardController {
     if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
     if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
+    if (category) query.category = category;
     if (model) query.model = model;
     if (firmwareVersion) query.firmwareVersion = firmwareVersion;
     if (protocolVersion) query.protocolVersion = protocolVersion;

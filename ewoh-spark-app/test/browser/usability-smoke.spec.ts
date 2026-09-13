@@ -11,10 +11,9 @@
  * 凭据来源环境变量（不落库）：EWOH_E2E_USER / EWOH_E2E_PASS。
  */
 import { test, expect, type Page } from '@playwright/test';
+const { resolveBrowserBaseUrl, browserCredentials } = require('./runtime-target');
 
-const BASE_URL = process.env.EWOH_E2E_BASE ?? 'http://121.43.230.202:3000';
-const USER = process.env.EWOH_E2E_USER ?? 'admin';
-const PASS = process.env.EWOH_E2E_PASS ?? '';
+const BASE_URL = resolveBrowserBaseUrl();
 
 const ALL_ROUTES = [
   '/command-center',
@@ -90,10 +89,11 @@ function attachCollectors(page: Page, diag: RouteDiag): void {
 }
 
 async function loginViaForm(page: Page): Promise<void> {
+  const { username, password } = browserCredentials();
   await page.goto(`${BASE_URL}/login`);
   await page.waitForLoadState('domcontentloaded');
-  await page.locator('#username').fill(USER);
-  await page.locator('#password').fill(PASS);
+  await page.locator('#username').fill(username);
+  await page.locator('#password').fill(password);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL((u) => !u.pathname.includes('/login'), { timeout: 20_000 });
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});

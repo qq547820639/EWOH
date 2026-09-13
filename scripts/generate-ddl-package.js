@@ -3,9 +3,19 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createRequire } = require('node:module');
 
 const ROOT = path.resolve(__dirname, '..');
+const yaml = createRequire(path.join(ROOT, 'ewoh-spark-app/package.json'))('js-yaml');
 const SCHEMA = '__EWOH_SCHEMA__';
+const F61_02_DOMAIN_TABLES = new Set([
+  'ewoh_resource_locks',
+  'ewoh_handoffs',
+  'ewoh_git_sync_state',
+  'ewoh_evidence_metadata',
+  'ewoh_factory_replication_sessions',
+  'ewoh_idempotency_keys',
+]);
 
 // SCR-026: role 名参数化——缺省输出 __EWOH_ROLE_*__ 占位符（与 __EWOH_SCHEMA__
 // 同一下游替换机制配套），不再硬编码 Miaoda workspace token；真实角色名可经
@@ -1706,19 +1716,28 @@ function renderRollback() {
   return parts.join('\n');
 }
 
+function coreManagedTableRecordsFromManifest() {
+  const { tables } = assertAuthoritativeManifest();
+  return tables
+    .filter((entry) => !F61_02_DOMAIN_TABLES.has(entry.physical_table))
+    .map((entry) => ({ name: entry.physical_table, orgPolicy: entry.org_id_policy }));
+}
+
+function coreManagedTablesFromManifest() {
+  return coreManagedTableRecordsFromManifest().map((entry) => entry.name);
+}
+
 function renderVerify() {
-  const managedPhysical = [
-    ...NEW_GROUP.map((t) => t.name),
-    ...ALTERED_TABLES.map((t) => t.name),
-  ];
-  const special = ['ewoh_world_snapshot', 'ewoh_world_delta_log', 'ewoh_system_config', 'ewoh_audit_log'];
-  const notNull = managedPhysical.filter((n) => !special.includes(n));
-  const expected = managedPhysical.map((n) => `'${n}'`).join(', ');
+  const managedRecords = coreManagedTableRecordsFromManifest();
+  const managedPhysical = managedRecords.map((entry) => entry.name);
+  const notNull = managedRecords
+    .filter((entry) => entry.orgPolicy === 'NOT NULL')
+    .map((entry) => entry.name);
   const notNullList = notNull.map((n) => `'${n}'`).join(', ');
   const requestScoped = [...BASELINE_TABLES.map((t) => t.name), ...NEW_TABLES.map((t) => t.name)];
   const lines = [];
   lines.push(`-- EWOH managed schema verification (AG-10)`);
-  lines.push(`-- Every result column must be 0 to pass, except audit_function_count which must be 1.`);
+  lines.push(`-- Verify after the full migration chain: ${managedPhysical.length} core managed tables; six F61-02 domain tables are verified separately.`);
   lines.push(`WITH expected(name) AS (VALUES ${managedPhysical.map((n) => `('${n}')`).join(', ')}),`);
   lines.push(`request_scoped(name) AS (VALUES ${requestScoped.map((n) => `('${n}')`).join(', ')}),`);
   lines.push(`managed AS (`);
@@ -1832,13 +1851,53 @@ function writeOutput(rel, content) {
   fs.writeFileSync(p, content, 'utf8');
 }
 
-// SCR-022: 加 main 守卫——require 该模块（如测试/复用 render* 函数）不得触发写文件。
+/**
+ * This generator predates the standalone migration chain. Its renderManifest()
+ * describes only the legacy 001 package and must never replace the final
+ * migration manifest, which also registers later standalone migrations.
+ */
+function assertAuthoritativeManifest() {
+  const manifestPath = path.join(ROOT, 'db/contracts/schema-manifest.yaml');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(
+      'Refusing legacy DDL package generation: db/contracts/schema-manifest.yaml is missing; restore the final migration manifest first.',
+    );
+  }
+  const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
+  const managed = manifest?.managed_package?.managed_count;
+  const physical = manifest?.managed_package?.physical_create_count;
+  if (!Number.isInteger(managed) || !Number.isInteger(physical) || managed < 74 || physical < 77) {
+    throw new Error(
+      `Refusing legacy DDL package generation: schema-manifest.yaml has managed_count=${managed ?? 'missing'} / physical_create_count=${physical ?? 'missing'}; expected the final migration footprint (at least 74/77).`,
+    );
+  }
+  const tables = manifest.managed_tables;
+  if (!Array.isArray(tables) || tables.length !== managed ||
+      tables.some((entry) => !entry || typeof entry.physical_table !== 'string' ||
+        !/^[a-z][a-z0-9_]*$/.test(entry.physical_table) ||
+        !['NOT NULL', 'special', 'GLOBAL_SHARED'].includes(entry.org_id_policy)) ||
+      new Set(tables.map((entry) => entry.physical_table)).size !== managed ||
+      [...F61_02_DOMAIN_TABLES].some((name) => !tables.some((entry) => entry.physical_table === name))) {
+    throw new Error('schema-manifest.yaml managed_tables must match managed_count with unique valid tables, org_id_policy and all six F61-02 domain tables');
+  }
+  return { manifestPath, managed, physical, tables };
+}
+
+// SCR-022: require 该模块（如测试/复用 render* 函数）不得触发写文件。
 if (require.main === module) {
-  writeOutput('db/contracts/schema-manifest.yaml', renderManifest());
+  const manifest = assertAuthoritativeManifest();
+  const verify = renderVerify();
   writeOutput('db/migrations/001_ewoh_managed_tables.sql', renderMigration());
   writeOutput('db/migrations/001_ewoh_managed_tables.rollback.sql', renderRollback());
-  writeOutput('db/verify/001_verify.sql', renderVerify());
+  writeOutput('db/verify/001_verify.sql', verify);
   writeOutput('tmp/ddl/capability-map.csv', renderCapabilityCsv());
 
-  console.log('Generated EWOH DDL package artifacts.');
+  console.log(`Generated legacy EWOH DDL package artifacts; preserved authoritative schema manifest (${manifest.managed}/${manifest.physical}).`);
 }
+
+module.exports = {
+  assertAuthoritativeManifest,
+  coreManagedTablesFromManifest,
+  renderManifest,
+  renderVerify,
+};

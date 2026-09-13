@@ -34,6 +34,7 @@ const AiAssistant = () => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const placeholderSequenceRef = useRef(0);
 
   // 新消息/流式增量时自动滚动到底部（打字机效果跟随）
   useEffect(() => {
@@ -50,7 +51,7 @@ const AiAssistant = () => {
 
   const chatMutation = useMutation({
     mutationFn: async (question: string) => {
-      const placeholderId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const placeholderId = `ai-${Date.now()}-${++placeholderSequenceRef.current}`;
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: question },

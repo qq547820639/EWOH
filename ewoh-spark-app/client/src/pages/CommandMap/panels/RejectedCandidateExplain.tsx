@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import type { DecisionExplainVM } from '../vm/decisionExplainVM';
+import { softConstraintLabel } from '@shared/reject-reason';
 
 interface RejectedCandidateExplainProps {
   decision: DecisionExplainVM | null;
@@ -48,7 +49,10 @@ export function RejectedCandidateExplain({
       </table>
       {decision.softCosts && Object.keys(decision.softCosts).length > 0 && (
         <div className="text-xs text-slate-500">
-          软成本：{Object.entries(decision.softCosts).map(([k, v]) => `${k}=${v}`).join(' · ')}
+          软成本：
+          {Object.entries(decision.softCosts)
+            .map(([k, v]) => `${softConstraintLabel(k)} ${typeof v === 'number' ? v.toFixed(2) : String(v)}`)
+            .join(' · ')}
         </div>
       )}
     </div>

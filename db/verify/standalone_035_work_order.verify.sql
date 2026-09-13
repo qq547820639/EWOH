@@ -39,7 +39,7 @@ BEGIN
   SELECT count(*) INTO wo_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_work_order'
       AND policyname = 'work_order_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF wo_policy <> 1 THEN
     missing := missing || format('policy wo=%s ', wo_policy);
   END IF;

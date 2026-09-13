@@ -75,6 +75,22 @@ export function trustProxySetting(value = process.env.TRUST_PROXY): number | boo
     .filter(Boolean);
 }
 
+/** SPA 入口候选（两种构建产物互斥：主应用 index.html / standalone index.standalone.html）。 */
+export const SPA_INDEX_CANDIDATES = ['index.html', 'index.standalone.html'] as const;
+
+/**
+ * 解析当前存在的 SPA 入口文件名（无则 null）。
+ *
+ * **每次请求调用**：构建产物可能在运行期被替换（两种构建互斥且 standalone 会清空
+ * dist/client）。启动时冻结会让服务器一直 sendFile 已被删除的文件 → SPA 路由全 500。
+ */
+export function resolveSpaIndexFile(clientDir: string): string | null {
+  for (const candidate of SPA_INDEX_CANDIDATES) {
+    if (existsSync(join(clientDir, candidate))) return candidate;
+  }
+  return null;
+}
+
 export function isSpaFallbackPath(path: string): boolean {
   return (
     !path.startsWith('/api/') &&
@@ -125,10 +141,24 @@ export async function bootstrapStandalone(): Promise<void> {
   });
 
   const clientDir = join(process.cwd(), 'dist/client');
-  const indexFile = existsSync(join(clientDir, 'index.html'))
-    ? 'index.html'
-    : 'index.standalone.html';
-  if (existsSync(join(clientDir, indexFile))) {
+  /**
+   * 解析 SPA 入口文件名（每次请求都解析，**不在启动时冻结**）。
+   *
+   * 为什么：两种前端产物互斥——`build:client` 产出 `index.html`（主应用），
+   * `build:client:standalone` 产出 `index.standalone.html` 且会清空 dist/client。
+   * 启动时冻结文件名后，只要运行期做了一次另一种构建，服务器就会一直 sendFile
+   * 那个已被删除的文件 → 所有 SPA 路由 500，直到重启（2026-09-11 实测：
+   * 浏览器真实链路三例全挂，日志 ENOENT dist/client/index.html）。
+   */
+  const resolveIndexFile = (): string | null => resolveSpaIndexFile(clientDir);
+  const indexFile = resolveIndexFile();
+  if (!indexFile) {
+    Logger.warn(
+      `前端产物缺失：${clientDir} 下没有 index.html / index.standalone.html（SPA 路由将返回 503，请先构建客户端）`,
+      'StandaloneBootstrap',
+    );
+  }
+  if (indexFile) {
     // MIN-003 修复：带 content-hash 的静态资源设长缓存；HTML 设 no-cache。
     app.useStaticAssets(clientDir, {
       index: indexFile,
@@ -146,8 +176,20 @@ export async function bootstrapStandalone(): Promise<void> {
     // SPA fallback：合法前端路由返回 index.html + 200，由 React Router 接管。
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (req.method === 'GET' && isSpaFallbackPath(req.path)) {
+        const current = resolveIndexFile();
+        if (!current) {
+          // 产物缺失必须显式（503 + 可读原因），不能让运维看到"服务器内部错误"
+          res.status(503).json({
+            error: {
+              code: 'CLIENT_BUNDLE_MISSING',
+              message: '前端产物缺失：请构建客户端（npm run build:client:standalone）后重试',
+              retryable: false,
+            },
+          });
+          return;
+        }
         res.status(200);
-        res.sendFile(join(clientDir, indexFile));
+        res.sendFile(join(clientDir, current));
         return;
       }
       next();

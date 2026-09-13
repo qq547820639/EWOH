@@ -10,10 +10,11 @@
  * standalone_045 verify + CI 承担）。
  */
 /// <reference types="jest" />
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { LearningProposalService } from '../learning-proposal.service';
 import { ewohLearningProposal, ewohEvent, ewohTelemetry, ewohLearningEvaluation } from '@server/database/schema';
 import { validateDecision } from '@shared/decision';
+import { DEFAULT_WORKLOAD_THRESHOLD, REASONING_ENGINE_VERSION } from '@shared/reasoning-trace';
 
 const ORG_A = 'org-a';
 
@@ -21,6 +22,7 @@ function asProposal(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+const PROPOSER = 'person:proposer-1';
 const CHANGE = {
   ruleId: 'rule:worker-overload',
   parameter: 'workloadThreshold',
@@ -196,7 +198,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
   it('propose 契约 fail-closed：未知 kind 拒绝且不落库（§33 无引擎空类型）', async () => {
     const { rows, service } = createProposalDb();
     await expect(
-      service.propose({ kind: 'policy_weight', change: CHANGE }, ORG_A),
+      service.propose({ kind: 'policy_weight', change: CHANGE }, ORG_A, PROPOSER),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(rows).toHaveLength(0);
   });
@@ -213,6 +215,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
     const result = await service.propose(
       { kind: 'rule_threshold', change: CHANGE, facts: forgedLowRiskFacts },
       ORG_A,
+      PROPOSER,
     );
     expect(result.created).toBe(true);
     expect(asProposal(result.proposal).status).toBe('shadow_evaluated');
@@ -235,7 +238,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
 
   it('R2-SBZ-004：propose 库内窗口为空 → proposed（即使客户端供给 facts 也不作证据）', async () => {
     const { rows, service } = createProposalDb();
-    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A);
+    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE, facts: FACTS }, ORG_A, PROPOSER);
     expect(asProposal(result.proposal).status).toBe('proposed');
     expect(rows[0]?.status).toBe('proposed');
   });
@@ -246,6 +249,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
       service.propose(
         { kind: 'rule_threshold', change: CHANGE, evaluationRef: { evalId: 'eval-not-exist' } },
         ORG_A,
+        PROPOSER,
       ),
     ).rejects.toThrow('evaluation_ref_not_found');
   });
@@ -261,6 +265,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
     const result = await service.propose(
       { kind: 'rule_threshold', change: CHANGE, evaluationRef: { evalId: 'eval-bound-1' } },
       ORG_A,
+      PROPOSER,
     );
     expect(asProposal(result.proposal).status).toBe('shadow_evaluated');
     const provenance = asProposal(result.proposal).shadowFactsProvenance as Record<string, unknown>;
@@ -272,7 +277,7 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
       [],
       { telemetry: [telemetryRow('org-b')] },
     );
-    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE }, ORG_A);
+    const result = await service.propose({ kind: 'rule_threshold', change: CHANGE }, ORG_A, PROPOSER);
     expect(asProposal(result.proposal).status).toBe('proposed');
   });
 
@@ -281,9 +286,9 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
       [],
       { telemetry: [telemetryRow(ORG_A)] },
     );
-    const first = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A);
+    const first = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A, PROPOSER);
     expect(first.created).toBe(true);
-    const second = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A);
+    const second = await service.propose({ proposalId: 'lp:fixed-1', kind: 'rule_threshold', change: CHANGE }, ORG_A, PROPOSER);
     expect(second.created).toBe(false);
     expect(events).toHaveLength(1);
   });
@@ -396,6 +401,126 @@ describe('LearningProposalService（NO-12b 反馈腿）', () => {
     expect(decision.status).toBe('superseded');
     expect((decision.auditTrail as Array<Record<string, unknown>>)[0].action).toBe('rolled_back');
     expect(validateDecision(decision)).toEqual([]);
+  });
+
+  /* ------------------------------------------------------------------
+   * B5 同族审批独立性（standalone_073）：提议人归属 + 生成人回避。
+   * 与 plan.service SELF_APPROVAL_FORBIDDEN 同语义（同一治理口径）：
+   * 比较用服务端权威口径，proposedBy 为 NULL 的存量行放行。
+   * ------------------------------------------------------------------ */
+  it('B5：propose 无提议人身份 → fail-closed 拒绝且不落库；带身份则列与响应双写 proposedBy', async () => {
+    const { rows, service } = createProposalDb();
+    await expect(
+      service.propose({ kind: 'rule_threshold', change: CHANGE }, ORG_A),
+    ).rejects.toThrow('propose 必须带非空 proposedBy');
+    expect(rows).toHaveLength(0);
+
+    const { rows: rowsWithProposer, service: serviceWithProposer } = createProposalDb();
+    const result = await serviceWithProposer.propose(
+      { kind: 'rule_threshold', change: CHANGE },
+      ORG_A,
+      PROPOSER,
+    );
+    expect(asProposal(result.proposal).proposedBy).toBe(PROPOSER);
+    expect(rowsWithProposer[0]?.proposedBy).toBe(PROPOSER);
+  });
+
+  it('B5：提议人自批 → SELF_APPROVAL_FORBIDDEN 且不写入；他人可批；存量无归属行放行', async () => {
+    // 自批：状态不变、无 Resolved 事件（拒绝发生在任何写入之前）。
+    const self = createProposalDb([rowOf('lp:self', ORG_A, { proposedBy: 'person:approver-1' })]);
+    await expect(self.service.approve(ORG_A, 'lp:self', 'person:approver-1'))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    await expect(self.service.approve(ORG_A, 'lp:self', 'person:approver-1'))
+      .rejects.toThrow('SELF_APPROVAL_FORBIDDEN');
+    expect(self.rows[0]?.status).toBe('shadow_evaluated');
+    expect(self.events).toHaveLength(0);
+
+    // 跨人审批：正常进入 approved。
+    const cross = createProposalDb([rowOf('lp:cross', ORG_A, { proposedBy: PROPOSER })]);
+    const approved = await cross.service.approve(ORG_A, 'lp:cross', 'person:approver-2');
+    expect(asProposal(approved).status).toBe('approved');
+    expect(cross.rows[0]?.approvedBy).toBe('person:approver-2');
+
+    // 存量行（standalone_073 之前的行无 proposedBy）：放行，避免历史提案被永久锁死。
+    const legacy = createProposalDb([rowOf('lp:legacy', ORG_A)]);
+    expect(asProposal(await legacy.service.approve(ORG_A, 'lp:legacy', PROPOSER)).status).toBe('approved');
+  });
+
+  /* ------------------------------------------------------------------
+   * 阈值基线读面（决策原则 5）：来源 / 生效值 / 更新时间 / 影响面。
+   * ------------------------------------------------------------------ */
+  it('阈值基线：无覆盖 → 引擎内置常量（显式来源，provenance 为空，绝不冒充已激活策略）', async () => {
+    const { service } = createProposalDb([
+      rowOf('lp:pending', ORG_A, { status: 'proposed', shadowEvalJson: null, proposedBy: PROPOSER }),
+    ]);
+    const baseline = await service.getThresholdBaseline(ORG_A);
+    expect(baseline.engineVersion).toBe(REASONING_ENGINE_VERSION);
+    expect(new Date(baseline.readAt).toISOString()).toBe(baseline.readAt);
+    expect(baseline.entries).toHaveLength(1);
+    const [entry] = baseline.entries;
+    expect(entry.ruleId).toBe('rule:worker-overload');
+    expect(entry.parameter).toBe('workloadThreshold');
+    expect(entry.effective).toBe(DEFAULT_WORKLOAD_THRESHOLD);
+    expect(entry.engineDefault).toBe(DEFAULT_WORKLOAD_THRESHOLD);
+    expect(entry.source).toBe('engine_default');
+    expect(entry.provenance).toBeNull();
+    expect(entry.counts).toEqual({ pending: 1, approved: 0, rejected: 0, rolledBack: 0 });
+  });
+
+  it('阈值基线：approved 覆盖 → 生效值为候选值 + 提案/审批/影子证据来源；在途与历史计数分离', async () => {
+    const { service } = createProposalDb([
+      rowOf('lp:a1', ORG_A, {
+        status: 'approved',
+        candidateValue: 0.75,
+        proposedBy: PROPOSER,
+        approvedBy: 'person:approver-2',
+        approvedAt: new Date('2026-08-16T10:00:00Z'),
+        recordJson: {
+          proposalId: 'lp:a1',
+          kind: 'rule_threshold',
+          status: 'approved',
+          change: { ...CHANGE },
+          auditTrail: true,
+          shadowFactsProvenance: {
+            source: 'server:ewoh_telemetry',
+            window: { from: '2026-08-09T00:00:00Z', to: '2026-08-16T00:00:00Z' },
+            factsCount: 3,
+            fields: { workload: 'ewoh_telemetry.load_score' },
+          },
+        },
+      }),
+      rowOf('lp:rej', ORG_A, { status: 'rejected', candidateValue: 0.6, rejectedBy: 'person:x', rejectedReason: '证据不足' }),
+      rowOf('lp:rb', ORG_A, {
+        status: 'rolled_back', candidateValue: 0.7,
+        rolledBackBy: 'person:x', rolledBackReason: '误伤过频', approvedBy: 'person:x', approvedAt: new Date(),
+      }),
+      rowOf('lp:pending', ORG_A, { status: 'shadow_evaluated' }),
+      rowOf('lp:other-org', 'org-b', { status: 'approved', candidateValue: 0.5, approvedAt: new Date() }),
+    ]);
+    const baseline = await service.getThresholdBaseline(ORG_A);
+    const [entry] = baseline.entries;
+    expect(entry.effective).toBe(0.75);
+    expect(entry.source).toBe('approved_proposal');
+    expect(entry.provenance).toMatchObject({
+      proposalId: 'lp:a1',
+      baselineValue: 0.8,
+      candidateValue: 0.75,
+      proposedBy: PROPOSER,
+      approvedBy: 'person:approver-2',
+      approvedAt: '2026-08-16T10:00:00.000Z',
+    });
+    expect(entry.provenance?.shadowFactsProvenance?.source).toBe('server:ewoh_telemetry');
+    expect(entry.counts).toEqual({ pending: 1, approved: 1, rejected: 1, rolledBack: 1 });
+  });
+
+  it('阈值基线：租户作用域——他租户 approved 提案不影响本租户基线；缺 orgId fail-closed', async () => {
+    const { service } = createProposalDb([
+      rowOf('lp:other-org', 'org-b', { status: 'approved', candidateValue: 0.5, approvedAt: new Date() }),
+    ]);
+    const baseline = await service.getThresholdBaseline(ORG_A);
+    expect(baseline.entries[0].source).toBe('engine_default');
+    expect(baseline.entries[0].effective).toBe(DEFAULT_WORKLOAD_THRESHOLD);
+    await expect(service.getThresholdBaseline('')).rejects.toThrow('orgId 缺失');
   });
 });
 

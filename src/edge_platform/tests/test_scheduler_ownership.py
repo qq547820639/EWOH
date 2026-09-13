@@ -67,7 +67,7 @@ class _FakeWorldStorage:
         return self.devices
 
     def list_tasks(self):
-        return []
+        return [{"task_id": "T1", "estimated_duration_sec": 600}]
 
     def list_stations(self):
         return [{"station_id": "S1"}]

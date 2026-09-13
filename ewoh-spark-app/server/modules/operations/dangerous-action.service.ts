@@ -1,10 +1,11 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { IdempotencyService } from '../shared/idempotency.service';
 import { AuditService } from '../shared/audit.service';
 import {
   buildCompensation,
   dangerousIdempotencyKey,
+  DANGEROUS_ACTION_KINDS,
   previewDangerousImpact,
   type DangerousActionKind,
   type DangerousActionSpec,
@@ -43,7 +44,20 @@ export class DangerousActionService {
 
   /** Impact preview — no side effects. */
   preview(spec: DangerousActionSpec): DangerousImpact {
+    this.assertKnownKind(spec?.action);
     return previewDangerousImpact(spec);
+  }
+
+  /**
+   * 未知 kind 必须以 400 拒绝：previewDangerousImpact 直接查
+   * ACTION_LABELS/ACTION_TEMPLATES 表，未知 kind 会 TypeError → 500。
+   */
+  private assertKnownKind(action: unknown): asserts action is DangerousActionKind {
+    if (!DANGEROUS_ACTION_KINDS.includes(action as DangerousActionKind)) {
+      throw new BadRequestException(
+        `action must be one of ${DANGEROUS_ACTION_KINDS.join(', ')}`,
+      );
+    }
   }
 
   /**
@@ -58,10 +72,9 @@ export class DangerousActionService {
     impact: DangerousImpact;
     compensation: ReturnType<typeof buildCompensation>;
   }> {
+    this.assertKnownKind(input?.action);
     const impact = previewDangerousImpact(input);
-    const key =
-      input.idempotencyKey ??
-      dangerousIdempotencyKey(input.action, input.targetType, input.targetId);
+    const key = this.scopedKey(actor, input);
     const payload = {
       action: input.action,
       targetType: input.targetType,
@@ -94,6 +107,23 @@ export class DangerousActionService {
       impact,
       compensation: buildCompensation(input.action),
     };
+  }
+
+  /**
+   * 幂等键必须带租户前缀：ewoh_idempotency_keys 的隔离依赖 RLS/org 谓词，
+   * 而部署形态存在以表 owner 连接（RLS 不生效）的情况；裸
+   * `dangerous:{action}:{targetType}:{targetId}` 会让 A/B 租户对同形
+   * (targetType, targetId) 的确认互相吞并（B 拿到 A 的 actionId，且 B 的
+   * 确认审计丢失）。同租户内幂等语义不变。
+   */
+  private scopedKey(
+    actor: DangerousActor,
+    input: DangerousConfirmInput,
+  ): string {
+    const base =
+      input.idempotencyKey ??
+      dangerousIdempotencyKey(input.action, input.targetType, input.targetId);
+    return `${base}::org:${actor.primaryOrgId}`;
   }
 
   /** Records a compensation / undo action for a previously confirmed action. */

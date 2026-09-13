@@ -134,6 +134,8 @@ const DEFAULT_CONFIG: SchedulingPolicyConfig = {
       maxFallbackRate: 0.5,
       minCoverage: 0.8,
     },
+    // ADR-056 消费侧激活开关：缺省 off（求解器行为逐字节不变，见 shared/scheduler.ts 注释）。
+    durationModelMode: 'off' as const,
   },
   // --- CP-SAT 激活阶梯（Task A / P0）：缺省 OFF（仅 heuristic 生产；CP-SAT 不参与任何路径） ---
   cpSat: {
@@ -715,6 +717,11 @@ export class SchedulingPolicyService {
             DEFAULT_CONFIG.prediction.autoRollbackOn.minCoverage,
           ),
         },
+        // 封闭词表：'off' | 'advisory'（词表外一律回退缺省 off，不静默发明新模式）。
+        durationModelMode:
+          c.prediction?.durationModelMode === 'advisory'
+            ? 'advisory'
+            : DEFAULT_CONFIG.prediction.durationModelMode,
       },
       // --- CP-SAT 激活阶梯（Task A / P0）：cpSat 块透传，缺省=OFF（仅 heuristic） ---
       cpSat: {

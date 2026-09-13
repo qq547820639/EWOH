@@ -57,9 +57,105 @@ describe('candidateExplainVM（候选解释展示）', () => {
 });
 
 describe('candidateReasonLabel（原因文案映射）', () => {
-  it('已知原因映射中文，未知原因原样透传', () => {
+  /* 2026-09-11 策略变更：未知原因不再裸透传英文键，而是显式标注"未登记原因（key）"
+   * ——对现场是"这条解释还没登记"，对排查保留了 key（原则 5/7：不伪装成已知事实）。 */
+  /* NO-15b：能力拒绝的可读细节由后端生成，前端只透传（不重算、不编造）。 */
+  it('候选透传后端能力说明（哪个能力/谁/何时/为何停用）', () => {
+    const vm = candidateExplainVM({
+      taskId: 'T-1',
+      candidates: [
+        {
+          personId: 'P-1',
+          personName: '张三',
+          deviceId: 'D-1',
+          stationId: 'S-1',
+          eligible: false,
+          etaSeconds: 0,
+          distanceMeters: 0,
+          skillMatch: true,
+          workload: 0,
+          batteryPct: null,
+          reservationConflict: false,
+          score: null,
+          reasons: ['capability_disabled'],
+          rejectReasons: ['capability_disabled'],
+          capabilityNotes: [
+            '任务要求的能力：exo-lift；该设备当前可用能力：（无）',
+            '能力 exo-lift 已被人工停用：admin · 2026/9/11 10:00:00 · 理由：助力模块故障待修',
+          ],
+        },
+      ],
+    } as never);
+    const row = (vm?.rejected ?? vm?.eligible ?? [])[0];
+    expect(row?.capabilityNotes).toEqual([
+      '任务要求的能力：exo-lift；该设备当前可用能力：（无）',
+      '能力 exo-lift 已被人工停用：admin · 2026/9/11 10:00:00 · 理由：助力模块故障待修',
+    ]);
+  });
+
+  /* NO-38b：人机同体配对的正向说明同样由后端生成、前端只透传。 */
+  it('候选透传后端会话说明（人机同体：该设备正由本候选人员佩戴）', () => {
+    const vm = candidateExplainVM({
+      taskId: 'T-1',
+      candidates: [
+        {
+          personId: 'P-1',
+          personName: '张三',
+          deviceId: 'D-1',
+          stationId: 'S-1',
+          eligible: true,
+          etaSeconds: 0,
+          distanceMeters: 0,
+          skillMatch: true,
+          workload: 0,
+          batteryPct: 80,
+          reservationConflict: false,
+          score: 10,
+          reasons: [],
+          rejectReasons: [],
+          sessionNotes: [
+            '设备 EXO-1 正由该人员佩戴（外骨骼会话 exo-session:x，开始于 2026/9/12 08:00:00）：本候选是人机同体配对（同一台外骨骼不能同时给两个人用）；若要改派他人，需先结束会话或由现场改派佩戴者。',
+          ],
+        },
+      ],
+    } as never);
+    const row = vm.eligible[0];
+    expect(row?.sessionNotes).toHaveLength(1);
+    expect(row?.sessionNotes[0]).toContain('人机同体');
+    // 没有该字段时 → 空数组（前端不补造说明）
+    const vm2 = candidateExplainVM({
+      taskId: 'T-1',
+      candidates: [
+        {
+          personId: 'P-2',
+          personName: '李四',
+          deviceId: null,
+          stationId: null,
+          eligible: true,
+          etaSeconds: 0,
+          distanceMeters: 0,
+          skillMatch: true,
+          workload: 0,
+          batteryPct: null,
+          reservationConflict: false,
+          score: 5,
+          reasons: [],
+          rejectReasons: [],
+        },
+      ],
+    } as never);
+    expect(vm2.eligible[0]?.sessionNotes).toEqual([]);
+  });
+
+  it('已知原因映射中文（唯一词表），未知原因显式标注未登记', () => {
     expect(candidateReasonLabel('missing_skill')).toBe('缺少技能');
-    expect(candidateReasonLabel('route_infeasible')).toBe('路径不可行');
-    expect(candidateReasonLabel('custom_reason')).toBe('custom_reason');
+    expect(candidateReasonLabel('route_infeasible')).toBe('无可行路径');
+    // 旧键仍可读（历史方案里的 rejectReasons 带过 device_data_unavailable）
+    expect(candidateReasonLabel('device_data_unavailable')).toBe('电量未知（未上报，不派工）');
+    // 本轮新增登记的原因（此前不在联合类型里，前端无文案）
+    expect(candidateReasonLabel('device_maintenance_blocked')).toBe('设备维护中（需人工解除）');
+    expect(candidateReasonLabel('continuous_work_exceeded')).toBe('连续负荷超限');
+    expect(candidateReasonLabel('battery_unknown')).toBe('电量未知（未上报，不派工）');
+    expect(candidateReasonLabel('custom_reason')).toBe('未登记原因（custom_reason）');
   });
 });

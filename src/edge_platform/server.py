@@ -187,6 +187,7 @@ class Context:
         world_projection=None,
         event_uplink=None,
         metrics_uplink=None,
+        sensor_uplink=None,
     ):
         self.storage = storage
         self.bus = bus
@@ -213,6 +214,8 @@ class Context:
         self.world_projection = world_projection
         # NO-04b：Edge→Cloud 事件上行（缺省 None；/api/status 如实报 enabled=false）
         self.event_uplink = event_uplink
+        # 2026-09-10：多源传感器帧上行（环境/摄像头/定位 → /api/ingest/*）
+        self.sensor_uplink = sensor_uplink
         self.metrics_uplink = metrics_uplink
         self.started_at = time.time()
         self.assignments = []  # 人工确认派工记录（演示会话级，不自动派工）

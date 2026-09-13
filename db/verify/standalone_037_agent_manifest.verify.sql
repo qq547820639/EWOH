@@ -40,7 +40,7 @@ BEGIN
   SELECT count(*) INTO am_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_agent_manifest'
       AND policyname = 'agent_manifest_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF am_policy <> 1 THEN
     missing := missing || format('policy am=%s ', am_policy);
   END IF;

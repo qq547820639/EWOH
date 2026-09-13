@@ -14,6 +14,7 @@ export const PLAN_STATUS_LABELS: Record<PlanStatus, string> = {
   completed: '已完成',
   rejected: '已驳回',
   superseded: '已被替代',
+  cancelled: '已取消',
 };
 
 export const PLAN_FLOW_STEPS: ReadonlyArray<PlanStatus> = [
@@ -39,7 +40,14 @@ export function planStatusSteps(status: PlanStatus): PlanStatusStep[] {
       state: 'done' as const,
     }));
   }
-  if (status === 'draft' || status === 'rejected' || status === 'superseded') {
+  if (
+    status === 'draft'
+    || status === 'rejected'
+    || status === 'superseded'
+    // cancelled：主链未推进到完成；取消发生在派工之后时 executed 段不可信，
+    // 统一按"未完成"展示（取消事实见方案卡 cancel 摘要）。
+    || status === 'cancelled'
+  ) {
     return PLAN_FLOW_STEPS.map((key) => ({
       key,
       label: PLAN_STATUS_LABELS[key],

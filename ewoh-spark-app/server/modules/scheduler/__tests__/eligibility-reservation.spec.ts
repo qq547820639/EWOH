@@ -25,6 +25,30 @@ describe('EligibilityService reservation 冲突（Task 0.2）', () => {
     predIds: [],
   };
 
+  it.each([null, undefined, NaN, Infinity, -Infinity, -1, 101, '80'])(
+    'rejects invalid battery %p as unavailable even with a zero minimum',
+    (batteryPct) => {
+      const device = Object.assign(
+        { id: 'd1', batteryPct: 80, online: true, status: 'AVAILABLE', capabilities: [] },
+        { batteryPct },
+      );
+      const result = svc.check(person, baseTask, device, makeEligibilityCtx({ minBatteryPct: 0 }));
+      expect(result.eligible).toBe(false);
+      expect(result.reasons).toEqual(['battery_unknown']);
+    },
+  );
+
+  it.each([0, 14.9, 15, 100])('applies the minimum to measured battery %p', (batteryPct) => {
+    const result = svc.check(
+      person,
+      baseTask,
+      { id: 'd1', batteryPct, online: true, status: 'AVAILABLE', capabilities: [] },
+      makeEligibilityCtx({ minBatteryPct: 15 }),
+    );
+    expect(result.eligible).toBe(batteryPct >= 15);
+    expect(result.reasons).toEqual(batteryPct < 15 ? ['battery_low'] : []);
+  });
+
   it('人员已有 09:00-10:00 预订，新任务候选 09:30-10:30 → time_conflict', () => {
     const res = svc.check(
       person,

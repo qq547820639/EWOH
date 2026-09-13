@@ -40,8 +40,8 @@ BEGIN
     WHERE schemaname = current_schema()
       AND tablename = 'ewoh_identity_mapping'
       AND policyname = 'identity_mapping_org_isolation'
-      AND (pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%'
-           AND pg_get_expr(polwithcheck, polrelid) LIKE '%app.current_org_id%');
+      AND (qual LIKE '%app.current_org_id%'
+           AND with_check LIKE '%app.current_org_id%');
   IF policy_ok <> 1 THEN missing := missing || format('policy_missing=%s ', policy_ok); END IF;
 
   -- 3) 业务键唯一约束存在

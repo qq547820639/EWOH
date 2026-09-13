@@ -96,9 +96,18 @@ function makeReplanInstance(opts: {
 }
 
 /** 缩短窗口以便快速连续触发（避免真实 sleep），与 replan-storm 一致。 */
+/**
+ * 测试配置：**不要用毫秒级 interval 表达"同一时间窗"**。
+ *
+ * 2026-09-12 实测缺陷：`minimumReplanIntervalMs: 5` 时"第 3 次被抑制"依赖三次调用
+ * 落在 5ms 内——单文件跑很快能过，全量 jest（多 worker 并行、机器有负载）时超过 5ms，
+ * 第 3 次就变成 allowed，表现为**随机失败的 flaky 用例**（P0-5 降级路径）。
+ * 抑制语义由"窗口内次数已满（maximumReplansPerWindow=2）+ 仍在最小间隔内"共同决定，
+ * 因此把间隔设成远大于测试时长：语义不变，且与机器速度无关。
+ */
 const SHORT_CONFIG = {
   replanDebounceMs: 0,
-  minimumReplanIntervalMs: 5,
+  minimumReplanIntervalMs: 60_000,
   maximumReplansPerWindow: 2,
   conflictAggregationWindowMs: 60_000,
 };

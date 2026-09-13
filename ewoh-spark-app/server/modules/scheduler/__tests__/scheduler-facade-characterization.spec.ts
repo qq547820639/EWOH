@@ -175,7 +175,7 @@ function makeDb(seed: FakeDbSeed = {}): any {
 }
 
 /** 完整依赖 fake 集：默认全部可用；按需覆盖以测 fallback 路径。 */
-function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecution?: boolean; noCandidateEngine?: boolean; noReplanCoordinator?: boolean; noReplay?: boolean } = {}) {
+function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecution?: boolean; noReceipt?: boolean; noCandidateEngine?: boolean; noReplanCoordinator?: boolean; noReplay?: boolean } = {}) {
   const db = makeDb(seed);
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<unknown>) => {
@@ -301,6 +301,8 @@ function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecutio
   const feedbackService = {
     deriveKpis: jest.fn().mockResolvedValue({ acceptanceRate: 0.8 }),
     recordActuals: jest.fn().mockResolvedValue(undefined),
+    // R-3：recordTaskActuals 直达规范回执服务后的 shadow 回填钩子（观测型）。
+    backfillShadowActuals: jest.fn(),
   };
   const outboxService = {
     enqueue: jest.fn().mockResolvedValue({ id: 'EVT-1' }),
@@ -345,6 +347,10 @@ function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecutio
         list: jest.fn().mockResolvedValue({ executions: [], total: 0 }),
         createFromPlan: jest.fn().mockResolvedValue(undefined),
       };
+  const receiptService = {
+    applyFromExecutionUpdate: jest.fn().mockResolvedValue({ assignmentId: 'ASG-1', status: 'running', receipt: { matchedRows: 1, advancedAssignments: 0, advancedTaskSteps: 0, skips: [], policy: 'receipt-provenance-v1', source: 'unknown', productionTrainingEligible: false, reason: 'test', evidence: {} } }),
+    applyFromActuals: jest.fn().mockResolvedValue({ receipt: { matchedRows: 1, advancedAssignments: 0, advancedTaskSteps: 0, skips: [], policy: 'receipt-provenance-v1', source: 'unknown', productionTrainingEligible: false, reason: 'test', evidence: {} } }),
+  };
   const constraintLoaderService = {
     loadGlobalActive: jest.fn().mockResolvedValue([]),
   };
@@ -389,6 +395,9 @@ function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecutio
     constraintLoaderService as never,
     candidateEngineService as never,
     replanPreviewService as never,
+    undefined,
+    undefined,
+    (opts.noReceipt ? undefined : receiptService) as never,
   );
 
   return {
@@ -407,6 +416,7 @@ function makeSvc(seed: FakeDbSeed = {}, opts: { noConflict?: boolean; noExecutio
       policyService,
       feedbackService,
       outboxService,
+      receiptService,
       replanCoordinatorService,
       metricsService,
       conflictService,
@@ -922,50 +932,25 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(mocks.conflictService.listConflicts).toHaveBeenCalledWith({}, undefined);
     });
 
-    it('未注入 conflictService → 回退内存推导（double booking / low battery / stale plan）', async () => {
-      const { svc, mocks } = makeSvc({}, { noConflict: true });
-      mocks.worldStateSnapshotService.getCurrentWorldState.mockResolvedValue({
-        ...makeSnapshot(),
-        reservations: [
-          { reservationId: 'r1', resourceType: 'person', resourceId: 'p1', startMs: 100, endMs: 200 },
-          { reservationId: 'r2', resourceType: 'person', resourceId: 'p1', startMs: 150, endMs: 250 },
-        ],
-        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
-      });
-      const res = await svc.listConflicts({});
-      expect(res.total).toBeGreaterThanOrEqual(2);
-      expect(res.conflicts.some((c) => c.type === 'double_booking')).toBe(true);
-      expect(res.conflicts.some((c) => c.type === 'low_battery')).toBe(true);
-      expect(res.conflicts.every((c) => c.conflictId.startsWith('CFL-'))).toBe(true);
-    });
-
-    it('未注入 conflictService → 新冲突经 outbox 推送 conflict.detected（去重）', async () => {
-      const { svc, mocks } = makeSvc({}, { noConflict: true });
-      mocks.worldStateSnapshotService.getCurrentWorldState.mockResolvedValue({
-        ...makeSnapshot(),
-        devices: [{ id: 'd1', batteryPct: 5, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' }],
-      });
-      await svc.listConflicts({});
-      const first = mocks.outboxService.enqueue.mock.calls.length;
-      expect(first).toBeGreaterThan(0);
-      await svc.listConflicts({});
-      expect(mocks.outboxService.enqueue.mock.calls.length).toBe(first);
-      expect(mocks.outboxService.enqueue).toHaveBeenCalledWith(
-        'conflict.detected',
-        expect.stringContaining('CFL-'),
-        expect.objectContaining({ type: 'low_battery' }),
-        null,
-      );
-    });
-
-    it('getConflictDetail 未注入 conflictService → 从推导列表查找；不存在抛 NotFound', async () => {
+    it('未注入 conflictService → 显式失败（不回退内存推导；唯一的冲突实现是 ConflictService）', async () => {
       const { svc } = makeSvc({}, { noConflict: true });
-      await expect(svc.getConflictDetail('CFL-nope')).rejects.toThrow(NotFoundException);
+      // 2026-09-12（第 59 轮）：内存孪生推导已删除——两个"冲突真相"会漂移
+      //（缺 reservation_expiring / perception_inconsistent、生命周期与 SSE 各写一套）。
+      // 未装配 = 装配错误，必须显式失败，而不是静默返回另一份冲突集。
+      await expect(svc.listConflicts({})).rejects.toThrow(/需要 ConflictService/);
+      await expect(svc.getConflictDetail('CFL-nope')).rejects.toThrow(/需要 ConflictService/);
     });
+
+    it('未注入 conflictService → 读面不产生任何 SSE 副作用（旧孪生实现会在 GET 里推事件）', async () => {
+      const { svc, mocks } = makeSvc({}, { noConflict: true });
+      await svc.listConflicts({}).catch(() => undefined);
+      expect(mocks.outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
   });
 
   describe('执行领域（executionUpdate / executionList）', () => {
-    it('executionUpdate 委托 executionService.update（orgId 透传）', async () => {
+    it('executionUpdate 委托 canonical receipt（actor 透传）', async () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.executionUpdate(
         'ASG-1',
@@ -973,18 +958,16 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
         ACTOR,
       );
       expect(res).toMatchObject({ assignmentId: 'ASG-1', status: 'running' });
-      expect(mocks.executionService.update).toHaveBeenCalledWith(
-        'ASG-1',
-        { status: 'running' },
-        'org1',
+      expect(mocks.receiptService.applyFromExecutionUpdate).toHaveBeenCalledWith(
+        'ASG-1', { status: 'running' }, ACTOR,
       );
     });
 
-    it('executionUpdate 未注入 executionService → 抛错', async () => {
-      const { svc } = makeSvc({}, { noExecution: true });
+    it('executionUpdate 未注入 canonical receipt → fail closed', async () => {
+      const { svc } = makeSvc({}, { noReceipt: true });
       await expect(
         svc.executionUpdate('ASG-1', { status: 'running' } as never, ACTOR),
-      ).rejects.toThrow('executionService not injected');
+      ).rejects.toThrow('Canonical receipt service not available');
     });
 
     it('executionList 委托 executionService.list', async () => {
@@ -1029,30 +1012,19 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(res).toEqual({ run: null, plans: [], debounced: true, cascaded: [] });
     });
 
-    it('recordTaskActuals 委托 feedbackService.recordActuals + 推送 execution.deviation', async () => {
+    it('recordTaskActuals 委托 canonical 且 facade 不重复发 outbox', async () => {
       const { svc, mocks } = makeSvc();
       const res = await svc.recordTaskActuals(
         { taskId: 't1', actualStart: '2026-08-09T10:00:00Z' },
         ACTOR,
       );
       // NO-13a / ADR-050：响应 additive 透出推进 summary（stub 返回 undefined → 兜底零值）。
-      expect(res).toEqual({
-        ok: true,
-        matched: true,
-        advancedAssignments: 0,
-        advancedTaskSteps: 0,
-        skips: [],
-      });
-      expect(mocks.feedbackService.recordActuals).toHaveBeenCalledWith(
-        expect.objectContaining({ taskId: 't1', actualStart: '2026-08-09T10:00:00Z' }),
-        expect.any(Object),
+      expect(res).toMatchObject({ ok: true, matched: true, advancedAssignments: 0, advancedTaskSteps: 0, skips: [] });
+      expect(mocks.receiptService.applyFromActuals).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: 't1', actualStart: '2026-08-09T10:00:00Z' }), ACTOR,
       );
-      expect(mocks.outboxService.enqueue).toHaveBeenCalledWith(
-        'execution.deviation',
-        't1',
-        expect.any(Object),
-        'org1',
-      );
+      expect(mocks.outboxService.enqueue).not.toHaveBeenCalled();
+      expect(mocks.feedbackService.recordActuals).not.toHaveBeenCalled();
     });
 
     it('recordTaskActuals 无匹配键 → BadRequestException', async () => {

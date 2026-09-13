@@ -20,12 +20,15 @@ class StateMachineContractTest(unittest.TestCase):
     def test_parse_task_contract(self):
         sm = sml.load_state_machine("task")
         self.assertEqual(len(sm["states"]), 11)
-        self.assertEqual(len(sm["transitions"]), 14)
+        self.assertEqual(len(sm["transitions"]), 16)
         self.assertEqual(sm["terminal"], ["completed", "cancelled"])
         # 关键转换存在
         trans = {(t["from"], t["to"]) for t in sm["transitions"]}
         self.assertIn(("executing", "paused"), trans)
         self.assertIn(("any_non_terminal", "cancelled"), trans)
+        # DR-5 方案取消/回滚：开始执行前可退回待派发池。
+        self.assertIn(("dispatched", "pending_dispatch"), trans)
+        self.assertIn(("received", "pending_dispatch"), trans)
 
     def test_parse_plan_contract(self):
         sm = sml.load_state_machine("plan")

@@ -13,7 +13,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   ewohSchedulePlan,
   ewohSchedulingPlanAssignment,
@@ -59,6 +59,7 @@ export class SchedulingNarratorService {
     planId: string,
     ctx?: OrgContext,
   ): Promise<{ source: NarrationSource; narration: string } | null> {
+    const orgId = ctx?.primaryOrgId?.trim() || null;
     const gucSettings = buildGucSettings(
       ctx ?? {
         userId: 'system',
@@ -79,7 +80,11 @@ export class SchedulingNarratorService {
       const [plan] = await this.db
         .select()
         .from(ewohSchedulePlan)
-        .where(eq(ewohSchedulePlan.planId, planId))
+        .where(
+          orgId
+            ? and(eq(ewohSchedulePlan.planId, planId), eq(ewohSchedulePlan.orgId, orgId))
+            : eq(ewohSchedulePlan.planId, planId),
+        )
         .limit(1);
       if (!plan) return null;
       // 幂等：已有说明直接返回（不覆盖）。
@@ -89,8 +94,15 @@ export class SchedulingNarratorService {
       const assignments = await this.db
         .select()
         .from(ewohSchedulingPlanAssignment)
-        .where(eq(ewohSchedulingPlanAssignment.planId, planId));
-      const llmInput = this.ark ? await this.buildLlmInput(plan, assignments) : '';
+        .where(
+          orgId
+            ? and(
+                eq(ewohSchedulingPlanAssignment.planId, planId),
+                eq(ewohSchedulingPlanAssignment.orgId, orgId),
+              )
+            : eq(ewohSchedulingPlanAssignment.planId, planId),
+        );
+      const llmInput = this.ark ? await this.buildLlmInput(plan, assignments, orgId) : '';
       return { plan, assignments, llmInput } as unknown as ReadResult;
     });
 
@@ -150,7 +162,7 @@ export class SchedulingNarratorService {
     }
 
     // ---- 阶段 3：写事务（快速，仅 UPDATE） ----
-    await this.persist(planId, narration, source);
+    await this.persist(planId, narration, source, orgId);
     return { source, narration };
   }
 
@@ -158,6 +170,7 @@ export class SchedulingNarratorService {
     planId: string,
     narration: string,
     source: NarrationSource,
+    orgId: string | null,
   ): Promise<void> {
     // 写事务需要 GUC 设置（RLS 上下文），独立于读事务。
     const gucSettings = buildGucSettings({
@@ -171,7 +184,11 @@ export class SchedulingNarratorService {
       await this.db
         .update(ewohSchedulePlan)
         .set({ aiNarration: narration, narrationSource: source })
-        .where(eq(ewohSchedulePlan.planId, planId));
+        .where(
+          orgId
+            ? and(eq(ewohSchedulePlan.planId, planId), eq(ewohSchedulePlan.orgId, orgId))
+            : eq(ewohSchedulePlan.planId, planId),
+        );
     });
   }
 
@@ -190,6 +207,7 @@ export class SchedulingNarratorService {
   private async buildLlmInput(
     plan: typeof ewohSchedulePlan.$inferSelect,
     assignments: Array<typeof ewohSchedulingPlanAssignment.$inferSelect>,
+    orgId: string | null,
   ): Promise<string> {
     const personIds = Array.from(
       new Set(assignments.map((a) => a.personId).filter(Boolean) as string[]),
@@ -203,7 +221,12 @@ export class SchedulingNarratorService {
             })
             .from(ewohSpatialEntity)
             .where(
-              inArray(ewohSpatialEntity.entityId, personIds),
+              orgId
+                ? and(
+                    inArray(ewohSpatialEntity.entityId, personIds),
+                    eq(ewohSpatialEntity.orgId, orgId),
+                  )
+                : inArray(ewohSpatialEntity.entityId, personIds),
             )
         : [];
     const personName = new Map(

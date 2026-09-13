@@ -75,6 +75,11 @@ x-event-types:
   - ExoSessionStarted
   - ExoSessionEnded
   - OutcomeAnnotationRecorded
+  # --- DR-2~DR-5 班次/复盘/数据质量确认/方案取消（2026-09-11）---
+  - PlanCancelled
+  - DataQualityConfirmed
+  - ShiftHandoverRecorded
+  - RetrospectiveRecorded
 channels:
   device.birth:
     publish:
@@ -337,6 +342,22 @@ channels:
     publish:
       message:
         $ref: '#/components/messages/ExoConfigRecorded'
+  plan.cancelled:
+    publish:
+      message:
+        $ref: '#/components/messages/PlanCancelled'
+  data_quality.confirmed:
+    publish:
+      message:
+        $ref: '#/components/messages/DataQualityConfirmed'
+  shift.handover_recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/ShiftHandoverRecorded'
+  retrospective.recorded:
+    publish:
+      message:
+        $ref: '#/components/messages/RetrospectiveRecorded'
 components:
   messages:
     DeviceBirth:
@@ -2246,3 +2267,123 @@ components:
           - targetId
           - outcomeKind
           - occurredAt
+    PlanCancelled:
+      name: PlanCancelled
+      title: Plan Cancelled
+      summary: A scheduling plan was cancelled/rolled back after dispatch (DR-5); non-started assignments cancelled, reservations released, tasks returned to pending_dispatch.
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.scheduler.plan_cancelled
+        source: ewoh:///organizations/{orgId}/scheduling/plans/{planId}
+        subject: scheduling/plans/{planId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          planId: { type: string }
+          reason: { type: string }
+          cancelledBy: { type: string }
+          cancelledAssignmentIds: { type: array, items: { type: string } }
+          irreversibleAssignmentIds: { type: array, items: { type: string } }
+          releasedReservations: { type: integer }
+          returnedTaskIds: { type: array, items: { type: string } }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - planId
+          - reason
+          - cancelledBy
+          - occurredAt
+    DataQualityConfirmed:
+      name: DataQualityConfirmed
+      title: Data Quality Confirmed
+      summary: A human registered the final data-quality verdict (confirmed/contested) for one event (DR-4, closed-loop step 2).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.quality.data_quality_confirmed
+        source: ewoh:///organizations/{orgId}/events/{eventId}
+        subject: events/{eventId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          verdict: { type: string, enum: [confirmed, contested] }
+          confirmedBy: { type: string }
+          note: { type: string }
+          confirmedAt: { type: string, format: date-time }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - verdict
+          - confirmedBy
+          - confirmedAt
+          - occurredAt
+    ShiftHandoverRecorded:
+      name: ShiftHandoverRecorded
+      title: Shift Handover Recorded
+      summary: A shift handover was recorded with structured open items (DR-2 shift workbench).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.shift.handover_recorded
+        source: ewoh:///organizations/{orgId}/shifts/{shiftId}/handovers/{handoverId}
+        subject: shifts/{shiftId}/handovers/{handoverId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          handoverId: { type: string }
+          shiftId: { type: string }
+          shiftDate: { type: string, format: date }
+          toUserId: { type: string }
+          openItemCount: { type: integer }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - handoverId
+          - shiftId
+          - shiftDate
+          - toUserId
+          - occurredAt
+    RetrospectiveRecorded:
+      name: RetrospectiveRecorded
+      title: Retrospective Recorded
+      summary: A retrospective (factory run-memory record) was assembled/published for a plan, incident or shift (DR-3).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.learning.retrospective_recorded
+        source: ewoh:///organizations/{orgId}/retrospectives/{retrospectiveId}
+        subject: retrospectives/{retrospectiveId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          retrospectiveId: { type: string }
+          scope: { type: string, enum: [plan, incident, shift] }
+          targetId: { type: string }
+          status: { type: string, enum: [draft, published, superseded] }
+          narrativeSource: { type: string, enum: [llm, rule_fallback] }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - retrospectiveId
+          - scope
+          - targetId
+          - status
+          - occurredAt
+

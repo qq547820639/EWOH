@@ -6,8 +6,9 @@
  * Run: npx playwright test --config playwright.config.ts test/browser/comprehensive-platform.spec.ts
  */
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+const { resolveBrowserBaseUrl } = require('./runtime-target');
 
-const BASE_URL = 'http://121.43.230.202:3000';
+const BASE_URL = resolveBrowserBaseUrl();
 
 // ─── Helper: collect console errors and failed requests ───
 interface MonitoringResult {
@@ -83,11 +84,12 @@ test.describe('SPA Routing — BUG-001 verification', () => {
     });
   }
 
-  test('SPA routes serve index.html even with 404 status', async ({ page }) => {
+  test('SPA routes serve index.html with HTTP 200', async ({ page }) => {
     const response = await page.goto(`${BASE_URL}/login`);
     expect(response).not.toBeNull();
     // BUG-001: Currently returns 404 status
     const status = response!.status();
+    expect(status).toBe(200);
     // Record the actual status (404 is the known bug)
     console.log(`BUG-001 check: /login returns HTTP ${status}`);
     // Regardless of status, the content should be the SPA shell
@@ -254,8 +256,9 @@ test.describe('Error Handling', () => {
     await expect(heading.first()).toBeVisible({ timeout: 10000 });
 
     // Should have a link back to command center
-    const backLink = page.locator('a[href="/command-center"], text=返回指挥中心');
+    const backLink = page.getByRole('link', { name: '返回工厂运行台' });
     await expect(backLink.first()).toBeVisible();
+    await expect(backLink).toHaveAttribute('href', '/factory-operations');
   });
 
   test('login error does not cause white screen', async ({ page }) => {
@@ -358,10 +361,12 @@ test.describe('Static Resources', () => {
     await page.waitForLoadState('networkidle');
 
     // Check a JS asset response
-    const jsResponse = await page.goto(
-      `${BASE_URL}/assets/index.standalone-mNpC19Bq.js`,
-    );
+    const script = page.locator('script[type="module"][src]').first();
+    await expect(script).toHaveAttribute('src', /\/assets\/.+\.js$/);
+    const jsResponse = await page.request.get(new URL((await script.getAttribute('src'))!, BASE_URL).href);
     expect(jsResponse).not.toBeNull();
+    expect(jsResponse.status()).toBe(200);
+    expect(jsResponse.headers()['content-type']).toMatch(/javascript/);
     const cacheControl = jsResponse!.headers()['cache-control'] || '';
     expect(cacheControl).toContain('immutable');
     expect(cacheControl).toContain('max-age=31536000');
@@ -436,6 +441,7 @@ test.describe('Responsive Viewport Tests', () => {
           `Horizontal overflow at ${vp.width}x${vp.height}: scrollWidth=${await page.evaluate(() => document.documentElement.scrollWidth)}, clientWidth=${await page.evaluate(() => document.documentElement.clientWidth)}`,
         );
       }
+      expect(hasHScroll, `Horizontal overflow at ${vp.width}x${vp.height}`).toBe(false);
     }
   });
 });

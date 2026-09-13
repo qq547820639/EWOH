@@ -28,6 +28,7 @@ from edge_platform.scheduler.models import (  # noqa: E402
     CandidateAssignment,
     Reservation,
     SchedulePlan,
+    WorldStateSnapshot,
 )
 from edge_platform.scheduler.repository import SchedulingRepository  # noqa: E402
 from edge_platform.scheduler.scheduler_service import SchedulerService  # noqa: E402
@@ -133,6 +134,9 @@ class TaskAssignmentSyncTest(unittest.TestCase):
         )
 
     def _approve_and_execute(self, plan):
+        snapshot = WorldStateSnapshot(snapshot_id="WS-SYNC")
+        plan.world_state_version = snapshot.snapshot_id
+        self.repo.save_snapshot(snapshot)
         self.repo.save_plan(plan)
         self.service.hydrate_from_repository()
         self.service.confirm(plan.plan_id, "leader1", "同意")

@@ -33,7 +33,56 @@ type ShadowSampleEntry = PredictionShadowSample & {
   executionId?: string;
   policyVersion?: number;
   snapshotVersion?: string;
+  /** 采样腿给出的"预计可回填时刻"（计划窗口 plannedEnd，ISO）。回填到期判据用；缺省回退 createdAt+baseline。 */
+  expectedActualAt?: string;
 };
+
+/**
+ * 回填"到期"宽限（2026-09-13，R-3 自查修正）：样本过了预计可回填时刻仍无 actual，
+ * 才算"应回填而未回填"，才允许进入 coverage 回退判定。
+ *
+ * 为什么需要宽限：实际结束晚于计划结束是常态（执行延迟、回执落库延迟），把刚过
+ * plannedEnd 的在途样本立刻计为缺失，会让 coverage 在真实执行中几乎恒低于
+ * minCoverage——叠加"每条回执都 evaluateCanary 一次"的接线（scheduling-feedback），
+ * 任何多任务方案的第一条回执都会把 canary 归零（实测复现：coverage_low:0.5000），
+ * 阶梯永远无法放量——与本次已修的 mae 刻度问题同一类"可触发但不可用"。
+ * 30min 吸收常规执行/回执延迟；真正断链的回填腿（样本过期数小时仍无 actual）依然会触发回退。
+ */
+const BACKFILL_DUE_GRACE_MS = 30 * 60 * 1000;
+
+/**
+ * R-3（2026-09-13）稳定关联键：采样腿（计划基线落库）与回填腿（recordActuals）必须用
+ * **同一个函数**构造 correlationId。
+ *
+ * 为什么需要它：采样发生在 dispatch 之前、回填发生在任务真实执行之后，两侧唯一都持有的
+ * 事实是 planId/assignmentId/taskId；任一侧手写字符串拼接（分隔符/空值处理不同）都会让回填
+ * 静默失配——内存样本 actual 永久为 null、coverage 恒 0、canary 永不达标，学习腿重新断链。
+ * 无 assignment/task 时返回 null：plan 级观测没有可精确匹配的键，调用方应显式不采样。
+ */
+export function shadowCorrelationId(
+  planId: string,
+  assignmentId?: string | null,
+  taskId?: string | null,
+): string | null {
+  if (!planId?.trim() || (!assignmentId && !taskId)) return null;
+  return `${planId}|${assignmentId ?? '-'}|${taskId ?? '-'}`;
+}
+
+/**
+ * R-3 采样种子：correlationId → [0,1000) 的确定性整数（FNV-1a）。
+ *
+ * 为什么不用 Math.random()：shouldSample 按 canary 比例决定是否采样，同一次派工必须每次
+ * 得到同一判定（重放/重试/测试可复现），否则同一方案在不同进程/重试下采样集合漂移，
+ * 观测数据不可审计。
+ */
+export function stableSampleSeed(key: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % 1000;
+}
 
 /**
  * Prediction Shadow Learning（Incremental Replan V2 / M05，08 §11）——shadow-only。
@@ -45,12 +94,17 @@ type ShadowSampleEntry = PredictionShadowSample & {
  *  - canary 阶梯仅控制 shadow 采样比例（生产预测输出仍为 deterministic baseline）；
  *    窗口聚合 error/fallback/coverage 超阈值 → 自动回退 canary 至 0%（SSE prediction.rollback）。
  *  - advisory-only：绝不写生产调度、不改变 dispatch、不替代 hard constraints。
+ *
+ * R-3（2026-09-13）接线：采样腿 = SchedulingFeedbackService.recordBaseline（计划基线落库时
+ * 按 canary 采样），回填腿 = SchedulingFeedbackService.recordActuals（真实回执落库成功后按
+ * shadowCorrelationId 精确回填 + evaluateCanary）。canary 缺省 0 → 两侧都不动作，行为与接线前
+ * 逐字节一致。
  */
 @Injectable()
 export class ShadowEvaluatorService {
   private readonly logger = new Logger(ShadowEvaluatorService.name);
   /** org → 样本环形缓冲（FIFO）。 */
-  private readonly samplesByOrg = new Map<string, PredictionShadowSample[]>();
+  private readonly samplesByOrg = new Map<string, ShadowSampleEntry[]>();
   /** org → 当前 canary fraction（0..1；控制采样比例）。 */
   private readonly canaryByOrg = new Map<string, number>();
   /** 上次惰性 prune 时间戳（防高频 recordSample 反复扫表）。 */
@@ -70,6 +124,7 @@ export class ShadowEvaluatorService {
       maxFallbackRate: 0.5,
       minCoverage: 0.8,
     },
+    durationModelMode: 'off',
   };
 
   /** 记录一次 shadow 预测样本（预测 vs 确定性 baseline；actual 待回填）。
@@ -84,6 +139,7 @@ export class ShadowEvaluatorService {
       executionId?: string;
       policyVersion?: number;
       snapshotVersion?: string;
+      expectedActualAt?: string;
     },
     ctx?: OrgContext,
   ): void {
@@ -100,6 +156,7 @@ export class ShadowEvaluatorService {
     if (sample.executionId) entry.executionId = sample.executionId;
     if (sample.policyVersion != null) entry.policyVersion = sample.policyVersion;
     if (sample.snapshotVersion) entry.snapshotVersion = sample.snapshotVersion;
+    if (sample.expectedActualAt) entry.expectedActualAt = sample.expectedActualAt;
     const buffer = this.samplesByOrg.get(orgKey) ?? [];
     buffer.push(entry);
     if (buffer.length > MAX_SAMPLES_PER_ORG) {
@@ -233,9 +290,15 @@ export class ShadowEvaluatorService {
    * 回填 actual：按 (predictionType, createdAt) 匹配最近一条未回填样本并计算误差。
    * 由 SchedulingFeedback.recordActuals / ExecutionService 完成时调用。
    * 匹配不到时静默跳过（不伪造）。
-   * Task 7：内存更新与持久化行更新并行——DB 侧按 correlation_id →
-   * (task_id, prediction_type) → (prediction_type, created_at) 优先级匹配（见
-   * applyPersistedBackfill）；DB 无匹配行时静默跳过（与内存语义一致）。
+   *
+   * R-3（2026-09-13）：匹配优先级与持久化侧（applyPersistedBackfill）**逐条对齐**——
+   * correlationId → (taskId, predictionType) → (predictionType, createdAt)。
+   * 为什么必须对齐：采样侧写入 createdAt=`采样时刻`，回填侧拿到的是执行回执（actualStart/
+   * actualEnd），**无法复现采样时刻**；此前内存侧只按 createdAt 严格比较，于是"接上采样腿"
+   * 之后每条样本在内存里都回填不到（actual 恒 null → coverage 恒 0 → canary 永远不达标），
+   * 只有 DB 行被更新，内存聚合与持久化聚合长期相互矛盾。
+   *
+   * Task 7：内存更新与持久化行更新并行——DB 无匹配行时静默跳过（与内存语义一致）。
    */
   backfillActual(
     predictionType: string,
@@ -246,24 +309,29 @@ export class ShadowEvaluatorService {
   ): boolean {
     const orgKey = ctx?.primaryOrgId || 'ALL';
     const buffer = this.samplesByOrg.get(orgKey) ?? [];
-    // 匹配同 predictionType + createdAt 的最近样本（逆序找第一条未回填）。
+    // 逆序找第一条未回填且匹配的样本（同一键重复时取最近的一条）。
+    const matches = (s: ShadowSampleEntry): boolean => {
+      if (s.actual != null) return false;
+      if (extra?.correlationId) return s.correlationId === extra.correlationId;
+      if (extra?.taskId) return s.taskId === extra.taskId && s.predictionType === predictionType;
+      return s.predictionType === predictionType && s.createdAt === createdAt;
+    };
     let matched = false;
     for (let i = buffer.length - 1; i >= 0; i -= 1) {
       const s = buffer[i];
-      if (s.predictionType === predictionType && s.createdAt === createdAt && s.actual == null) {
-        s.actual = actual;
-        s.absoluteError = Math.abs(s.prediction - actual);
-        s.relativeError =
-          actual !== 0 && Number.isFinite(actual)
-            ? Math.abs(s.prediction - actual) / Math.abs(actual)
-            : null;
-        matched = true;
-        break;
-      }
+      if (!matches(s)) continue;
+      s.actual = actual;
+      s.absoluteError = Math.abs(s.prediction - actual);
+      s.relativeError =
+        actual !== 0 && Number.isFinite(actual)
+          ? Math.abs(s.prediction - actual) / Math.abs(actual)
+          : null;
+      matched = true;
+      break;
     }
     if (!matched) {
       this.logger.debug(
-        `shadow backfill missed: ${predictionType}@${createdAt} (no open sample for ${orgKey})`,
+        `shadow backfill missed: ${predictionType}@${extra?.correlationId ?? createdAt} (no open sample for ${orgKey})`,
       );
     }
     // 持久化行回填（fire-and-forget；失败仅记日志，不改变返回值语义）。
@@ -486,6 +554,18 @@ export class ShadowEvaluatorService {
    * Canary 阶梯 + 自动回退（08 §11）：
    *  - 窗口聚合 error/fallback/coverage 超阈值 → canary 归 0，返回 rollback 事件。
    *  - advisory-only：仅改变采样比例，不改变生产求解输出。
+   *
+   * 自查修正（2026-09-13）：**回退只能由"坏证据"触发，不能由"缺证据"触发**。
+   *  - `error_undecidable`（没有可算相对误差的样本）与 `coverage_undecidable`
+   *    （还没有任何到期待回填的样本）只进入 `reasons` 供观测，**不参与回退判定**
+   *    ——此前 `reasons.length > 0` 一律回退，把"还没证据"当成"证据显示坏了"，
+   *    与本函数"缺证据不判定"的注释直接矛盾（实测：唯一回填样本 actual=0 即把
+   *    canary 归零）；
+   *  - coverage 判定改为**到期感知**（见 BACKFILL_DUE_GRACE_MS）：只有过了预计
+   *    可回填时刻仍无 actual 的样本才算"缺失"，在途样本不计入分母——否则多任务
+   *    方案的第一条回执（coverage=1/N<0.8）必然误杀 canary（实测复现）。
+   *  相对误差超限 / fallbackRate 超限 / 到期样本 coverage 不足这三条是**坏证据**，
+   *  保持回退（护栏不放松）。
    */
   evaluateCanary(config?: PredictionConfig, ctx?: OrgContext): {
     rolledBack: boolean;
@@ -503,35 +583,119 @@ export class ShadowEvaluatorService {
       },
     };
     const agg = this.aggregate(ctx);
-    const reasons: string[] = [];
-    if (agg.mae > cfg.autoRollbackOn.maxAbsoluteError) {
-      reasons.push(`mae_exceeded:${agg.mae.toFixed(4)}`);
+    /** 坏证据：任一非空即回退。 */
+    const rollbackReasons: string[] = [];
+    /** 缺证据观测：只上报，不判定（缺证据 ≠ 判负）。 */
+    const observedReasons: string[] = [];
+    // 误差判定的**刻度**（2026-09-13 修正）：
+    // `autoRollbackOn` 的三个阈值（maxAbsoluteError 0.25 / maxFallbackRate 0.5 /
+    // minCoverage 0.8）**都是 [0,1] 比率**——两个邻居显然是比率，`0.25` 也只在比率
+    // 刻度上才有意义。但 `agg.mae` 是**毫秒绝对误差**（样本 prediction/baseline/actual
+    // 一律 ms）。原先拿 ms 与 0.25 比，等于"误差超过 0.25 毫秒就回退"——实测
+    // `mae_exceeded:600000` 即 10 分钟误差触发，于是**任何一次真实回填都会立刻把
+    // canary 归零**，阶梯永远无法放量（"可触发"但不可用）。
+    // 现在按**相对误差**判定（|预测−实际|/|实际|，与样本侧的 relativeError 同口径），
+    // 绝对 mae 仍留在 reason 里供观测——两个刻度都可见，不隐藏任何一个。
+    const relative = this.meanRelativeError(ctx);
+    if (relative === null) {
+      // 无法计算（没有带 actual 的样本，或 actual 全为 0）：**不判定**，
+      // 而不是用"0 误差"假装通过，也不据此回退（缺证据 ≠ 达标，≠ 判负）。
+      observedReasons.push('error_undecidable:no_relative_sample');
+    } else if (relative > cfg.autoRollbackOn.maxAbsoluteError) {
+      rollbackReasons.push(
+        `relative_error_exceeded:${relative.toFixed(4)}`
+          + `(阈值 ${cfg.autoRollbackOn.maxAbsoluteError}；绝对 mae=${agg.mae.toFixed(0)}ms)`,
+      );
     }
     if (agg.fallbackRate > cfg.autoRollbackOn.maxFallbackRate) {
-      reasons.push(`fallback_exceeded:${agg.fallbackRate.toFixed(4)}`);
+      rollbackReasons.push(`fallback_exceeded:${agg.fallbackRate.toFixed(4)}`);
     }
-    if (agg.coverage < cfg.autoRollbackOn.minCoverage) {
-      reasons.push(`coverage_low:${agg.coverage.toFixed(4)}`);
+    const coverageDecision = this.dueAwareCoverage(ctx);
+    if (coverageDecision.undecidable) {
+      // 还没有任何"到期应回填"的样本：coverage 无证据可判（在途 ≠ 断链）。
+      observedReasons.push('coverage_undecidable:no_due_sample');
+    } else if (coverageDecision.coverage < cfg.autoRollbackOn.minCoverage) {
+      rollbackReasons.push(
+        `coverage_low:${coverageDecision.coverage.toFixed(4)}`
+          + `(到期缺失 ${coverageDecision.dueOpen}/${coverageDecision.dueTotal})`,
+      );
     }
-    const rolledBack = reasons.length > 0;
+    const rolledBack = rollbackReasons.length > 0;
     if (rolledBack) {
       this.canaryByOrg.set(orgKey, 0);
       this.logger.warn(
-        `prediction canary rolled back for ${orgKey}: ${reasons.join('; ')}`,
+        `prediction canary rolled back for ${orgKey}: `
+          + [...rollbackReasons, ...observedReasons].join('; '),
       );
     }
     return {
       rolledBack,
       canaryFraction: this.canaryByOrg.get(orgKey) ?? 0,
       aggregate: agg,
-      reasons,
+      // reasons = 坏证据 + 缺证据观测（顺序：先坏证据；调用方按前缀自行过滤）。
+      reasons: [...rollbackReasons, ...observedReasons],
     };
+  }
+
+  /**
+   * 到期感知的 coverage（仅回退判定用；`aggregate().coverage` 仍是无时间窗的
+   * 诚实占比，口径不变）。"到期"= 过了预计可回填时刻（expectedActualAt，缺省
+   * 回退 createdAt+baseline）再加宽限（BACKFILL_DUE_GRACE_MS）仍无 actual。
+   * undecidable = 没有任何到期样本（全部在途或缓冲为空）——此时 coverage 无证据。
+   */
+  private dueAwareCoverage(ctx?: OrgContext): {
+    undecidable: boolean;
+    coverage: number;
+    dueOpen: number;
+    dueTotal: number;
+  } {
+    const orgKey = ctx?.primaryOrgId || 'ALL';
+    const buffer = this.samplesByOrg.get(orgKey) ?? [];
+    const nowMs = Date.now();
+    let dueOpen = 0;
+    let dueTotal = 0;
+    for (const s of buffer) {
+      const dueAtMs = this.sampleDueAtMs(s);
+      if (dueAtMs == null || nowMs <= dueAtMs) continue; // 未到期在途：不算缺失证据
+      dueTotal += 1;
+      if (s.actual == null) dueOpen += 1;
+    }
+    if (dueTotal === 0) return { undecidable: true, coverage: 1, dueOpen: 0, dueTotal: 0 };
+    return { undecidable: false, coverage: (dueTotal - dueOpen) / dueTotal, dueOpen, dueTotal };
+  }
+
+  /** 样本的"预计可回填时刻"（ms）。expectedActualAt 优先；缺省回退 createdAt+baseline；无法解析 → null（永不到期，缺字段不构成证据）。 */
+  private sampleDueAtMs(s: ShadowSampleEntry): number | null {
+    const fromExpected = s.expectedActualAt ? Date.parse(s.expectedActualAt) : NaN;
+    const base = Number.isFinite(fromExpected)
+      ? fromExpected
+      : Date.parse(s.createdAt) + (typeof s.baseline === 'number' && Number.isFinite(s.baseline) && s.baseline > 0 ? s.baseline : 0);
+    if (!Number.isFinite(base)) return null;
+    return base + BACKFILL_DUE_GRACE_MS;
+  }
+
+  /**
+   * 本 org 缓冲区内的**平均相对误差**（|预测−实际|/|实际|）。
+   *
+   * 为什么单独算而不复用 `aggregate().mae`：后者是**毫秒绝对误差**，与
+   * `autoRollbackOn` 的比率阈值不同刻度（见 `evaluateCanary` 的说明）。
+   * 返回 `null`（而不是 0）表示**无样本可判定**——缺证据必须显式表达，
+   * 否则"没有数据"会被当成"零误差达标"。
+   */
+  private meanRelativeError(ctx?: OrgContext): number | null {
+    const orgKey = ctx?.primaryOrgId || 'ALL';
+    const buffer = this.samplesByOrg.get(orgKey) ?? [];
+    const values = buffer
+      .map((s) => s.relativeError)
+      .filter((v): v is number => v != null && Number.isFinite(v));
+    if (values.length === 0) return null;
+    return values.reduce((a, b) => a + b, 0) / values.length;
   }
 
   /** 测试/审计：读取 org 样本。 */
   listSamples(ctx?: OrgContext): ShadowSampleEntry[] {
     const orgKey = ctx?.primaryOrgId || 'ALL';
-    return [...(this.samplesByOrg.get(orgKey) ?? [])] as ShadowSampleEntry[];
+    return [...(this.samplesByOrg.get(orgKey) ?? [])];
   }
 
   /** 测试用：清空。 */

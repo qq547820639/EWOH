@@ -23,6 +23,64 @@
 # ============================================================================
 
 features:
+  # ── 2026-09 长周期建设：具身智能操作系统的执行/人机协同层（NO-33a…NO-52a）──
+  # 说明：这些能力在 2026-09 的连续轮次里成型（会话域 → 提醒终态 → 责任人 → 班次 → 交接核对），
+  # 之前未登记进本清单（框架层缺口，2026-09-12 补齐）。字段口径见文件头。
+  exoSessionDomain:
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_046_exo_session.sql
+      - db/migrations/standalone_079_exo_session_task_link.sql
+      - db/migrations/standalone_080_telemetry_worker_id.sql
+      - ewoh-spark-app/shared/exo-session.ts
+      - ewoh-spark-app/server/modules/exo/exo-session.service.ts
+      - ewoh-spark-app/client/src/pages/Exo/ExoWorkbench.tsx
+      - ewoh-spark-app/test/e2e/exo-session-loop.mjs（52 项，真实 PG）
+  notificationDisposition:
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_081_notification_resolution.sql
+      - ewoh-spark-app/server/modules/notification/notification-resolution.link.ts
+      - ewoh-spark-app/shared/notification-metrics.ts
+      - ewoh-spark-app/test/unit/notification/notification-id-families.spec.ts
+      - ewoh-spark-app/test/e2e/approval-expiry-reminder.mjs（22 项，含处置闭环）
+  andonEscalation:
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_082_open_andon_orgs.sql
+      - ewoh-spark-app/server/modules/oee/andon-sla.service.ts
+      - ewoh-spark-app/server/modules/oee/andon-sla.worker.ts
+      - ewoh-spark-app/shared/andon-sla.ts
+      - ewoh-spark-app/test/e2e/edge-multisource-uplink.mjs（54 项，含 5c–5l）
+  deviceResponsibility:
+    implemented: true
+    tested: true
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_083_device_responsibility.sql
+      - db/migrations/standalone_084_responsibility_shift.sql
+      - db/migrations/standalone_085_handover_responsibility_snapshot.sql
+      - ewoh-spark-app/server/modules/responsibility/device-responsibility.service.ts
+      - ewoh-spark-app/client/src/pages/Devices/ResponsibilityDialog.tsx
+      - ewoh-spark-app/test/browser/responsibility-readiness.spec.js
   schedulerV2:
     # 调度 V2：世界状态快照 → 优先级 → 资格 → 路径 → 求解 → 方案 → 审批 → 预约 → 派工
     implemented: true
@@ -224,3 +282,578 @@ features:
       - ewoh-spark-app/server/modules/scheduler/__tests__/benchmark-scheduler.spec.ts
       - ewoh-spark-app/output/benchmark-scheduler-2026-08-07T14-39-03-704Z.json
       - "ewoh-spark-app/package.json (npm run benchmark:scheduler)"
+
+  # ── DR-2~DR-6 班次/复盘/数据质量/回滚/世界模型扩展（2026-09-11）─────────
+
+  shiftDomain:
+    # 班次域（standalone_074，DR-2 班次工作台）：班次定义 + 交接班记录 +
+    # /shift-workbench 当班视图（异常/待审批/偏差/物料缺口/交接）。
+    implemented: true
+    tested: true                       # 契约测试（窗口判定/跨零点/显式未知）+ E2E 班次解析
+    deployable: true                   # 迁移链 074 + 种子 standalone_008
+    productionEnabled: false
+    runtimeVerified: true              # e2e:fault-replan 真实 PG 断言（当班=中班）
+    docsUpdated: true                  # README 功能表 + CHANGELOG + ADR-059
+    evidence:
+      - db/migrations/standalone_074_shift_domain.sql
+      - ewoh-spark-app/server/modules/shift/shift.service.ts
+      - ewoh-spark-app/client/src/pages/ShiftWorkbench/ShiftWorkbench.tsx
+      - ewoh-spark-app/test/unit/shift/shift-contract.spec.ts
+      - "make e2e-fault-replan（DR-2 班次解析 PASS）"
+
+  dataQualityConfirmation:
+    # 数据质量人工确认（standalone_076，DR-4 闭环第②步）：confirmed/contested
+    # 最终判定 + 联动了结 DataQualityAlert（NO-53a 起走 ADR-031 合法链
+    # acknowledge→process→close）+ 班次工作台确认入口。
+    implemented: true
+    tested: true                       # 契约测试 + E2E（确认/词表外 fail-closed/合法链）
+    deployable: true                   # 迁移链 076
+    productionEnabled: false
+    runtimeVerified: true              # e2e:fault-replan + e2e:data-quality 真实 PG 断言
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_076_data_quality_confirmation.sql
+      - ewoh-spark-app/server/modules/data-quality/data-quality.service.ts
+      - ewoh-spark-app/test/unit/data-quality/data-quality-confirmation.spec.ts
+      - "make e2e-fault-replan（② 数据质量 PASS ×2）"
+      - "npm run e2e:data-quality（⑨⑩⑪ 判定+合法链了结 PASS）"
+
+  orderChainView:
+    # 订单链消费面（NO-57a，§6）：订单 → 任务/工序 → 物料 + 断链缺口（投影修复 + 统一词表）。
+    implemented: true
+    tested: true                       # 契约 8 + 服务 5 + 快照投影回归 3 + 客户端 5 + e2e 3
+    deployable: true                   # 无新表（复用 ERP 事件投影 + schedule_task/step）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:materials（NO-57a/57a2 真实 PG）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/order-chain.ts
+      - ewoh-spark-app/server/modules/world/order-chain.service.ts
+      - ewoh-spark-app/client/src/pages/Operations/OrderChainCard.tsx
+      - ewoh-spark-app/test/unit/materials/materials-snapshot-orders.spec.ts
+      - "npm run e2e:materials（NO-57a/57a2 PASS）"
+
+  plannedVsActual:
+    # 预计 vs 实际对账（NO-57b，§7）：执行事实的可复盘口径（样本不足不给比率）。
+    implemented: true
+    tested: true                       # 契约 8 + 服务 4 + 客户端 4 + e2e 1
+    deployable: true                   # 无新表（读 ewoh_scheduling_execution）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:materials（NO-57b 真实 PG）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/planned-vs-actual.ts
+      - ewoh-spark-app/server/modules/scheduler/planned-vs-actual.service.ts
+      - ewoh-spark-app/client/src/pages/ShiftWorkbench/ShiftWorkbench.tsx（预计 vs 实际卡片）
+      - "npm run e2e:materials（NO-57b PASS）"
+
+  improvementKnowledgeBackflow:
+    # 经验回流（NO-57c，§9）：行动项完成 → 知识条目 + outcomeRef（迁移 091）。
+    implemented: true
+    tested: true                       # 契约 + 服务 3 + e2e 1（含失败降级与未装配）
+    deployable: true                   # 迁移链 091（outcome_ref/outcome_kind + CHECK）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:improvement-action（17c 真实 PG）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_091_improvement_action_outcome_ref.sql
+      - ewoh-spark-app/server/modules/learning/improvement-action.service.ts（知识回流）
+      - "npm run e2e:improvement-action（17c PASS）"
+
+  perceptionFusion:
+    # 多模态感知融合（NO-56a，standalone_089，§5）：UWB/外骨骼 IMU/视觉/工位语义/任务上下文
+    # → 一致性、冲突、可解释加权置信度、被排除证据、五条规则留痕；低置信度禁止强建议。
+    implemented: true
+    tested: true                       # 契约 50（骨架/关节角→动作/按源计权）+ 服务 25（含区域主体与骨架）+ 客户端 5 + 浏览器 5 + E2E 20
+    deployable: true                   # 迁移链 089（ewoh_perception_fusion + RLS）
+    productionEnabled: false
+    runtimeVerified: true              # npm run e2e:perception-fusion（真实 PG + 真实摄入；7d/7e 骨架、7f 冲突面、7g/7h 关节角动作）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_089_perception_fusion.sql
+      - ewoh-spark-app/shared/perception-fusion.ts
+      - ewoh-spark-app/server/modules/perception/perception-fusion.service.ts（含 NO-59a 关节角→动作观测）
+      - ewoh-spark-app/client/src/pages/ShiftWorkbench/ShiftWorkbench.tsx（感知融合卡片）
+      - ewoh-spark-app/test/e2e/perception-fusion-loop.mjs（7b/7c 环境多源、7d/7e 视觉骨架、7f 调度冲突面）
+      - ewoh-spark-app/test/browser/responsibility-readiness.spec.js（感知融合 5 例）
+
+  improvementActions:
+    # 复盘经验/缺口 → 改进行动项（NO-55a，standalone_088）：有人负责、有期限、有验收判据、
+    # 有完成证据；与阈值提案并列（行动项改做法、提案改参数），二者可互相引用。
+    implemented: true
+    tested: true                       # 契约 21（含对象归属）+ 服务 26（含复发度量）+ 客户端 15 + 浏览器 10 + E2E 26
+    deployable: true                   # 迁移链 088（ewoh_improvement_action + RLS）
+    productionEnabled: false
+    runtimeVerified: true              # npm run e2e:improvement-action（19 PASS，真实 PG）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_088_improvement_action.sql
+      - ewoh-spark-app/shared/improvement-action.ts
+      - ewoh-spark-app/server/modules/learning/improvement-action.service.ts
+      - ewoh-spark-app/client/src/pages/LearningConsole/ImprovementActionsCard.tsx
+      - ewoh-spark-app/test/e2e/improvement-action-loop.mjs（19~22 对象归属与复发度量）
+      - ewoh-spark-app/test/browser/learning-console.spec.js（改进行动项 10 例）
+
+  learningSignalLoop:
+    # 运行记忆 → 学习信号（NO-54a，standalone_087）：提醒治理/数据质量积压/偏差复发
+    # → 带证据、样本量、可信度与方向的信号；人点"生成提案"才进提案台账（绝不自动激活）。
+    implemented: true
+    tested: true                       # 契约 16 + 服务 16 + 客户端 19 + 浏览器 6 + E2E 19
+    deployable: true                   # 迁移链 087（ewoh_learning_signal + RLS）
+    productionEnabled: false
+    runtimeVerified: true              # npm run e2e:learning-signal（19 PASS，真实 PG）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_087_learning_signal.sql
+      - ewoh-spark-app/shared/learning-signal.ts
+      - ewoh-spark-app/server/modules/learning/learning-signal.service.ts
+      - ewoh-spark-app/client/src/pages/LearningConsole/LearningSignalsCard.tsx
+      - ewoh-spark-app/test/e2e/learning-signal-loop.mjs
+      - ewoh-spark-app/test/browser/learning-console.spec.js
+
+  dataQualityVerification:
+    # 数据质量"待核实提醒"（NO-53a，standalone_086）：摄入侧开告警后把"该核实"
+    # 叫到责任人（班次感知）/角色兜底，人工判定与提醒终态**同事务**落账。
+    implemented: true
+    tested: true                       # 扫描服务单测 9（含 aging 桶）+ 判定/终态单测 + 浏览器 6 + E2E 15
+    deployable: true                   # 迁移链 086（ewoh_open_quality_alert_orgs）
+    productionEnabled: false
+    runtimeVerified: true              # npm run e2e:data-quality（14 PASS，真实 PG）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_086_open_quality_alert_orgs.sql
+      - shared/data-quality-notification.ts
+      - ewoh-spark-app/server/modules/data-quality/data-quality-notification.service.ts
+      - ewoh-spark-app/server/modules/data-quality/data-quality-notification.worker.ts
+      - ewoh-spark-app/client/src/pages/ShiftWorkbench/shiftWorkbenchLogic.ts（buildQualityVerificationView）
+      - ewoh-spark-app/test/e2e/data-quality-notification-leg.mjs（12b aging 桶）
+      - ewoh-spark-app/server/modules/learning/improvement-action-overdue.worker.ts
+      - db/migrations/standalone_090_improvement_action_orgs.sql
+      - ewoh-spark-app/test/browser/data-quality-verification.spec.js
+
+  planCancelRollback:
+    # 方案取消/回滚（standalone_077，DR-5）：部分回退语义（未开始回退回池、
+    # 已开始不可逆如实回报）+ 预占释放 + rollback_dispatch 任务状态机扩展。
+    implemented: true
+    tested: true                       # 状态机锁步测试（TS+Python）+ E2E 回滚断言
+    deployable: true                   # 迁移链 077 + task.yaml 契约
+    productionEnabled: false
+    runtimeVerified: true              # e2e:fault-replan 真实 PG 断言（16 回退/1 不可回退）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_077_plan_cancel.sql
+      - contracts/state-machines/task.yaml（rollback_before_start）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（cancelPlan）
+      - ewoh-spark-app/test/unit/task/task-state-machine-contract.spec.ts
+      - "make e2e-fault-replan（⑨ 回滚 PASS ×3）"
+
+  retrospectiveRunMemory:
+    # 复盘/运行记忆（standalone_075，DR-3）：闭环六段组装（只引用既有台账证据、
+    # 缺口显式 gaps）+ AI 总结（llm|rule_fallback 双路留痕）+ 发布 + 经验条目。
+    implemented: true
+    tested: true                       # 契约测试 + E2E（组装/留痕/发布）
+    deployable: true                   # 迁移链 075
+    productionEnabled: false
+    runtimeVerified: true              # e2e:fault-replan 真实 PG 断言
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_075_retrospective.sql
+      - ewoh-spark-app/server/modules/retrospective/retrospective.service.ts
+      - ewoh-spark-app/client/src/pages/LearningConsole/RetrospectivePanel.tsx
+      - ewoh-spark-app/test/unit/retrospective/retrospective-contract.spec.ts
+      - "make e2e-fault-replan（⑩ 复盘 PASS ×3）"
+
+  worldModelExtension:
+    # 世界模型扩展（DR-6）：调度快照新增 materials/orders/shifts 投影
+    # （advisory；物料聚合 per-org 15s TTL 缓存；缺失显式 note 不伪造）。
+    implemented: true
+    tested: true                       # collectState 集成 + E2E 快照字段断言
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true              # e2e:fault-replan 真实 PG 断言（shifts=3）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/scheduler.ts（WorldSnapshotMaterial/Order/Shift）
+      - ewoh-spark-app/server/modules/materials/materials.service.ts（getSnapshotFacts）
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts
+      - "make e2e-fault-replan（DR-6 快照扩展 PASS）"
+
+  improvementActionRecurrence:
+    # 行动项对象归属与复发度量（NO-58a，standalone_092）：由复盘 incident target_id 派生
+    # subject_type/subject_id（成对 + 封闭词表）；完成前后各一窗口统计该对象偏差计数，
+    # 无归属 → 明确"不可度量"，样本 < 3 → 不给趋势结论，下降只是事实（≠ 改进有效）。
+    implemented: true
+    tested: true                       # 契约 8（归属/成对/执行键归一）+ 服务 6（复发度量）+ 客户端 11 + 浏览器 4 + E2E 5
+    deployable: true                   # 迁移链 092（subject_type/subject_id + CHECK）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:improvement-action（19~22：派生/落库/下降/no_subject）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_092_improvement_action_subject.sql
+      - ewoh-spark-app/shared/improvement-action.ts（deriveActionSubject）
+      - ewoh-spark-app/server/modules/learning/improvement-action.service.ts（effect 复发度量 + executionSubjectKey 归一）
+      - ewoh-spark-app/client/src/pages/LearningConsole/ImprovementActionsCard.tsx（归属/复发面板）
+      - ewoh-spark-app/test/e2e/improvement-action-loop.mjs（19~22）
+      - ewoh-spark-app/server/modules/learning/__tests__/improvement-action.service.spec.ts（NO-58a 5 例）
+
+  perceptionUpstreamGate:
+    # 感知门控接入上游（NO-58b）：融合结论"不许强建议"时——推理结论标 advisoryOnly（带原因），
+    # 调度冲突面新增 perception_inconsistent（提示层，不阻断调度；与在飞任务无关的主体不进冲突面；
+    # 读取失败如实降级不伪造）。
+    implemented: true
+    tested: true                       # 契约（门控一致性 + "字段按需出现"）+ 冲突面 10 + 客户端 4 + 浏览器 2 + E2E 2
+    deployable: true                   # 无迁移（读面接线）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:perception-fusion（5b 推理只提示、7f 冲突面）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/reasoning-trace.ts（perceptionGate/advisoryOnly 一致性校验）
+      - ewoh-spark-app/server/modules/reasoning/reasoning.service.ts（attachPerceptionGates）
+      - ewoh-spark-app/server/modules/scheduler/conflict.service.ts（derivePerceptionConflicts）
+      - ewoh-spark-app/shared/scheduler.ts（SchedulingConflictType += perception_inconsistent）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/conflict-perception.spec.ts（10 例）
+      - ewoh-spark-app/client/src/pages/Reasoning/ReasoningConsole.tsx（"仅提示（原因）"徽标）
+      - ewoh-spark-app/test/browser/reasoning-console.spec.js（门控徽标 2 例）
+      - ewoh-spark-app/test/e2e/perception-fusion-loop.mjs（5b / 7f）
+
+  visionSkeletonPosture:
+    # 视觉骨架 → 躯干角（NO-58c）：`detections[].skeleton` 双肩/双髋中点连线换算躯干俯仰，
+    # 使姿态维度具备两个独立角度源；差值 ≥ 30° 记姿态角度冲突（各源都保留）。
+    # 缺要点/低置信/退化向量 → null + 明确原因，绝不猜 0°。
+    implemented: true
+    tested: true                       # 契约 9（换算/门槛/退化/冲突）+ 服务 5（真实摄入通道）+ E2E 2
+    deployable: true                   # 无迁移（契约 + 读面扩展）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:perception-fusion（7d 角度冲突、7e 缺要点如实说明）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/perception-fusion.ts（deriveVisionTrunkPitch / POSTURE_PITCH_DISAGREEMENT_DEG）
+      - ewoh-spark-app/server/modules/perception/perception-fusion.service.ts（骨架 → 姿态观测）
+      - ewoh-spark-app/test/unit/perception/perception-fusion.service.spec.ts（NO-58c 5 例）
+      - ewoh-spark-app/test/e2e/perception-fusion-loop.mjs（7d / 7e）
+
+  actuatorAdapter:
+    # 执行机构（AGV/PLC）适配与命令面（NO-59b）：边缘 actuator 适配器（协议面 +
+    # 确定性回环模拟器）+ 命令授权 fail-closed（高危命令必须带平台授权号；stop 是安全
+    # 动作不要求授权）+ 状态上行（/api/ingest/actuator → 世界状态实体行 + 设备/能力登记）
+    # + 设备类别 agv 与能力 transport.move / observe.actuator_state（平台可调度、可停用）。
+    implemented: true
+    tested: true                       # 边缘 17（适配器/模拟器/授权）+ API 11 + 帧契约 5 + 平台 ingest 6 + 契约对账 7 + 能力对账 17
+    deployable: true                   # 无迁移（复用 ewoh_world_state/ewoh_device/ewoh_device_capability）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:edge 59/59（真实 PG：边缘模拟 AGV → 桥接 → /api/ingest/actuator → world_state/设备/能力）+ pytest 全绿；真实硬件为外部条件
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/../src/edge_platform/edge/adapters/actuator/protocol.py（ActuatorTransport + 回环模拟器）
+      - src/edge_platform/edge/adapters/actuator/adapter.py（授权 fail-closed + 统一状态帧）
+      - src/edge_platform/routes/actuators.py（GET/POST /api/actuators/*）
+      - src/edge_platform/edge/modeling/sensor_frames.py（FRAME_KIND_ACTUATOR）
+      - ewoh-spark-app/shared/actuator.ts（平台侧词表，跨语言对账）
+      - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts（ingestActuator）
+      - ewoh-spark-app/shared/device-capability.ts（transport.move / observe.actuator_state）
+      - src/edge_platform/tests/test_actuator_adapter.py（17 例）
+      - src/edge_platform/tests/test_actuator_api.py（11 例）
+      - ewoh-spark-app/test/e2e/edge-multisource-uplink.mjs（2k~2k5 执行机构全链）
+
+  controlActuatorLoop:
+    # 平台授权 → 边缘执行 → 回执（NO-60a）：控制命令**参数**（payload）+ 网关轮询下行
+    # （平台签发授权号 control:<requestId>）+ 投递确认（gateway_received/failed）+
+    # 机器身份执行回执（按 commandId 复用同一套校验）+ 边缘命令代理（tools/edge_control_agent.py）。
+    # 执行边界统一：执行机构高危命令（dispatch_task/resume/clear_fault）并入平台高危词表，
+    # 与边缘共享契约同源（一条命令不再能绕过审批直达设备）。
+    implemented: true
+    tested: true                       # 平台服务 14 例（含 payload/pending/ack/回执）+ 边缘 7 例（桩平台全链 + CLI）+ E2E 18 项
+    deployable: true                   # 无迁移（复用 ewoh_control_* / ewoh_control_result）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 18/18（真实 PG：审批→下发→边缘子进程执行→ack/回执→终态）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（payload / listPendingCommands / ackCommand / receiveReceiptByCommandId）
+      - ewoh-spark-app/server/modules/control/control.controller.ts（ControlGatewayController：pending / ack / receipt）
+      - ewoh-spark-app/shared/actuator.ts（高危词表同源：平台 HIGH_RISK_COMMAND_KEYS 并入共享契约）
+      - src/edge_platform/edge/bridge/control_downlink.py（轮询 + 授权号核对 + ack + 回执）
+      - tools/edge_control_agent.py（现场命令代理 CLI：--once / 常驻）
+      - src/edge_platform/tests/test_control_downlink.py（7 例）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（18 项）
+      - scripts/e2e-chain.sh（16 场景主产品闭环链；make e2e-chain）
+
+  actuatorSchedulingLoop:
+    # 搬运任务 → 执行机构调度（NO-61a）：执行机构状态投影到**设备台账**（位置/电量/故障），
+    # 使其成为世界模型里可调度的资源：候选合格（能力匹配 + 电量已知 + 路由可行）→
+    # 方案把搬运任务派给 AGV。缺口审计：此前位置/电量只落 world_state，
+    # 设备行 battery_pct/location_lat 为空 → 候选恒 `battery_unknown`，派工无从谈起。
+    implemented: true
+    tested: true                       # 服务 2 例（投影合并语义/故障码）+ E2E 10 项（真实 PG 调度）
+    deployable: true                   # 无迁移（复用 ewoh_device 位置/电量列）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:agv-transport 10 PASS / 0 FAIL / 1 SKIP（审批腿经 NO-62c 诊断→重排→再审批走通；仅"派工"被新鲜度闸门拒绝，SKIP 有原因）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts（projectActuatorDeviceState）
+      - ewoh-spark-app/test/e2e/agv-transport-loop.mjs（11 项；含人员档案/位置前置条件自建 + NO-62c 审批处置）
+      - ewoh-spark-app/test/unit/ingest/sensor-ingest.service.spec.ts（NO-61a 2 例）
+      - ewoh-spark-app/test/e2e/helpers/plan-freshness.mjs（approveWithReplan 共享助手，NO-62c）
+      - docs/architecture/capability-alignment.md（§3 第 61 轮销账）
+
+  controlDeliveryAuthorization:
+    # 投递前授权复核 + 授权范围指纹（NO-62a）：命令落成 sent 之后，网关每次投递前
+    # 重新复核**审批是否仍有效**（撤销/过期/驳回/实例缺失/租户不符）并重算授权范围指纹
+    # （请求/设备/命令/审批实例/参数），任一不符 → 命令撤回（status=revoked + 原因码 +
+    # 结果行 delivery_rejected + 审计 + 提醒），**不投给设备**；网关 ack 时原样回传指纹，
+    # 平台比对不符同样拒绝；设备若在授权失效后仍然执行，回执照记（事实不丢）并额外落
+    # authorization_violation（未授权执行）违规行与 critical 提醒。
+    # 缺口审计：此前只在**人工下发**那一步校验审批，投递路径 fail-open——
+    # "审批通过 → 下发 → 网关投递"之间审批被撤销，命令照样会落到 AGV 上执行。
+    implemented: true
+    tested: true                       # 服务 8 例（NO-62a 专项）+ 跨语言指纹对账 6 例 + 边缘 4 例 + E2E 4 项（13/14/15/11b）
+    deployable: true                   # standalone_093（命令级授权证据列 + 撤回原因 CHECK + 投递部分索引）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator（真实 PG：投递前复核撤回 + 未授权执行留痕）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_093_control_command_authorization.sql（authorization_fingerprint/verified_at/revoked_reason/revoked_at + CHECK + 部分索引）
+      - ewoh-spark-app/server/modules/control/control.service.ts（verifyDeliveryAuthorization / revokeUndeliveredCommand / recordUnauthorizedExecution）
+      - ewoh-spark-app/shared/actuator.ts（authorizationFingerprint / canonicalJson / fnv1a64Hex）
+      - ewoh-spark-app/shared/actuator.spec.ts（跨语言固定向量对账）
+      - src/edge_platform/edge/bridge/control_downlink.py（指纹原样回传 + 平台拒绝投递处理）
+      - src/edge_platform/tests/test_control_downlink.py（NO-62a 4 例）
+      - docs/architecture/embodied_factory.md（§执行边界：投递前复核）
+
+  actuatorCommandPriority:
+    # 下行投递优先级与积压可见性（NO-62b）：平台按命令优先级排序投递
+    # （stop=0 安全停机 → pause → return_to_dock → clear_fault → resume → dispatch_task=5），
+    # 未登记命令键排最后（不靠"未知"插队）；边缘侧再排一次并核对平台顺序，不一致上报
+    # platform_order_violation；pending 返回 queued/oldestSentAt/revoked/truncated
+    # ——"还有多少条、最久多久"现场可见。
+    # 缺口审计：此前一律 sentAt ASC + limit，一条排队中的急停会被前面几十条搬运命令
+    # 挤出窗口：排序在这里是安全语义，不是体验优化。
+    implemented: true
+    tested: true                       # 优先级词表跨语言对账 3 例 + 服务排序 1 例 + 边缘 3 例 + E2E 2 项（12/12b）
+    deployable: true                   # 无迁移（排序 + 读面字段）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator（真实 PG：stop 排在 dispatch_task 之前）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/actuator.ts（ACTUATOR_COMMAND_PRIORITY / UNKNOWN_COMMAND_PRIORITY）
+      - src/edge_platform/edge/adapters/actuator/protocol.py（同源词表 + command_priority）
+      - ewoh-spark-app/server/modules/control/control.service.ts（SQL CASE + 内存同序复核 + 积压字段）
+      - src/edge_platform/edge/bridge/control_downlink.py（本地重排 + platformOrderViolation）
+      - docs/runtime-gates.md（§3.6 验证口径）
+
+  planStalenessDiagnosis:
+    # 方案过期可解释 + 一键重排（NO-62c）：审批 409 PLAN_STALE 的响应体带上差异事实
+    # （entityVersions + reservations 的增删改，区分"外部变化"与"本方案自身执行效果"），
+    # 新增只读 GET /api/scheduler/plans/{planId}/staleness（与审批同一实现，不存在第二套口径），
+    # 页面在审批被拒或主动"检查新鲜度"时摊开差异并给出一键重排出口（重排仍走完整审批链）。
+    # 缺口审计：审批被拒时页面只弹"该方案生成后现场状态已发生变化，请重新计算"——
+    # 用户不知道变了什么、也不知道是不是自己造成的（长期求解 + 60s 设备新鲜度必然踩到）。
+    implemented: true
+    tested: true                       # 诊断 4 例（含 selfInflicted 区分）+ 客户端解析/排序 4 例 + 面板渲染 5 例 + E2E 7 项（e2e:plan-staleness）
+    deployable: true                   # 无迁移（只读诊断 + 409 体增强）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:plan-staleness（真实 PG：差异逐项 + 审批 409 带 staleness）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts（describeStaleness / ownEntityKeys）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（explainPlanStaleness + 409 体增强）
+      - ewoh-spark-app/server/modules/scheduler/scheduler.controller.ts（GET plans/:planId/staleness）
+      - ewoh-spark-app/client/src/pages/Scheduling/PlanStalenessPanel.tsx（差异面板 + 一键重排）
+      - ewoh-spark-app/client/src/pages/Scheduling/schedulingLogic.ts（extractStalenessReport / orderStalenessChanges）
+      - openapi/ewoh.yaml（/api/scheduler/plans/{planId}/staleness + PlanStalenessReport）
+
+  modbusActuatorTransport:
+    # 真实工业协议路径（NO-62d）：Modbus/TCP 主站 Transport（MBAP + FC03/FC06/FC10 真实帧、
+    # 异常响应 0x83+码、越界拒绝）+ 假从站（协议帧真实解析，寄存器背后的设备是数字孪生）
+    # + 寄存器映射契约（RegisterMap：状态/坐标/电量/故障/目标 + 命令/参数/序号）。
+    # 边界诚实：**线上协议是真的，设备是模拟的**；不实现 RTU 的 CRC16（Modbus/TCP 用 MBAP 定界）；
+    # 16 位工位哈希只用于协议内关联（真值在主站侧保留），绝不把哈希当工位号。
+    # 接真机只需替换从站/指向现场 PLC，主站类与上层授权判定顺序不变。
+    implemented: true
+    tested: true                       # pytest 13 例（帧/异常码/语义/失败模式/适配器边界/CLI 走真帧端到端）+ 平台侧无改动
+    deployable: true                   # 无迁移（边缘侧新增 Transport；平台侧不变）
+    productionEnabled: false
+    runtimeVerified: false             # 真机/现场 PLC 为外部条件；假从站 + 真帧已端到端跑通（pytest）
+    docsUpdated: true
+    evidence:
+      - src/edge_platform/edge/adapters/actuator/modbus.py（主站 Transport + FakeModbusSlave + RegisterMap）
+      - src/edge_platform/tests/test_actuator_modbus.py（13 例）
+      - tools/edge_control_agent.py（--transport modbus / --modbus-host / --modbus-port / --source-type）
+      - src/edge_platform/edge/bridge/control_downlink.py（build_agent 传输选择）
+      - docs/architecture/embodied_factory.md（§执行层：真机接入路径）
+
+  freshnessContentVersionGate:
+    # 事实变化 vs 证据老化的分档闸门（NO-64a）：快照除 `entityVersions`（全量摘要）外，
+    # 再记 `entityContentVersions`（**内容版本**：排除随时间自然变化的派生字段——设备
+    # status/online、证据时钟 telemetryUpdatedAt、过期后的状态标签）与 `entityEvidence`
+    # （来源时间/质量/状态）。审批与派工共用同一判定：
+    #   ① 内容版本不同 → 事实变了 → 拒绝（CONTENT_CHANGED）；
+    #   ② 仅版本不同（内容相同）→ 证据老化：方案**依赖**该实体且其 dataQuality≠FRESH →
+    #      拒绝（EVIDENCE_STALE，不拿过期证据背书）；与方案无关 → **不阻断**并如实报告；
+    #   ③ 老快照缺内容版本 → 一律严格判定（fail-closed，不静默放宽）。
+    # 缺口审计（第 61–63 轮反复记录的 PLAN_STALE 泛发）：设备"没人上报"只是证据变旧，
+    # 却被当成"世界变了"→ 任何方案都批不下去；心跳本身（内容未变）也会让方案即刻过期。
+    implemented: true
+    tested: true                       # 诊断/闸门 7 例（心跳、依赖/非依赖沉默、内容变化、老快照、分档）+ 客户端 2 例
+    deployable: true                   # 无迁移（快照 JSON 增字段，向后兼容）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:agv-transport 11/11（真实 PG：审批经诊断→重排→再审批通过 + 派工 200 + assignment=dispatched + 本设备执行行已生成）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/scheduler.ts（WorldStateSnapshot.entityContentVersions / entityEvidence）
+      - ewoh-spark-app/server/modules/scheduler/world-state.service.ts（内容版本采集 + stalenessVerdict + planDependencyKeys + 分档诊断）
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（审批传 planId + 409 带 stalenessReason）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-domain.spec.ts（NO-64a 7 例）
+      - ewoh-spark-app/client/src/pages/Scheduling/PlanStalenessPanel.tsx（分档徽章）
+      - ewoh-spark-app/test/e2e/helpers/plan-freshness.mjs（beforeReplan 钩子）
+
+  approvalIdentityBoundary:
+    # 审批确认人的**身份边界**（NO-64b）：`ewoh_schedule_plan.confirmed_by` 一律写
+    # **认证主体**（ctx.userId），客户端自报的 `body.operator` 只作为"声明"进审计文案，
+    # 不参与任何判定。理由：`confirmed_by` 是"独立审批"安全闸门的输入
+    # （`hasIndependentApproval`：createdBy ≠ confirmedBy），回执授权闸门
+    # （RECEIPT_PLAN_NOT_AUTHORIZED）也读它；写自报字段等于允许用别人的名字落库、
+    # 或把"自己生成自己审批"伪装成独立审批。
+    # 同轮修掉：e2e:agv-transport 的收尾清理引用了**不存在的表名/列**
+    # （ewoh_schedule_assignment.schedule_task_id），异常被 try/catch 吞成一行 warn →
+    # assignment/执行/反馈从未被清理，残留被 e2e:receipt 捡到（7 FAIL + 3 SKIP）。
+    implemented: true
+    tested: true                       # 调度域 1155 例全绿（含确认人语义）+ e2e:receipt 19/19
+    deployable: true                   # 无迁移
+    productionEnabled: false
+    runtimeVerified: true              # e2e:receipt 19 PASS / 0 FAIL / 0 SKIP（真实 PG：审批→派工→开始/完成回执→来源判定→反馈落库）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/scheduler/plan.service.ts（approve/reject 确认人 = ctx.userId）
+      - ewoh-spark-app/server/modules/scheduler/execution-receipt-provenance.ts（hasIndependentApproval）
+      - ewoh-spark-app/test/e2e/helpers/plan-freshness.mjs（审批不再自报 operator）
+      - ewoh-spark-app/test/e2e/agv-transport-loop.mjs（按 task_id 清理 assignment/执行/事件/反馈）
+      - ewoh-spark-app/test/e2e/execution-receipt-closed-loop.mjs（approveWithReplan + 冷却等待）
+
+  signedAuthorizationFingerprint:
+    # 签名的授权范围指纹（NO-65a）：平台用**密钥**对授权范围做 HMAC-SHA256
+    # （`hmac-sha256:v2:<32hex>`，材料 = 请求/设备/命令/审批实例/参数），随命令下发；
+    # `pending` 同时携带**可重建的 `authorizationScope`**，边缘持同一密钥即可**验签**，
+    # 验不过不碰设备（`fingerprint_signature_invalid`）。平台复核按**已存指纹的方案**
+    # 进行：v2 行缺密钥 → 显式拒绝（`revoked_reason=fingerprint_key_missing`，迁移 094），
+    # 绝不退回无密钥的一致性校验。未配密钥时退化为 v1 并**启动告警**（不静默降级）。
+    # 缺口审计：v1 只能发现偶然漂移，任何持有 ingest key 的一方能算出"看起来对"的指纹
+    # ——真实产线上那是一条伪造通道。
+    implemented: true
+    tested: true                       # 服务端签发/复核 7 例 + 跨语言固定向量（TS/Python 各 1）+ 边缘验签 6 例 + E2E 2 项（12b/16）
+    deployable: true                   # standalone_094（撤回原因词表扩展；快照/命令列无新增）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 26/26（真实 PG：v2 签名 + scope 下发 + 改写参数被撤回且设备拿不到）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/actuator.ts（authorizationFingerprintV2 / material / 前缀判定）
+      - ewoh-spark-app/server/modules/control/authorization-fingerprint.ts（签发/复核唯一实现）
+      - ewoh-spark-app/server/modules/control/authorization-fingerprint.spec.ts（7 例）
+      - src/edge_platform/edge/adapters/actuator/protocol.py（Python 侧验签，stdlib hmac）
+      - src/edge_platform/edge/bridge/control_downlink.py（碰设备前验签 + 结论写进 ack 详情）
+      - src/edge_platform/tests/test_control_downlink.py（SignedFingerprintBoundaryTest 6 例）
+      - db/migrations/standalone_094_control_fingerprint_key_missing.sql
+      - deploy/.env.example（EWOH_CONTROL_FINGERPRINT_SECRET 与轮换纪律）
+
+  deviceBusyDeliveryGuard:
+    # 一车一活（NO-65b）：设备上有**已投递未回执**（`gateway_received`）的运动命令
+    # （`dispatch_task`/`resume`）时，同一设备的下一条运动命令**暂缓投递**
+    # （`deferred[{reason: device_busy, blockedBy}]`，命令保持 `sent`，设备空下来自动解除）；
+    # **安全动作永不暂缓**（stop/pause/return_to_dock/clear_fault 必须能插队）。
+    # 缺口审计：命令层原本只禁止**同一命令键**并发下发，不同 requestId 的第二条搬运
+    # 要等命令投到设备上才由设备拒绝——太晚；闸门放在平台投递前。
+    implemented: true
+    tested: true                       # 服务 3 例（暂缓/安全动作不暂缓/自动解除）+ E2E 1 项（17）
+    deployable: true                   # 无迁移（读面新增 deferred 字段）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 26/26（真实 PG：第二条被 device_busy 暂缓）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（MOTION_COMMAND_KEYS / DEVICE_BUSY_COMMAND_STATUSES / deferred）
+      - ewoh-spark-app/server/modules/control/control.service.spec.ts（NO-65b 3 例）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（步骤 17）
+
+  capabilityDriftPatrol:
+    # 能力停用漂移巡检与**审批路径**恢复（NO-65c）：`scripts/capability-drift-check.js`
+    # 只读巡检（按能力聚合停用行、标出最老/最新停用时间与缺留痕行数，超阈值非零退出）；
+    # `scripts/capability-restore.js` 走**产品审批路径**恢复（dry-run 默认；
+    # 只恢复"设备仍声明该能力"的行——恢复等于凭空授予的行一律跳过）。
+    # 缺口审计：被中断的 e2e 运行只恢复"它这一轮停用的那批"，历史 `status='disabled'` 行会累积
+    # （实测 exo-lift 116 台）→ 别的场景报"没有具备 exo-lift 的设备"，环境漂移被伪装成产品缺陷。
+    implemented: true
+    tested: true                       # 巡检脚本在本库实测发现并清零 116 台漂移；恢复走审批（approval=81ebe0c1）
+    deployable: true                   # 无迁移（脚本 + runbook）
+    productionEnabled: false
+    runtimeVerified: true              # 实测：漂移 116 → 恢复 116/116 → 巡检清零
+    docsUpdated: true
+    evidence:
+      - scripts/capability-drift-check.js（只读巡检 + 处置指引 + 阈值退出码）
+      - scripts/capability-restore.js（审批路径恢复，dry-run 默认 + 只恢复仍声明者）
+      - docs/operations/production-runbook.md（能力停用漂移的审计与处置）
+
+  deviceExecutionBoundaryView:
+    # 设备执行边界**人面读面**（NO-66a）：`GET /api/control/requests?deviceId=` +
+    # 设备抽屉里的「执行边界」面板。平台早已记录命令的完整生命周期（下发/投递确认/
+    # 执行回执/授权复核撤回/未授权执行/一车一活排队/指纹方案），但此前**只有网关
+    # （机器身份）能读**——现场问"这台设备为什么不动"只能翻库。
+    # 逐条返回投递态（待投递 / **排队（设备忙）** / 已投递未回执 / 终态）、
+    # 指纹**方案**与**是否复核通过**（两件事分开显示）、投递确认与回执事实、
+    # 以及违规留痕（`delivery_rejected` / `authorization_violation` 单独提示为安全事件）。
+    # 只读；RBAC（dispatcher/workshop_lead/safety_admin/device_ops/global_admin）+ 租户收敛。
+    # 现场纪律：空列表显式说明"无命令 ≠ 设备正常"，读失败显式报错（不显示假状态）。
+    implemented: true
+    tested: true                       # 服务 2 例（在飞/排队/撤回/验签结论 + 空设备）+ 面板渲染 6 例 + E2E 3 项（17b/17c）
+    deployable: true                   # 无迁移（读面 + 前端面板）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 28/28（真实 PG：在飞=1/排队=1/占用者正确/未认证 401）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（listDeviceCommands：与投递闸门同一判定口径）
+      - ewoh-spark-app/server/modules/control/control.controller.ts（GET /api/control/requests?deviceId= + RBAC）
+      - ewoh-spark-app/client/src/api/control.ts（getDeviceExecutionBoundary）
+      - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.tsx（状态分档/授权可信度/违规留痕）
+      - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.test.tsx（6 例）
+      - openapi/ewoh.yaml（GET /api/control/requests 契约）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（17b 现场可见性 / 17c 未认证 401）
+
+  fingerprintKeyRotation:
+    # 授权指纹密钥**轮换窗口**（NO-66b）：`EWOH_CONTROL_FINGERPRINT_SECRET_PREVIOUS`
+    # 让复核同时接受上一把密钥，而**签发只用当前密钥**——否则一次轮换会把现场正在执行的
+    # 在飞命令判成"签名不符"并撤回。窗口有期限：见 runbook（切完并在飞清零后立即移除）。
+    # 纪律：previous == current 不放宽（同值不构成额外接受面）；窗口只放宽**密钥**，
+    # 仍拒绝被改写的命令范围；缺密钥时平台显式拒绝（`fingerprint_key_missing`）不静默降级。
+    implemented: true
+    tested: true                       # 轮换 5 例（旧签通过/新签通过/窗口外失效/同值不放宽/改写仍拒）
+    deployable: true                   # 无迁移（环境变量 + 验收逻辑）
+    productionEnabled: false
+    runtimeVerified: false             # 轮换窗口按单测验证；真实轮换演练需生产密钥（外部条件）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/authorization-fingerprint.ts（createFingerprintSigner(secret, previous)）
+      - ewoh-spark-app/server/modules/control/authorization-fingerprint.spec.ts（轮换 5 例）
+      - docs/operations/production-runbook.md（轮换四步 + 纪律）
+
+  deviceDeliveryQuota:
+    # 单设备**投递配额**（NO-67b）：`EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE`（默认 60，<=0 显式关闭），
+    # 按 `delivered_at`（**交付时刻**，投递路径唯一写入点）计 60s 窗口；用尽后普通命令显式排队
+    # （`deferred[{reason: quota, blockedBy: quota:N/min}]`，保持 `sent`，下一分钟自动继续），
+    # **安全动作（stop）插队且不占配额**。人面读面同时给出 `quota{perMinute,usedInWindow,remaining}`，
+    # 设备抽屉面板显示"窗口内已投 X / 上限 Y 每分钟（已用尽：命令排队到下一分钟，不是失败）"。
+    # 缺口审计：平台原来"有多少投多少"——真实设备控制通道吞吐有限（现场总线/WiFi/PLC 周期），
+    # 一次轮询灌满会把设备打爆，且平台侧看不出异常。
+    # 同轮修掉的口径缺陷：一开始用 `authorization_verified_at` 计配额，但该列在**下发**时也写
+    # → 刚下发的命令立刻把配额算成用尽（e2e 实测 delivered=0/quotaDeferred=4）。
+    # 现在拆成两个事实：`authorization_verified_at`（授权复核通过）与 `delivered_at`（已交付网关），
+    # 迁移 095 只为后者建列 + 部分索引。
+    implemented: true
+    tested: true                       # 服务 2 例（配额用尽排队 + 安全动作不占配额 / 0=不限）+ E2E 1 项（19）
+    deployable: true                   # standalone_095（delivered_at 列 + 部分索引）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 29/29（真实 PG：4 条 pause → 3 投递 + 1 排队 reason=quota）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（controlDeliveryQuotaPerMinute / 配额闸门 / quota 读面）
+      - ewoh-spark-app/server/database/schema.ts（deliveredAt）
+      - db/migrations/standalone_095_control_command_delivered_at.sql（列 + 部分索引 + NULL=从未交付）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（步骤 19）
+      - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.tsx（配额徽章）
+      - docs/operations/production-runbook.md（配额与轮换说明）

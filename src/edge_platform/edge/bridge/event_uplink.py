@@ -83,7 +83,12 @@ class EventUplink:
         queue_path: str = "",
     ):
         self._bus = bus
-        self._url = spark_url.rstrip("/") + "/api/ingest/events"
+        # UR8（2026-09-13 审查）：先 strip 再拼端点——urlsplit/urllib 均容忍 URL
+        # 前后空白（" http://host" 会被正常发往 http），不 strip 则下方明文 http
+        # 守卫被空白绕过，production 下 X-Ingest-Key 仍走明文（已用本地 HTTP
+        # 服务端到端复现）。空白 URL 同时让 enabled 误报 True，一并归一为关闭。
+        base = (spark_url or "").strip()
+        self._url = base.rstrip("/") + "/api/ingest/events" if base else ""
         self._ingest_key = ingest_key
         self._org_id = org_id
         self._batch_size = max(1, min(batch_size, BATCH_SIZE))
@@ -93,7 +98,9 @@ class EventUplink:
         # （enabled=false，health 说明原因），绝不降级发送凭据。
         # （mTLS/HMAC 签名属云端协同改造，由云侧任务域跟进；此处先消除明文面。）
         self._disabled_reason = ""
-        if self._url.startswith(("http://", "//")) and _runtime_mode() == "production":
+        # UR8：scheme 按 RFC 3986 大小写不敏感——先归一再判定，堵住 "HTTP://"
+        # 绕过 EDGE-041 明文 http 守卫旁路（否则 production 下凭据仍走明文）。
+        if self._url.lower().startswith(("http://", "//")) and _runtime_mode() == "production":
             self._disabled_reason = "insecure_http_in_production"
             logger.error(
                 "event uplink: production 下拒绝明文 http 上行（X-Ingest-Key 会暴露），已禁用: %s",
@@ -289,47 +296,61 @@ class EventUplink:
 
     def _loop(self) -> None:
         while self._running:
-            batch = self._drain()
-            if batch:
-                outcome = self._post_batch(batch)
-                if outcome == "ok":
-                    with self._lock:  # P2：stats 修改统一进锁（跨线程计数）
-                        self._stats["sent"] += len(batch)
-                    self._consecutive_failures = 0
-                    self._batch_attempts = 0
-                    with self._lock:
-                        self._persist()  # 成功即截断队列文件
-                else:
-                    with self._lock:  # P2：同上
-                        self._stats["failures"] += 1
-                    self._consecutive_failures += 1
-                    self._batch_attempts += 1
-                    if outcome == "dead_letter" or self._batch_attempts >= MAX_BATCH_ATTEMPTS:
-                        # P1：毒信封 dead-letter——只剔除队头一条（最小损失面：
-                        # 无法定位批内哪条有毒，逐条浮出逐条剔除，批内无辜信封
-                        # 保留正常投递机会），队头不再永久阻塞。
-                        reason = (
-                            "云端 4xx 拒绝"
-                            if outcome == "dead_letter"
-                            else f"连续失败 {self._batch_attempts} 次"
-                        )
-                        self._dead_letter(batch[:1], reason)
-                        self._batch_attempts = 0
-                        rest = batch[1:]
-                        if rest:
-                            with self._lock:
-                                self._buffer.extendleft(reversed(rest))
-                        with self._lock:
-                            self._persist()  # 死信条目从队列文件截断
-                    else:
-                        # 瞬态失败：批次重新放回缓冲头部（at-least-once，云端幂等
-                        # 去重兜底；队列文件仍保留完整未发送集合，重启后继续续传）
-                        with self._lock:
-                            self._buffer.extendleft(reversed(batch))
-                    self._backoff()
-            else:
+            try:
+                self._loop_once()
+            except Exception:
+                # UR8（2026-09-13 审查）：消费线程的最后一道防线——任何未预期异常
+                # 都不得静默杀死线程（曾发生：读超时 TimeoutError 逃逸 URLError
+                # 处理直接击穿 _loop，上行停摆且 health 仍显示 enabled）。
+                # 显式留痕 + failures 计数 + 退避后继续循环（可观测，不吞异常）。
+                logger.exception("event uplink: loop 未预期异常（继续循环，不静默停摆）")
+                with self._lock:
+                    self._stats["failures"] += 1
+                self._consecutive_failures += 1
+                self._backoff()
+
+    def _loop_once(self) -> None:
+        batch = self._drain()
+        if batch:
+            outcome = self._post_batch(batch)
+            if outcome == "ok":
+                with self._lock:  # P2：stats 修改统一进锁（跨线程计数）
+                    self._stats["sent"] += len(batch)
+                self._consecutive_failures = 0
                 self._batch_attempts = 0
-                time.sleep(1.0)
+                with self._lock:
+                    self._persist()  # 成功即截断队列文件
+            else:
+                with self._lock:  # P2：同上
+                    self._stats["failures"] += 1
+                self._consecutive_failures += 1
+                self._batch_attempts += 1
+                if outcome == "dead_letter" or self._batch_attempts >= MAX_BATCH_ATTEMPTS:
+                    # P1：毒信封 dead-letter——只剔除队头一条（最小损失面：
+                    # 无法定位批内哪条有毒，逐条浮出逐条剔除，批内无辜信封
+                    # 保留正常投递机会），队头不再永久阻塞。
+                    reason = (
+                        "云端 4xx 拒绝"
+                        if outcome == "dead_letter"
+                        else f"连续失败 {self._batch_attempts} 次"
+                    )
+                    self._dead_letter(batch[:1], reason)
+                    self._batch_attempts = 0
+                    rest = batch[1:]
+                    if rest:
+                        with self._lock:
+                            self._buffer.extendleft(reversed(rest))
+                    with self._lock:
+                        self._persist()  # 死信条目从队列文件截断
+                else:
+                    # 瞬态失败：批次重新放回缓冲头部（at-least-once，云端幂等
+                    # 去重兜底；队列文件仍保留完整未发送集合，重启后继续续传）
+                    with self._lock:
+                        self._buffer.extendleft(reversed(batch))
+                self._backoff()
+        else:
+            self._batch_attempts = 0
+            time.sleep(1.0)
 
     def _drain(self) -> list[dict]:
         with self._lock:
@@ -363,6 +384,13 @@ class EventUplink:
             return "retry"
         except urllib.error.URLError as exc:
             logger.warning("event uplink: 上行失败 %s（重试）", exc)
+            return "retry"
+        except (TimeoutError, OSError) as exc:
+            # UR8（2026-09-13 审查）：响应头读超时以 TimeoutError（OSError 子类）
+            # 逃逸 urlopen 的 URLError 包装——不捕获会把异常抛进 _loop，杀死上行
+            # 线程（缓冲只进不出而 health 仍显示 enabled）。读超时是瞬态失败，
+            # 与连接失败同一处置：重试（at-least-once，云端幂等去重兜底）。
+            logger.warning("event uplink: 上行 IO 异常 %s: %s（重试）", type(exc).__name__, exc)
             return "retry"
 
     def _backoff(self) -> None:

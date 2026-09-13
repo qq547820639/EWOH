@@ -25,7 +25,7 @@ BEGIN
     INSERT INTO ewoh_schedule_plan
       (org_id, plan_id, plan_name, strategy, status, decision_records_json)
       VALUES
-      ('verify-050', probe_plan, 'verify-050', 'verify', 'shadow',
+      ('00000000-0000-4000-8000-0000000000fe', probe_plan, 'verify-050', 'verify', 'shadow',
        '[{"decisionId":"decision:verify:1","kind":"task_assignment","status":"proposed","decisionAuthority":"optimization","subject":"task:t-1","tenantId":"verify-050","riskLevel":"low","requiresApproval":true,"decidedAt":"2026-08-16T08:00:00Z","selected":{"optionId":"opt:a","reason":["verify"]},"auditTrail":[{"actor":"solver:verify","action":"decided","at":"2026-08-16T08:00:00Z"}]}]'::jsonb);
     IF EXISTS (
       SELECT 1 FROM ewoh_schedule_plan
@@ -44,7 +44,7 @@ BEGIN
   BEGIN
     INSERT INTO ewoh_schedule_plan
       (org_id, plan_id, plan_name, strategy, status, decision_records_json)
-      VALUES ('verify-050', probe_plan, 'verify-050', 'verify', 'shadow', NULL);
+      VALUES ('00000000-0000-4000-8000-0000000000fe', probe_plan, 'verify-050', 'verify', 'shadow', NULL);
     null_ok := true;
     DELETE FROM ewoh_schedule_plan WHERE plan_id = probe_plan;
   EXCEPTION WHEN OTHERS THEN

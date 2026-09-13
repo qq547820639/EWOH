@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { qualityFindingsBlockDispatch } from '@shared/quality';
+import { normalizeBatteryPct } from '@shared/api.interface';
 import type {
   CandidateEvaluation,
   CandidateRejectReason,
@@ -13,15 +14,32 @@ import type {
 import { WorldStateSnapshotService } from './world-state.service';
 import { ResourceProjectionService } from './resource-projection.service';
 import { EligibilityService } from './eligibility.service';
+import { normalizePersonRef } from '@shared/identity';
 import type { CapabilityRecord } from '@shared/capability';
 import { RouteCostProvider } from './route-cost.provider';
 import type { RouteCost } from './travel-cost.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { TaskLifecycle } from './task-lifecycle';
+import { deviceCapabilityNames } from './capability-projection';
+import { capabilityRiskLevel } from '@shared/device-capability';
 
 /** 候选池构建选项。 */
 export interface CandidatePoolOptions {
   nowMs?: number;
+  /**
+   * ADR-056 消费侧（2026-09-13）：taskId → 模型时长（ms）。
+   * heuristic 求解器在 durationModelMode='advisory' 时把预解析的映射传进来，
+   * 使**候选阶段的时间窗**与指派阶段同源（否则会出现"候选用默认窗判定可行、
+   * 指派用模型窗"的口径分裂）。缺省 null = 用 config.defaultTaskDurationMs（历史行为）。
+   */
+  durationMsByTask?: ReadonlyMap<string, number> | null;
+  /**
+   * NO-35a：任务**已锁定的人员**（task.assigneeId 或方案级锁定）。
+   *
+   * 用途：佩戴中的外骨骼只对该佩戴者的任务可用——人机同体是物理上可行的，
+   * 而"把别人的外骨骼派给他"不是。未锁定时资格判定一律拒绝（不猜配对）。
+   */
+  lockedAssigneeId?: string | null;
   /**
    * R2-SCH-002（2026-08-17）：显式策略覆盖（solveVariants 变体权重缩放透传）。
    * 缺省回退 getActivePolicy()——端点等无变体上下文的调用保持旧语义。
@@ -75,6 +93,20 @@ export interface CandidatePoolOptions {
   maxContinuousLoad?: number;
   /** station 决策开关（P1-4 风险回滚开关；false 回退 task.stationId）。 */
   stationDecisionEnabled?: boolean;
+  /**
+   * R-6（2026-09-13 性能回归修复）：调用方租户 org id，透传给
+   * routeCostProvider.estimate 的第 5 参 opts.orgId。
+   *
+   * 为什么必须显式传：estimate 不传 orgId 时 RoutingService.loadGraph 拿不到
+   * 可安全隔离的租户键，只能"读穿不缓存"——候选池 O(persons×stations) 次
+   * estimate 每次都全图 SELECT route_node/route_edge（典型数百次/请求）。
+   * 传了 orgId 后路由图按 `tenant:<orgId>` 分桶 TTL 复用，桶内容与该租户
+   * 一一对应，不会与其它租户混用。
+   *
+   * 缺省 null ≠ "随便挑一个 org"：它表示调用方**确实没有**具体租户（深层内部流），
+   * 此时保持读穿不缓存（诚实缺失，绝不伪造 org 去换取命中率）。
+   */
+  orgId?: string | null;
 }
 
 /**
@@ -154,10 +186,38 @@ export class CandidateEngineService {
       minBatteryPct: config.minBatteryPct,
       maxContinuousLoad: config.maxContinuousLoad,
       stationDecisionEnabled: config.stationCapacityEnforced !== false,
+      // NO-35a：任务锁定人员透传（佩戴中的外骨骼只对该佩戴者可用）
+      lockedAssigneeId,
+      // R-6（2026-09-13）：端点把 actor 的租户透传进候选池 → 路由图按租户缓存。
+      // actor 缺失（系统后台流/函数式调用）时为 null → 读穿不缓存，不伪造 org。
+      orgId: actor?.primaryOrgId ?? null,
     });
 
     const stationOptions = this.buildStationOptions(task, fullState, pool);
     const timeWindows = this.buildTimeWindows(task, fullState, config.horizonMinutes);
+
+    // NO-17a：无合格候选且原因是能力要求时，给出**反事实放宽分析**——
+    // "放宽某一项要求会多出几个候选、那些设备还具备什么能力"。
+    // 只建议、不自动放宽（原则 4/6）：改要求仍是人工动作，且需重新生成方案。
+    const capabilityRelaxationSuggestions = await this.buildCapabilityRelaxationSuggestions({
+      task,
+      snapshot: fullState,
+      pool,
+      poolOpts: {
+        nowMs: now,
+        policy,
+        bookedTimeSlots,
+        bookedDeviceSlots,
+        bookedStationSlots,
+        minBatteryPct: config.minBatteryPct,
+        maxContinuousLoad: config.maxContinuousLoad,
+        stationDecisionEnabled: config.stationCapacityEnforced !== false,
+        // NO-35a：反事实放宽分析必须用同一约束（否则会"建议放宽"到佩戴中的设备上）
+        lockedAssigneeId,
+        // R-6（2026-09-13）：反事实评估同样透传租户（与主池同口径的缓存/隔离）。
+        orgId: actor?.primaryOrgId ?? null,
+      },
+    });
 
     const candidates: TaskCandidateResource[] = pool.map((c) => ({
       personId: c.personId,
@@ -170,7 +230,7 @@ export class CandidateEngineService {
       skillMatch: !c.rejectReasons.includes('missing_skill'),
       workload: state.persons.find((p) => p.id === c.personId)?.loadLevel ?? 0,
       batteryPct: c.deviceId
-        ? state.devices.find((d) => d.id === c.deviceId)?.batteryPct ?? null
+        ? normalizeBatteryPct(state.devices.find((d) => d.id === c.deviceId)?.batteryPct)
         : null,
       reservationConflict: c.rejectReasons.some((r) =>
         ['time_conflict', 'device_reserved', 'station_reserved'].includes(r),
@@ -180,6 +240,12 @@ export class CandidateEngineService {
         ? []
         : [...new Set(c.rejectReasons)],
       rejectReasons: c.rejectReasons,
+      // NO-15b：能力拒绝的可读细节（引擎生成，前端只透传）
+      ...(c.capabilityNotes && c.capabilityNotes.length > 0
+        ? { capabilityNotes: c.capabilityNotes }
+        : {}),
+      // NO-38b：会话相关的正向说明（人机同体配对；前端只透传）
+      ...(c.sessionNotes && c.sessionNotes.length > 0 ? { sessionNotes: c.sessionNotes } : {}),
       scoreBreakdown: c.scoreBreakdown,
       stationOptions: stationOptions.filter((s) => s.stationId === c.stationId),
       timeWindows,
@@ -198,6 +264,11 @@ export class CandidateEngineService {
       taskId: task.id,
       taskTitle: task.title ?? null,
       taskStatus: task.status ?? null,
+      requiredDeviceCapabilities: task.requiredDeviceCapabilities ?? [],
+      requiredStationCapabilities: task.requiredStationCapabilities ?? [],
+      ...(capabilityRelaxationSuggestions.length > 0
+        ? { capabilityRelaxationSuggestions }
+        : {}),
       assigned,
       lockedAssigneeId,
       lockedDeviceId,
@@ -222,6 +293,8 @@ export class CandidateEngineService {
     const config = await this.policyService.getConfig();
     const nowMs = opts.nowMs ?? Date.now();
     const stationDecisionEnabled = opts.stationDecisionEnabled !== false;
+    // NO-35a：任务锁定人员（佩戴中设备的合法使用前提）；缺省 null = 未锁定。
+    const lockedAssigneeId = opts.lockedAssigneeId ?? null;
 
     const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
     const taskStation = task.stationId ? stationById.get(task.stationId) : undefined;
@@ -356,6 +429,9 @@ export class CandidateEngineService {
         task.id,
         personPoint,
         taskPoint,
+        // R-6（2026-09-13）：透传调用方租户，恢复路由图按租户分桶缓存
+        // （此前不传 → loadGraph 读穿不缓存 → 每候选一次全图 SELECT）。
+        { orgId: opts.orgId ?? null },
       );
       const routeInfeasible = routeCost.feasible === false;
 
@@ -384,6 +460,8 @@ export class CandidateEngineService {
             task.id,
             personPoint,
             stationPoint,
+            // R-6（2026-09-13）：同 person×task 候选（每 station 一次）也须透传租户。
+            { orgId: opts.orgId ?? null },
           );
           const stationRouteInfeasible = candRouteCost.feasible === false;
 
@@ -407,7 +485,7 @@ export class CandidateEngineService {
             ? Math.max(lockedWindow[1] - lockedWindow[0], 1)
             : task.planEnd && task.planStart
               ? Date.parse(task.planEnd) - Date.parse(task.planStart)
-              : config.defaultTaskDurationMs;
+              : (opts.durationMsByTask?.get(task.id) ?? config.defaultTaskDurationMs);
           const endMs = lockedWindow
             ? lockedWindow[1]
             : startMs + Math.max(durationMs, 1);
@@ -416,6 +494,7 @@ export class CandidateEngineService {
             person,
             task,
             device,
+            lockedAssigneeId,
             ctx: {
               now: nowMs,
               // T9：每候选仅携带本资源槽位（见上方一次性分组注释）；
@@ -484,9 +563,13 @@ export class CandidateEngineService {
           // 也乘 config.mediumRiskFactor（此前仅判 high，medium 罚丢失）。
           const riskMs =
             this.riskFactor(candRouteCost.riskLevel, config) * travelMs;
-          const batteryPct = device ? device.batteryPct : 100;
+          const batteryPct = device ? normalizeBatteryPct(device.batteryPct) : null;
           const energyPenalty =
-            device != null ? (1 - batteryPct / 100) * 60 * 1000 : 0;
+            device == null
+              ? 0
+              : batteryPct == null
+                ? Number.POSITIVE_INFINITY
+                : (1 - batteryPct / 100) * 60 * 1000;
 
           const scoreBreakdown = this.computeScore(
             policy,
@@ -514,6 +597,8 @@ export class CandidateEngineService {
             scoreBreakdown.total = Math.max(0, scoreBreakdown.total - bonus);
           }
 
+          const capabilityNotes = this.buildCapabilityNotes(task, device, rejectReasons);
+          const sessionNotes = this.buildSessionNotes(device, person.id);
           evaluations.push({
             personId: person.id,
             deviceId: device ? device.id : null,
@@ -522,6 +607,8 @@ export class CandidateEngineService {
             endMs,
             eligible,
             rejectReasons,
+            ...(capabilityNotes.length > 0 ? { capabilityNotes } : {}),
+            ...(sessionNotes.length > 0 ? { sessionNotes } : {}),
             scoreBreakdown,
             routeCost: this.toCandidateRouteCost(candRouteCost, person.id, device ? device.id : null, stationId),
             preferred,
@@ -621,16 +708,213 @@ export class CandidateEngineService {
   }
 
   /** 汇总结构化拒绝原因（eligibility + 路由 + mustFinishBy 硬截止）。 */
+  /**
+   * 能力要求的**反事实放宽分析**（NO-17a）。
+   *
+   * 为什么：能力要求写错/写多时任务永远没有候选，而现场只知道"匹配不到"，不知道该放宽哪一项、
+   * 放宽之后会得到什么资源。这里对每个要求做一次反事实评估（把它去掉后重新判定资格），
+   * 报告"新增候选数 + 那些候选设备还具备什么能力"，让调度员自己判断是否可替代。
+   *
+   * 边界（重要）：
+   * - **只建议，不自动放宽**：要求保持不变，平台绝不为了"派出去"而擅自降低执行边界；
+   * - 只有在**当前零合格候选**时才计算（有候选就别制造噪音）；
+   * - 安全/硬约束不参与建议：放宽后仍需通过全部其他硬约束（复用同一资格判定）。
+   */
+  private async buildCapabilityRelaxationSuggestions(input: {
+    task: WorldStateSnapshot['tasks'][number];
+    snapshot: WorldStateSnapshot;
+    pool: CandidateEvaluation[];
+    poolOpts: CandidatePoolOptions;
+  }): Promise<
+    Array<{
+      /** 建议放宽的能力集合（组合建议时 >1 项）。 */
+      capabilities: string[];
+      /** 展示标签（单项 = 能力名；组合 = `a + b`）。 */
+      label: string;
+      kind: 'single' | 'combination';
+      /** 兼容字段：单项建议 = 唯一能力名；组合建议 = 展示标签。 */
+      capability: string;
+      /** 涉及能力中的最高风险等级（未登记等级的能力 → null，不假装低风险）。 */
+      risk: 'low' | 'medium' | 'high' | null;
+      /** true = 放宽涉及高风险能力，必须由安全负责人确认（原则 4/6）。 */
+      requiresSafetyReview: boolean;
+      addedEligibleCount: number;
+      sampleDeviceCapabilities: string[];
+      note: string;
+    }>
+  > {
+    const { task, snapshot, pool, poolOpts } = input;
+    const requiredDeviceCaps = task.requiredDeviceCapabilities ?? [];
+    if (requiredDeviceCaps.length === 0) return [];
+    if (pool.some((c) => c.eligible)) return [];
+    // 只在"确实因为能力被挡"时给建议（否则原因在别处，放宽能力也没用）
+    const blockedByCapability = pool.some((c) =>
+      c.rejectReasons.includes('missing_device_capability') ||
+      c.rejectReasons.includes('capability_disabled'),
+    );
+    if (!blockedByCapability) return [];
+
+    const evaluate = async (dropped: string[]) => {
+      const relaxedTask = {
+        ...task,
+        requiredDeviceCapabilities: requiredDeviceCaps.filter((c) => !dropped.includes(c)),
+      };
+      const relaxedPool = await this.buildCandidatePool(relaxedTask, snapshot, poolOpts);
+      const newlyEligible = relaxedPool.filter((c) => c.eligible);
+      if (newlyEligible.length === 0) return null;
+      const deviceIds = [...new Set(newlyEligible.map((c) => c.deviceId).filter(Boolean))] as string[];
+      const sampleDeviceCapabilities = [
+        ...new Set(
+          deviceIds.flatMap((id) => snapshot.devices.find((d) => d.id === id)?.capabilities ?? []),
+        ),
+      ].sort();
+      const label = dropped.join(' + ');
+      // NO-19a：风险分级——放宽"吊装/助力"与放宽"温度观测"不是一回事。
+      //   high：需**安全负责人**确认（调度员不得单独决定放宽执行边界）
+      //   medium：需与安全/工艺负责人确认（含人员观测的隐私面）
+      //   low：现场确认可替代性即可；未知等级按"未知"如实说明，不假装低风险
+      const risks = dropped.map((name) => capabilityRiskLevel(name));
+      const highestRisk = risks.includes('high')
+        ? ('high' as const)
+        : risks.includes('medium')
+          ? ('medium' as const)
+          : risks.includes('low')
+            ? ('low' as const)
+            : null;
+      const requiresSafetyReview = highestRisk === 'high';
+      const reviewNote = requiresSafetyReview
+        ? '；**该要求涉及高风险能力（直接作用于人体或吊装载荷），放宽必须由安全负责人确认**，调度员不得单独决定'
+        : highestRisk === 'medium'
+          ? '；该要求为中风险（执行动作或人员观测），请与安全/工艺负责人确认后放宽'
+          : highestRisk === null
+            ? '；该能力未登记风险等级（无法判断风险），放宽前请人工确认'
+            : '';
+      return {
+        capabilities: dropped,
+        label,
+        // 兼容字段：单项建议时 = 唯一能力名（历史调用方/文案用 `capability`）
+        capability: dropped.length === 1 ? dropped[0] : label,
+        kind: dropped.length > 1 ? ('combination' as const) : ('single' as const),
+        risk: highestRisk,
+        requiresSafetyReview,
+        addedEligibleCount: newlyEligible.length,
+        sampleDeviceCapabilities: sampleDeviceCapabilities.slice(0, 8),
+        note:
+          `仅建议（不会自动放宽）：去掉要求「${label}」后可多出 ${newlyEligible.length} 个合格候选` +
+          (deviceIds.length > 0 ? `（涉及 ${deviceIds.length} 台设备）` : '') +
+          (dropped.length > 1 ? `；注意需要**同时**放宽这 ${dropped.length} 项才有效` : '') +
+          reviewNote +
+          '。是否可替代需现场确认；确认后请修改能力要求并重新生成方案。',
+      };
+    };
+
+    const suggestions: Awaited<ReturnType<typeof evaluate>>[] = [];
+    for (const capability of requiredDeviceCaps) {
+      suggestions.push(await evaluate([capability]));
+    }
+    const singles = suggestions.filter(
+      (s): s is NonNullable<typeof s> => s !== null,
+    );
+    // 收益大的排前面（帮助现场先看最值得放宽的那一项）
+    if (singles.length > 0) {
+      return singles.sort((a, b) => b.addedEligibleCount - a.addedEligibleCount).slice(0, 5);
+    }
+
+    // NO-18b：单项都无效 → 试**组合**（"同时放宽两项才出候选"是真实现场常见情形：
+    // 例如任务同时要求两种专用设备能力，而现场只有一种替代资源）。
+    // 成本有界：仅在单项全零时触发，要求数 ≤ 5、评估对数 ≤ 6，命中即停。
+    if (requiredDeviceCaps.length < 2 || requiredDeviceCaps.length > 5) return [];
+    let evaluatedPairs = 0;
+    for (let i = 0; i < requiredDeviceCaps.length && evaluatedPairs < 6; i += 1) {
+      for (let j = i + 1; j < requiredDeviceCaps.length && evaluatedPairs < 6; j += 1) {
+        evaluatedPairs += 1;
+        const combo = await evaluate([requiredDeviceCaps[i], requiredDeviceCaps[j]]);
+        if (combo) return [combo];
+      }
+    }
+    return [];
+  }
+
+  /**
+   * 能力相关拒绝的可读细节（NO-15b）。
+   *
+   * 只在拒绝原因与设备能力有关时才生成：把"缺哪些能力"与"哪些能力被人停用
+   * （谁/何时/为什么）"写清楚——现场据此判断该换设备、加装，还是复核停用决定。
+   * 无相关事实返回空数组（不拼凑、不猜测）。
+   */
+  private buildCapabilityNotes(
+    task: WorldStateSnapshot['tasks'][number],
+    device: WorldStateSnapshot['devices'][number] | null,
+    rejectReasons: CandidateRejectReason[],
+  ): string[] {
+    const capabilityRelated =
+      rejectReasons.includes('capability_disabled') || rejectReasons.includes('missing_device_capability');
+    if (!capabilityRelated || !device) return [];
+    const required = task.requiredDeviceCapabilities ?? [];
+    if (required.length === 0) return [];
+    const available = new Set(deviceCapabilityNames(device));
+    const disabledLifecycle = new Map(
+      (device.disabledCapabilityLifecycle ?? []).map((entry) => [entry.name, entry]),
+    );
+    const notes: string[] = [];
+    const missing = required.filter((cap) => !available.has(cap));
+    if (missing.length > 0) {
+      notes.push(`任务要求的能力：${missing.join('、')}；该设备当前可用能力：${available.size > 0 ? [...available].join('、') : '（无）'}`);
+    }
+    for (const cap of missing) {
+      const lifecycle = disabledLifecycle.get(cap);
+      if (!lifecycle) continue;
+      const who = lifecycle.operator ?? '未知操作者';
+      const when = lifecycle.at ? new Date(lifecycle.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时间未知';
+      const why = lifecycle.reason ?? '未填写理由';
+      notes.push(`能力 ${cap} 已被人工停用：${who} · ${when} · 理由：${why}`);
+    }
+    return notes;
+  }
+
+  /**
+   * NO-38b：外骨骼会话的**正向**说明（只解释，不参与判定）。
+   *
+   * 什么时候给：候选设备正处于外骨骼会话中，且**候选人员就是佩戴者**——
+   * 这是唯一物理可行的组合（人机同体）。现场此前只看到"这台设备没被拒"，却不知道
+   * 为什么只有这个人能接；说明里必须写清"换人需先结束会话或改派佩戴者"。
+   *
+   * 判定仍由资格服务的 `device_in_active_session` 负责（佩戴者放行、他人拒绝），
+   * 本方法绝不改变 eligible。
+   */
+  private buildSessionNotes(
+    device: WorldStateSnapshot['devices'][number] | null | undefined,
+    personId: string,
+  ): string[] {
+    const session = device?.activeExoSession;
+    if (!device || !session) return [];
+    const wearer = normalizePersonRef(session.personId);
+    const candidate = normalizePersonRef(personId);
+    if (!wearer || !candidate || wearer !== candidate) return [];
+    const deviceLabel = device.deviceId ?? device.id;
+    const started = session.startedAt
+      ? new Date(session.startedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+      : '开始时间未记录';
+    return [
+      `设备 ${deviceLabel} 正由该人员佩戴（外骨骼会话 ${session.sessionId}，开始于 ${started}）：`
+        + '本候选是人机同体配对（同一台外骨骼不能同时给两个人用）；'
+        + '若要改派他人，需先结束会话或由现场改派佩戴者。',
+    ];
+  }
+
   private collectRejectReasons(input: {
     person: WorldStateSnapshot['persons'][number];
     task: WorldStateSnapshot['tasks'][number];
     device: WorldStateSnapshot['devices'][number] | null;
+    /** NO-35a：本任务的锁定人员（见 `CandidatePoolOptions.lockedAssigneeId`）。 */
+    lockedAssigneeId?: string | null;
     ctx: Parameters<EligibilityService['check']>[3];
     routeInfeasible: boolean;
     mustFinishByMs: number | null;
     endMs: number;
   }): CandidateRejectReason[] {
     const { person, task, device, ctx, routeInfeasible, mustFinishByMs, endMs } = input;
+    const lockedAssigneeId = input.lockedAssigneeId ?? null;
     // P1-B：投影层 source 为可选超集字段（WorldStateSnapshot 形状未含）；此处类型断言透传。
     const personSource = (
       person as WorldStateSnapshot['persons'][number] & {
@@ -682,14 +966,20 @@ export class CandidateEngineService {
         earliestStartMs: task.earliestStartMs ?? null,
         dueAtMs: task.dueAtMs ?? null,
         safetyCritical: task.safetyCritical,
+        // NO-35a：佩戴中的外骨骼只对"锁定给该佩戴者"的任务可用
+        lockedAssigneeId,
       },
       device
         ? {
             id: device.id,
-            batteryPct: device.batteryPct,
+            batteryPct: normalizeBatteryPct(device.batteryPct),
             online: device.online,
             status: device.status,
             capabilities: device.capabilities ?? [],
+            // NO-15b：停用能力事实（用于区分"缺能力"与"能力被停用"）
+            disabledCapabilities: device.disabledCapabilities ?? [],
+            // NO-34a：活跃外骨骼会话（佩戴中的设备是硬约束，不是提示）
+            activeExoSession: device.activeExoSession ?? null,
             // P1-A/P1-B：可用/维护窗口 + 新鲜度 + 来源维度。
             availableWindows: device.availableWindows ?? [],
             maintenanceWindows: deviceSource?.maintenanceWindows ?? [],
@@ -703,7 +993,8 @@ export class CandidateEngineService {
         : null,
       ctx,
     );
-    const reasons = [...eligibility.reasons] as CandidateRejectReason[];
+    // eligibility 现在直接返回词表类型，无需 `as` 断言（断言会掩盖未登记键）。
+    const reasons: CandidateRejectReason[] = [...eligibility.reasons];
     if (routeInfeasible) reasons.push('route_infeasible');
     if (mustFinishByMs != null && endMs > mustFinishByMs) {
       reasons.push('must_finish_by_violation');
@@ -742,7 +1033,9 @@ export class CandidateEngineService {
     const changeCost =
       churnCostScore != null ? churnCostScore : (w.change * changeCostMs) / 60000;
     const risk = (w.risk * riskMs) / 60000;
-    const energyCost = (w.energy * energyPenalty) / 60000;
+    const energyCost = Number.isFinite(energyPenalty)
+      ? (w.energy * energyPenalty) / 60000
+      : Number.POSITIVE_INFINITY;
     return {
       lateness,
       travel,

@@ -135,6 +135,19 @@ export class SchedulerRunOrchestrator {
       }
     }
 
+    // 排产规模可观测（2026-09-13）：单次求解的成本对**任务数**超线性，而规模此前
+    // 只存在于快照内部、任何日志里都看不到。实测后果：本地库被历轮 E2E 残留撑到
+    // 约 20 倍时，`POST /api/scheduler/runs` 从 5 秒退化到 3 分钟以上，而**没有任何
+    // 信号指向数据量**——排障者会以为是产品故障（我实际这样误判过一次）。
+    // 这里只做观测（不参与任何判定、不改求解语义），把"这次要吃多少活"写进日志，
+    // 让"数据量问题"与"代码问题"一眼可分。
+    this.logger.log(
+      `scheduling run scale: run=${run.runId} org=${ctx?.primaryOrgId ?? 'n/a'} `
+        + `snapshot=${snapshot.snapshotVersion} tasks=${snapshot.tasks?.length ?? 0} `
+        + `entities=${Object.keys(snapshot.entityVersions ?? {}).length} `
+        + `constraints=${constraints.length} horizonMinutes=${horizonMinutes}`,
+    );
+
     // R2-SCH-007（2026-08-17，NEST-140 残留）：solveVariants 抛错与
     // INFEASIBLE_PROFILE 筛选失败必须先闭合 run（status=failed）再向上抛——
     // 此前 run 已创建但两条路径均无闭合动作，run 永久滞留 queued。

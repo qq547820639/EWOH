@@ -8,6 +8,7 @@
  */
 
 import { isCanonicalIdentity } from './identity';
+import type { PerceptionAdviceGate } from './perception-fusion';
 
 export const REASONING_RULE_IDS = [
   'rule:worker-overload', 'rule:exo-low-battery', 'rule:machine-vibration-risk',
@@ -19,6 +20,14 @@ export const TRACE_CONFIDENCE_BASES = ['deterministic', 'statistical'] as const;
 export const TRACE_FACT_KINDS = ['person', 'exo', 'machine', 'material', 'station', 'alert'] as const;
 
 export const REASONING_ENGINE_VERSION = '1.0.0';
+
+/**
+ * rule:worker-overload 的引擎内置负荷阈值（无 ADR-026 人审激活覆盖时生效值）。
+ * 单一事实来源：matchesRule 与 LearningProposalService 阈值基线读面共用，
+ * 避免「基线展示值」与「引擎实际判定值」两处字面量漂移。
+ * 跨运行地对齐：src/edge_platform/contracts/reasoning_trace.py 同值 0.8。
+ */
+export const DEFAULT_WORKLOAD_THRESHOLD = 0.8;
 
 const RULE_SET: ReadonlySet<string> = new Set(REASONING_RULE_IDS);
 const SEVERITY_SET: ReadonlySet<string> = new Set(TRACE_SEVERITIES);
@@ -96,6 +105,15 @@ export function validateReasoningTrace(record: unknown): string[] {
     if (!Array.isArray(evidence) || evidence.length === 0) return ['empty_evidence'];
     if (!isCanonicalIdList(evidence)) return ['bad_evidence_ref'];
     if (typeof c.explanation !== 'string' || c.explanation.trim() === '') return ['bad_explanation'];
+    // NO-58b：门控一致性——门控说不许强建议，结论就必须标 advisoryOnly；
+    // 反之标了 advisoryOnly 必须给原因（否则页面读不出"为什么只是提示"）。
+    const gate = c.perceptionGate as PerceptionAdviceGate | null | undefined;
+    if (gate && gate.strongAdviceAllowed === false && c.advisoryOnly !== true) {
+      return ['advisory_flag_inconsistent_with_gate'];
+    }
+    if (c.advisoryOnly === true && (typeof c.advisoryReason !== 'string' || c.advisoryReason.trim() === '')) {
+      return ['advisory_requires_reason'];
+    }
     // R2-SHR-011：conclusionId 在 conclusions 内必须唯一（多主体命中同规则
     // 时由 subjectId 段区分；重复 ID 会导致台账互相覆盖）。
     if (seenConclusionIds.has(c.conclusionId)) return ['duplicate_conclusion_id'];
@@ -115,6 +133,8 @@ export interface ReasoningFact {
   kind: string;
   values: Record<string, number | boolean>;
   evidenceIds: string[];
+  /** 该主体的感知建议门控（由 ReasoningService 从最新融合快照注入）。 */
+  perceptionGate?: PerceptionAdviceGate | null;
 }
 
 /** 规则阈值覆盖（ADR-026 人审激活的激活面；缺省 = 引擎内置常量）。 */
@@ -134,6 +154,14 @@ export interface ReasoningConclusion {
   premises: string[];
   evidenceIds: string[];
   explanation: string;
+  /**
+   * 感知门控（NO-58b）：该主体的感知融合`strongAdviceAllowed=false` 时，
+   * 结论仍然产出（事实是真的），但**只能作为提示，不得据此生成强建议**
+   * （§5 规则 5 / 原则 5）。缺省 = 没有融合快照（未评估，不等于"可以强建议"）。
+   */
+  advisoryOnly?: boolean;
+  advisoryReason?: string | null;
+  perceptionGate?: PerceptionAdviceGate | null;
 }
 
 const RULE_TEMPLATES: Record<string, string> = {
@@ -189,7 +217,7 @@ function matchesRule(ruleId: string, fact: ReasoningFact, thresholds?: Reasoning
   switch (ruleId) {
     case 'rule:worker-overload':
       return fact.kind === 'person'
-        && ge(v.workload, thresholds?.workload ?? 0.8)
+        && ge(v.workload, thresholds?.workload ?? DEFAULT_WORKLOAD_THRESHOLD)
         && (ge(v.fatigue, thresholds?.fatigue ?? 0.7) || ge(v.ergonomicRisk, thresholds?.ergonomicRisk ?? 0.7));
     case 'rule:exo-low-battery':
       return fact.kind === 'exo' && lt(v.batteryPct, 20);
@@ -232,6 +260,8 @@ export function evaluateReasoningRules(
         .replace('{inventory}', fmt(v.inventory))
         .replace('{threshold}', fmt(v.minThreshold))
         .replace('{minutes}', fmt(v.unacknowledgedMinutes));
+      const gate = fact.perceptionGate ?? null;
+      const advisoryOnly = gate !== null && gate.strongAdviceAllowed === false;
       conclusions.push({
         // R2-SHR-001/011：traceId/subjectId 先经 safeConclusionValue 清洗，
         // 且 subjectId 参与 ID 拼接——同规则多主体命中时 conclusionId 不再碰撞。
@@ -243,7 +273,22 @@ export function evaluateReasoningRules(
         confidenceBasis: 'deterministic',
         premises: [fact.subjectId],
         evidenceIds: fact.evidenceIds,
-        explanation,
+        explanation: advisoryOnly
+          ? `${explanation}（**仅提示**：${gate?.reason ?? '感知门控不允许强建议'}）`
+          : explanation,
+        // 门控字段**只在有门控时出现**：
+        //   · 无门控 = "平台没评估过"，不是"评估为可强建议"——用缺省而不是 `false` 表达，
+        //     调用方才能区分"未评估"与"已评估且允许"（原则 7：缺失不得伪造成确定事实）；
+        //   · 同时保持与边缘运行时（`edge_platform/contracts/reasoning_trace.py`）以及
+        //     跨语言金标场景（`tests/golden-fixtures/contract-golden-scenarios.json`）
+        //     的结论形状逐字段一致——同一份 fixture 两侧都要过。
+        ...(gate
+          ? {
+              advisoryOnly,
+              advisoryReason: advisoryOnly ? gate.reason ?? '感知门控不允许强建议' : null,
+              perceptionGate: gate,
+            }
+          : {}),
       });
     }
   }

@@ -28,6 +28,7 @@ import { AuditService } from '@server/modules/shared/audit.service';
 import { TaskService } from '@server/modules/task/task.service';
 import { SolverService } from '../solver.service';
 import { SchedulingFeedbackService } from '../scheduling-feedback.service';
+import { makeCanonicalReceiptHarness } from './canonical-receipt-test-harness';
 import { makeFakeDb, testOrgContext } from './dispatch-test-harness';
 import { makeSolver, defaultPolicy, defaultConfig } from './scheduler-test-helpers';
 
@@ -81,6 +82,8 @@ async function runScenario(scenario: Scenario): Promise<{ scenarioId: string; op
   const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
   const worldState = {
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn().mockResolvedValue(undefined),
     // replan 用真实求解器：buildSnapshot 返回场景快照（含 snapshotVersion 与资源）。
     buildSnapshot: jest.fn().mockResolvedValue(scenario.snapshot),
     getCurrentWorldState: jest.fn().mockResolvedValue({
@@ -217,21 +220,8 @@ async function runScenario(scenario: Scenario): Promise<{ scenarioId: string; op
       }
     } else if (entry.op === 'feedback') {
       try {
-        const feedbackService = new SchedulingFeedbackService(
-          db,
-          requestDatabaseContext as unknown as RequestDatabaseContext,
-        );
-        await feedbackService.recordActuals(
-          {
-            planId: String(params.planId),
-            assignmentId: String(params.assignmentId),
-            taskId: String(params.taskId),
-            actualStart: String(params.actualStart),
-            actualEnd: String(params.actualEnd),
-            actualResource: params.actualResource as never,
-          },
-          ctx,
-        );
+        const h = makeCanonicalReceiptHarness({ planId: String(params.planId), assignmentId: String(params.assignmentId), personId: 'p1', assignmentStatus: 'dispatched', taskStatus: 'executing', executionStatus: 'DISPATCHED' });
+        await h.feedback.recordActuals({ assignmentId: h.assignmentId, planId: h.planId, taskId: h.taskId, actualStart: String(params.actualStart), actualEnd: String(params.actualEnd), actualResource: params.actualResource as never }, h.actor);
         outcomes.push({ op: 'feedback', outcome: { ok: true } });
       } catch (err) {
         outcomes.push({ op: 'feedback', outcome: { ok: false, reason: String((err as Error).message) } });

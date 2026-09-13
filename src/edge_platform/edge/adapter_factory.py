@@ -9,9 +9,14 @@ run.py 注册后启动；启动即输出每适配器 health，/api/status 暴露
 Spec 语义（EWOH_ADAPTERS，JSON 列表，每项含 kind + 参数）：
 - ny_exo_a1：{kind, deviceId 必填, sourceType, workerId, firmwareVersion,
   tzOffsetHours} → NyExoA1Adapter
+- ny_exo_a1_tcp：同上 + {listenHost, listenPort} → NyExoA1TcpAdapter
+  （G8 补链：内层 NyExoA1Adapter + 真实 TCP 接收端，现场显式启用真机/回放接入。
+   监听失败/端口占用在装配期抛 ValueError，不静默）
 - camera：{kind, cameraId 必填, sourceType} → CameraAdapter（真实驱动基类）
 - environment：{kind, sensorId 必填, stationId, sourceType} → EnvSensorAdapter
 - mes：{kind, deviceId 必填, sourceType, systemName} → MESAdapter
+- agv：{kind, deviceId 必填, sourceType, stationId, model, firmwareVersion,
+  lowBatteryPct, batteryPct, tickOnRead} → ActuatorAdapter（执行机构；缺省回环模拟器）
 - uwb：需要 beacon/tag 对象图配置，本轮未纳入（未知/未支持 kind fail-closed
   抛 ValueError，绝不静默跳过）
 
@@ -31,6 +36,20 @@ _ADAPTER_KINDS: dict[str, dict] = {
         "required": ("deviceId",),
         "optional": ("sourceType", "workerId", "firmwareVersion", "tzOffsetHours"),
     },
+    # G8：真机/回放接入的 TCP 接收端。与 ny_exo_a1 同参数，外加监听地址/端口；
+    # 绑定失败在构造期抛错（fail-closed），不会"启动成功但没在收数据"。
+    "ny_exo_a1_tcp": {
+        "factory": "edge_platform.edge.device_driver:NyExoA1TcpAdapter",
+        "required": ("deviceId",),
+        "optional": (
+            "sourceType",
+            "workerId",
+            "firmwareVersion",
+            "tzOffsetHours",
+            "listenHost",
+            "listenPort",
+        ),
+    },
     "camera": {
         "factory": "edge_platform.edge.adapters.camera.adapter:CameraAdapter",
         "asset_cls": "edge_platform.edge.adapters.camera.adapter:CameraAsset",
@@ -48,6 +67,21 @@ _ADAPTER_KINDS: dict[str, dict] = {
         "required": ("deviceId",),
         "optional": ("sourceType", "systemName"),
     },
+    # NO-59b：执行机构（AGV/PLC）。缺省用确定性回环模拟器（无硬件也能跑通命令→状态→回执）；
+    # 真机接入时把 transport 换成 Modbus/OPC-UA/厂商 API 实现即可，本工厂参数不变。
+    "agv": {
+        "factory": "edge_platform.edge.adapters.actuator.adapter:ActuatorAdapter",
+        "required": ("deviceId",),
+        "optional": (
+            "sourceType",
+            "stationId",
+            "model",
+            "firmwareVersion",
+            "lowBatteryPct",
+            "batteryPct",
+            "tickOnRead",
+        ),
+    },
 }
 
 # 构造参数名（spec）→ 适配器构造参数名
@@ -60,7 +94,13 @@ _KWARG_MAP = {
     "workerId": "worker_id",
     "firmwareVersion": "firmware_version",
     "tzOffsetHours": "tz_offset_hours",
+    "listenHost": "host",
+    "listenPort": "port",
     "systemName": "system_name",
+    "model": "model",
+    "lowBatteryPct": "low_battery_pct",
+    "batteryPct": "battery_pct",
+    "tickOnRead": "tick_on_read",
 }
 
 

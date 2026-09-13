@@ -1,7 +1,11 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   applySecurityHeaders,
   corsOrigins,
   isSpaFallbackPath,
+  resolveSpaIndexFile,
   trustProxySetting,
 } from '../../../server/standalone-main';
 
@@ -57,5 +61,42 @@ describe('standalone bootstrap security configuration', () => {
     expect(isSpaFallbackPath('/api/organization')).toBe(false);
     expect(isSpaFallbackPath('/health/live')).toBe(false);
     expect(isSpaFallbackPath('/metrics')).toBe(false);
+  });
+});
+
+describe('SPA 入口解析（运行期可替换，不冻结在启动时）', () => {
+  /* 2026-09-11 实测缺陷：启动时冻结入口文件名 → 运行期做另一种客户端构建后，
+   * 服务器一直 sendFile 已被删除的 index.html → 所有 SPA 路由 500（直到重启）。 */
+  it('优先 index.html（主应用产物）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spa-'));
+    try {
+      writeFileSync(join(dir, 'index.html'), '<html></html>');
+      writeFileSync(join(dir, 'index.standalone.html'), '<html></html>');
+      expect(resolveSpaIndexFile(dir)).toBe('index.html');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('index.html 被 standalone 构建清掉后，回落到 index.standalone.html（不 500）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spa-'));
+    try {
+      writeFileSync(join(dir, 'index.standalone.html'), '<html></html>');
+      expect(resolveSpaIndexFile(dir)).toBe('index.standalone.html');
+      // 运行期再切回主应用产物：解析结果必须跟着变（不缓存）
+      writeFileSync(join(dir, 'index.html'), '<html></html>');
+      expect(resolveSpaIndexFile(dir)).toBe('index.html');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('两种产物都不存在 → null（调用方据此返回 503 + 可读原因，而不是"内部错误"）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spa-'));
+    try {
+      expect(resolveSpaIndexFile(dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

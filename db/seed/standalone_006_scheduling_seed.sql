@@ -137,25 +137,25 @@ VALUES
   ('65000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'LINE-A底座装配',   'assembly',    'high',   'executing', 'P001', 'DEV-01', 'NODE-LA-02', now() - interval '30 minutes', now() + interval '40 minutes', 60, 'seed'),
   ('65000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'LINE-A主板装配',   'assembly',    'high',   'executing', 'P002', 'DEV-02', 'NODE-LA-02', now() - interval '20 minutes', now() + interval '50 minutes', 40, 'seed'),
   ('65000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'LINE-A装配辅助',   'assembly',    'medium', 'executing', 'P003', 'DEV-03', 'NODE-LA-03', now() - interval '10 minutes', now() + interval '1 hour',    30, 'seed'),
-  ('65000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'LINE-A质检',       'inspection',  'medium', 'pending',   'P001', 'DEV-01', 'NODE-LA-03', now() + interval '1 hour',      now() + interval '2 hours',   0,  'seed'),
-  ('65000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'LINE-A物料搬运',   'logistics',   'low',    'queued',    'P003', NULL,     'NODE-LA-01', now() + interval '2 hours',      now() + interval '3 hours',   0,  'seed'),
+  ('65000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'LINE-A质检',       'inspection',  'medium', 'pending_dispatch',   'P001', 'DEV-01', 'NODE-LA-03', now() + interval '1 hour',      now() + interval '2 hours',   0,  'seed'),
+  ('65000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'LINE-A物料搬运',   'logistics',   'low',    'pending_dispatch',    'P003', NULL,     'NODE-LA-01', now() + interval '2 hours',      now() + interval '3 hours',   0,  'seed'),
   -- LINE-B backlog (TASK-126..131) — high priority, tight deadlines
-  ('65000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'LINE-B模组装配-1', 'assembly',   'high',  'pending',  'P004', 'DEV-04', 'NODE-LB-02', now() + interval '5 minutes',  now() + interval '40 minutes', 0, 'seed'),
-  ('65000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000001', 'LINE-B模组装配-2', 'assembly',   'high',  'pending',  'P005', 'DEV-05', 'NODE-LB-02', now() + interval '10 minutes', now() + interval '45 minutes', 0, 'seed'),
-  ('65000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'LINE-B外观装配',   'assembly',   'high',  'pending',  'P008', 'DEV-06', 'NODE-LB-02', now() + interval '15 minutes', now() + interval '50 minutes', 0, 'seed'),
-  ('65000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'LINE-B焊接-1',     'welding',    'high',  'pending',  'P006', NULL,     'NODE-LB-03', now() + interval '20 minutes', now() + interval '55 minutes', 0, 'seed'),
-  ('65000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-000000000001', 'LINE-B焊接-2',     'welding',    'high',  'pending',  'P004', NULL,     'NODE-LB-03', now() + interval '30 minutes', now() + interval '1 hour 5 minutes', 0, 'seed'),
-  ('65000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-000000000001', 'LINE-B总检',       'inspection', 'high',  'pending',  'P005', NULL,     'NODE-PK-01', now() + interval '40 minutes', now() + interval '1 hour 20 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'LINE-B模组装配-1', 'assembly',   'high',  'pending_dispatch',  'P004', 'DEV-04', 'NODE-LB-02', now() + interval '5 minutes',  now() + interval '40 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000001', 'LINE-B模组装配-2', 'assembly',   'high',  'pending_dispatch',  'P005', 'DEV-05', 'NODE-LB-02', now() + interval '10 minutes', now() + interval '45 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'LINE-B外观装配',   'assembly',   'high',  'pending_dispatch',  'P008', 'DEV-06', 'NODE-LB-02', now() + interval '15 minutes', now() + interval '50 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'LINE-B焊接-1',     'welding',    'high',  'pending_dispatch',  'P006', NULL,     'NODE-LB-03', now() + interval '20 minutes', now() + interval '55 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-000000000001', 'LINE-B焊接-2',     'welding',    'high',  'pending_dispatch',  'P004', NULL,     'NODE-LB-03', now() + interval '30 minutes', now() + interval '1 hour 5 minutes', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-000000000001', 'LINE-B总检',       'inspection', 'high',  'pending_dispatch',  'P005', NULL,     'NODE-PK-01', now() + interval '40 minutes', now() + interval '1 hour 20 minutes', 0, 'seed'),
   -- WAREHOUSE (TASK-132..134)
-  ('65000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-000000000001', '原料入库-1',       'warehouse',  'medium', 'queued',   'P007', NULL,     'NODE-WH-02', now() + interval '30 minutes', now() + interval '2 hours', 0, 'seed'),
-  ('65000000-0000-4000-8000-00000000000d', '00000000-0000-4000-8000-000000000001', '原料出库-2',       'warehouse',  'medium', 'queued',   'P007', NULL,     'NODE-WH-01', now() + interval '2 hours',      now() + interval '4 hours', 0, 'seed'),
-  ('65000000-0000-4000-8000-00000000000e', '00000000-0000-4000-8000-000000000001', '仓库盘点',         'inventory',  'low',    'pending',  'P010', NULL,     'NODE-WH-02', now() + interval '3 hours',      now() + interval '5 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-000000000001', '原料入库-1',       'warehouse',  'medium', 'pending_dispatch',   'P007', NULL,     'NODE-WH-02', now() + interval '30 minutes', now() + interval '2 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000d', '00000000-0000-4000-8000-000000000001', '原料出库-2',       'warehouse',  'medium', 'pending_dispatch',   'P007', NULL,     'NODE-WH-01', now() + interval '2 hours',      now() + interval '4 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000e', '00000000-0000-4000-8000-000000000001', '仓库盘点',         'inventory',  'low',    'pending_dispatch',  'P010', NULL,     'NODE-WH-02', now() + interval '3 hours',      now() + interval '5 hours', 0, 'seed'),
   -- PACKING (TASK-135..137)
-  ('65000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000001', '成品打包-1',       'packing',    'medium', 'pending',  'P008', NULL,     'NODE-PK-02', now() + interval '50 minutes', now() + interval '2 hours', 0, 'seed'),
-  ('65000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000001', '成品检验-1',       'inspection', 'medium', 'pending',  'P009', NULL,     'NODE-PK-01', now() + interval '1 hour',       now() + interval '3 hours', 0, 'seed'),
-  ('65000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001', '成品打包-2',       'packing',    'low',    'queued',   'P009', NULL,     'NODE-PK-02', now() + interval '3 hours',      now() + interval '5 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000001', '成品打包-1',       'packing',    'medium', 'pending_dispatch',  'P008', NULL,     'NODE-PK-02', now() + interval '50 minutes', now() + interval '2 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000010', '00000000-0000-4000-8000-000000000001', '成品检验-1',       'inspection', 'medium', 'pending_dispatch',  'P009', NULL,     'NODE-PK-01', now() + interval '1 hour',       now() + interval '3 hours', 0, 'seed'),
+  ('65000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000001', '成品打包-2',       'packing',    'low',    'pending_dispatch',   'P009', NULL,     'NODE-PK-02', now() + interval '3 hours',      now() + interval '5 hours', 0, 'seed'),
   -- CHARGE (TASK-138)
-  ('65000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000001', '充电桩点检-1',     'maintenance','low',    'pending',  'P010', NULL,     'NODE-CH-01', now() + interval '2 hours',      now() + interval '4 hours', 0, 'seed')
+  ('65000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000001', '充电桩点检-1',     'maintenance','low',    'pending_dispatch',  'P010', NULL,     'NODE-CH-01', now() + interval '2 hours',      now() + interval '4 hours', 0, 'seed')
 ON CONFLICT (id) DO NOTHING;
 
 -- ===========================================================================
@@ -164,12 +164,12 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.ewoh_schedule_task
   (id, org_id, schedule_task_id, template_id, title, description, status, priority, source, plan_start, plan_end, is_simulation, progress)
 VALUES
-  ('66000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'TASK-126', NULL, 'LINE-B模组装配-1', 'B班高优先级装配，交期紧张', 'queued',   'high',   'scheduler', now() + interval '5 minutes',  now() + interval '40 minutes', false, 0),
-  ('66000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'TASK-127', NULL, 'LINE-B模组装配-2', 'B班高优先级装配，交期紧张', 'queued',   'high',   'scheduler', now() + interval '10 minutes', now() + interval '45 minutes', false, 0),
-  ('66000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'TASK-128', NULL, 'LINE-B外观装配',   '锁定P008执行的外观装配任务', 'queued', 'high',   'scheduler', now() + interval '15 minutes', now() + interval '50 minutes', false, 0),
-  ('66000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'TASK-129', NULL, 'LINE-B焊接-1',     'B班高优先级焊接，交期紧张',   'queued', 'high',   'scheduler', now() + interval '20 minutes', now() + interval '55 minutes', false, 0),
-  ('66000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'TASK-130', NULL, 'LINE-B焊接-2',     'B班高优先级焊接，交期紧张',   'queued', 'high',   'scheduler', now() + interval '30 minutes', now() + interval '1 hour 5 minutes', false, 0),
-  ('66000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'TASK-131', NULL, 'LINE-B总检',       'B班高优先级总检',             'queued', 'high',   'scheduler', now() + interval '40 minutes', now() + interval '1 hour 20 minutes', false, 0)
+  ('66000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'TASK-126', NULL, 'LINE-B模组装配-1', 'B班高优先级装配，交期紧张', 'released', 'high',   'scheduler', now() + interval '5 minutes',  now() + interval '40 minutes', false, 0),
+  ('66000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'TASK-127', NULL, 'LINE-B模组装配-2', 'B班高优先级装配，交期紧张', 'released', 'high',   'scheduler', now() + interval '10 minutes', now() + interval '45 minutes', false, 0),
+  ('66000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'TASK-128', NULL, 'LINE-B外观装配',   '锁定P008执行的外观装配任务', 'released', 'high',   'scheduler', now() + interval '15 minutes', now() + interval '50 minutes', false, 0),
+  ('66000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'TASK-129', NULL, 'LINE-B焊接-1',     'B班高优先级焊接，交期紧张',   'released', 'high',   'scheduler', now() + interval '20 minutes', now() + interval '55 minutes', false, 0),
+  ('66000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'TASK-130', NULL, 'LINE-B焊接-2',     'B班高优先级焊接，交期紧张',   'released', 'high',   'scheduler', now() + interval '30 minutes', now() + interval '1 hour 5 minutes', false, 0),
+  ('66000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'TASK-131', NULL, 'LINE-B总检',       'B班高优先级总检',             'released', 'high',   'scheduler', now() + interval '40 minutes', now() + interval '1 hour 20 minutes', false, 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- ===========================================================================

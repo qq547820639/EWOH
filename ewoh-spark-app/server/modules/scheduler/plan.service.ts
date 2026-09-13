@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Optional,
   forwardRef,
 } from '@nestjs/common';
@@ -19,8 +20,12 @@ import {
   ewohSchedulingPlanAssignment,
   ewohSchedulingConstraint,
   ewohSimulationRun,
+  ewohAssignmentEvent,
+  ewohResourceReservation,
+  ewohProductionTask,
 } from '@server/database/schema';
 import { eq, asc, and, inArray, desc, isNull, or, gte } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import type {
   SchedulingPlanV2,
   SchedulingAssignment,
@@ -29,9 +34,13 @@ import type {
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { AuditService } from '../shared/audit.service';
 import { buildGucSettings } from '../shared/org-context.interceptor';
+import type { PostgresJsDatabase as PostgresJsDatabaseType } from '@lark-apaas/fullstack-nestjs-core';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { SolverService, type SolverConstraint } from './solver.service';
-import { WorldStateSnapshotService } from './world-state.service';
+import {
+  WorldStateSnapshotService,
+  type PlanStalenessReport,
+} from './world-state.service';
 import { DispatchCoordinatorService } from './dispatch-coordinator.service';
 import { projectPlanDecisionRecords, projectPlanApprovalDecision } from './decision-projection';
 import { appendPlanDecisionRecords } from './decision-ledger';
@@ -44,6 +53,7 @@ import { OutboxService } from './outbox.service';
 import { SimulationService } from '../simulation/simulation.service';
 import { buildPlanLayoutParameters } from './pre-approval-simulation';
 import { assertPlanTenantVisible } from './plan-tenant-guard';
+import { TaskService } from '../task/task.service';
 
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
@@ -71,6 +81,10 @@ export class PlanService {
     // Optional 仅兼容直接构造的单测 seams——缺装配时显式 warn 跳过）。
     @Optional()
     private readonly simulationService?: SimulationService,
+    // DR-5：取消/回滚路径的任务状态机操作（rollback_dispatch）。Optional 仅
+    // 兼容直接构造的单测 seams——生产装配必达；cancelPlan 对缺装配 fail-closed。
+    @Optional()
+    private readonly taskService?: TaskService,
   ) {}
 
   /** 持久化一个 V2 方案（ewoh_schedule_plan + 分配明细）。 */
@@ -340,13 +354,42 @@ export class PlanService {
       throw new ConflictException('PLAN_STALE');
     }
     try {
+      // NO-64a：把 planId 传下去，让闸门按"事实变化 vs 证据老化"分档——
+      // 与方案无关的设备沉默不再阻断审批，而方案依赖的资源证据过期仍然 fail-closed。
       await this.worldStateSnapshotService.assertFreshForApprove(
         body.snapshotVersion,
+        ctx,
+        planId,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'PLAN_STALE' || msg.includes('PLAN_STALE')) {
+        // NO-62c：把"过期"变成**可处置的诊断**——409 体里带上差异事实
+        // （哪些实体变了、哪些是本方案自身造成的），页面据此告诉审批人
+        // "变了什么、要不要重排"，而不是只弹一句"方案已过期"。
+        const diagnosis = await this.safeDescribeStaleness(
+          body.snapshotVersion,
+          ctx,
+          planId,
+        );
         await this.notifyStalePlan(planId, ctx);
+        // 注意形状：全局异常过滤器只透传 `{ error: { code, message, ... } }` 形态的
+        // 结构化响应（`extractStructuredResponse`），所以诊断必须挂在 `error` 下，
+        // 否则会被改写成一串纯文本（实测：页面拿不到差异明细）。
+        throw new ConflictException({
+          // 顶层 message 保持 `PLAN_STALE`：既有调用方/测试按 message 判定过期，
+          // 不能因为"加了结构化明细"就把裸状态码语义改掉（前端 isPlanStaleError 依赖它）。
+          message: 'PLAN_STALE',
+          error: {
+            code: 'PLAN_STALE',
+            message: 'PLAN_STALE',
+            details: diagnosis?.summary ?? '方案绑定的世界快照与当前状态不一致',
+            // NO-64a：机器可读的阻断原因（CONTENT_CHANGED = 事实变了；EVIDENCE_STALE = 依赖资源证据过期）
+            stalenessReason: diagnosis?.reason ?? null,
+            planStaleness: diagnosis,
+            replanAvailable: true,
+          },
+        });
       }
       throw err;
     }
@@ -357,7 +400,19 @@ export class PlanService {
     // 显式留痕，绝不阻断审批：审批仍是人工决策门，§13/§2）。
     const preApprovalSimulation = await this.runPreApprovalSimulation(planId, ctx);
 
-    const op = body.operator || ctx.userId;
+    // NO-64b（审计边界修复）：确认人一律记**认证主体** `ctx.userId`。
+    //
+    // 为什么不能记 `body.operator`：`confirmedBy` 是"独立审批"这条安全闸门的输入
+    // （`hasIndependentApproval(plan)` 比较 `createdBy !== confirmedBy`，回执授权
+    // `RECEIPT_PLAN_NOT_AUTHORIZED` 也读它）。写客户端自报字段 = 审批人可以用别人的
+    // 名字落库、也可以把"自己生成、自己审批"伪装成独立审批（本轮 e2e 实测：
+    // created=admin、confirmed=admin 由自报造成 → 回执被正确拒绝，但根因是入库口径）。
+    // 自报操作者只作为**声明**留在审计里（可追溯，不影响判定）。
+    const op = ctx.userId;
+    const claimedOperator = body.operator?.trim() || null;
+    const approvalReason = claimedOperator && claimedOperator !== op
+      ? `${body.reason ?? ''}（自报操作者 ${claimedOperator}）`
+      : (body.reason ?? '');
     const now = new Date();
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
@@ -368,7 +423,7 @@ export class PlanService {
             status: 'approved',
             confirmedBy: op,
             confirmedAt: now,
-            confirmReason: body.reason ?? '',
+            confirmReason: approvalReason,
           })
           .where(eq(ewohSchedulePlan.planId, planId));
 
@@ -377,7 +432,7 @@ export class PlanService {
           .set({ status: 'approved' })
           .where(eq(ewohSchedulingPlanAssignment.planId, planId));
 
-        await this.insertAudit(planId, 'approve', op, body.reason ?? '', now, ctx.primaryOrgId);
+        await this.insertAudit(planId, 'approve', op, approvalReason, now, ctx.primaryOrgId);
       },
     );
 
@@ -503,10 +558,15 @@ export class PlanService {
     plan: SchedulingPlanV2,
   ): Promise<SchedulingPlanV2> {
     try {
+      // ewoh_simulation_run 唯一键是 (org_id, run_id)——只按 run_id 读会命中
+      // 他租户的同名运行（2026-09-10 org 谓词审计）；按方案自身租户收敛。
       const [run] = await this.db
         .select()
         .from(ewohSimulationRun)
-        .where(eq(ewohSimulationRun.runId, `plan-approval:${plan.planId}`))
+        .where(and(
+          eq(ewohSimulationRun.runId, `plan-approval:${plan.planId}`),
+          plan.orgId ? eq(ewohSimulationRun.orgId, plan.orgId) : undefined,
+        ))
         .limit(1);
       if (!run) return plan;
       const results = (run.resultsJson ?? {}) as Record<string, unknown>;
@@ -532,42 +592,117 @@ export class PlanService {
   }
 
   /**
-   * T04 / P1-6：stale approve → outbox `stale_plan` 事件 + scoped replan（cause=PLAN_STALE）。
-   * 观测型：失败仅记日志，不改变审批拒绝语义（PLAN_STALE 仍然抛异常）。
+   * NO-62c：查询方案是否过期 + **为什么**（只读，供页面/运维/审批前预检）。
+   *
+   * 与审批路径共用同一判定实现（`describeStaleness`），因此页面看到的差异
+   * 就是审批时 409 里那份差异——不会出现"页面说新鲜、审批说过期"的第二套口径。
+   */
+  async explainPlanStaleness(
+    planId: string,
+    ctx?: OrgContext,
+  ): Promise<{
+    planId: string;
+    status: string;
+    version: number;
+    snapshotVersion: string;
+    stale: boolean;
+    staleness: PlanStalenessReport;
+    replanAvailable: boolean;
+    checkedAt: string;
+  }> {
+    const [plan] = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(eq(ewohSchedulePlan.planId, planId))
+      .limit(1);
+    if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    // ADR-071：变面租户守卫（无 ctx = 内部可信流，RLS 继续兜底）。
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
+    const staleness = await this.worldStateSnapshotService.describeStaleness(
+      String(plan.snapshotVersion ?? ''),
+      ctx,
+      undefined,
+      planId,
+    );
+    return {
+      planId,
+      status: String(plan.status ?? ''),
+      version: Number(plan.version ?? 0),
+      snapshotVersion: String(plan.snapshotVersion ?? ''),
+      // 只有"待审批/已审批"的方案才谈得上过期与重排（终态方案无需处置）。
+      stale: staleness.stale,
+      staleness,
+      replanAvailable: ['draft', 'shadow', 'approved', 'rejected', 'cancelled'].includes(
+        String(plan.status ?? ''),
+      ),
+      checkedAt: staleness.checkedAt,
+    };
+  }
+
+  /** 诊断失败绝不影响审批拒绝语义（拿不到差异也要拒绝，只是文案降级）。 */
+  private async safeDescribeStaleness(
+    snapshotVersion: string,
+    ctx: OrgContext | undefined,
+    planId: string,
+  ): Promise<PlanStalenessReport | null> {
+    try {
+      return await this.worldStateSnapshotService.describeStaleness(
+        snapshotVersion,
+        ctx,
+        undefined,
+        planId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `describeStaleness failed for plan ${planId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * NO-62c：stale approve 的**持久化**留痕 + 显式补偿入口。
+   *
+   * 本轮审计烧掉的两个真实缺陷（都不是"缺功能"）：
+   *   1. **写入被回滚**：本方法在 approve 内被调用，而 approve 随后抛 409；
+   *      `OrgContextInterceptor` 把请求包在一个事务里，异常 → 整体回滚 →
+   *      `stale_plan` 事件**从未真正落库**（"事件化"是空头承诺）。
+   *      现在经 `runDetachedTransaction` 在独立事务里提交（错误路径上的事实必须存活）。
+   *   2. **声称的补偿不存在**：原注释说"重排由 outbox 消费者异步执行"，但
+   *      **没有任何消费者**把 `stale_plan` 变成重排；而 fire-and-forget 的
+   *      `handleTrigger` 跑在被中止的请求事务里（求解白跑 + 写入丢失，还占着连接）。
+   *      现在不再假装自动补偿：过期诊断 + 差异明细随 409 返回，页面一键重排
+   *      （`POST /plans/:id/replan`）与 API 调用是**唯一的、显式的、可提交的**重排入口。
+   * 观测型：留痕失败仅记日志，不改变审批拒绝语义（PLAN_STALE 仍然抛异常）。
    */
   private async notifyStalePlan(
     planId: string,
     ctx: OrgContext,
   ): Promise<void> {
-    try {
-      await this.outboxService.enqueue(
+    const occurredAt = new Date().toISOString();
+    const enqueue = async (executor?: PostgresJsDatabase) =>
+      this.outboxService.enqueue(
         'stale_plan',
         planId,
-        {
-          planId,
-          reason: 'approve rejected: PLAN_STALE',
-          occurredAt: new Date().toISOString(),
-        },
+        { planId, reason: 'approve rejected: PLAN_STALE', occurredAt },
         ctx.primaryOrgId || null,
         undefined,
-        {
-          entityType: 'schedule_plan',
-          planId,
-          occurredAt: new Date().toISOString(),
-        },
+        { entityType: 'schedule_plan', planId, occurredAt, ...(executor ? { executor } : {}) },
       );
-      // 2026-08-21 修复：stale 审批路径不得同步等待 scoped replan——
-      // handleTrigger 会跑完整调度（快照+求解，实测 30-60s），阻塞审批响应导致
-      // 前端 15s 超时（"approve timeout"）。改为 fire-and-forget：
-      // PLAN_STALE 拒绝语义不受影响，outbox stale_plan 事件已入队，
-      // 重排由 outbox 消费者异步执行（P1-6 补偿闭环保持）。
-      void this.replanCoordinator
-        .handleTrigger('PLAN_STALE', planId, ctx)
-        .catch((err) => {
-          this.logger.warn(
-            `async replan after stale approve failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
+    try {
+      // 独立事务：即使本请求随后抛 409 回滚，事件仍在。
+      // 替身/旧上下文没有该方法时退回同事务入队（金样本 fixture 走这条；
+      // 生产装配的 RequestDatabaseContext 一定实现它）。
+      if (typeof this.requestDatabaseContext?.runDetachedTransaction === 'function') {
+        await this.requestDatabaseContext.runDetachedTransaction(
+          buildGucSettings(ctx),
+          async (db) => {
+            await enqueue(db as PostgresJsDatabase);
+          },
+        );
+      } else {
+        await enqueue();
+      }
     } catch (err) {
       this.logger.warn(
         `stale plan notification failed for ${planId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -603,7 +738,12 @@ export class PlanService {
     // ADR-071：变面租户守卫（反枚举 404；与 RLS 语义等价）。
     assertPlanTenantVisible(plan.orgId, ctx, planId);
 
-    const op = body.operator || ctx.userId;
+    // 同上：确认人 = 认证主体（自报操作者只进审计声明）。
+    const op = ctx.userId;
+    const claimedOperator = body.operator?.trim() || null;
+    const rejectReason = claimedOperator && claimedOperator !== op
+      ? `${body.reason ?? ''}（自报操作者 ${claimedOperator}）`
+      : (body.reason ?? '');
     const now = new Date();
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
@@ -614,7 +754,7 @@ export class PlanService {
             status: 'rejected',
             confirmedBy: op,
             confirmedAt: now,
-            confirmReason: body.reason ?? '',
+            confirmReason: rejectReason,
           })
           .where(eq(ewohSchedulePlan.planId, planId));
 
@@ -623,7 +763,7 @@ export class PlanService {
           .set({ status: 'cancelled' })
           .where(eq(ewohSchedulingPlanAssignment.planId, planId));
 
-        await this.insertAudit(planId, 'reject', op, body.reason ?? '', now, ctx.primaryOrgId);
+        await this.insertAudit(planId, 'reject', op, rejectReason, now, ctx.primaryOrgId);
       },
     );
 
@@ -645,11 +785,210 @@ export class PlanService {
   }
 
   /**
+   * DR-5 方案取消/回滚（standalone_077）：dispatched/executing/approved 方案的
+   * 受控回退。部分回滚语义（物理执行不可撤销，如实回报）：
+   *  - 可回退 assignment：proposed/approved/dispatched/acknowledged（任务处于
+   *    pending_dispatch/dispatched/received 且未开始执行）→ assignment=cancelled、
+   *    释放其预占、任务 rollback_dispatch 回 pending_dispatch（重新可排程）；
+   *  - 不可回退 assignment：executing/paused/exception/completed/failed/blocked →
+   *    保持原状并列入 irreversibleAssignmentIds（现场处置，不静默吞掉）；
+   *  - 方案状态 CAS → cancelled（并发双取消守卫），取消事实落列 + 审计 +
+   *    PlanCancelled outbox 事件（SSE 实时可见）。
+   */
+  async cancelPlan(
+    planId: string,
+    body: { reason?: string },
+    ctx: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    const reason = (body.reason ?? '').trim();
+    if (!reason) {
+      throw new BadRequestException('取消原因必填（reason）：回滚必须可解释、可审计。');
+    }
+    const [plan] = await this.db
+      .select()
+      .from(ewohSchedulePlan)
+      .where(eq(ewohSchedulePlan.planId, planId))
+      .limit(1);
+    if (!plan) throw new NotFoundException(`Plan ${planId} not found`);
+    assertPlanTenantVisible(plan.orgId, ctx, planId);
+    const cancellablePlanStatuses = new Set(['approved', 'dispatched', 'executing']);
+    if (!cancellablePlanStatuses.has(plan.status ?? '')) {
+      throw new ConflictException(
+        `PLAN_NOT_CANCELLABLE: 当前状态 ${plan.status}（仅 approved/dispatched/executing 可取消；终态不可逆）`,
+      );
+    }
+    const op = ctx.userId;
+    const now = new Date();
+
+    // 分类在事务外只读、事务内复查并按 assignment 逐条 CAS——分派与取消的
+    // 边界判定是正确性关键，显式分区（与 dispatch 同纪律）。
+    const cancellableAssignmentStatuses = new Set([
+      'proposed', 'approved', 'dispatched', 'acknowledged',
+    ]);
+    // 任务可回退状态（task.yaml rollback_before_start 条件）：未开始执行。
+    const rollbackableTaskStatuses = new Set(['pending_dispatch', 'dispatched', 'received']);
+
+    const result = await this.requestDatabaseContext.runInTransaction(
+      buildGucSettings(ctx),
+      async () => {
+        const assignments = await this.db
+          .select()
+          .from(ewohSchedulingPlanAssignment)
+          .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+
+        const cancelled: Array<typeof ewohSchedulingPlanAssignment.$inferSelect> = [];
+        const irreversible: Array<typeof ewohSchedulingPlanAssignment.$inferSelect> = [];
+        for (const a of assignments) {
+          if (cancellableAssignmentStatuses.has(a.status)) cancelled.push(a);
+          else irreversible.push(a);
+        }
+
+        const returnedTaskIds: string[] = [];
+        for (const a of cancelled) {
+          // assignment → cancelled（逐条 CAS：状态已变则该条不可回退，转入 irreversible）。
+          const updated = await this.db
+            .update(ewohSchedulingPlanAssignment)
+            .set({ status: 'cancelled' })
+            .where(
+              and(
+                eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId),
+                eq(ewohSchedulingPlanAssignment.status, a.status),
+              ),
+            )
+            .returning();
+          if (updated.length === 0) {
+            irreversible.push(a);
+            continue;
+          }
+          await this.db.insert(ewohAssignmentEvent).values({
+            eventId: `EVT-${randomUUID()}`,
+            assignmentId: a.assignmentId,
+            taskId: a.taskId ?? null,
+            personId: a.personId ?? null,
+            deviceId: a.deviceId ?? null,
+            fromStatus: a.status,
+            toStatus: 'cancelled',
+            actor: op,
+            reason: `plan cancelled: ${reason.slice(0, 200)}`,
+          });
+          // 释放该 assignment 的预占（部分回滚只释放被取消项；已完成项保留台账）。
+          await this.db
+            .update(ewohResourceReservation)
+            .set({ status: 'released' })
+            .where(
+              and(
+                eq(ewohResourceReservation.planId, planId),
+                eq(ewohResourceReservation.assignmentId, a.assignmentId),
+              ),
+            );
+          // 任务回退：dispatched/received → pending_dispatch（重新可排程）。
+          if (a.taskId) {
+            const [task] = await this.db
+              .select({ status: ewohProductionTask.status })
+              .from(ewohProductionTask)
+              .where(eq(ewohProductionTask.id, a.taskId))
+              .limit(1);
+            if (task && rollbackableTaskStatuses.has(task.status ?? '')) {
+              if (task.status === 'dispatched' || task.status === 'received') {
+                if (!this.taskService) {
+                  throw new InternalServerErrorException(
+                    'PLAN_CANCEL_TASK_SERVICE_MISSING: 任务回退需要 TaskService 装配（生产模块必达）',
+                  );
+                }
+                await this.taskService.transitionTaskState(a.taskId, 'rollback_dispatch', ctx);
+              }
+              returnedTaskIds.push(a.taskId);
+            }
+          }
+        }
+
+        // 方案状态 CAS → cancelled（并发守卫：另一取消/状态变更已发生则 409）。
+        const planUpdated = await this.db
+          .update(ewohSchedulePlan)
+          .set({
+            status: 'cancelled',
+            cancelledReason: reason,
+            cancelledBy: op,
+            cancelledAt: now,
+          })
+          .where(
+            and(
+              eq(ewohSchedulePlan.planId, planId),
+              inArray(ewohSchedulePlan.status, [...cancellablePlanStatuses]),
+            ),
+          )
+          .returning();
+        if (planUpdated.length === 0) {
+          throw new ConflictException('PLAN_CONCURRENT_CANCEL: 方案状态已变更，请刷新后重试');
+        }
+
+        await this.insertAudit(
+          planId, 'cancel', op,
+          `${reason}；回退 ${cancelled.length} 项、不可回退 ${irreversible.length} 项`,
+          now, ctx.primaryOrgId,
+        );
+
+        return {
+          cancelledAssignmentIds: cancelled.map((a) => a.assignmentId),
+          irreversibleAssignmentIds: irreversible.map((a) => a.assignmentId),
+          returnedTaskIds,
+        };
+      },
+    );
+
+    await this.auditService.appendAuditLog({
+      actorId: op,
+      orgId: ctx.primaryOrgId,
+      action: 'scheduler.plan.cancel',
+      entityType: 'schedule_plan',
+      entityId: planId,
+      before: { status: plan.status },
+      after: { status: 'cancelled', reason },
+      reason,
+      risk: true,
+      metadata: {
+        cancelledAssignmentIds: result.cancelledAssignmentIds.length,
+        irreversibleAssignmentIds: result.irreversibleAssignmentIds.length,
+      },
+    });
+    await this.outboxService.enqueue(
+      'PlanCancelled',
+      planId,
+      {
+        planId,
+        reason,
+        cancelledBy: op,
+        cancelledAssignmentIds: result.cancelledAssignmentIds,
+        irreversibleAssignmentIds: result.irreversibleAssignmentIds,
+        returnedTaskIds: result.returnedTaskIds,
+        occurredAt: now.toISOString(),
+      },
+      ctx.primaryOrgId || null,
+      undefined,
+      { planId, occurredAt: now.toISOString() },
+    );
+    const refreshed = await this.getPlan(planId, ctx);
+    return {
+      ...refreshed,
+      cancel: {
+        reason,
+        cancelledBy: op,
+        cancelledAt: now.toISOString(),
+        cancelledAssignmentIds: result.cancelledAssignmentIds,
+        irreversibleAssignmentIds: result.irreversibleAssignmentIds,
+        returnedTaskIds: result.returnedTaskIds,
+        releasedReservations: result.cancelledAssignmentIds.length,
+      },
+    } as SchedulingPlanV2;
+  }
+
+  /**
    * 下发方案：委托 DispatchCoordinator 原子下发（校验 → 预占 → 下发 → 审计 → 出站事件）。
    */
   async dispatchPlan(
     planId: string,
     ctx: OrgContext,
+    wave?: { assignmentIds?: string[] },
   ): Promise<SchedulingPlanV2> {
     // NEST-026 修复（2026-08-17）：租户守卫先行——先 assertPlanTenantVisible
     // 再查 isShadow（旧顺序对跨租户 shadow 方案先抛 SHADOW_PLAN_GUARD，泄露
@@ -665,8 +1004,28 @@ export class PlanService {
     if (planRow?.isShadow) {
       throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be dispatched');
     }
-    await this.dispatchCoordinator.dispatch(planId, ctx);
-    return this.getPlan(planId, ctx);
+    // 未指定波次时保持既有调用形状（两参）——避免给既有契约加一个恒为
+    // undefined 的第三参，也便于以调用形状为 oracle 的表征测试继续成立。
+    const dispatchResult = wave
+      ? await this.dispatchCoordinator.dispatch(planId, ctx, wave)
+      : await this.dispatchCoordinator.dispatch(planId, ctx);
+    const plan = await this.getPlan(planId, ctx);
+    // 协调器未返回摘要时不编造 dispatch 事实（例如测试替身只验证"被调用"）。
+    // 缺失就是缺失：宁可不给该字段，也不能写一个看似正常的默认摘要。
+    if (!dispatchResult) return plan;
+    // 分波次事实随方案一起回传（additive）：调用方必须能区分"整单派工完成"
+    // 与"只派了一波"。仅看 plan.status 不足以判断后者（部分派工时计划保持
+    // approved，以免把半成品方案标成契约终态）。
+    return {
+      ...plan,
+      dispatch: {
+        planStatus: dispatchResult.planStatus ?? plan.status,
+        dispatchedAssignmentIds: dispatchResult.dispatchedAssignmentIds ?? [],
+        remainingAssignmentIds: dispatchResult.remainingAssignmentIds ?? [],
+        remainingAssignments: dispatchResult.remainingAssignments ?? 0,
+        dispatchedAssignments: dispatchResult.dispatchedAssignments,
+      },
+    } as SchedulingPlanV2;
   }
 
   /**
@@ -899,7 +1258,9 @@ export class PlanService {
     // 人工 LOCK/EXCLUDE/PREFER 不得因为普通 replan 传入 [] 而消失。
     const effectiveConstraints = await this.loadEffectiveConstraints(
       planId,
-      body.lockedConstraints as import('@shared/api.interface').SchedulingConstraint[],
+      // NO-62c：可选字段缺省 → 空数组（"本次重排没有新增人工约束"），
+      // 不是"约束丢失"；显式传非数组由 ConstraintLoader 400 拒绝。
+      (body.lockedConstraints ?? []) as import('@shared/api.interface').SchedulingConstraint[],
       ctx,
     );
 

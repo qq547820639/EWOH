@@ -71,6 +71,13 @@ const GRAPH_MOCK = {
  * 返回 { violations, minorModerate } 供调用方进一步记录。
  */
 async function runAxeScan(page, label) {
+  // 扫描前等待页面稳定：横幅/徽标会带透明度过渡（SSE 状态解析后才出现），
+  // 在过渡中途扫描会把"半透明文字"测成对比度不足（4.16 < 4.5），
+  // 表现为同一 bundle 时而通过时而失败（2026-09-11 实测：reduced-motion 项目
+  // 连续两次运行一次通过一次失败）。axe 的 color-contrast 依赖**计算后**颜色，
+  // 因此这里显式等待过渡结束，而不是放宽判据。
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(600);
   const results = await new AxeBuilder({ page }).analyze();
 
   const blocking = results.violations.filter((v) =>

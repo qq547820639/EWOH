@@ -317,13 +317,32 @@ async function openSession(page, baseUrl, role, route = '/command-center', extra
  * 值可为：普通对象/数组（→ 200 JSON），或 `{ status, body }`，或返回二者的函数。
  * 未匹配的 API 请求默认返回 404 JSON，避免回退到静态服务器返回 HTML。
  */
+/**
+ * 应用外壳（AppShell / 顶栏待办收件箱 / 组织切换器）会**无条件**请求的端点。
+ *
+ * 为什么放在这里而不是每个 spec 各自 mock：`installGateListeners` 一类的门禁把
+ * 「console error」当失败，而这些外壳请求一旦没被 mock 就是 404 → 浏览器打印
+ * console error → 与页面本身无关的门禁集体变红（2026-09-11 实测：visual-gate
+ * 的指挥中心/移动工作台因 `/api/scheduler/active-plans`、`/api/organization`、
+ * 待办事件查询 404 而失败）。默认给空集，需要具体数据的 spec 照旧用同名 key 覆盖。
+ */
+const SHELL_DEFAULT_MOCKS = {
+  // 组织列表必须与 `sessionInitScript` 注入的 orgId 一致：返回空数组会让
+  // 「当前组织」解析不到，页面进入无租户上下文状态（实测：200% 缩放用例
+  // 因 h1 不渲染而失败）。需要多组织/无组织的 spec 用同名 key 覆盖即可。
+  'GET /api/organization': [{ orgId: 'default-factory', name: '默认工厂', code: 'F-001' }],
+  'GET /api/scheduler/active-plans': [],
+  'GET /api/dashboard/events': [],
+};
+
 async function mockApi(page, handlers) {
+  const merged = { ...SHELL_DEFAULT_MOCKS, ...(handlers ?? {}) };
   await page.route('**/api/**', (route) => {
     const req = route.request();
     const url = new URL(req.url());
     const method = req.method();
     const keyMethod = `${method} ${url.pathname}`;
-    const matcher = handlers[keyMethod] ?? handlers[url.pathname] ?? handlers['*'];
+    const matcher = merged[keyMethod] ?? merged[url.pathname] ?? merged['*'];
     if (!matcher) {
       route.fulfill({
         status: 404,
@@ -342,13 +361,21 @@ async function mockApi(page, handlers) {
           })
         : matcher;
     const response =
-      value && typeof value === 'object' && 'status' in value && 'body' in value
-        ? value
+      value &&
+      typeof value === 'object' &&
+      ('status' in value || 'headers' in value) &&
+      'body' in value
+        ? { status: 200, ...value }
         : { status: 200, body: value };
+    const responseBody =
+      typeof response.body === 'string' || Buffer.isBuffer(response.body)
+        ? response.body
+        : JSON.stringify(response.body);
     route.fulfill({
       status: response.status,
-      contentType: 'application/json',
-      body: JSON.stringify(response.body),
+      headers: response.headers,
+      contentType: response.headers?.['Content-Type'] ? undefined : 'application/json',
+      body: responseBody,
     });
   });
 }

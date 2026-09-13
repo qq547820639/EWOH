@@ -46,11 +46,11 @@ BEGIN
   SELECT count(*) INTO mc_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_maintenance_condition'
       AND policyname = 'maintenance_condition_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   SELECT count(*) INTO qf_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_quality_finding'
       AND policyname = 'quality_finding_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF mc_policy <> 1 OR qf_policy <> 1 THEN
     missing := missing || format('policies mc=%s qf=%s ', mc_policy, qf_policy);
   END IF;

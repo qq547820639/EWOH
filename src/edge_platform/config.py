@@ -161,6 +161,22 @@ class Settings:
         self.event_uplink_url = (os.environ.get("EWOH_EVENT_UPLINK_URL") or "").strip()
         self.event_uplink_key = (os.environ.get("EWOH_EVENT_UPLINK_KEY") or "").strip()
         self.event_uplink_org_id = (os.environ.get("EWOH_EVENT_UPLINK_ORG_ID") or "").strip()
+        # ---- 2026-09-10：Edge→Cloud 多源传感器帧上行（环境/摄像头/定位）----
+        # EWOH_SENSOR_UPLINK_URL 为空时回落到事件上行地址（同一平台、同一机器密钥）；
+        # 两者都为空 = 显式关闭（启动打印原因，不静默）。
+        self.sensor_uplink_url = (
+            os.environ.get("EWOH_SENSOR_UPLINK_URL") or self.event_uplink_url or ""
+        ).strip()
+        self.sensor_uplink_key = (
+            os.environ.get("EWOH_SENSOR_UPLINK_KEY") or self.event_uplink_key or ""
+        ).strip()
+        self.sensor_uplink_org_id = (
+            os.environ.get("EWOH_SENSOR_UPLINK_ORG_ID") or self.event_uplink_org_id or ""
+        ).strip()
+        # 是否让本桥接管外骨骼帧（缺省否：外骨骼另有协议级 BACKFILL 通道）。
+        self.sensor_uplink_include_exoskeleton = (
+            os.environ.get("EWOH_SENSOR_UPLINK_INCLUDE_EXO", "").strip() == "1"
+        )
         # ---- NO-12d：Edge→Cloud 指标上行（周期快照，ADR-028）----
         # EWOH_METRICS_UPLINK_URL 为空 = 上行显式关闭；KEY/ORG_ID 与事件上行
         # 同语义（IngestGuard X-Ingest-Key / X-Org-Id 机器通道）。

@@ -33,6 +33,7 @@ import { ReplanCoordinatorService } from './replan-coordinator.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { ReplanPreviewService } from './replan-preview.service';
 import { toOrgContext } from './scheduler-run-context';
+import { ExecutionReceiptApplicationService } from './execution-receipt-application.service';
 
 /** 影子评估 / 审批 consult 所需的 comparePolicyVersion 引用（调用时求值）。 */
 export type ComparePolicyVersionRef = (
@@ -67,6 +68,7 @@ export class SchedulerEventApplicationService {
     private readonly comparePolicyVersionRef: ComparePolicyVersionRef = async () => {
       throw new Error('comparePolicyVersionRef not injected');
     },
+    private readonly receiptService?: ExecutionReceiptApplicationService,
   ) {}
 
   /**
@@ -255,9 +257,17 @@ export class SchedulerEventApplicationService {
 
   /**
    * v0.7 D1 反馈闭环：回填任务执行实际值（actualStart/actualEnd/实际资源等）。
-   * 委托 SchedulingFeedbackService.recordActuals（按 assignmentId/planId/taskId 匹配更新）。
-   * 匹配语义：至少提供一个匹配键，否则拒绝；重复回填为覆盖式更新（天然幂等）。
+   * 委托规范回执服务 ExecutionReceiptApplicationService.applyFromActuals
+   * （assignment/task/feedback/outbox 单事务原子更新）。
+   * 匹配语义：至少提供一个匹配键，否则拒绝；重复事实幂等，已记录事实不可覆盖。
    * 调用方：POST /api/scheduler/feedback/actuals（任务执行方/移动端/边缘）。
+   *
+   * R-3 shadow 回填腿（自查修正 2026-09-13）：回执落库成功后必须回调
+   * SchedulingFeedbackService 的 shadow 回填钩子。本路径重构成直达规范回执服务时
+   * 绕过了 SchedulingFeedbackService.recordActuals——生产回执永远不回填 shadow
+   * 样本（内存缓冲与 prediction_shadow_observation 的 actual 恒 NULL，coverage 恒 0，
+   * 学习腿在采样腿接好的同时再次断链）。回执未命中（result 为 null）也照常回调：
+   * 钩子内部对 matchedRows<=0 显式忽略（不伪造 actual）。
    */
   async recordTaskActuals(
     input: RecordActualsRequest,
@@ -268,68 +278,35 @@ export class SchedulerEventApplicationService {
     advancedAssignments?: number;
     advancedTaskSteps?: number;
     skips?: string[];
+    receipt?: import('@shared/execution-receipt').ExecutionReceiptResult['receipt'] | null;
   }> {
     if (
       !input.assignmentId &&
       !input.planId &&
       !input.taskId
-    ) {
+  ) {
       throw new BadRequestException(
         '至少提供一个匹配键（assignmentId / planId / taskId）',
       );
     }
-    const ctx = toOrgContext(actor);
-    // NO-13a / ADR-050：recordActuals 返回推进 summary（additive 透出，供调用方可观测）。
-    // ?? 兜底：既有测试/调用方 stub 返回 undefined 时保持向后兼容（不读取推进字段）。
-    const advancement = (await this.feedbackService.recordActuals(
-      {
-        planId: input.planId,
-        assignmentId: input.assignmentId,
-        taskId: input.taskId,
-        actualStart: input.actualStart ?? null,
-        actualEnd: input.actualEnd ?? null,
-        actualTravel: input.actualTravel ?? null,
-        actualWait: input.actualWait ?? null,
-        actualResource: input.actualResource ?? null,
-      },
-      ctx,
-    )) ?? { advancedAssignments: 0, advancedTaskSteps: 0, skips: [] };
-    // v0.7 B3：执行偏差实时推送（SSE execution.deviation），供地图执行偏差图层消费。
-    // 观测型：推送失败仅记日志，不影响回填主流程。
-    if (this.outboxService) {
-      // NEST-137（2026-08-17）：执行偏差事件 await 落库（关键观测事件，
-      // 丢失会断地图偏差图层；失败留痕不阻断回填主流程）。
-      try {
-        await this.outboxService.enqueue(
-          'execution.deviation',
-          input.taskId ?? input.assignmentId ?? 'unknown',
-          {
-            planId: input.planId ?? null,
-            assignmentId: input.assignmentId ?? null,
-            taskId: input.taskId ?? null,
-            actualStart: input.actualStart ?? null,
-            actualEnd: input.actualEnd ?? null,
-            actualTravel: input.actualTravel ?? null,
-            actualWait: input.actualWait ?? null,
-          },
-          ctx.primaryOrgId || null,
-        );
-      } catch (e) {
-        this.logger.warn(`execution.deviation enqueue failed: ${(e as Error).message}`);
-      }
-    }
-    // recordActuals 为更新语义（无行则不写）；推进 summary additive 透出（NO-13a）。
-    // NEST-121 修复（2026-08-17）：matched 不再无条件 true——feedbackService
-    // recordActuals 以 UPDATE ... RETURNING 统计 matchedRows（真实命中行数）；
-    // 旧 stub 无该字段时保守回退 true（向后兼容，避免旧测试误判）。
-    const matchedRows = (advancement as { matchedRows?: number }).matchedRows;
-    const matched = matchedRows != null ? matchedRows > 0 : true;
+    if (!this.receiptService) throw new Error('Canonical receipt service not available');
+    const result = await this.receiptService.applyFromActuals(input, toOrgContext(actor));
+    // 与 SchedulingFeedbackService.recordActuals 的回填语义逐字对齐（含未命中的
+    // receipt:not_matched 兜底形状），观测失败在钩子内部只记日志、绝不影响本返回值。
+    const receipt = result?.receipt ?? {
+      matchedRows: 0,
+      advancedAssignments: 0,
+      advancedTaskSteps: 0,
+      skips: ['receipt:not_matched'],
+    };
+    this.feedbackService?.backfillShadowActuals(input, receipt, toOrgContext(actor));
     return {
-      ok: true,
-      matched,
-      advancedAssignments: advancement.advancedAssignments,
-      advancedTaskSteps: advancement.advancedTaskSteps,
-      skips: advancement.skips,
+      ok: result != null,
+      matched: receipt.matchedRows === 1,
+      advancedAssignments: receipt.advancedAssignments ?? 0,
+      advancedTaskSteps: receipt.advancedTaskSteps ?? 0,
+      skips: receipt.skips ?? ['receipt:not_matched'],
+      receipt: result?.receipt ?? null,
     };
   }
 }

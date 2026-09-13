@@ -11,7 +11,7 @@
  * 每段内部保持服务端顺序；跨段去重（保留首次出现）。
  */
 import type { DecisionTrace, PlanAssignmentDiff, ReplanImpact } from '@shared/api.interface';
-import { decisionReasonLabel } from './decisionExplainVM';
+import { EXTRA_TRIGGER_LABELS, SCHEDULING_TRIGGER_LABELS, isCodeLikeReason, rejectReasonLabel } from '@shared/reject-reason';
 
 export interface TaskMoveResourceView {
   personId: string | null;
@@ -108,35 +108,30 @@ export function taskMoveExplainVM(input: TaskMoveExplainInput): TaskMoveExplainV
   };
 }
 
-/** 触发码表（SchedulingTrigger 枚举 + 常用码；纯映射，不推导因果）。 */
+/**
+ * 触发码表：唯一来源 `shared/reject-reason.ts`（`SCHEDULING_TRIGGER_LABELS`）。
+ * 保留该导出名以兼容既有引用；不再维护第二份文案。
+ */
 export const TASK_MOVE_TRIGGER_LABELS: Record<string, string> = {
-  MANUAL: '手动触发',
-  TASK_CREATED: '任务创建',
-  TASK_UPDATED: '任务更新',
-  PERSON_UNAVAILABLE: '人员不可用',
-  DEVICE_OFFLINE: '设备离线',
-  DEVICE_LOW_BATTERY: '设备低电量',
-  BOTTLENECK_DETECTED: '瓶颈检测',
-  DEADLINE_AT_RISK: '交期风险',
-  SAFETY_EVENT: '安全事件',
-  ZONE_RESTRICTED: '区域受限',
-  ROUTE_BLOCKED: '路线阻断',
-  ROUTE_CONGESTED: '路线拥塞',
-  RESERVATION_CONFLICT: '预占冲突',
-  CHURN: '分配搅动最小化',
+  ...SCHEDULING_TRIGGER_LABELS,
+  ...EXTRA_TRIGGER_LABELS,
 };
 
-/** 原因码 → 可读文案（先查触发码表，再回退 decisionReasonLabel 的约束/拒绝码表）。 */
+/**
+ * 原因码 → 可读文案（触发码 → 约束/拒绝码 → 未登记标记，全部来自共享词表）。
+ *
+ * 触发码可带实体后缀（如 `DEVICE_OFFLINE:D-1`）：取冒号前段匹配后拼回后缀，
+ * 保持"哪个实体"这一信息不丢（纯展示映射，不做因果推导）。
+ */
 export function taskMoveReasonLabel(reason: string): string {
-  const direct = TASK_MOVE_TRIGGER_LABELS[reason];
-  if (direct) return direct;
-  // 触发码可带实体后缀（如 'DEVICE_OFFLINE:D-1'），取冒号前段匹配（纯展示映射，非因果推导）。
-  const prefix = reason.split(':')[0];
-  if (prefix !== reason) {
-    const fromPrefix = TASK_MOVE_TRIGGER_LABELS[prefix] ?? decisionReasonLabel(prefix);
-    if (fromPrefix !== prefix) return fromPrefix;
-  }
-  const fallback = decisionReasonLabel(reason);
-  // decisionReasonLabel 未知时原样透传（未知码不伪造文案）。
-  return fallback === reason ? reason : fallback;
+  const direct = rejectReasonLabel(reason);
+  // 自由文本（如"负荷均衡：选中 P-Li"）已是给人读的说明 → 原样展示。
+  if (!isCodeLikeReason(reason)) return direct;
+  if (!direct.startsWith('未登记原因')) return direct;
+  const [prefix, ...rest] = reason.split(':');
+  if (rest.length === 0) return direct;
+  const head = rejectReasonLabel(prefix);
+  if (head.startsWith('未登记原因')) return direct;
+  // 保留实体后缀：现场需要知道"是哪台设备/哪条路线"，不能静默丢掉。
+  return `${head}（${rest.join(':')}）`;
 }

@@ -22,6 +22,8 @@ interface Mocks {
   chainInsertValues: jest.Mock;
   eventUpdateWhere: jest.Mock;
   chainUpdateWhere: jest.Mock;
+  /** NO-45a：原始 SQL（"旧审批是否还挂着待办提醒"的反查）。 */
+  execute: jest.Mock;
 }
 
 /**
@@ -102,6 +104,9 @@ function createDbMock(seed: {
       }
       throw new Error(`unexpected update table ${String(table)}`);
     }),
+    // NO-45a：`stepAction` 在审批通过时用一条原始 SQL 反查"同一对象、仍挂待办提醒"的旧审批。
+    // 这里返回空集（本 spec 不构造提醒数据）；真实行为由 e2e（approval-expiry-reminder）覆盖。
+    execute: jest.fn(async () => []),
     transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   } as never;
 
@@ -112,6 +117,7 @@ function createDbMock(seed: {
     chainInsertValues,
     eventUpdateWhere,
     chainUpdateWhere,
+    execute: (db as unknown as { execute: jest.Mock }).execute,
   };
 }
 
@@ -233,6 +239,39 @@ describe('R2-SMI-004：step/instance 双写同事务', () => {
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(mocks.chainUpdateWhere).toHaveBeenCalledTimes(1);
     expect(mocks.eventUpdateWhere).toHaveBeenCalledTimes(1);
+  });
+
+  /* ── NO-45a：审批通过 → 反查"同一对象、仍挂待办提醒"的旧审批（同事务）── */
+  it('stepAction 通过时反查旧审批的待办提醒（同事务内执行，不是事后补偿）', async () => {
+    const mocks = createDbMock();
+    const service = new ApprovalPersistenceService(mocks.db, createAuditMock() as never);
+
+    await service.stepAction(instanceId, 'step-1', 'approve', '同意', undefined, {
+      userId: 'safety-officer',
+      primaryOrgId: 'org-1',
+      roles: ['safety_admin'],
+    });
+
+    // 反查必须发生在同一事务里（否则会出现"新审批已生效但旧提醒没关"的半成品窗口）。
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    const sqlText = JSON.stringify(mocks.execute.mock.calls[0]?.[0] ?? {});
+    expect(sqlText).toContain('NTF-EXPR-%');
+    expect(sqlText).toContain('approval_instance');
+    expect(sqlText).toContain('resolution');
+  });
+
+  it('stepAction 驳回时不反查（驳回不产生授权，也就没有到期提醒要关）', async () => {
+    const mocks = createDbMock();
+    const service = new ApprovalPersistenceService(mocks.db, createAuditMock() as never);
+
+    await service.stepAction(instanceId, 'step-1', 'reject', '不行', undefined, {
+      userId: 'safety-officer',
+      primaryOrgId: 'org-1',
+      roles: ['safety_admin'],
+    });
+
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
 
   it('bypass：全部 step 跳过 + instance 置 bypassed 同事务', async () => {

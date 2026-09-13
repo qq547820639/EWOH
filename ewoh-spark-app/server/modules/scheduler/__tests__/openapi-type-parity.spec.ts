@@ -150,6 +150,8 @@ const executionUpdateRequestFixture = {
   deviationType: 'START_DELAY',
   deviationReason: 'handover delayed',
   triggerReplan: true,
+  reportedSource: 'manual_report',
+  note: 'operator note',
 } satisfies components['schemas']['ExecutionUpdateRequest'] & SharedExecutionUpdateRequest;
 
 const executionListResponseFixture = {

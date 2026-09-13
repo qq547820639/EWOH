@@ -148,6 +148,9 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
         progressed = true;
         const pool = await this.candidateEngine.buildCandidatePool(task, snapshot, {
           nowMs: now,
+          // R-6（2026-09-13）：透传本请求租户，让路径成本估算复用按租户分桶的路由图缓存
+          // （不透传则每候选一次全图 SELECT，见 candidate-engine 的同一注释）。
+          orgId: opts.orgId ?? null,
           // R2-SCH-002：变体策略透传（候选评分消费变体权重缩放）。
           policy,
           // R2-SCH-001：人员/设备占用顺延（booked 槽位推得的资源空闲时刻）。
@@ -189,6 +192,10 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
             rejectReasons: pool
               .slice(0, REJECTED_HARD_CAP)
               .flatMap((c) => c.rejectReasons),
+            // NO-15c：把候选层的**能力细节**带上方案（哪个能力、谁/何时/为何停用）。
+            // 只带拒绝原因键时，班组长在方案上只能看到"capability_disabled ×2"，
+            // 仍不知道是哪个能力、谁停的、为什么——那正是处置所需的全部信息。
+            capabilityNotes: this.collectCapabilityNotes(pool),
           });
           continue;
         }
@@ -260,6 +267,19 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
    * R2-SCH-001：booked 槽位 → 资源空闲时刻（resourceId → max end）。候选 startMs
    * 按占用顺延，与 heuristic 内联 earliestStart(raw, personFreeAt, deviceFreeAt) 同语义。
    */
+  /**
+   * 方案级能力说明聚合（NO-15c）。
+   *
+   * 从候选池收集能力相关细节（缺哪些能力、哪些被人停用及其留痕），去重后限量返回——
+   * 方案层不重复候选层的全部噪音，但**关键处置信息一条都不能少**。
+   */
+  private collectCapabilityNotes(pool: CandidateEvaluation[]): string[] {
+    const notes = pool
+      .slice(0, REJECTED_HARD_CAP)
+      .flatMap((c) => c.capabilityNotes ?? []);
+    return [...new Set(notes)].slice(0, REJECTED_HARD_CAP);
+  }
+
   private freeAtByResource<T extends { start: number; end: number }>(
     slots: T[],
     resourceIdOf: (slot: T) => string,

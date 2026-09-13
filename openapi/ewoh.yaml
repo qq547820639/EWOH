@@ -408,6 +408,19 @@ paths:
           description: Device model
           schema:
             type: string
+        - &ref_category
+          name: category
+          in: query
+          required: false
+          description: "Device category filter (device-category vocabulary): exoskeleton, environment_sensor, camera, location_tag, or unknown (rows with no category)."
+          schema:
+            type: string
+            enum:
+              - exoskeleton
+              - environment_sensor
+              - camera
+              - location_tag
+              - unknown
         - &ref_7
           name: orderby
           in: query
@@ -483,6 +496,223 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/device-responsibilities/coverage:
+    get:
+      tags:
+        - devices
+      summary: Responsibility coverage for a shift (NO-52a handover readiness)
+      description: >-
+        The question a shift handover must answer: for the incoming shift, which devices
+        have nobody responsible? Coverage counts a device as covered when it has a holder
+        for the given shift or an all-day holder; devices whose only holders belong to
+        *other* shifts are reported as gaps (with the reason per device). The check does
+        NOT require the holder to have a login account — that is a separate gap reported
+        by the alert-routing path (this endpoint answers "is anyone responsible", not
+        "can we reach them"). When the current shift cannot be resolved the response says
+        `shiftUnknown: true` instead of guessing a default shift.
+      parameters:
+        - in: query
+          name: shiftId
+          schema:
+            type: string
+          required: false
+          description: >-
+            Shift to check (omit = current shift; empty string = explicitly unknown shift).
+      responses:
+        '200':
+          description: Coverage snapshot (shiftId / totals / per-device gaps / notes)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/device-responsibilities:
+    get:
+      tags:
+        - devices
+      summary: Batch-read device responsibility assignments (NO-50a, tenant scoped)
+      description: >-
+        One request for a whole device-list page (avoids N+1). `deviceIds` is an optional
+        comma-separated list of business device ids; omitting it returns every active
+        assignment in the caller's tenant (capped). Tenant scope always comes from the
+        caller context — a caller can never read another tenant's assignments. This is
+        the fact the device ledger UI uses to show who would be alerted for a device.
+      parameters:
+        - in: query
+          name: deviceIds
+          schema:
+            type: string
+          required: false
+          description: Comma-separated business device ids (e.g. `EXO-1,ENV-2`)
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+            default: true
+          required: false
+      responses:
+        '200':
+          description: Responsibility rows (active by default)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/devices/{deviceId}/responsibilities:
+    get:
+      tags:
+        - devices
+      summary: List device responsibility assignments (NO-49a, tenant scoped)
+      description: >-
+        Who is responsible for this device (owner / operator / maintainer). This is the
+        fact that lets alerts be addressed to a person instead of broadcast to a role.
+        At most one active holder per (device, responsibility); history is kept by
+        deactivating the previous row. Readable by any authenticated field/management
+        role (coordination needs it); writes are restricted to workshop_lead /
+        safety_admin / global_admin.
+      parameters:
+        - in: path
+          name: deviceId
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+            default: true
+          required: false
+      responses:
+        '200':
+          description: Responsibility rows (active by default)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - devices
+      summary: Assign a device responsibility to a person (NO-49a)
+      description: >-
+        Same responsibility set twice for the same person is idempotent (no new history
+        row, no extra audit). Assigning a different person deactivates the previous
+        active row in the same transaction (history preserved). The device must exist in
+        this tenant's ledger (404 otherwise — the platform never invents shadow devices),
+        and a concurrent change is reported as 409 instead of silently creating two
+        active holders.
+      parameters:
+        - in: path
+          name: deviceId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                personId:
+                  type: string
+                  description: Canonical person identity (bare uuid and `person:<uuid>` are equivalent)
+                responsibility:
+                  type: string
+                  enum: [owner, operator, maintainer]
+                shiftId:
+                  type: string
+                  description: >-
+                    Shift this responsibility applies to (`ewoh_shift.shift_id`).
+                    Omit/empty = all-day responsibility (the fallback for every shift, NO-51a).
+                    Routing prefers the current shift's holder and falls back to the all-day
+                    holder; holders of *other* shifts are never alerted but are reported as
+                    gaps (`outOfShiftPersons`).
+                note: { type: string }
+              required:
+                - personId
+                - responsibility
+      responses:
+        '201':
+          description: Responsibility assigned (previous holder deactivated if any)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/devices/{deviceId}/responsibilities/{responsibility}:
+    delete:
+      tags:
+        - devices
+      summary: Release a device responsibility (NO-49a)
+      description: >-
+        Deactivates the current holder (history preserved, audit written). Returns 409
+        when there is no active holder — removing a responsibility nobody holds is not a
+        silent success.
+      parameters:
+        - in: path
+          name: deviceId
+          schema:
+            type: string
+          required: true
+        - in: path
+          name: responsibility
+          schema:
+            type: string
+            enum: [owner, operator, maintainer]
+          required: true
+        - in: query
+          name: shiftId
+          schema:
+            type: string
+          required: false
+          description: Shift of the responsibility to release (omit = the all-day one, NO-51a)
+      responses:
+        '200':
+          description: Responsibility released
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/devices/{id}/bindings:
     post:
       tags:
@@ -510,6 +740,51 @@ paths:
                 $ref: '#/components/schemas/DeviceBinding'
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/devices/{id}/capabilities/{capabilityKey}/status:
+    post:
+      tags:
+        - devices
+      summary: Disable or restore a device capability (human lifecycle action)
+      description: >
+        能力决定派工资格（requiredDeviceCapabilities 匹配）。停用立即从调度可见能力中移除；
+        恢复前按权威契约重新校验（词表外能力名拒绝恢复）。理由必填并写入审计；
+        幂等：状态未变化时 changed=false（不写库、不记审计）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 业务设备号（ewoh_device.device_id）
+          schema:
+            type: string
+        - name: capabilityKey
+          in: path
+          required: true
+          description: 能力名（如 observe.temperature）
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDeviceCapabilityStatusRequest'
+      responses:
+        '200':
+          description: 状态变更结果（幂等 no-op 时 changed=false）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetDeviceCapabilityStatusResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/dashboard/overview:
@@ -626,6 +901,7 @@ paths:
         - *ref_3
         - *ref_4
         - *ref_5
+        - *ref_category
         - *ref_6
         - *ref_7
         - name: firmwareVersion
@@ -3522,6 +3798,40 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/oee/andons/sla-sweep:
+    post:
+      tags:
+        - oee
+      summary: Escalate andons nobody has taken over (NO-48a, SLA breach sweep)
+      description: >-
+        Periodic/manual sweep that closes a real safety gap: the existing SLA escalation
+        only fires when someone acknowledges **late**. If a red andon stays `open` and
+        nobody touches it, nothing happens. This sweep escalates only those
+        never-taken-over andons past their SLA — level 1 (>1x SLA) notifies
+        workshop_lead + dispatcher, level 2 (>2x SLA) additionally notifies safety_admin.
+        It is read-only with respect to business facts (no status/evidence writes) but
+        writes deterministic, idempotent reminders plus an audit entry per escalation.
+        Missing/unparseable `openedAt` is reported as `undecidable` rather than being
+        treated as "not overdue". Workers scan tenants via the controlled SECURITY DEFINER
+        function `ewoh_open_andon_orgs` and then re-read per tenant under GUC.
+      responses:
+        '201':
+          description: >-
+            Sweep counters (scanned/openAndons/breached/undecidable/created/duplicates)
+            + per-andon escalations
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/oee/andons/{id}/state:
     post:
       tags:
@@ -4313,6 +4623,44 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/tasks/{id}/requirements:
+    patch:
+      tags:
+        - tasks
+      summary: Update task capability requirements (device / station capabilities)
+      description: >
+        能力要求决定该任务能被哪些资源承接（调度按 requiredDeviceCapabilities ⊆ device.capabilities
+        匹配），是执行边界的一部分。形状非法 400（不猜不截断）；能力名是开放词表——
+        未登记/当前无法匹配的名称**允许**写入，但响应会给出显式 warnings（否则会得到
+        "永远匹配不到资源"的任务而无从知晓）。变更留审计并触发重排。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 任务 id
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCapabilityRequirementsRequest'
+      responses:
+        '200':
+          description: 更新后的能力要求与提示
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCapabilityRequirementsResult'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/tasks/{id}/state:
     post:
       tags:
@@ -4545,6 +4893,68 @@ paths:
           $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/approvals/authorizations/expiry-sweep:
+    post:
+      tags:
+        - approvals
+      summary: "Sweep execution-boundary authorizations and raise expiry reminders (NO-30a)"
+      description: >-
+        Creates idempotent in-app notifications for authorizations that are about to expire
+        (remaining <= 2h) or have recently expired (within 24h), addressed to the
+        safety_admin role. Notification ids are derived from (approvalId, bucket, channel),
+        so repeated sweeps never duplicate reminders. The sweep is read-only with respect to
+        authorization state. The same implementation runs on a periodic worker.
+        NO-45a: when an authorization has actually expired, the "about to expire, act now"
+        reminder loses its premise and is closed (`resolution=approval_expired`) in the same
+        sweep, while the "already expired, re-apply" reminder stays pending — the two carry
+        different meanings and are never closed together. `resolved` reports how many urging
+        reminders were closed by this run.
+      responses:
+        '200':
+          description: >-
+            Sweep counters (scanned/expiringSoon/expired/created/duplicates/resolved) +
+            per-approval notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/approvals/authorizations:
+    get:
+      tags:
+        - approvals
+      summary: "Execution-boundary authorizations with validity and usage (NO-24a)"
+      description: >-
+        Capability-change approvals (task relaxation / device restore) with the tenant's
+        approved-at / expires-at / expired flag (24h validity) and the per-object usage
+        records that consumed them. Expired authorizations remain listed and are marked
+        unusable instead of disappearing.
+      responses:
+        '200':
+          description: Authorization rows (approvalId/status/approvedAt/expiresAt/expired/remainingMs/subject/usage)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/approvals/pending:
     get:
       tags:
@@ -4728,6 +5138,112 @@ paths:
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/control/requests:
+    get:
+      tags:
+        - control
+      summary: Device execution boundary (human read surface, NO-66a)
+      description: >
+        现场读面：一台设备的控制命令现在处于什么状态、为什么。平台此前只把这个事实
+        开给网关（机器身份 `pending`），现场问"这台设备为什么不动"只能翻库。
+        逐条返回投递态（待投递 / **排队（设备忙，一车一活）** / 已投递未回执 / 终态）、
+        授权指纹方案与**是否复核通过**（两件事分开）、投递确认与执行回执事实、
+        以及违规留痕（`delivery_rejected` / `authorization_violation`——安全事件不与
+        "执行失败"混为一谈）。只读；租户与角色收敛（dispatcher/workshop_lead/safety_admin/device_ops）。
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        '200':
+          description: Device execution boundary snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, commands, summary, checkedAt]
+                properties:
+                  deviceId: { type: string }
+                  checkedAt: { type: string }
+                  summary:
+                    type: object
+                    properties:
+                      inFlight: { type: integer }
+                      queued: { type: integer }
+                      awaitingDelivery: { type: integer }
+                      revoked: { type: integer }
+                      busyBlocker:
+                        type: string
+                        nullable: true
+                        description: 占用设备的在飞命令 `<commandKey>:<commandId>`；null = 设备空闲
+                      quota:
+                        type: object
+                        description: NO-67b 投递配额现状（与 pending 读面同一计量口径：delivered_at + 60s 窗口）
+                        properties:
+                          perMinute: { type: integer }
+                          usedInWindow: { type: integer }
+                          remaining: { type: integer, nullable: true }
+                  commands:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        commandId: { type: string }
+                        requestId: { type: string }
+                        commandKey: { type: string }
+                        attemptNo: { type: integer }
+                        status: { type: string }
+                        deliveryState:
+                          type: string
+                          description: awaiting_delivery | queued_device_busy | gateway_received | executed | failed | revoked | expired
+                        deliveryNote: { type: string, nullable: true }
+                        sentAt: { type: string, nullable: true }
+                        deliveredAt:
+                          type: string
+                          nullable: true
+                          description: >
+                            NO-67b：平台把命令交给网关的时刻（投递路径唯一写入点）。
+                            NULL = 从未交付。与 `authorizationVerifiedAt`（授权复核通过，下发前也会写）
+                            是两个事实——"下发 ≠ 交付"。
+                        responseAt: { type: string, nullable: true }
+                        revokedReason: { type: string, nullable: true }
+                        revokedReasonLabel: { type: string, nullable: true }
+                        fingerprintScheme: { type: string, enum: [hmac-sha256:v2, fnv1a64:v1, none] }
+                        fingerprintVerified: { type: boolean }
+                        executable: { type: boolean }
+                        ack:
+                          type: object
+                          nullable: true
+                          properties:
+                            delivered: { type: boolean }
+                            reason: { type: string, nullable: true }
+                            at: { type: string, nullable: true }
+                        receipt:
+                          type: object
+                          nullable: true
+                          properties:
+                            result: { type: string, nullable: true }
+                            at: { type: string, nullable: true }
+                        violations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              resultType: { type: string }
+                              resultCode: { type: string, nullable: true }
+                              at: { type: string, nullable: true }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
     post:
       tags:
         - control
@@ -4876,6 +5392,57 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         NotFound:
           $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/delivery-backlog/sweep:
+    post:
+      tags:
+        - control
+      summary: Sweep control commands stuck in delivery backlog
+      description: >
+        NO-68a：把"命令下发后迟迟没投到设备"变成一条叫到人的提醒。
+        扫本租户内 `status=sent` 且 `delivered_at is null` 且下发已超过投递 SLA
+        （`EWOH_CONTROL_DELIVERY_SLA_MS`，默认 5 分钟）的命令，按设备聚合成
+        确定性 notificationId 的提醒（收件人 dispatcher / workshop_lead / device_ops，
+        重复扫描只累加 `duplicates`），并写 `control.delivery_backlog_sweep` 审计。
+        **只读命令与设备事实**：不改状态、不代替人投递、不撤销任何命令。
+        同一实现由定时 worker 复跑（`CONTROL_BACKLOG_WORKER_INTERVAL_MS`，默认 10 分钟，
+        `CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）；本端点供值班角色在排障时手动触发，
+        不必等下一个周期。跨设备/跨 request 的租户级操作，故挂在 `api/control` 而非
+        某条 request 之下（对齐 `/api/perception/fusion/sweep` 等同类巡检）。
+      responses:
+        '201':
+          description: Sweep result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scanned:
+                    type: integer
+                    description: 扫描到的超 SLA 未交付命令数
+                  devicesWithBacklog:
+                    type: integer
+                    description: 存在投递积压的设备数
+                  created:
+                    type: integer
+                    description: 本次新建的提醒数
+                  duplicates:
+                    type: integer
+                    description: 幂等命中的已存在提醒数
+                  slaMs:
+                    type: integer
+                    description: 当前投递 SLA（毫秒）
+                  notificationIds:
+                    type: array
+                    items:
+                      type: string
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/ai/snapshot-version:
@@ -5669,6 +6236,54 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/plans/{planId}/staleness:
+    get:
+      tags:
+        - scheduler
+      summary: Explain whether a plan is stale and what changed (NO-62c)
+      description: >
+        Read-only diagnosis with the SAME implementation the approve path uses when it rejects with 409 PLAN_STALE.
+        Returns per-entity version/reservation differences, separating external changes from changes the plan itself
+        caused (already dispatched assignments / created reservations), so the approver learns what changed instead of
+        only that the plan is stale. `snapshotFound=false` means the bound snapshot row is gone: differences cannot be
+        computed (never reported as fresh).
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  planId:
+                    type: string
+                  status:
+                    type: string
+                  version:
+                    type: integer
+                  snapshotVersion:
+                    type: string
+                  stale:
+                    type: boolean
+                  replanAvailable:
+                    type: boolean
+                  checkedAt:
+                    type: string
+                    format: date-time
+                  staleness:
+                    $ref: '#/components/schemas/PlanStalenessReport'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/scheduler/plans/{planId}/constraints:
     get:
       tags:
@@ -5775,13 +6390,32 @@ paths:
     post:
       tags:
         - scheduler
-      summary: Dispatch schedule plan (V2)
+      summary: Dispatch schedule plan (V2) — supports partial dispatch (wave)
+      description: >
+        派工。body 省略或 assignmentIds 为空 → 派发全部待派工 assignment（原有行为）。
+        提供 assignmentIds → 只派发这一波（部分执行）。波内全有或全无：出现任何
+        不可派工项即拒绝整波（409 DISPATCH_WAVE_INVALID），不做半应用。
+        计划状态语义：仅当本波覆盖全部待派工 assignment 时才进入契约终态
+        `dispatched`（其含义是"全部转任务"）；否则保持 `approved`，并通过
+        响应的 dispatch.remainingAssignmentIds 显式暴露剩余。把部分派工写成
+        dispatched 会让半成品方案看起来已终结。
       parameters:
         - name: planId
           in: path
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assignmentIds:
+                  type: array
+                  description: 本波要派发的 assignment ID；省略表示整单派工。
+                  items: { type: string }
       responses:
         '200':
           description: Successful response
@@ -6028,6 +6662,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/predictions/task-duration/samples:
+    get:
+      tags:
+        - scheduler
+      summary: Training-sample eligibility summary for the empirical duration model
+      description: >
+        训练样本资格摘要。按稳定枚举原因给出可解释计数，并区分两级资格：
+        行级标记（receipt_source='real' + production_training_eligible + provenance_json）
+        与**独立设备回执证据**（provenance.independentReceipt.policy='persisted-device-receipt-v1'）。
+        只有两级都通过的行才计入 trainable；人工上报与模拟回执永久排除在训练集之外。
+        因此 flaggedEligible 可能大于 trainable——该差额即"有标记但缺设备证据"。
+        资格判定与训练加载共用同一纯函数（training-sample-eligibility.ts），
+        避免"界面说可训练 N 条、训练报样本不足"的两套口径。
+      responses:
+        '200':
+          description: Eligibility summary (tenant scoped)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orgId, trainable, minSamplesRequired, eligibilityPolicy]
+                properties:
+                  orgId: { type: string }
+                  sampleLimit: { type: number, description: 参与统计的反馈行上限 }
+                  totalFeedbackRows: { type: number }
+                  flaggedEligible: { type: number, description: 通过行级标记的行数（不等于可训练数） }
+                  trainable: { type: number, description: 训练实际可用样本数 }
+                  minSamplesRequired: { type: number }
+                  fullyTrained: { type: boolean }
+                  rejected:
+                    type: object
+                    additionalProperties: { type: number }
+                    description: 按拒绝原因计数的排除明细（稳定枚举键）
+                  rejectedLabels:
+                    type: object
+                    additionalProperties: { type: string }
+                  eligibilityPolicy:
+                    type: string
+                    enum: [independent-device-receipt-required]
+        '400':
+          description: 缺少租户上下文或训练模块未装配
   /api/scheduler/predictions/task-duration/retrain:
     post:
       tags:
@@ -6048,6 +6723,26 @@ paths:
                   version: { type: string }
                   n: { type: number }
                   medianMs: { type: number }
+                  lineage:
+                    type: object
+                    description: >
+                      谱系（lineage）：新模型版本由哪些样本、按什么资格策略产生。
+                      没有它就无法回答"这个模型是怎么来的"，而时长模型会影响排程预测。
+                    properties:
+                      trainedFrom: { type: string }
+                      eligibilityPolicy: { type: string }
+                      trainableSamples: { type: number, nullable: true }
+                      flaggedEligible: { type: number, nullable: true }
+                      minSamplesRequired: { type: number, nullable: true }
+                      perTaskType:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            taskType: { type: string }
+                            ok: { type: boolean }
+                            version: { type: string, nullable: true }
+                            notEnoughDataReason: { type: string, nullable: true }
                   p90Ms: { type: number }
         BadRequest:
           $ref: '#/components/responses/BadRequest'
@@ -6926,6 +7621,124 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/ingest/actuator:
+    post:
+      tags:
+        - ingest
+      summary: Ingest actuator (AGV/PLC) state frame (NO-59b)
+      description: >
+        执行机构状态帧上行（边缘 `actuator` 适配器 → 世界状态实体行 `state_json.actuator`
+        + 设备/能力登记）。fail-closed：`state` 必须在封闭词表
+        （idle/moving/arrived/paused/fault/offline）内，否则 400 并回显词表；
+        缺租户上下文或时间戳超前（时钟漂移）一律拒绝，不写半条事实；
+        同 `record_id` 重放幂等跳过（边缘 at-least-once）。
+      security: *ref_8
+      parameters: *ref_ingest_org
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActuatorFrameDto'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        TooManyRequests:
+          $ref: '#/components/responses/TooManyRequests'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/ingest/execution-facts:
+    post:
+      tags:
+        - ingest
+      summary: Ingest device-measured execution fact (sole writer of source=device_receipt)
+      description: >
+        设备执行事实接入 —— **`device_receipt` 来源的唯一写入方**。
+        `execution-receipt-provenance` 的资格判定要求持久化执行行 `source='device_receipt'`，
+        而此前**全仓没有任何写入方产出该值**（HTTP 回执路径只可能写 simulated/manual_report），
+        所以 `real` 分支不可达、现场回执永远无法成为生产训练样本。本端点补上这条合法路径：
+        由**机器身份**（X-Ingest-Key）上报设备自己测得的执行时间。
+
+        安全边界（逐条有测试锁定）：
+        (1) **只接受带 org 绑定的 ingest key** —— legacy 无绑定模式（org 由客户端 X-Org-Id 自报）
+        一律 403 `DEVICE_FACT_REQUIRES_BOUND_KEY`，否则任何持无绑定 key 者可声称任意租户并产出
+        "看起来合法"的训练数据；(2) **设备只能报自己的活** —— 执行行已记录的 deviceId 必须非空
+        且等于上报 deviceId，否则 403；(3) **不创建计划** —— 按 (orgId, assignmentId) 解析既有执行行，
+        不存在则 404；(4) **时间必须是设备测得值** —— `actualStartAt` 必填、`COMPLETED` 必须带
+        `actualEndAt` 且不早于 start，服务端**不**从 now() 兜底；(5) **不推进任务状态** ——
+        本端点只写执行事实，任务/方案状态推进仍由既有回执应用服务负责。
+
+        即便写入成功也**不自动可训练**：`receiptProvenance` 仍要求 task.source=real、
+        device.sourceType=real、方案非 shadow、审批人 ≠ 生成人、且 plan.confirmedAt ≤
+        execution.actualStartAt。模拟与联调环境因此无法获得训练样本（设计意图）。
+      security: *ref_8
+      parameters: *ref_ingest_org
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId, assignmentId, actualStartAt, status]
+              properties:
+                deviceId:
+                  type: string
+                  description: 上报设备（必须与该执行行已记录的 deviceId 一致）
+                assignmentId:
+                  type: string
+                  description: 执行行定位键（设备事实附到既有执行行，不新建）
+                actualStartAt:
+                  type: string
+                  format: date-time
+                  description: 设备测得的实际开始时间（服务端不代填）
+                actualEndAt:
+                  type: string
+                  format: date-time
+                  description: 设备测得的实际结束时间（status=COMPLETED 时必填）
+                status:
+                  type: string
+                  enum: [STARTED, COMPLETED]
+                metrics:
+                  type: object
+                  additionalProperties: true
+                  description: 设备侧附加测量（原样留存供溯源，不参与资格判定）
+      responses:
+        '201':
+          description: 设备事实已记录
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  executionId: { type: string }
+                  assignmentId: { type: string }
+                  deviceId: { type: string }
+                  status: { type: string }
+                  source:
+                    type: string
+                    description: 恒为 device_receipt（本端点唯一值）
+                  actualStartAt: { type: string, format: date-time }
+                  actualEndAt: { type: string, format: date-time, nullable: true }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        TooManyRequests:
+          $ref: '#/components/responses/TooManyRequests'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/ingest/events:
     post:
       tags:
@@ -7540,6 +8353,142 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/materials/inventory:
+    get:
+      tags:
+        - approvals
+      summary: "Projected material inventory from ERP outbound movements (NO-27a)"
+      description: >-
+        Inventory is projected from authoritative material movements (inventory_receipt
+        adds, material_consumption subtracts) recorded on ERP outbound events. Response
+        includes per-material balances with evidence event ids, materials that cannot be
+        judged (no declared reorder point / mixed units) and legacy unparsable payloads.
+      responses:
+        '200':
+          description: Material balances + unparsable movements + scan counters
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/materials/movement-types:
+    get:
+      tags:
+        - approvals
+      summary: "Material movement type registry (NO-27a)"
+      responses:
+        '200':
+          description: Closed registry of movement types that participate in the inventory projection
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/master-data/capabilities/import:
+    post:
+      tags:
+        - approvals
+      summary: "Import device capability master data from ERP/MES/WMS (NO-26a)"
+      description: >-
+        Controlled batch entry for externally maintained capability lists. Unknown sources,
+        unknown capability names (with typo suggestion), unknown devices and human-disabled
+        capabilities are rejected/skipped row by row; fieldMap maps external column names;
+        ?dryRun=1 previews the outcome without writing. Every run (including previews) is audited.
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          description: When truthy (1/true/yes) the import is evaluated but nothing is written.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: Per-row import outcome (applied/updated/unchanged/skipped_*) with totals and warnings
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reasoning/evaluate-live:
+    post:
+      tags:
+        - reasoning
+      summary: "Evaluate rules against the live world model (NO-25a observation projection)"
+      description: >-
+        Builds reasoning facts from the authoritative world-state snapshot plus the tenant's
+        recent environment readings (observation capabilities), then runs the same
+        deterministic rule engine and L4 ledger path as /api/reasoning/evaluate.
+        The response also returns the evidence behind each fact (value/threshold/observedAt/
+        dataQuality/sourceType) and the readings that were NOT used (skipped + reason).
+      responses:
+        '201':
+          description: Reasoning trace + inference ids + facts + evidence + skipped readings
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/reasoning/live-facts:
+    get:
+      tags:
+        - reasoning
+      summary: "Read-only projection of live reasoning facts (NO-25a)"
+      description: >-
+        Same projection as evaluate-live without rule evaluation or ledger writes —
+        the explainability/debug surface for "what can the world model currently deduce".
+      responses:
+        '200':
+          description: Facts + evidence + skipped readings + effective thresholds
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/reasoning/rules:
     get:
       tags:
@@ -7725,6 +8674,750 @@ paths:
                   additionalProperties: true
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/thresholds:
+    get:
+      tags:
+        - learning
+      summary: "Current rule-threshold baseline (effective value + provenance + read time; read-only)"
+      responses:
+        '200':
+          description: >-
+            Per rule/parameter baseline: engine default, currently effective value,
+            its source (approved proposal override or engine constant), the approving
+            proposal's provenance, and pending/history counts. Read-only: never
+            activates anything.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningThresholdBaseline'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/world/order-chains:
+    get:
+      tags:
+        - world
+      summary: Order → task/step → material chain view with explicit gaps (NO-57a)
+      description: >
+        把"订单 → 任务/工序 → 物料"在同一次读取里组装出来：订单=未完工 `ERP_ORDER` 事件；
+        任务=`ewoh_schedule_task`（MES 建单时 `schedule_task_id = 订单号`，这条链一直存在）；
+        工序=`ewoh_schedule_task_step`（工序总数/未完成数）；物料=MRP 缺口行（含证据订单号）。
+        **断链显式**：`task_link_missing` / `steps_missing` / `material_link_missing` / `due_at_missing`
+        逐单返回（原则 7），排序为逾期优先 → 期限升序 → 订单号。
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+        - name: orderNo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Order chains + summary (overdue/gaps/materials in shortage/open steps)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderChainResult' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/scheduler/planned-vs-actual:
+    get:
+      tags:
+        - scheduler
+      summary: Planned vs actual reconciliation over execution facts (NO-57b)
+      description: >
+        读 `ewoh_scheduling_execution`（计划/实际时间戳 + 偏差类型）给出**可复盘口径**：
+        可比覆盖率、绝对偏差的中位/均值/P90、超时/提前/准时计数、不可比行按原因分类
+        （缺计划/缺实际/计划为 0/未完工）、偏差类型分布。**样本不足（可比 < 5）不给比率**
+        （字段为 null + notes 说明），缺失不当 0；读取触顶时显式说明"不是全体"。
+      parameters:
+        - name: windowDays
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 2000, default: 500 }
+      responses:
+        '200':
+          description: Reconciliation summary (rates are null when sample is insufficient)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlannedVsActualSummary' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/perception/fusion:
+    get:
+      tags:
+        - perception
+      summary: Latest multi-source perception fusion snapshots (NO-56a, §5)
+      description: >
+        多源（UWB 定位 / 外骨骼 IMU / 视觉检测 / 工位语义 / 任务上下文）融合后的
+        主体状态快照：一致性、冲突、可解释加权置信度、被排除证据与规则留痕。
+        **默认每个主体取最新一条**。`strongAdviceAllowed=false` 表示上游不得据此生成强建议
+        （低置信度或存在冲突，§5 规则 5）。
+      parameters:
+        - name: subjectId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: agreement
+          in: query
+          required: false
+          schema: { type: string, enum: [consistent, partial, conflict, insufficient] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        '200':
+          description: Latest fusion snapshot per subject
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PerceptionFusion' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/perception/fusion/sweep:
+    post:
+      tags:
+        - perception
+      summary: Fuse multi-source observations for the window (idempotent, read-only w.r.t. facts)
+      description: >
+        读窗口内的真实观测（`ewoh_world_state` 定位行 / `ewoh_telemetry` 外骨骼行 /
+        相机 person 检测行）与上下文（工位实体、在飞任务），按 §5 五条规则融合并落快照。
+        **只读感知事实**，只写快照与 `perception.fusion_sweep` 审计；快照号确定性
+        （主体 + 窗口桶）→ 重复扫描幂等。视觉检测的 track 未绑定到主体时如实计数
+        （不按"最像的人"分配）；坐标超出工位半径即"工位未知"（不猜最近工位）。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                windowMinutes: { type: integer, minimum: 1, maximum: 1440, default: 5 }
+                bucketMinutes: { type: integer, minimum: 1, maximum: 1440, default: 5 }
+      responses:
+        '201':
+          description: Sweep result (subjects/persisted/byAgreement/byConfidenceLevel/conflicts/notes)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerceptionSweepResult' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/commands/pending:
+    get:
+      tags:
+        - control
+      summary: Pending control commands for an edge gateway (NO-60a, poll-based downlink)
+      description: >
+        边缘网关轮询待投递命令（机器对机器；`X-Ingest-Key` 鉴权 + key→org 绑定）。
+        只返回本租户 + 目标设备匹配 + 命令状态 `sent`（尚未被网关接收）+ 请求行非终态的命令。
+        每条命令带**平台签发的授权号** `control:<requestId>`——高危命令在边缘侧的授权闸门
+        由此满足，且授权号可回溯到真实审批过的请求。只读：不改变任何状态。
+      security:
+        - IngestKey: []
+      parameters:
+        - name: deviceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Pending commands for the device (each carries authorizationRef + payload)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, commands]
+                properties:
+                  deviceId: { type: string }
+                  commands:
+                    type: array
+                    items:
+                      type: object
+                      required: [commandId, requestId, commandKey, attemptNo, authorizationRef]
+                      properties:
+                        commandId: { type: string }
+                        requestId: { type: string }
+                        commandKey: { type: string }
+                        attemptNo: { type: integer }
+                        authorizationRef: { type: string, description: 平台签发：`control:<requestId>` }
+                        authorizationFingerprint:
+                          type: string
+                          description: >
+                            NO-62a/65a 授权范围指纹。配置了 `EWOH_CONTROL_FINGERPRINT_SECRET` 时为
+                            `hmac-sha256:v2:<32hex>`（边缘持同一密钥可验签，验不过不碰设备）；
+                            未配置时为 `fnv1a64:v1` 一致性指纹（启动会告警）。
+                        authorizationScope:
+                          type: object
+                          description: >
+                            NO-65a：**可重建的授权范围**（边缘据此重算签名材料）。
+                            缺了它边缘无法验证签名，只能盲信指纹。
+                          properties:
+                            requestId: { type: string }
+                            deviceId: { type: string }
+                            commandKey: { type: string }
+                            approvalInstanceId: { type: string, nullable: true }
+                        priority: { type: integer, description: NO-62b 投递优先级（越小越先；stop=0） }
+                        priorityLabel: { type: string }
+                        payload: { type: object, nullable: true }
+                        sentAt: { type: string, nullable: true }
+                        orgId: { type: string, nullable: true }
+                  queued: { type: integer, description: 本设备待投递积压（本轮可见范围内） }
+                  revoked: { type: integer, description: 本轮因授权复核未通过被撤回的命令数 }
+                  deferred:
+                    type: array
+                    description: >
+                      NO-65b：本轮因设备仍在执行上一条运动命令（`gateway_received`）而**暂缓投递**
+                      的命令。暂缓 ≠ 失败：命令保持 `sent`，设备空下来后下一轮照常投递；
+                      安全动作（stop/pause/return_to_dock/clear_fault）永不暂缓。
+                    items:
+                      type: object
+                      properties:
+                        commandId: { type: string }
+                        commandKey: { type: string }
+                        reason:
+                          type: string
+                          enum: [device_busy, quota]
+                          description: device_busy = 一车一活；quota = 本分钟投递配额用尽（均非失败）
+                        blockedBy: { type: string, description: 占用设备的在飞命令 `<commandKey>:<commandId>` }
+                  quota:
+                    type: object
+                    description: >
+                      NO-67b 单设备投递配额（每分钟）。`usedInWindow` = 本轮开始前窗口内已投递条数；
+                      `remaining` = 本轮还能投几条（null = 不限，0 = 已用尽 → 后续普通命令排队到下一分钟）。
+                      安全动作（stop）永不受配额约束，也不占配额。
+                    properties:
+                      perMinute: { type: integer }
+                      usedInWindow: { type: integer }
+                      remaining: { type: integer, nullable: true }
+                  oldestSentAt: { type: string, nullable: true }
+                  truncated: { type: boolean }
+                  checkedAt: { type: string }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        TooManyRequests:
+          $ref: '#/components/responses/TooManyRequests'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/commands/{commandId}/receipt:
+    post:
+      tags:
+        - control
+      summary: Edge gateway execution receipt by commandId (executed | failed)
+      description: >
+        机器身份（边缘网关，`X-Ingest-Key`）按 `commandId` 回执执行结果——人面回执路径
+        （`POST /api/control/requests/:id/receipts`）要 Bearer 用户令牌，边缘网关没有也不该持有
+        （NO-60a 实测：只用服务端密钥会 401，命令停在 `gateway_received`、执行结果丢失）。
+        本端点按 commandId 定位请求与命令键，**复用同一套校验与落库**
+        （终态/重复回执/租户/`ewoh_control_result`），不另写一份。
+      security:
+        - IngestKey: []
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { type: string, enum: [executed, failed] }
+                receipt: { type: object, description: 执行细节（设备状态/适配器判定/时间等） }
+      responses:
+        '201':
+          description: Receipt recorded (command/request status updated, control_result row written)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ControlRequest' }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/commands/{commandId}/ack:
+    post:
+      tags:
+        - control
+      summary: Edge gateway delivery acknowledgement (pending_gateway → gateway_received | failed)
+      description: >
+        投递确认（状态机 `contracts/state-machines/control.yaml`）。`delivered=true` →
+        `gateway_received`；`delivered=false` **必须给原因** → `failed`（否则平台只知道
+        "没送到"、不知道为什么）。幂等：已确认过同一命令 → 返回当前状态 +
+        `alreadyAcked=true`（边缘 at-least-once），不重复写结果行；已进入终态 → 409。
+        无论接受还是拒绝都写 `ewoh_control_result`（resultType=gateway_ack）与审计。
+      security:
+        - IngestKey: []
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delivered]
+              properties:
+                delivered: { type: boolean }
+                reason: { type: string, description: delivered=false 时必填（投递失败原因） }
+                details: { type: object }
+      responses:
+        '201':
+          description: Acknowledgement recorded (gateway_received / failed / alreadyAcked)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commandId, status, alreadyAcked, requestId]
+                properties:
+                  commandId: { type: string }
+                  status: { type: string }
+                  alreadyAcked: { type: boolean }
+                  requestId: { type: string }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions:
+    get:
+      tags:
+        - learning
+      summary: List improvement actions derived from published retrospectives (NO-55a)
+      description: >
+        改进行动项 = 复盘经验条目/缺口 → **有人负责、有期限、有验收判据、有完成证据**的工作项。
+        与阈值提案（可激活的参数变更）并列：行动项改"做法"，提案改"参数"。
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [proposed, accepted, rejected, completed, dropped] }
+        - name: priority
+          in: query
+          required: false
+          schema: { type: string, enum: [low, medium, high] }
+        - name: owner
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Actions (org-scoped, earliest due first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ImprovementAction' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/scan:
+    post:
+      tags:
+        - learning
+      summary: Derive/refresh improvement actions from published retrospectives (idempotent, read-only)
+      description: >
+        扫**已发布复盘**的结构化经验条目（severity=warning|critical）与缺口清单，派生行动项候选。
+        幂等：行动项号确定性，重复扫描只刷新来源事实（标题/详情/优先级/证据），
+        **不覆盖人的决定**（已接受的责任/期限/完成痕迹、已拒绝/放弃的理由原样保留）。
+        只读复盘记录，只写行动项与 `learning.action_scan` 审计。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retrospectiveIds:
+                  type: array
+                  maxItems: 20
+                  description: 聚焦扫描：只扫指定复盘（不传则扫最近 100 篇已发布复盘）
+                  items: { type: string }
+      responses:
+        '201':
+          description: Scan result (created/refreshed/decisionsPreserved/rejected + 读了什么)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImprovementScanResult' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/overdue:
+    get:
+      tags:
+        - learning
+      summary: Overdue improvement actions (accepted + past due), earliest due first
+      responses:
+        '200':
+          description: Overdue actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ImprovementAction' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/overdue-sweep:
+    post:
+      tags:
+        - learning
+      summary: Notify owners and workshop leads about overdue improvement actions (NO-56b)
+      description: >
+        逾期待办**主动叫人**：收件人 = 负责人账号（经受控函数从 person 反查，
+        查不到就如实进 `unresolvedOwners`）+ 班组长角色兜底；通知号确定性
+        （`NTF-ACT-<行动项号>-action_overdue-<role|user>-<收件人>-<渠道>`）→ 重复扫描只累加 duplicates。
+        **只读行动项**：不改状态、不代替人完成，只写提醒与 `learning.action_overdue_sweep` 审计。
+        完成/放弃/拒绝时按前缀把提醒落到终态（`action_completed` / `action_dropped`，与主事实同事务）。
+      responses:
+        '201':
+          description: Sweep result (scanned/created/duplicates/notified/unresolvedOwners)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orgId: { type: string }
+                  scanned: { type: integer }
+                  created: { type: integer }
+                  duplicates: { type: integer }
+                  notified:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actionId: { type: string }
+                        recipients: { type: array, items: { type: string } }
+                  unresolvedOwners: { type: array, items: { type: string } }
+                  generatedAt: { type: string, format: date-time }
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/{actionId}/accept:
+    post:
+      tags:
+        - learning
+      summary: Human accepts an action (owner + due date + acceptance criteria are mandatory)
+      description: >
+        平台不替现场承诺期限：负责人、期限、验收判据三项必填；同时可纠正建议类型
+        （`kindSource` 变 `human`）。状态不对（已接受/已拒绝等）→ 409；缺事实 → 400。
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner, dueAt, acceptanceCriteria]
+              properties:
+                owner: { type: string, description: 负责人（人或角色） }
+                dueAt: { type: string, format: date-time }
+                acceptanceCriteria: { type: string, description: 让别人能判断"做完了没有" }
+                kind:
+                  type: string
+                  enum: [process_change, training, tooling, maintenance, threshold_review]
+      responses:
+        '201':
+          description: Accepted action (owner/due/criteria/acceptedBy/acceptedAt recorded)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImprovementAction' }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/{actionId}/complete:
+    post:
+      tags:
+        - learning
+      summary: Human marks an accepted action complete (outcome note mandatory)
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcomeNote]
+              properties:
+                outcomeNote: { type: string, description: 对着验收判据说清楚做了什么、结果如何 }
+      responses:
+        '201':
+          description: Completed action (completedBy/completedAt/outcomeNote recorded)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImprovementAction' }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/{actionId}/effect:
+    get:
+      tags:
+        - learning
+      summary: Recurrence metric for an improvement action (before/after deviation counts; NO-58a)
+      description: >
+        复发度量：该行动项的**对象归属**（device/person/station，由复盘 incident `target_id` 派生）
+        在"完成前后各一个窗口"内的执行偏差计数。诚实边界：
+        ① 没有对象归属 → `conclusion=no_subject`（复发**不可度量**，不硬算）；
+        ② 尚未完成 → 只给"完成前"计数（`not_completed`）；
+        ③ 合计样本 < 3 → `insufficient_sample`（不给趋势结论）；
+        ④ 计数下降/未下降只是**事实**，不等于"这条改进有效"（订单结构/季节变化同样影响）。
+        只读：不改任何事实、不写通知。
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: windowDays
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 180, default: 30 }
+      responses:
+        '200':
+          description: Recurrence metric (counts + explicit conclusion and reason)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImprovementActionEffect' }
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/actions/{actionId}/decision:
+    post:
+      tags:
+        - learning
+      summary: Human rejects (proposed) or drops (accepted) an action with a mandatory reason
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision: { type: string, enum: [rejected, dropped] }
+                reason: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Action rejected/dropped (decidedBy/decidedAt/decidedReason recorded)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImprovementAction' }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/signals:
+    get:
+      tags:
+        - learning
+      summary: List run-memory learning signals for the current tenant (NO-54a)
+      description: >
+        运行记忆信号 = 提醒治理（处置率/账龄）、数据质量积压、执行偏差复发的**实测快照**
+        加上证据引用、样本量、可信度与方向。信号**不是提案**：只有
+        POST /api/learning/signals/{signalId}/promote 才会创建学习提案。
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [notification_fatigue, data_quality_backlog, deviation_repeat]
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [open, promoted, dismissed] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Signals (org-scoped, newest seen first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LearningSignal' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/signals/scan:
+    post:
+      tags:
+        - learning
+      summary: Derive/refresh learning signals from run memory (idempotent, read-only w.r.t. facts)
+      description: >
+        扫描提醒治理指标、数据质量积压与执行偏差复发，派生带证据的信号。幂等：
+        同一窗口重复扫描只刷新实测快照（`last_seen_at`），**不覆盖人的决定**
+        （promoted/dismissed 原样保留）；条件恶化（严重度升级）会生成新的信号号。
+        边界：只读业务事实（不改告警/偏差/提醒），只写信号与审计；样本不足的信号
+        `confidence=null` 且 `actionable=null`（原则 7）。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                windowDays: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Scan result (created/refreshed/decisionsPreserved/rejected + memory read counts)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningSignalScanResult' }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/signals/{signalId}/promote:
+    post:
+      tags:
+        - learning
+      summary: Human turns an actionable signal into a learning proposal (target value supplied by the human)
+      description: >
+        人点"生成提案"：目标阈值由**人**填写（平台只给方向 raise/lower 与依据，不替现场定数值）。
+        服务端两道防漂移：信号必须仍是 `open`；重新读取当前生效阈值并与信号扫描时的基线比对，
+        不一致 → 409（必须重新扫描）。创建出的提案仍走影子评估 → 人审激活阶梯，绝不自动生效。
+      parameters:
+        - name: signalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateValue]
+              properties:
+                candidateValue: { type: number, minimum: 0, maximum: 1 }
+                note: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Signal marked promoted + created proposal (proposal starts at proposed/shadow_evaluated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signal: { $ref: '#/components/schemas/LearningSignal' }
+                  proposal: { type: object }
+                  created: { type: boolean }
+                  proposalId: { type: string }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/learning/signals/{signalId}/dismiss:
+    post:
+      tags:
+        - learning
+      summary: Human dismisses a signal with a mandatory reason (never silently ignored)
+      parameters:
+        - name: signalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Signal dismissed (decidedBy/decidedAt/decidedReason recorded; re-scan preserves it)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningSignal' }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
         Forbidden:
           $ref: '#/components/responses/Forbidden'
         InternalError:
@@ -10017,7 +11710,19 @@ paths:
     post:
       tags:
         - exo
-      summary: "Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique)"
+      summary: "Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique + execution-boundary guards)"
+      description: >-
+        Starts an explicit, temporary, auditable wearer binding. The device row is locked
+        (SELECT ... FOR UPDATE) for the duration of the transaction, so session starts are
+        serialized against plan dispatch for the same device. Two execution-boundary rules
+        apply: (1) the device must not already have another ACTIVE session (partial unique
+        index + explicit conflict); (2) NO-39a — the device must not be committed to another
+        person by an in-flight task (status dispatched/received/executing/paused/exception):
+        a wearer different from the task assignee is rejected with 409
+        EXO_SESSION_TASK_CONFLICT, a task without an assignee is rejected as well
+        (fail-closed), and only the assignee may wear the device (human-machine pairing).
+        Pre-dispatch tasks are proposals, not execution boundaries, and therefore do not
+        block a session start; they are re-checked at dispatch time instead.
       requestBody:
         required: true
         content:
@@ -10032,6 +11737,15 @@ paths:
                 expectedEndAt: { type: string, format: date-time }
                 operatorId: { type: string }
                 reason: { type: string }
+                taskId:
+                  type: string
+                  description: >-
+                    NO-40a: optional business task (ewoh_production_task.id) this wear belongs to.
+                    When set and expectedEndAt is omitted, the task plan end is inherited as the
+                    expected end (source task_plan_end); an explicit expectedEndAt always wins
+                    (source operator). A task bound to a different device is rejected with 409.
+                    Unknown task ids are rejected with 400 (the binding declaration is never
+                    silently ignored).
               required:
                 - exoId
                 - personId
@@ -10049,6 +11763,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
           $ref: '#/components/responses/Forbidden'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
     get:
@@ -10083,6 +11799,166 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/reminder-sweep:
+    post:
+      tags:
+        - exo
+      summary: "Sweep active exoskeleton sessions and raise idempotent reminders (NO-37a)"
+      description: >-
+        Scans ACTIVE exoskeleton sessions and creates idempotent in-app notifications on two
+        dimensions. Time: sessions past their expected end (with a 15-minute grace) or worn
+        continuously for at least 4 hours. Evidence (NO-42a, reusing the NO-41a cross-check):
+        sessions whose declared wearer disagrees with the telemetry-reported wearer
+        (telemetry_wearer_mismatch, high) or whose telemetry shows a fresh frame with no wearer
+        and quiet metrics (telemetry_inactive_suspect, medium). Every tag carries its own
+        deterministic id (NTF-EXO-<session>-<tag>[-user-<who>]-<channel>), so re-sweeping only
+        increments duplicates; 'consistent', 'activity_only', 'stale_telemetry' and
+        'no_telemetry' never raise a reminder. The sweep is read-only with respect to session
+        state. Recipients are the workshop_lead role plus the
+        wearer's own bound account (ewoh_user.person_id, resolved through the SECURITY DEFINER
+        helper ewoh_find_active_users_by_person); wearers without a bound account are reported
+        in unresolvedWearers instead of being silently dropped. Notification ids are derived
+        from (sessionId, bucket, recipient, channel), so repeated sweeps only increment
+        duplicates. The sweep is read-only with respect to session state: it never ends a
+        session and never issues device commands. The same implementation runs on a periodic
+        worker (EXO_SESSION_REMINDER_WORKER_INTERVAL_MS, default 10 minutes).
+      responses:
+        '200':
+          description: Sweep counters (scanned/overdue/longRunning/created/duplicates/unresolvedWearers) + per-session notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/consistency:
+    get:
+      tags:
+        - exo
+      summary: "Cross-check declared wearer (session) against device telemetry (NO-41a)"
+      description: >-
+        Read-only reconciliation of every ACTIVE session against the latest telemetry frame of
+        its device (DISTINCT ON (device_id), indexed by (org_id, device_id, ts DESC)).
+        Verdicts: consistent (frame names the session wearer), wearer_mismatch (frame names a
+        DIFFERENT person - a hard conflict that a human must resolve, the platform takes no
+        side), activity_only (device is moving but the frame reported no wearer), inactive_suspect
+        (frame reported no wearer and all metrics are quiet - "suspected" not "proven"),
+        stale_telemetry (latest frame older than the freshness window, or unparsable timestamp:
+        no conclusion), no_telemetry (no frame at all: absence of evidence, NOT evidence of
+        absence). Notes in the response carry the same caveats for the UI to display verbatim.
+      responses:
+        '200':
+          description: Per-session verdicts + summary counts + freshness window + caveat notes
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/device-context:
+    get:
+      tags:
+        - exo
+      summary: "Device context for starting a session (NO-40a: in-flight tasks + bindable plan end)"
+      description: >-
+        Read-only context for one exoskeleton device: whether it is registered in the asset
+        ledger, the ACTIVE session (if any), the in-flight tasks committed to it
+        (dispatched/received/executing/paused/exception) and one actionable suggestion.
+        The suggestion binds a task only when exactly one in-flight task exists (choosing
+        among several is a human decision and is therefore not guessed), marks whether that
+        task's assignee equals the person about to wear the device (human-machine pairing),
+        and exposes the task plan end as an inheritable expectedEndAt (expired plan ends are
+        never inherited). Binding the task at session start makes deviation samples
+        comparable, which is what NO-38a aggregates.
+      parameters:
+        - in: query
+          name: exoId
+          schema:
+            type: string
+          required: true
+          description: Canonical device identity (device:<business device id>).
+        - in: query
+          name: personId
+          schema:
+            type: string
+          required: false
+          description: Canonical person identity considered as the next wearer (for assignee matching).
+      responses:
+        '200':
+          description: Device context (registered/activeSession/inFlightTasks/suggestion)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/deviation-summary:
+    get:
+      tags:
+        - exo
+      summary: "Aggregate planned-vs-actual session deviation (NO-38a runtime memory)"
+      description: >-
+        Aggregates COMPLETED (ended/aborted) exoskeleton sessions whose started_at falls inside
+        the requested window into per-device or per-person deviation groups. Only sessions that
+        record BOTH expectedEndAt and actualEndAt are comparable; sessions missing either
+        timestamp are counted as notComparable and excluded from every rate. onTimeRate is null
+        (never 0%) when the comparable sample is below the minSample threshold, and the response
+        carries explicit notes describing the caveats. Results are capped and flagged with
+        truncated=true when the cap is hit, so a partial window is never presented as full
+        history.
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+          required: false
+          description: Window length in days (default 30, normalized server-side).
+        - in: query
+          name: groupBy
+          schema:
+            type: string
+            enum: [ device, person ]
+          required: false
+          description: Grouping dimension (default device).
+      responses:
+        '200':
+          description: Deviation summary (totals + groups + minSample + truncated + caveat notes)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/exo/sessions/{sessionId}:
     get:
       tags:
@@ -10110,11 +11986,74 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/exo/sessions/{sessionId}/correct-wearer:
+    post:
+      tags:
+        - exo
+      summary: Hand the exoskeleton over to the person the telemetry says is actually wearing it
+      description: >-
+        Closes the current session at the wearer hand-over point (CAS on the active session,
+        reason plus a pointer to the successor) and opens a successor session for the actual
+        wearer in one transaction. The declared wearer is never overwritten in place: the
+        platform keeps both the mistaken and the corrected record, because 缺失 ≠ 事实 and
+        the audit trail must show who wore what, when, and who decided the correction.
+        Telemetry alone never triggers this call; a human (or an approved workflow) invokes it.
+      parameters:
+        - in: path
+          name: sessionId
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                personId:
+                  type: string
+                  description: Actual wearer; bare uuid and `person:<uuid>` are equivalent (ADR-006)
+                endedBy: { type: string }
+                reason: { type: string }
+              required:
+                - personId
+      responses:
+        '201':
+          description: >-
+            Correction applied (previous session ended, successor session started).
+            The ended session's pending alerts are closed in the same transaction with
+            `resolution=session_corrected` and `resolutionRef` pointing at the successor
+            session; the response reports `resolvedNotificationCount` /
+            `annotatedNotificationCount`.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/exo/sessions/{sessionId}/end:
     post:
       tags:
         - exo
       summary: End a session normally (state machine + endedBy required)
+      description: >-
+        Ends the session and, in the SAME transaction, closes every pending alert that
+        was raised about it (NO-44a): those rows get `status=resolved` plus
+        `resolution=session_ended`, `resolvedBy`, `resolvedAt`, `resolutionRef`, so an
+        alert never lingers in someone's to-do list after the matter is handled and
+        never disappears without a trace. The response therefore carries
+        `resolvedNotificationCount` (pending → resolved) and `annotatedNotificationCount`
+        (rows that were already read and only received the disposition metadata). Both
+        fields are **absent** on the idempotent re-end path: "no disposition happened in
+        this call" is not the same fact as "closed zero alerts".
       parameters:
         - in: path
           name: sessionId
@@ -10153,6 +12092,10 @@ paths:
       tags:
         - exo
       summary: Abort a session (state machine + endedBy required)
+      description: >-
+        Same disposition wiring as `end`, with `resolution=session_aborted` so an
+        abnormal termination stays distinguishable from a normal hand-off in the
+        alert history.
       parameters:
         - in: path
           name: sessionId
@@ -10191,12 +12134,20 @@ paths:
       tags:
         - notifications
       summary: List in-app notifications (tenant + role scoped, ADR-030)
+      description: >-
+        Returns the notifications visible to the caller (tenant + role/user scoped).
+        Notifications are derived facts; their `status` is one of pending / read /
+        resolved / sent / failed, and `resolution` records **why a pending alert was
+        closed by a disposition of its subject** (NO-44a: session ended / aborted /
+        corrected). `read` means "a human looked at it"; `resolution` means "the
+        matter was closed by an audited disposition" — the two are not interchangeable
+        and `resolved` is never downgraded back to `read`.
       parameters:
         - in: query
           name: status
           schema:
             type: string
-            enum: [ pending, read ]
+            enum: [ pending, read, resolved ]
           required: false
       responses:
         '200':
@@ -10208,6 +12159,79 @@ paths:
                 items:
                   type: object
                   additionalProperties: true
+                  properties:
+                    notificationId: { type: string }
+                    status:
+                      type: string
+                      description: pending / read / resolved / sent / failed（投递状态与处置状态互不替代）
+                    externalRef:
+                      type: string
+                      nullable: true
+                      description: 主事实引用（外骨骼提醒=会话号）；处置按它定位待办提醒
+                    resolution:
+                      type: string
+                      nullable: true
+                      enum:
+                        - session_ended
+                        - session_aborted
+                        - session_corrected
+                        - approval_expired
+                        - approval_superseded
+                        - andon_cleared
+                        - agent_approval_decided
+                        - agent_approval_expired
+                        - null
+                      description: >-
+                        处置类型（NULL=未被处置关闭）；未登记值由调用方原样展示。
+                        session_* = 外骨骼会话侧（收工/中止/按实际佩戴人更正）；
+                        approval_* = 执行边界授权侧（失效 / 被新审批取代）；
+                        andon_cleared = 安灯被关闭（acknowledged/processing 不关闭提醒）；
+                        agent_approval_* = Agent 待批命令被人处理 / 超时作废
+                    resolvedAt: { type: string, nullable: true }
+                    resolvedBy: { type: string, nullable: true }
+                    resolutionRef:
+                      type: string
+                      nullable: true
+                      description: 处置指向的引用（更正=新会话号；收工/中止=会话号）
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/notifications/metrics:
+    get:
+      tags:
+        - notifications
+      summary: Notification governance metrics (disposition rate/latency, aging, repeat sources)
+      description: >-
+        Read-only operating memory for the notification layer (NO-46a). Answers the
+        management questions the disposition work made possible: how fast are alerts
+        closed, which objects keep generating them, how many are left unattended, and
+        whether push delivery failures were missed. Scope is identical to the
+        notification list (tenant + role / addressed-to-me), so the numbers never cover
+        more than the caller can act on. Time-to-resolve only counts comparable rows
+        (both timestamps parseable and ordered); `dispositionRate` is null when the
+        window holds fewer than `minSample` alerts — the UI must say "insufficient
+        evidence" instead of showing 0%. Notification kinds come from the deterministic
+        id rules; unregistered shapes land in other/unknown rather than being guessed.
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+          required: false
+      responses:
+        '200':
+          description: Governance summary (totals / rates / latency / aging / byKind / topSources + notes)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         Unauthorized:
           $ref: '#/components/responses/Unauthorized'
         Forbidden:
@@ -10293,6 +12317,37 @@ paths:
           $ref: '#/components/responses/Forbidden'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/field/my-work:
+    get:
+      tags:
+        - scheduler
+      summary: Field workbench projection — only the caller's own work
+      description: >-
+        现场作业台只读投影。范围由服务端从签名令牌中的账号↔人员绑定
+        (personId) 推导，**不接受**客户端传入 personId。未绑定人员返回 403
+        FIELD_WORK_PERSON_UNBOUND（fail-closed，不返回空列表充数）。
+        与 GET /api/scheduler/executions 的区别：后者是全厂执行台账，仅限
+        dispatcher/workshop_lead/global_admin；本端点允许 worker 读取本人工作。
+      responses:
+        '200':
+          description: Caller's own field work
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personId, executions, total]
+                properties:
+                  personId:
+                    type: string
+                    description: 服务端权威的账号↔人员绑定值
+                  executions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SchedulingExecution'
+                  total:
+                    type: integer
+        '403':
+          description: 未绑定业务人员或缺少认证上下文
   /api/scheduler/executions:
     get:
       tags:
@@ -10307,6 +12362,13 @@ paths:
           schema: { type: string }
         - name: status
           in: query
+          schema: { type: string }
+        - name: personId
+          in: query
+          required: false
+          description: >-
+            按被分配人筛选执行记录（现场作业台"我的任务"）。服务端过滤，
+            与 org 作用域条件叠加，不因该参数放宽租户隔离。
           schema: { type: string }
       responses:
         '200':
@@ -10589,6 +12651,386 @@ paths:
                   byName:
                     type: object
                     additionalProperties: { type: integer }
+  /api/scheduler/plans/{planId}/cancel:
+    post:
+      tags:
+        - scheduler
+      summary: Cancel/roll back schedule plan (DR-5, standalone_077)
+      description: >
+        受控部分回退：未开始 assignment（proposed/approved/dispatched/acknowledged）
+        → cancelled + 释放预占 + 任务 rollback_dispatch 回 pending_dispatch；
+        未开始 Execution 标记 CANCELLED。已开始的 assignment 物理不可撤销，
+        显式列入 irreversibleAssignmentIds（不静默）。reason 必填（可审计）。
+        方案状态 CAS → cancelled；PlanCancelled outbox 事件（SSE 可见）。
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: 取消/回滚原因（必填：回滚必须可解释、可审计）。
+      responses:
+        '200':
+          description: Cancelled plan (with cancel summary)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulePlanV2'
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+        Conflict:
+          $ref: '#/components/responses/Conflict'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/shifts:
+    get:
+      tags:
+        - shift
+      summary: List shift definitions (DR-2, standalone_074)
+      parameters:
+        - name: activeOnly
+          in: query
+          required: false
+          schema: { type: string, enum: ['true', '1'] }
+      responses:
+        '200':
+          description: Shift definitions (org-scoped)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ShiftDefinition' }
+    post:
+      tags:
+        - shift
+      summary: Register a shift definition (HH:mm window + crosses-midnight)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startTime, endTime]
+              properties:
+                shiftId: { type: string }
+                name: { type: string }
+                code: { type: string }
+                startTime: { type: string, description: 'HH:mm 本地时区' }
+                endTime: { type: string, description: 'HH:mm 本地时区' }
+                crossesMidnight: { type: boolean }
+                leadUserId: { type: string, format: uuid }
+                description: { type: string }
+      responses:
+        '200':
+          description: Created shift definition
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record: { $ref: '#/components/schemas/ShiftDefinition' }
+                  created: { type: boolean }
+  /api/shifts/current:
+    get:
+      tags:
+        - shift
+      summary: Resolve current and next shift at server time (null = explicitly unknown)
+      responses:
+        '200':
+          description: 'ResolvedShift: current=null 表示不在任何班次窗口内（显式未知，不猜默认班）'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    nullable: true
+                    allOf: [{ $ref: '#/components/schemas/ShiftDefinition' }]
+                  next:
+                    nullable: true
+                    allOf: [{ $ref: '#/components/schemas/ShiftDefinition' }]
+  /api/shifts/handovers:
+    get:
+      tags:
+        - shift
+      summary: List shift handover records (structured open items)
+      parameters:
+        - name: shiftId
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Handover records (org-scoped, newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ShiftHandover' }
+    post:
+      tags:
+        - shift
+      summary: Record a shift handover (ShiftHandoverRecorded catalog event)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shiftId, toUserId]
+              properties:
+                handoverId: { type: string }
+                shiftId: { type: string }
+                shiftDate: { type: string, format: date }
+                fromUserId: { type: string, format: uuid }
+                toUserId: { type: string, format: uuid }
+                openItems:
+                  type: array
+                  items: { $ref: '#/components/schemas/ShiftHandoverOpenItem' }
+                notes: { type: string }
+      responses:
+        '200':
+          description: Recorded handover (idempotent re-create returns existing)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record: { $ref: '#/components/schemas/ShiftHandover' }
+                  created: { type: boolean }
+  /api/data-quality/gap-sweep:
+    post:
+      tags:
+        - data-quality
+      summary: Sweep open data-quality alerts and notify the people who must verify them (NO-53a)
+      description: >
+        摄入侧自动分级开 `DataQualityAlert` 后，没人被主动叫到 → 告警只是躺在事件表里。
+        本端点扫描本租户 open 的 `DataQualityAlert`（仅 `requiresHumanVerification`
+        的告警码才打扰人），把"该核实这批数据"叫到 责任人（班次感知：本班优先/全天
+        兜底/他班报缺口）+ 角色兜底。边界：只读业务事实（不改告警状态、不写 evidence），
+        只写确定性通知与审计；人工判定只能走 POST /api/data-quality/confirmations，
+        缺失字段如实进正文不猜。幂等：重复扫描只累加 duplicates。
+      responses:
+        '200':
+          description: Sweep result (idempotent; re-running only accumulates duplicates)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orgId: { type: string, format: uuid }
+                  scanned: { type: integer, description: 本租户 open DataQualityAlert 数 }
+                  notifyRequired: { type: integer, description: 其中需要人核实的告警数 }
+                  created: { type: integer }
+                  duplicates: { type: integer }
+                  unresolvedResponsiblePersons:
+                    type: array
+                    items: { type: string }
+                  outOfShiftResponsiblePersons:
+                    type: array
+                    items: { type: string }
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        alertEventId: { type: string }
+                        bucket:
+                          type: string
+                          enum: [quality_alert, quality_aging]
+                          description: 当前实现只产生 quality_alert；quality_aging（长时间未核实再催）为预留桶，尚未写入
+                        recipients:
+                          type: array
+                          items: { type: string }
+                  generatedAt: { type: string, format: date-time }
+  /api/data-quality/confirmations:
+    post:
+      tags:
+        - data-quality
+      summary: Register human data-quality verdict for one event (DR-4, standalone_076)
+      description: >
+        confirmed=可信可用于决策（联动 resolve 同源 open DataQualityAlert）；
+        contested=不可信相关决策需复核（告警保持 open 持续可见）。判定人取
+        服务端会话（不信任客户端自报身份）。幂等：同事件改判=覆盖+审计。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, verdict]
+              properties:
+                eventId: { type: string }
+                verdict: { type: string, enum: [confirmed, contested] }
+                note: { type: string }
+      responses:
+        '200':
+          description: Confirmation record + linked alert resolution count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record: { $ref: '#/components/schemas/DataQualityConfirmation' }
+                  created: { type: boolean }
+                  linkedAlertsResolved: { type: integer }
+                  resolvedNotificationCount:
+                    type: integer
+                    description: 同事务内被处置的"待核实提醒"条数（NO-53a 处置终态）
+    get:
+      tags:
+        - data-quality
+      summary: Batch query confirmation status for events
+      parameters:
+        - name: eventIds
+          in: query
+          required: true
+          schema: { type: string, description: 逗号分隔，至多 100 个 }
+      responses:
+        '200':
+          description: Confirmations (org-scoped)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DataQualityConfirmation' }
+  /api/retrospective:
+    get:
+      tags:
+        - retrospective
+      summary: List retrospective run-memory records (DR-3, standalone_075)
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema: { type: string, enum: [plan, incident, shift] }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [draft, published, superseded] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Retrospective records (org-scoped, newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RetrospectiveRecord' }
+  /api/retrospective/from-plan:
+    post:
+      tags:
+        - retrospective
+      summary: Assemble a retrospective from a scheduling plan (closed-loop run memory)
+      description: >
+        组装感知/数据质量/决策/授权/执行/反馈六段（只引用既有台账证据，
+        缺失环节显式进 gaps，不伪造）；AI 总结（LLM 事务外调用 + 规则模板
+        兜底，narrativeSource 双路留痕）。同 target 重新组装 = 旧 published
+        置 superseded + 新 draft。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId: { type: string }
+      responses:
+        '200':
+          description: Assembled retrospective
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  record: { $ref: '#/components/schemas/RetrospectiveRecord' }
+                  created: { type: boolean }
+  /api/retrospective/{retrospectiveId}:
+    get:
+      tags:
+        - retrospective
+      summary: Get one retrospective record
+      parameters:
+        - name: retrospectiveId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Retrospective record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetrospectiveRecord' }
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+  /api/retrospective/{retrospectiveId}/publish:
+    post:
+      tags:
+        - retrospective
+      summary: Publish a draft retrospective (run memory stable state)
+      parameters:
+        - name: retrospectiveId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Published retrospective
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetrospectiveRecord' }
+        NotFound:
+          $ref: '#/components/responses/NotFound'
+  /api/retrospective/{retrospectiveId}/lessons:
+    post:
+      tags:
+        - retrospective
+      summary: Revise lessons (AI-suggested lessons are human-editable; memory belongs to people)
+      parameters:
+        - name: retrospectiveId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lessons:
+                  type: array
+                  items: { $ref: '#/components/schemas/RetrospectiveLesson' }
+      responses:
+        '200':
+          description: Updated retrospective
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetrospectiveRecord' }
+        NotFound:
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     BearerAuth:
@@ -10683,6 +13125,47 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    PlanStalenessReport:
+      type: object
+      description: NO-62c plan staleness diagnosis (also embedded in the 409 PLAN_STALE body as `staleness`).
+      properties:
+        snapshotVersion:
+          type: string
+        snapshotFound:
+          type: boolean
+          description: false = the bound snapshot row no longer exists (differences cannot be computed, never reported fresh).
+        stale:
+          type: boolean
+        summary:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        externalChangeCount:
+          type: integer
+        selfInflictedCount:
+          type: integer
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum: [entity_version, reservation]
+              entityKey:
+                type: string
+              entityType:
+                type: string
+              entityId:
+                type: string
+              change:
+                type: string
+                enum: [added, removed, changed]
+              selfInflicted:
+                type: boolean
+              label:
+                type: string
     TimelineSource:
       type: string
       enum: [ workflow, alert, device, system, user, edge, evidence ]
@@ -11434,9 +13917,20 @@ components:
         deviceModel:
           type: string
           description: Device model
+        deviceCategory:
+          type: string
+          nullable: true
+          description: "Device category (device-category vocabulary); unknown/historical rows report 'unknown'."
+          enum:
+            - exoskeleton
+            - environment_sensor
+            - camera
+            - location_tag
+            - unknown
         batteryPct:
           type: number
-          description: Battery percentage 0-100
+          nullable: true
+          description: "Battery percentage 0-100; null for devices without a battery (environment sensors, cameras, locator tags) — never coerced to 0."
         online:
           type: boolean
           description: Current online state
@@ -11476,6 +13970,52 @@ components:
         lastRawRef:
           type: string
           nullable: true
+        capabilities:
+          type: array
+          nullable: true
+          description: "Declared device capabilities as Canonical CapabilityModel records (ADR-043): kind=device_capability/exo_capability, providerType=device/exo, name in the registered capability vocabulary. Unregistered names are returned verbatim with registered=false — never hidden."
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Capability name (canonical CapabilityRecord.name; open vocabulary, registered in contracts/capability)
+              key:
+                type: string
+                description: Alias of name (kept for existing callers)
+              kind:
+                type: string
+                enum: [device_capability, exo_capability]
+              providerType:
+                type: string
+                enum: [device, exo]
+              mode:
+                type: string
+                enum: [observation, execution, interaction]
+              capabilityId:
+                type: string
+              label:
+                type: string
+              status:
+                type: string
+              fields:
+                type: array
+                items:
+                  type: string
+                description: "Source fact-field paths in the platform ingest DTO (e.g. temperature, detections[].track_id)"
+              grantedAt:
+                type: string
+                nullable: true
+              registered:
+                type: boolean
+            required:
+              - name
+              - kind
+              - providerType
+              - mode
+              - capabilityId
+              - status
+              - registered
         boundPersonId:
           type: string
           nullable: true
@@ -11575,6 +14115,124 @@ components:
           description: Device temperature in Celsius
       required: []
       additionalProperties: false
+    SetDeviceCapabilityStatusRequest:
+      type: object
+      required:
+        - status
+        - reason
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+          description: 目标状态（active=恢复生效；disabled=人工停用）
+        reason:
+          type: string
+          minLength: 1
+          description: 变更理由（必填，写入台账留痕与审计）
+    DeviceCapabilityLifecycleInfo:
+      type: object
+      description: 人工停用/恢复留痕（没有人工操作过则为 null，自动声明不冒充人工确认）
+      properties:
+        action:
+          type: string
+          enum: [disable, restore]
+        operator:
+          type: string
+        reason:
+          type: string
+        at:
+          type: string
+          format: date-time
+        previousStatus:
+          type: string
+          nullable: true
+          enum: [active, disabled]
+    SetDeviceCapabilityStatusResponse:
+      type: object
+      required:
+        - deviceId
+        - capabilityId
+        - capabilityName
+        - status
+        - changed
+        - contractValid
+        - repairedFields
+      properties:
+        deviceId:
+          type: string
+        capabilityId:
+          type: string
+        capabilityName:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        previousStatus:
+          type: string
+          nullable: true
+          enum: [active, disabled]
+        changed:
+          type: boolean
+          description: false = 幂等 no-op（未产生新的状态变更与审计记录）
+        effectiveFrom:
+          type: string
+          nullable: true
+          format: date-time
+        effectiveTo:
+          type: string
+          nullable: true
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        contractValid:
+          type: boolean
+        repairedFields:
+          type: array
+          items:
+            type: string
+          description: 恢复时按词表纠正的历史脏字段（kind/capabilityId/subject）
+    TaskCapabilityRequirementsRequest:
+      type: object
+      description: 任务能力要求（缺省字段表示不改动）
+      properties:
+        requiredDeviceCapabilities:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
+          description: 设备能力要求（开放词表；未登记名允许但会有 warnings）
+        requiredStationCapabilities:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
+          description: 工位能力要求（与工位投影 capabilities 匹配）
+    TaskCapabilityRequirementsResult:
+      type: object
+      required:
+        - taskId
+        - requiredDeviceCapabilities
+        - requiredStationCapabilities
+        - warnings
+      properties:
+        taskId:
+          type: string
+        requiredDeviceCapabilities:
+          type: array
+          items:
+            type: string
+        requiredStationCapabilities:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+          description: 当前无法匹配的能力要求提示（不阻断写入，但必须可见）
     BindDeviceRequest:
       type: object
       properties:
@@ -12706,6 +15364,9 @@ components:
         shadowEval:
           type: object
           additionalProperties: true
+        proposedBy:
+          type: string
+          description: "Operator who proposed the change (B5 generator avoidance: proposer cannot approve own proposal)"
         approvedBy:
           type: string
         approvedAt:
@@ -12740,6 +15401,463 @@ components:
       required:
         - proposal
         - created
+    LearningThresholdBaselineEntry:
+      type: object
+      properties:
+        ruleId:
+          type: string
+          enum: [ 'rule:worker-overload' ]
+        parameter:
+          type: string
+          enum: [ workloadThreshold ]
+        engineDefault:
+          type: number
+          nullable: true
+          description: "Engine built-in constant; null = not registered (source=engine_default_unknown, never fabricated)"
+        effective:
+          type: number
+          nullable: true
+          description: "Currently effective value (approved override ?? engine constant)"
+        source:
+          type: string
+          enum: [ approved_proposal, engine_default, engine_default_unknown ]
+        provenance:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: "Approving proposal + shadow-evidence provenance; null when source=engine_default"
+        counts:
+          type: object
+          additionalProperties: true
+      required:
+        - ruleId
+        - parameter
+        - effective
+        - source
+        - counts
+    OrderChain:
+      type: object
+      required: [orderNo, status, overdue, tasks, materials, gaps, notes]
+      properties:
+        orderNo: { type: string }
+        status: { type: string }
+        priority: { type: string, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true }
+        overdue: { type: boolean, nullable: true, description: 无期限时为 null（不猜是否逾期） }
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              taskId: { type: string }
+              title: { type: string }
+              status: { type: string }
+              source: { type: string }
+              planStart: { type: string, nullable: true }
+              planEnd: { type: string, nullable: true }
+              stepCount: { type: integer }
+              openStepCount: { type: integer }
+              stepIds: { type: array, items: { type: string } }
+        materials:
+          type: array
+          items:
+            type: object
+            properties:
+              materialId: { type: string }
+              name: { type: string, nullable: true }
+              unit: { type: string, nullable: true }
+              requiredTotal: { type: number }
+              onHand: { type: number }
+              shortage: { type: number }
+              belowThreshold: { type: boolean }
+              orderNos: { type: array, items: { type: string } }
+        gaps:
+          type: array
+          description: 链路缺口（封闭词表，页面必须逐条显示）
+          items:
+            type: string
+            enum: [task_link_missing, steps_missing, material_link_missing, due_at_missing]
+        assignedTaskCount: { type: integer }
+        notes: { type: array, items: { type: string } }
+    OrderChainResult:
+      type: object
+      required: [orgId, generatedAt, chains, summary]
+      properties:
+        orgId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        chains:
+          type: array
+          items: { $ref: '#/components/schemas/OrderChain' }
+        summary:
+          type: object
+          properties:
+            orders: { type: integer }
+            overdue: { type: integer }
+            withGaps: { type: integer }
+            gapCounts: { type: object, additionalProperties: { type: integer } }
+            materialsInShortage: { type: integer }
+            openSteps: { type: integer }
+        notes: { type: array, items: { type: string } }
+    PlannedVsActualSummary:
+      type: object
+      required: [windowDays, totalRows, comparableRows, byReason, notes]
+      properties:
+        windowDays: { type: integer }
+        totalRows: { type: integer }
+        comparableRows: { type: integer }
+        coverage: { type: number, nullable: true, description: 无可比也无可判定行时为 null }
+        meanAbsPctError: { type: number, nullable: true, description: 样本不足时 null（不给比率） }
+        medianAbsPctError: { type: number, nullable: true }
+        p90AbsPctError: { type: number, nullable: true }
+        meanSignedMs: { type: number, nullable: true }
+        overrunCount: { type: integer }
+        underrunCount: { type: integer }
+        onTimeCount: { type: integer }
+        byReason: { type: object, additionalProperties: { type: integer } }
+        byDeviationType: { type: object, additionalProperties: { type: integer } }
+        biasNote: { type: string, nullable: true, description: 只报事实（系统性倾向），不替现场下结论 }
+        notes: { type: array, items: { type: string } }
+        generatedAt: { type: string, format: date-time }
+    PerceptionFusion:
+      type: object
+      description: >
+        多源感知融合快照（NO-56a §5）。置信度是**可解释加权**（可用源权重和 / 应有源权重和），
+        不是标定概率；无可用源时 `confidence.level='unknown'` 且 `confidence.score=null`。
+      required: [subjectId, windowStart, windowEnd, fusedAt, agreement, confidence, conflicts, ruleTrace, strongAdviceAllowed]
+      properties:
+        subjectId: { type: string }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        fusedAt: { type: string, format: date-time }
+        agreement: { type: string, enum: [consistent, partial, conflict, insufficient] }
+        position:
+          type: object
+          nullable: true
+          properties:
+            x: { type: number, nullable: true }
+            y: { type: number, nullable: true }
+            z: { type: number, nullable: true }
+            stationId: { type: string, nullable: true, description: 坐标→工位；null = 未解析（不猜） }
+            basis: { type: array, items: { type: string } }
+        posture:
+          type: object
+          nullable: true
+          properties:
+            pitchDeg: { type: number, nullable: true }
+            action: { type: string, nullable: true }
+            basis: { type: array, items: { type: string } }
+        station:
+          type: object
+          nullable: true
+          description: 多源工位结论；来源互相矛盾时 stationId=null（不投票、不取第一个）
+          properties:
+            stationId: { type: string, nullable: true }
+            basis: { type: string }
+            sources: { type: array, items: { type: string } }
+        confidence:
+          type: object
+          required: [level, basis, usableSources, degraded, missingSources, excludedSources]
+          properties:
+            level: { type: string, enum: [high, medium, low, unknown] }
+            score: { type: number, nullable: true, minimum: 0, maximum: 1 }
+            basis: { type: string, description: 权重依据（可解释；明确写了"不是概率"） }
+            usableSources: { type: array, items: { type: string } }
+            degraded: { type: boolean }
+            missingSources: { type: array, items: { type: string } }
+            unknownConfidenceSources: { type: array, items: { type: string } }
+            excludedSources:
+              type: array
+              description: 被排除的证据（过期/不可信/维度不符），逐条带原因
+              items:
+                type: object
+                properties:
+                  source: { type: string }
+                  sourceId: { type: string }
+                  dimension: { type: string }
+                  status: { type: string, enum: [stale, untrusted, dimension_mismatch] }
+                  reason: { type: string }
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              dimension: { type: string }
+              severity: { type: string, enum: [low, medium, high] }
+              participants:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    source: { type: string }
+                    sourceId: { type: string }
+                    value: { type: string }
+              detail: { type: string }
+        ruleTrace:
+          type: array
+          description: §5 五条规则逐条留痕（哪条命中、依据是什么）
+          items:
+            type: object
+            properties:
+              rule: { type: string }
+              fired: { type: boolean }
+              detail: { type: string }
+        strongAdviceAllowed: { type: boolean, description: 低置信度/有冲突/证据不足一律 false }
+        notes: { type: array, items: { type: string } }
+    PerceptionSweepResult:
+      type: object
+      required: [orgId, windowStart, windowEnd, subjects, persisted, byAgreement, byConfidenceLevel, conflictSubjects]
+      properties:
+        orgId: { type: string }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        windowMinutes: { type: integer }
+        bucketMinutes: { type: integer }
+        subjects: { type: integer }
+        persisted: { type: integer }
+        created: { type: integer }
+        refreshed: { type: integer }
+        byAgreement: { type: object, additionalProperties: { type: integer } }
+        byConfidenceLevel: { type: object, additionalProperties: { type: integer } }
+        conflictSubjects: { type: array, items: { type: string } }
+        degradedSubjects: { type: array, items: { type: string } }
+        unmatchedVisionDetections: { type: integer, description: 视觉 track 未绑定到主体（不硬塞给某个人） }
+        stationUnresolved: { type: integer, description: 坐标未解析到工位（不猜最近工位） }
+        rejected:
+          type: array
+          items:
+            type: object
+            properties:
+              subjectId: { type: string }
+              errors: { type: array, items: { type: string } }
+        notes: { type: array, items: { type: string } }
+    ImprovementActionEffect:
+      type: object
+      description: >
+        行动项复发度量（NO-58a）。`conclusion` 只有五种：no_subject / not_completed /
+        insufficient_sample / recurrence_dropped / recurrence_persisted；任何结论都**只描述计数**，
+        不代表因果（页面必须原样展示 reason 与"不等于这条改进有效"）。
+      required: [actionId, subjectType, subjectId, status, completedAt, windowDays, before, after, conclusion, reason, notes, generatedAt]
+      properties:
+        actionId: { type: string }
+        subjectType: { type: string, nullable: true, enum: [device, person, station, null] }
+        subjectId: { type: string, nullable: true }
+        status: { type: string, enum: [proposed, accepted, rejected, completed, dropped] }
+        completedAt: { type: string, format: date-time, nullable: true }
+        windowDays: { type: integer, description: 前后各一个窗口的天数 }
+        before:
+          type: object
+          required: [from, to, deviations]
+          properties:
+            from: { type: string, description: ISO 时间；不可度量时为空串 }
+            to: { type: string }
+            deviations: { type: integer }
+        after:
+          type: object
+          required: [from, to, deviations]
+          properties:
+            from: { type: string }
+            to: { type: string }
+            deviations: { type: integer }
+        conclusion:
+          type: string
+          enum: [no_subject, not_completed, insufficient_sample, recurrence_dropped, recurrence_persisted]
+        reason: { type: string, description: 结论文案（含门槛与"不等于改进有效"的说明） }
+        notes:
+          type: array
+          items: { type: string }
+          description: 观察期未结束等补充说明
+        generatedAt: { type: string, format: date-time }
+    ImprovementAction:
+      type: object
+      description: >
+        改进行动项（NO-55a）：复盘经验条目/缺口 → 有人负责、有期限、有验收判据、有完成证据。
+        与阈值提案并列（行动项改做法、提案改参数）；`threshold_review` 类型表示需要人去提案面板改参数。
+      required: [actionId, sourceType, sourceRef, title, detail, kind, kindSource, priority, status, evidenceRefs, detectedAt]
+      properties:
+        actionId:
+          type: string
+          description: 确定性行动项号 `ACT-<lesson|gap>-<来源对象>-<slug>`（重复扫描幂等）
+        sourceType: { type: string, enum: [retrospective_lesson, retrospective_gap] }
+        sourceRef: { type: string, description: 来源复盘号 }
+        subjectType:
+          type: string
+          nullable: true
+          enum: [device, person, station, null]
+          description: 对象归属类型（NO-58a）；与 subjectId 成对，null = 未绑定 → 复发不可度量
+        subjectId: { type: string, nullable: true, description: 对象 id（incident 复盘的 targetId 派生） }
+        title: { type: string }
+        detail: { type: string }
+        kind: { type: string, enum: [process_change, training, tooling, maintenance, threshold_review] }
+        kindSource: { type: string, enum: [suggested, human], description: suggested=平台建议（接受时应确认） }
+        priority: { type: string, enum: [low, medium, high] }
+        status: { type: string, enum: [proposed, accepted, rejected, completed, dropped] }
+        evidenceRefs:
+          type: array
+          items:
+            type: object
+            required: [type, id]
+            properties:
+              type: { type: string, enum: [retrospective, lesson, gap, event, plan, execution, annotation] }
+              id: { type: string }
+              at: { type: string, nullable: true }
+              detail: { type: object }
+        owner: { type: string, nullable: true, description: accepted/completed 必填 }
+        dueAt: { type: string, format: date-time, nullable: true, description: accepted/completed 必填（平台不替现场承诺期限） }
+        acceptanceCriteria: { type: string, nullable: true, description: accepted/completed 必填（让别人能判断做完了没有） }
+        acceptedBy: { type: string, nullable: true }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+        completedBy: { type: string, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        outcomeNote: { type: string, nullable: true, description: completed 必填（结果说明） }
+        outcomeRef:
+          type: string
+          nullable: true
+          description: 完成时回流的知识条目号（NO-57c）；null = 未回流（页面必须显式显示，不许当成已归档）
+        outcomeKind: { type: string, nullable: true, enum: [knowledge_entry, null] }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        decidedReason: { type: string, nullable: true, description: rejected/dropped 必填 }
+        detectedAt: { type: string, format: date-time }
+    ImprovementScanResult:
+      type: object
+      required: [orgId, generatedAt, scannedRetrospectives, derived, created, refreshed, decisionsPreserved, rejected, actions, memory]
+      properties:
+        orgId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        scannedRetrospectives: { type: integer }
+        derived: { type: integer }
+        created: { type: integer }
+        refreshed: { type: integer }
+        decisionsPreserved: { type: integer, description: 已由人处理过、本次只刷新来源事实的行动项数 }
+        rejected:
+          type: array
+          items:
+            type: object
+            properties:
+              actionId: { type: string }
+              errors: { type: array, items: { type: string } }
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/ImprovementAction' }
+        memory:
+          type: object
+          description: 本次扫描读了什么（0 也要如实给出）
+          properties:
+            publishedRetrospectives: { type: integer }
+            lessons: { type: integer }
+            gaps: { type: integer }
+    LearningSignal:
+      type: object
+      description: >
+        运行记忆信号（NO-54a）。实测快照 + 证据引用 + 样本量 + 可信度 + 方向；
+        confidence=null 表示样本不足（不给结论），此时 actionable 必为 null 且
+        notActionableReason 必填（页面上要能读出"为什么只能提示"）。
+      required: [signalId, kind, severity, status, subjectKey, windowDays, sampleSize, metrics, narrative, evidenceRefs, detectedAt]
+      properties:
+        signalId:
+          type: string
+          description: 确定性信号号 `SIG-<KIND>-<subject>-<window>d-<severity>`（重复扫描同窗口同严重度 → 同一行）
+        kind:
+          type: string
+          enum: [notification_fatigue, data_quality_backlog, deviation_repeat]
+        severity: { type: string, enum: [low, medium, high] }
+        status: { type: string, enum: [open, promoted, dismissed] }
+        subjectKey: { type: string }
+        windowDays: { type: integer, minimum: 1, maximum: 365 }
+        sampleSize: { type: integer, minimum: 0 }
+        confidence:
+          type: string
+          nullable: true
+          enum: [low, medium, high, null]
+          description: 可信度；null = 样本不足（sampleSize < 5），不给结论
+        metrics:
+          type: object
+          description: 实测快照（数字 + 口径门槛），页面据此展示"依据是什么"
+        narrative:
+          type: object
+          required: [hypothesis, expectedEffect, risk, missing]
+          properties:
+            hypothesis: { type: string }
+            expectedEffect: { type: string }
+            risk: { type: string }
+            missing:
+              type: array
+              description: 缺什么导致结论受限（空数组 = 没有已知缺口）
+              items: { type: string }
+        evidenceRefs:
+          type: array
+          items:
+            type: object
+            required: [type, id]
+            properties:
+              type: { type: string, enum: [notification_kind, notification_source, quality_alert, execution_deviation, threshold_baseline] }
+              id: { type: string }
+              at: { type: string, nullable: true, description: 证据时间；null = 时间未知（不用扫描时刻冒充） }
+              detail: { type: object }
+        actionable:
+          type: object
+          nullable: true
+          description: 可执行（可生成提案）时的方向与基线；null = 只能提示（见 notActionableReason）
+          required: [ruleId, parameter, direction, baselineValue, baselineSource]
+          properties:
+            ruleId: { type: string }
+            parameter: { type: string }
+            direction: { type: string, enum: [raise, lower] }
+            baselineValue: { type: number, minimum: 0, maximum: 1 }
+            baselineSource: { type: string }
+        notActionableReason: { type: string, nullable: true }
+        detectedAt: { type: string, format: date-time }
+        decidedBy: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        decidedReason: { type: string, nullable: true }
+        promotedProposalId: { type: string, nullable: true }
+    LearningSignalScanResult:
+      type: object
+      required: [orgId, windowDays, generatedAt, derived, created, refreshed, decisionsPreserved, rejected, signals, memory]
+      properties:
+        orgId: { type: string }
+        windowDays: { type: integer }
+        generatedAt: { type: string, format: date-time }
+        derived: { type: integer, description: 派生出的信号总数（含已存在被刷新的） }
+        created: { type: integer }
+        refreshed: { type: integer }
+        decisionsPreserved: { type: integer, description: 已由人处理过、本次只刷新快照的信号数 }
+        rejected:
+          type: array
+          description: 契约校验未通过、**未落库**的信号（绝不写非法行）
+          items:
+            type: object
+            properties:
+              signalId: { type: string }
+              errors: { type: array, items: { type: string } }
+        signals:
+          type: array
+          items: { $ref: '#/components/schemas/LearningSignal' }
+        memory:
+          type: object
+          description: 本次扫描读了什么（0 也要如实给出，"没有信号"要能追到"读了什么"）
+          properties:
+            notificationTruncated: { type: boolean }
+            notificationScanned: { type: integer }
+            openQualityAlerts: { type: integer }
+            pendingQualityReminders: { type: integer }
+            deviationObjects: { type: integer }
+    LearningThresholdBaseline:
+      type: object
+      properties:
+        readAt:
+          type: string
+          format: date-time
+        engineVersion:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningThresholdBaselineEntry'
+      required:
+        - readAt
+        - engineVersion
+        - entries
     LearningEvaluateResponse:
       type: object
       properties:
@@ -13857,6 +16975,9 @@ components:
             stationId:
               type: string
               nullable: true
+        reportedSource:
+          type: string
+          enum: [manual_report, simulated]
       required: []
       additionalProperties: false
     CreateRunRequest:
@@ -15039,6 +18160,13 @@ components:
           description: ISO 8601 timestamp
         worker_name:
           type: string
+        worker_id:
+          type: string
+          description: >-
+            NO-41a: telemetry wearer reported by the device (observe.wearer / edge frame
+            worker_id). Persisted as ewoh_telemetry.worker_id and cross-checked against the
+            declared session wearer by GET /api/exo/sessions/consistency. Absence is a data
+            gap, NOT evidence that nobody is wearing the device.
         device_model:
           type: string
         firmware_version:
@@ -15353,11 +18481,64 @@ components:
         - entity_id
         - source_type
       additionalProperties: false
+    ActuatorFrameDto:
+      type: object
+      description: >
+        执行机构（AGV/PLC）状态帧（NO-59b）：边缘统一帧三段 device/motion/business 压平后的
+        平台口径。`last_authorization_ref` 是最后一次被平台授权号（control:/approval:/plan:/task:），
+        用于把"设备当前在动"追溯到具体授权。
+      required: [device_id, event_time, state]
+      properties:
+        device_id:
+          type: string
+        event_time:
+          type: string
+          description: ISO 8601 timestamp
+        state:
+          type: string
+          enum: [idle, moving, arrived, paused, fault, offline]
+          description: 封闭词表；词表外状态被拒绝（不默认 idle 假装在线）
+        x:
+          type: number
+        y:
+          type: number
+        battery_pct:
+          type: number
+        fault_code:
+          type: string
+          nullable: true
+        current_task_id:
+          type: string
+          nullable: true
+        target_station_id:
+          type: string
+          nullable: true
+        last_authorization_ref:
+          type: string
+          nullable: true
+          description: 最后一次被接受的平台授权号（命令可追溯）
+        station_id:
+          type: string
+          nullable: true
+        sequence:
+          type: integer
+        source_type:
+          type: string
+          enum: [real, controlled_test, simulated, unknown]
+        record_id:
+          type: string
+          description: 传输级幂等键（重放不写第二行）
+        data_confidence:
+          type: number
+          description: 0-1
     LocationFrameDto:
       type: object
       properties:
         entity_id:
           type: string
+        tag_id:
+          type: string
+          description: "Physical locator device id (UWB tag/beacon); used to register the device in the platform inventory. Falls back to entity_id when absent."
         locator:
           type: string
           enum:
@@ -15419,6 +18600,9 @@ components:
           type: boolean
         clock_drift:
           type: boolean
+        retryable:
+          type: boolean
+          description: "True only for transient write failures (DB/connection); edge uplink retries these. Absent/false = permanent rejection (dead-letter)."
       required:
         - accepted
         - skipped
@@ -15984,9 +19168,33 @@ components:
             - executed
             - failed
             - expired
+            - revoked
+          description: >
+            NO-62a：`revoked` = **投递前授权复核未通过，命令被平台撤回**（从未投给设备）。
+            它不是 `failed`（设备执行失败）——"未执行/被撤回"与"执行失败"必须可区分。
+        authorizationFingerprint:
+          type: string
+          nullable: true
+          description: >
+            NO-62a：授权范围指纹（请求/设备/命令/审批实例/参数；`fnv1a64:v1`）。
+            审批之后任意一项被改写 → 投递与回执两侧 fail-closed。
+        revokedReason:
+          type: string
+          nullable: true
+          description: >
+            NO-62a：撤回原因（封闭词表）：authorization_expired / authorization_revoked /
+            approval_missing / approval_not_granted / fingerprint_mismatch / request_terminal /
+            device_org_mismatch。NULL = 未撤回。
         receipt:
           type: object
           description: Gateway receipt
+          additionalProperties: true
+        payload:
+          type: object
+          nullable: true
+          description: >
+            命令参数（NO-60a）：执行机构要"去哪"这类信息随命令下发并留痕
+            （`dispatch_task` 必须给 `targetStationId`）。null = 该命令无参数。
           additionalProperties: true
       required: []
       additionalProperties: false
@@ -18469,6 +21677,12 @@ components:
           nullable: true
         triggerReplan:
           type: boolean
+        note:
+          type: string
+          nullable: true
+        reportedSource:
+          type: string
+          enum: [manual_report, simulated]
       additionalProperties: false
     SchedulerKpiSnapshot:
       type: object
@@ -18766,3 +21980,89 @@ components:
               y:
                 type: number
       additionalProperties: false
+
+    ShiftDefinition:
+      type: object
+      description: 班次定义（standalone_074，DR-2）。跨零点窗口显式标记，判定用共享纯函数。
+      properties:
+        shiftId: { type: string }
+        name: { type: string }
+        code: { type: string, nullable: true }
+        startTime: { type: string, description: 'HH:mm 本地时区' }
+        endTime: { type: string, description: 'HH:mm 本地时区' }
+        crossesMidnight: { type: boolean }
+        active: { type: boolean }
+        leadUserId: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+    ShiftHandoverOpenItem:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        relatedObjectType: { type: string }
+        relatedObjectId: { type: string }
+        note: { type: string }
+    ShiftHandover:
+      type: object
+      description: 交接班记录：结构化遗留事项 + 交接事实留痕。
+      properties:
+        handoverId: { type: string }
+        shiftId: { type: string }
+        shiftDate: { type: string, format: date }
+        fromUserId: { type: string, nullable: true }
+        toUserId: { type: string }
+        openItems:
+          type: array
+          items: { $ref: '#/components/schemas/ShiftHandoverOpenItem' }
+        notes: { type: string, nullable: true }
+        status: { type: string, enum: [pending, confirmed] }
+        confirmedAt: { type: string, nullable: true }
+    DataQualityConfirmation:
+      type: object
+      description: 数据质量人工确认（standalone_076，DR-4 闭环第②步）。
+      properties:
+        eventId: { type: string }
+        verdict: { type: string, enum: [confirmed, contested] }
+        note: { type: string, nullable: true }
+        confirmedBy: { type: string, description: 服务端会话身份 }
+        confirmedAt: { type: string }
+        context:
+          type: object
+          nullable: true
+          properties:
+            dataQuality: { type: string, nullable: true }
+            source: { type: string, nullable: true }
+            observedAt: { type: string, nullable: true }
+            receivedAt: { type: string, nullable: true }
+    RetrospectiveLesson:
+      type: object
+      required: [title, detail]
+      properties:
+        title: { type: string }
+        detail: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        evidenceIds:
+          type: array
+          items: { type: string }
+    RetrospectiveRecord:
+      type: object
+      description: 复盘/运行记忆（standalone_075，DR-3）：闭环六段组装产物（assembled 只引用既有台账证据）。
+      properties:
+        retrospectiveId: { type: string }
+        scope: { type: string, enum: [plan, incident, shift] }
+        targetId: { type: string }
+        title: { type: string }
+        periodStart: { type: string, nullable: true }
+        periodEnd: { type: string, nullable: true }
+        triggerEventId: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, superseded] }
+        assembled:
+          type: object
+          description: 六段结构（perception/dataQuality/decision/authorization/execution/feedback + gaps）。
+        narrative: { type: string, nullable: true }
+        narrativeSource: { type: string, enum: [llm, rule_fallback], nullable: true }
+        narrativeModel: { type: string, nullable: true }
+        publishedAt: { type: string, nullable: true }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string }

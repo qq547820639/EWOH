@@ -184,13 +184,21 @@ export class FrontendMetricsService {
     return [...filtered].reverse().slice(0, safeLimit);
   }
 
-  summary(): Record<string, number> {
+  /**
+   * 计数摘要。orgId 必传：本服务声明的隔离语义是"查询端点只返回调用方
+   * org 可见的内容"，摘要原先跨租户聚合 metric 名与条数并下发给
+   * dispatcher/workshop_lead 等非管理员角色——跨租户可观测信号泄漏。
+   */
+  summary(orgId: string): Record<string, number> {
     const byName = new Map<string, number>();
+    let total = 0;
     for (const r of this.records) {
+      if (r.orgId !== orgId) continue;
+      total += 1;
       byName.set(r.name, (byName.get(r.name) ?? 0) + 1);
     }
     return {
-      total: this.records.length,
+      total,
       distinctNames: byName.size,
       ...Object.fromEntries(byName),
     };

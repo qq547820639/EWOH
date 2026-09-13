@@ -112,6 +112,8 @@ function makeSvc(seed: { runs?: Array<Record<string, unknown>>; plans?: Array<Re
     isSnapshotFresh: jest.fn(),
     isPlanStale: jest.fn(),
     assertFreshForApprove: jest.fn(),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn(),
   };
 
   const svc = new SchedulerService(

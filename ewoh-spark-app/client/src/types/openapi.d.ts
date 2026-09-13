@@ -557,6 +557,8 @@ export interface paths {
                     sourceType?: string;
                     /** @description Device model */
                     model?: string;
+                    /** @description Device category filter (device-category vocabulary): exoskeleton, environment_sensor, camera, location_tag, or unknown (rows with no category). */
+                    category?: "exoskeleton" | "environment_sensor" | "camera" | "location_tag" | "unknown";
                     /** @description Sort order */
                     orderby?: "battery" | "batteryDesc" | "lastTelemetryAt" | "lastTelemetryAtDesc" | "deviceId" | "deviceIdDesc";
                 };
@@ -657,6 +659,243 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/device-responsibilities/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Responsibility coverage for a shift (NO-52a handover readiness)
+         * @description The question a shift handover must answer: for the incoming shift, which devices have nobody responsible? Coverage counts a device as covered when it has a holder for the given shift or an all-day holder; devices whose only holders belong to *other* shifts are reported as gaps (with the reason per device). The check does NOT require the holder to have a login account — that is a separate gap reported by the alert-routing path (this endpoint answers "is anyone responsible", not "can we reach them"). When the current shift cannot be resolved the response says `shiftUnknown: true` instead of guessing a default shift.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Shift to check (omit = current shift; empty string = explicitly unknown shift). */
+                    shiftId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Coverage snapshot (shiftId / totals / per-device gaps / notes) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/device-responsibilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batch-read device responsibility assignments (NO-50a, tenant scoped)
+         * @description One request for a whole device-list page (avoids N+1). `deviceIds` is an optional comma-separated list of business device ids; omitting it returns every active assignment in the caller's tenant (capped). Tenant scope always comes from the caller context — a caller can never read another tenant's assignments. This is the fact the device ledger UI uses to show who would be alerted for a device.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Comma-separated business device ids (e.g. `EXO-1,ENV-2`) */
+                    deviceIds?: string;
+                    activeOnly?: boolean;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Responsibility rows (active by default) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{deviceId}/responsibilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List device responsibility assignments (NO-49a, tenant scoped)
+         * @description Who is responsible for this device (owner / operator / maintainer). This is the fact that lets alerts be addressed to a person instead of broadcast to a role. At most one active holder per (device, responsibility); history is kept by deactivating the previous row. Readable by any authenticated field/management role (coordination needs it); writes are restricted to workshop_lead / safety_admin / global_admin.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    activeOnly?: boolean;
+                };
+                header?: never;
+                path: {
+                    deviceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Responsibility rows (active by default) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        /**
+         * Assign a device responsibility to a person (NO-49a)
+         * @description Same responsibility set twice for the same person is idempotent (no new history row, no extra audit). Assigning a different person deactivates the previous active row in the same transaction (history preserved). The device must exist in this tenant's ledger (404 otherwise — the platform never invents shadow devices), and a concurrent change is reported as 409 instead of silently creating two active holders.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    deviceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Canonical person identity (bare uuid and `person:<uuid>` are equivalent) */
+                        personId: string;
+                        /** @enum {string} */
+                        responsibility: "owner" | "operator" | "maintainer";
+                        /** @description Shift this responsibility applies to (`ewoh_shift.shift_id`). Omit/empty = all-day responsibility (the fallback for every shift, NO-51a). Routing prefers the current shift's holder and falls back to the all-day holder; holders of *other* shifts are never alerted but are reported as gaps (`outOfShiftPersons`). */
+                        shiftId?: string;
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Responsibility assigned (previous holder deactivated if any) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{deviceId}/responsibilities/{responsibility}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Release a device responsibility (NO-49a)
+         * @description Deactivates the current holder (history preserved, audit written). Returns 409 when there is no active holder — removing a responsibility nobody holds is not a silent success.
+         */
+        delete: {
+            parameters: {
+                query?: {
+                    /** @description Shift of the responsibility to release (omit = the all-day one, NO-51a) */
+                    shiftId?: string;
+                };
+                header?: never;
+                path: {
+                    deviceId: string;
+                    responsibility: "owner" | "operator" | "maintainer";
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Responsibility released */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/devices/{id}/bindings": {
         parameters: {
             query?: never;
@@ -693,6 +932,59 @@ export interface paths {
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{id}/capabilities/{capabilityKey}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable or restore a device capability (human lifecycle action)
+         * @description 能力决定派工资格（requiredDeviceCapabilities 匹配）。停用立即从调度可见能力中移除； 恢复前按权威契约重新校验（词表外能力名拒绝恢复）。理由必填并写入审计； 幂等：状态未变化时 changed=false（不写库、不记审计）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 业务设备号（ewoh_device.device_id） */
+                    id: string;
+                    /** @description 能力名（如 observe.temperature） */
+                    capabilityKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetDeviceCapabilityStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 状态变更结果（幂等 no-op 时 changed=false） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetDeviceCapabilityStatusResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                Conflict: components["responses"]["Conflict"];
                 InternalError: components["responses"]["InternalError"];
             };
         };
@@ -811,6 +1103,8 @@ export interface paths {
                     sourceType?: string;
                     /** @description Device model */
                     model?: string;
+                    /** @description Device category filter (device-category vocabulary): exoskeleton, environment_sensor, camera, location_tag, or unknown (rows with no category). */
+                    category?: "exoskeleton" | "environment_sensor" | "camera" | "location_tag" | "unknown";
                     /** @description Sort order */
                     orderby?: "battery" | "batteryDesc" | "lastTelemetryAt" | "lastTelemetryAtDesc" | "deviceId" | "deviceIdDesc";
                 };
@@ -894,6 +1188,8 @@ export interface paths {
                     batteryMax?: number;
                     /** @description real, controlled_test, simulated, replayed, stale, or offline */
                     sourceType?: string;
+                    /** @description Device category filter (device-category vocabulary): exoskeleton, environment_sensor, camera, location_tag, or unknown (rows with no category). */
+                    category?: "exoskeleton" | "environment_sensor" | "camera" | "location_tag" | "unknown";
                     /** @description Device model */
                     model?: string;
                     /** @description Sort order */
@@ -5205,6 +5501,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/oee/andons/sla-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate andons nobody has taken over (NO-48a, SLA breach sweep)
+         * @description Periodic/manual sweep that closes a real safety gap: the existing SLA escalation only fires when someone acknowledges **late**. If a red andon stays `open` and nobody touches it, nothing happens. This sweep escalates only those never-taken-over andons past their SLA — level 1 (>1x SLA) notifies workshop_lead + dispatcher, level 2 (>2x SLA) additionally notifies safety_admin. It is read-only with respect to business facts (no status/evidence writes) but writes deterministic, idempotent reminders plus an audit entry per escalation. Missing/unparseable `openedAt` is reported as `undecidable` rather than being treated as "not overdue". Workers scan tenants via the controlled SECURITY DEFINER function `ewoh_open_andon_orgs` and then re-read per tenant under GUC.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep counters (scanned/openAndons/breached/undecidable/created/duplicates) + per-andon escalations */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/oee/andons/{id}/state": {
         parameters: {
             query?: never;
@@ -6197,6 +6538,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{id}/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update task capability requirements (device / station capabilities)
+         * @description 能力要求决定该任务能被哪些资源承接（调度按 requiredDeviceCapabilities ⊆ device.capabilities 匹配），是执行边界的一部分。形状非法 400（不猜不截断）；能力名是开放词表—— 未登记/当前无法匹配的名称**允许**写入，但响应会给出显式 warnings（否则会得到 "永远匹配不到资源"的任务而无从知晓）。变更留审计并触发重排。
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 任务 id */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskCapabilityRequirementsRequest"];
+                };
+            };
+            responses: {
+                /** @description 更新后的能力要求与提示 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskCapabilityRequirementsResult"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        trace?: never;
+    };
     "/api/tasks/{id}/state": {
         parameters: {
             query?: never;
@@ -6551,6 +6942,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/approvals/authorizations/expiry-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep execution-boundary authorizations and raise expiry reminders (NO-30a)
+         * @description Creates idempotent in-app notifications for authorizations that are about to expire (remaining <= 2h) or have recently expired (within 24h), addressed to the safety_admin role. Notification ids are derived from (approvalId, bucket, channel), so repeated sweeps never duplicate reminders. The sweep is read-only with respect to authorization state. The same implementation runs on a periodic worker. NO-45a: when an authorization has actually expired, the "about to expire, act now" reminder loses its premise and is closed (`resolution=approval_expired`) in the same sweep, while the "already expired, re-apply" reminder stays pending — the two carry different meanings and are never closed together. `resolved` reports how many urging reminders were closed by this run.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep counters (scanned/expiringSoon/expired/created/duplicates/resolved) + per-approval notifications */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/approvals/authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Execution-boundary authorizations with validity and usage (NO-24a)
+         * @description Capability-change approvals (task relaxation / device restore) with the tenant's approved-at / expires-at / expired flag (24h validity) and the per-object usage records that consumed them. Expired authorizations remain listed and are marked unusable instead of disappearing.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Authorization rows (approvalId/status/approvedAt/expiresAt/expired/remainingMs/subject/usage) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/approvals/pending": {
         parameters: {
             query?: never;
@@ -6829,7 +7310,88 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Device execution boundary (human read surface, NO-66a)
+         * @description 现场读面：一台设备的控制命令现在处于什么状态、为什么。平台此前只把这个事实 开给网关（机器身份 `pending`），现场问"这台设备为什么不动"只能翻库。 逐条返回投递态（待投递 / **排队（设备忙，一车一活）** / 已投递未回执 / 终态）、 授权指纹方案与**是否复核通过**（两件事分开）、投递确认与执行回执事实、 以及违规留痕（`delivery_rejected` / `authorization_violation`——安全事件不与 "执行失败"混为一谈）。只读；租户与角色收敛（dispatcher/workshop_lead/safety_admin/device_ops）。
+         */
+        get: {
+            parameters: {
+                query: {
+                    deviceId: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Device execution boundary snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            deviceId: string;
+                            checkedAt: string;
+                            summary: {
+                                inFlight?: number;
+                                queued?: number;
+                                awaitingDelivery?: number;
+                                revoked?: number;
+                                /** @description 占用设备的在飞命令 `<commandKey>:<commandId>`；null = 设备空闲 */
+                                busyBlocker?: string | null;
+                                /** @description NO-67b 投递配额现状（与 pending 读面同一计量口径：delivered_at + 60s 窗口） */
+                                quota?: {
+                                    perMinute?: number;
+                                    usedInWindow?: number;
+                                    remaining?: number | null;
+                                };
+                            };
+                            commands: {
+                                commandId?: string;
+                                requestId?: string;
+                                commandKey?: string;
+                                attemptNo?: number;
+                                status?: string;
+                                /** @description awaiting_delivery | queued_device_busy | gateway_received | executed | failed | revoked | expired */
+                                deliveryState?: string;
+                                deliveryNote?: string | null;
+                                sentAt?: string | null;
+                                /** @description NO-67b：平台把命令交给网关的时刻（投递路径唯一写入点）。 NULL = 从未交付。与 `authorizationVerifiedAt`（授权复核通过，下发前也会写） 是两个事实——"下发 ≠ 交付"。 */
+                                deliveredAt?: string | null;
+                                responseAt?: string | null;
+                                revokedReason?: string | null;
+                                revokedReasonLabel?: string | null;
+                                /** @enum {string} */
+                                fingerprintScheme?: "hmac-sha256:v2" | "fnv1a64:v1" | "none";
+                                fingerprintVerified?: boolean;
+                                executable?: boolean;
+                                ack?: {
+                                    delivered?: boolean;
+                                    reason?: string | null;
+                                    at?: string | null;
+                                } | null;
+                                receipt?: {
+                                    result?: string | null;
+                                    at?: string | null;
+                                } | null;
+                                violations?: {
+                                    resultType?: string;
+                                    resultCode?: string | null;
+                                    at?: string | null;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
         put?: never;
         /**
          * Create control request
@@ -7041,6 +7603,61 @@ export interface paths {
                 BadRequest: components["responses"]["BadRequest"];
                 Unauthorized: components["responses"]["Unauthorized"];
                 NotFound: components["responses"]["NotFound"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/delivery-backlog/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep control commands stuck in delivery backlog
+         * @description NO-68a：把"命令下发后迟迟没投到设备"变成一条叫到人的提醒。 扫本租户内 `status=sent` 且 `delivered_at is null` 且下发已超过投递 SLA （`EWOH_CONTROL_DELIVERY_SLA_MS`，默认 5 分钟）的命令，按设备聚合成 确定性 notificationId 的提醒（收件人 dispatcher / workshop_lead / device_ops， 重复扫描只累加 `duplicates`），并写 `control.delivery_backlog_sweep` 审计。 **只读命令与设备事实**：不改状态、不代替人投递、不撤销任何命令。 同一实现由定时 worker 复跑（`CONTROL_BACKLOG_WORKER_INTERVAL_MS`，默认 10 分钟， `CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）；本端点供值班角色在排障时手动触发， 不必等下一个周期。跨设备/跨 request 的租户级操作，故挂在 `api/control` 而非 某条 request 之下（对齐 `/api/perception/fusion/sweep` 等同类巡检）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep result */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description 扫描到的超 SLA 未交付命令数 */
+                            scanned?: number;
+                            /** @description 存在投递积压的设备数 */
+                            devicesWithBacklog?: number;
+                            /** @description 本次新建的提醒数 */
+                            created?: number;
+                            /** @description 幂等命中的已存在提醒数 */
+                            duplicates?: number;
+                            /** @description 当前投递 SLA（毫秒） */
+                            slaMs?: number;
+                            notificationIds?: string[];
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
                 InternalError: components["responses"]["InternalError"];
             };
         };
@@ -8289,6 +8906,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/plans/{planId}/staleness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Explain whether a plan is stale and what changed (NO-62c)
+         * @description Read-only diagnosis with the SAME implementation the approve path uses when it rejects with 409 PLAN_STALE. Returns per-entity version/reservation differences, separating external changes from changes the plan itself caused (already dispatched assignments / created reservations), so the approver learns what changed instead of only that the plan is stale. `snapshotFound=false` means the bound snapshot row is gone: differences cannot be computed (never reported as fresh).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Successful response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            planId?: string;
+                            status?: string;
+                            version?: number;
+                            snapshotVersion?: string;
+                            stale?: boolean;
+                            replanAvailable?: boolean;
+                            /** Format: date-time */
+                            checkedAt?: string;
+                            staleness?: components["schemas"]["PlanStalenessReport"];
+                        };
+                    };
+                };
+                NotFound: components["responses"]["NotFound"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/plans/{planId}/constraints": {
         parameters: {
             query?: never;
@@ -8439,7 +9110,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Dispatch schedule plan (V2) */
+        /**
+         * Dispatch schedule plan (V2) — supports partial dispatch (wave)
+         * @description 派工。body 省略或 assignmentIds 为空 → 派发全部待派工 assignment（原有行为）。 提供 assignmentIds → 只派发这一波（部分执行）。波内全有或全无：出现任何 不可派工项即拒绝整波（409 DISPATCH_WAVE_INVALID），不做半应用。 计划状态语义：仅当本波覆盖全部待派工 assignment 时才进入契约终态 `dispatched`（其含义是"全部转任务"）；否则保持 `approved`，并通过 响应的 dispatch.remainingAssignmentIds 显式暴露剩余。把部分派工写成 dispatched 会让半成品方案看起来已终结。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -8449,7 +9123,14 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description 本波要派发的 assignment ID；省略表示整单派工。 */
+                        assignmentIds?: string[];
+                    };
+                };
+            };
             responses: {
                 /** @description Successful response */
                 200: {
@@ -8858,6 +9539,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/predictions/task-duration/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Training-sample eligibility summary for the empirical duration model
+         * @description 训练样本资格摘要。按稳定枚举原因给出可解释计数，并区分两级资格： 行级标记（receipt_source='real' + production_training_eligible + provenance_json） 与**独立设备回执证据**（provenance.independentReceipt.policy='persisted-device-receipt-v1'）。 只有两级都通过的行才计入 trainable；人工上报与模拟回执永久排除在训练集之外。 因此 flaggedEligible 可能大于 trainable——该差额即"有标记但缺设备证据"。 资格判定与训练加载共用同一纯函数（training-sample-eligibility.ts）， 避免"界面说可训练 N 条、训练报样本不足"的两套口径。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Eligibility summary (tenant scoped) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            orgId: string;
+                            /** @description 参与统计的反馈行上限 */
+                            sampleLimit?: number;
+                            totalFeedbackRows?: number;
+                            /** @description 通过行级标记的行数（不等于可训练数） */
+                            flaggedEligible?: number;
+                            /** @description 训练实际可用样本数 */
+                            trainable: number;
+                            minSamplesRequired: number;
+                            fullyTrained?: boolean;
+                            /** @description 按拒绝原因计数的排除明细（稳定枚举键） */
+                            rejected?: {
+                                [key: string]: number;
+                            };
+                            rejectedLabels?: {
+                                [key: string]: string;
+                            };
+                            /** @enum {string} */
+                            eligibilityPolicy: "independent-device-receipt-required";
+                        };
+                    };
+                };
+                /** @description 缺少租户上下文或训练模块未装配 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/predictions/task-duration/retrain": {
         parameters: {
             query?: never;
@@ -8892,6 +9639,20 @@ export interface paths {
                             version?: string;
                             n?: number;
                             medianMs?: number;
+                            /** @description 谱系（lineage）：新模型版本由哪些样本、按什么资格策略产生。 没有它就无法回答"这个模型是怎么来的"，而时长模型会影响排程预测。 */
+                            lineage?: {
+                                trainedFrom?: string;
+                                eligibilityPolicy?: string;
+                                trainableSamples?: number | null;
+                                flaggedEligible?: number | null;
+                                minSamplesRequired?: number | null;
+                                perTaskType?: {
+                                    taskType?: string;
+                                    ok?: boolean;
+                                    version?: string | null;
+                                    notEnoughDataReason?: string | null;
+                                }[];
+                            };
                             p90Ms?: number;
                         };
                     };
@@ -10304,6 +11065,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ingest/actuator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest actuator (AGV/PLC) state frame (NO-59b)
+         * @description 执行机构状态帧上行（边缘 `actuator` 适配器 → 世界状态实体行 `state_json.actuator` + 设备/能力登记）。fail-closed：`state` 必须在封闭词表 （idle/moving/arrived/paused/fault/offline）内，否则 400 并回显词表； 缺租户上下文或时间戳超前（时钟漂移）一律拒绝，不写半条事实； 同 `record_id` 重放幂等跳过（边缘 at-least-once）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description Target organization UUID for machine-to-machine ingestion */
+                    "X-Org-Id": components["parameters"]["OrgIdHeader"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ActuatorFrameDto"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IngestResponse"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                TooManyRequests: components["responses"]["TooManyRequests"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ingest/execution-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest device-measured execution fact (sole writer of source=device_receipt)
+         * @description 设备执行事实接入 —— **`device_receipt` 来源的唯一写入方**。 `execution-receipt-provenance` 的资格判定要求持久化执行行 `source='device_receipt'`， 而此前**全仓没有任何写入方产出该值**（HTTP 回执路径只可能写 simulated/manual_report）， 所以 `real` 分支不可达、现场回执永远无法成为生产训练样本。本端点补上这条合法路径： 由**机器身份**（X-Ingest-Key）上报设备自己测得的执行时间。
+         *     安全边界（逐条有测试锁定）： (1) **只接受带 org 绑定的 ingest key** —— legacy 无绑定模式（org 由客户端 X-Org-Id 自报） 一律 403 `DEVICE_FACT_REQUIRES_BOUND_KEY`，否则任何持无绑定 key 者可声称任意租户并产出 "看起来合法"的训练数据；(2) **设备只能报自己的活** —— 执行行已记录的 deviceId 必须非空 且等于上报 deviceId，否则 403；(3) **不创建计划** —— 按 (orgId, assignmentId) 解析既有执行行， 不存在则 404；(4) **时间必须是设备测得值** —— `actualStartAt` 必填、`COMPLETED` 必须带 `actualEndAt` 且不早于 start，服务端**不**从 now() 兜底；(5) **不推进任务状态** —— 本端点只写执行事实，任务/方案状态推进仍由既有回执应用服务负责。
+         *     即便写入成功也**不自动可训练**：`receiptProvenance` 仍要求 task.source=real、 device.sourceType=real、方案非 shadow、审批人 ≠ 生成人、且 plan.confirmedAt ≤ execution.actualStartAt。模拟与联调环境因此无法获得训练样本（设计意图）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description Target organization UUID for machine-to-machine ingestion */
+                    "X-Org-Id": components["parameters"]["OrgIdHeader"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description 上报设备（必须与该执行行已记录的 deviceId 一致） */
+                        deviceId: string;
+                        /** @description 执行行定位键（设备事实附到既有执行行，不新建） */
+                        assignmentId: string;
+                        /**
+                         * Format: date-time
+                         * @description 设备测得的实际开始时间（服务端不代填）
+                         */
+                        actualStartAt: string;
+                        /**
+                         * Format: date-time
+                         * @description 设备测得的实际结束时间（status=COMPLETED 时必填）
+                         */
+                        actualEndAt?: string;
+                        /** @enum {string} */
+                        status: "STARTED" | "COMPLETED";
+                        /** @description 设备侧附加测量（原样留存供溯源，不参与资格判定） */
+                        metrics?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description 设备事实已记录 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            executionId?: string;
+                            assignmentId?: string;
+                            deviceId?: string;
+                            status?: string;
+                            /** @description 恒为 device_receipt（本端点唯一值） */
+                            source?: string;
+                            /** Format: date-time */
+                            actualStartAt?: string;
+                            /** Format: date-time */
+                            actualEndAt?: string | null;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                NotFound: components["responses"]["NotFound"];
+                TooManyRequests: components["responses"]["TooManyRequests"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ingest/events": {
         parameters: {
             query?: never;
@@ -11252,6 +12149,236 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/materials/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Projected material inventory from ERP outbound movements (NO-27a)
+         * @description Inventory is projected from authoritative material movements (inventory_receipt adds, material_consumption subtracts) recorded on ERP outbound events. Response includes per-material balances with evidence event ids, materials that cannot be judged (no declared reorder point / mixed units) and legacy unparsable payloads.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Material balances + unparsable movements + scan counters */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/materials/movement-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Material movement type registry (NO-27a) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Closed registry of movement types that participate in the inventory projection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/master-data/capabilities/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import device capability master data from ERP/MES/WMS (NO-26a)
+         * @description Controlled batch entry for externally maintained capability lists. Unknown sources, unknown capability names (with typo suggestion), unknown devices and human-disabled capabilities are rejected/skipped row by row; fieldMap maps external column names; ?dryRun=1 previews the outcome without writing. Every run (including previews) is audited.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description When truthy (1/true/yes) the import is evaluated but nothing is written. */
+                    dryRun?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Per-row import outcome (applied/updated/unchanged/skipped_*) with totals and warnings */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reasoning/evaluate-live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate rules against the live world model (NO-25a observation projection)
+         * @description Builds reasoning facts from the authoritative world-state snapshot plus the tenant's recent environment readings (observation capabilities), then runs the same deterministic rule engine and L4 ledger path as /api/reasoning/evaluate. The response also returns the evidence behind each fact (value/threshold/observedAt/ dataQuality/sourceType) and the readings that were NOT used (skipped + reason).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reasoning trace + inference ids + facts + evidence + skipped readings */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reasoning/live-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read-only projection of live reasoning facts (NO-25a)
+         * @description Same projection as evaluate-live without rule evaluation or ledger writes — the explainability/debug surface for "what can the world model currently deduce".
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Facts + evidence + skipped readings + effective thresholds */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reasoning/rules": {
         parameters: {
             query?: never;
@@ -11539,6 +12666,1022 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current rule-threshold baseline (effective value + provenance + read time; read-only) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Per rule/parameter baseline: engine default, currently effective value, its source (approved proposal override or engine constant), the approving proposal's provenance, and pending/history counts. Read-only: never activates anything. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningThresholdBaseline"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/world/order-chains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order → task/step → material chain view with explicit gaps (NO-57a)
+         * @description 把"订单 → 任务/工序 → 物料"在同一次读取里组装出来：订单=未完工 `ERP_ORDER` 事件； 任务=`ewoh_schedule_task`（MES 建单时 `schedule_task_id = 订单号`，这条链一直存在）； 工序=`ewoh_schedule_task_step`（工序总数/未完成数）；物料=MRP 缺口行（含证据订单号）。 **断链显式**：`task_link_missing` / `steps_missing` / `material_link_missing` / `due_at_missing` 逐单返回（原则 7），排序为逾期优先 → 期限升序 → 订单号。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    orderNo?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Order chains + summary (overdue/gaps/materials in shortage/open steps) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrderChainResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/planned-vs-actual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Planned vs actual reconciliation over execution facts (NO-57b)
+         * @description 读 `ewoh_scheduling_execution`（计划/实际时间戳 + 偏差类型）给出**可复盘口径**： 可比覆盖率、绝对偏差的中位/均值/P90、超时/提前/准时计数、不可比行按原因分类 （缺计划/缺实际/计划为 0/未完工）、偏差类型分布。**样本不足（可比 < 5）不给比率** （字段为 null + notes 说明），缺失不当 0；读取触顶时显式说明"不是全体"。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    windowDays?: number;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reconciliation summary (rates are null when sample is insufficient) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlannedVsActualSummary"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/perception/fusion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest multi-source perception fusion snapshots (NO-56a, §5)
+         * @description 多源（UWB 定位 / 外骨骼 IMU / 视觉检测 / 工位语义 / 任务上下文）融合后的 主体状态快照：一致性、冲突、可解释加权置信度、被排除证据与规则留痕。 **默认每个主体取最新一条**。`strongAdviceAllowed=false` 表示上游不得据此生成强建议 （低置信度或存在冲突，§5 规则 5）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    subjectId?: string;
+                    agreement?: "consistent" | "partial" | "conflict" | "insufficient";
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest fusion snapshot per subject */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PerceptionFusion"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/perception/fusion/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fuse multi-source observations for the window (idempotent, read-only w.r.t. facts)
+         * @description 读窗口内的真实观测（`ewoh_world_state` 定位行 / `ewoh_telemetry` 外骨骼行 / 相机 person 检测行）与上下文（工位实体、在飞任务），按 §5 五条规则融合并落快照。 **只读感知事实**，只写快照与 `perception.fusion_sweep` 审计；快照号确定性 （主体 + 窗口桶）→ 重复扫描幂等。视觉检测的 track 未绑定到主体时如实计数 （不按"最像的人"分配）；坐标超出工位半径即"工位未知"（不猜最近工位）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @default 5 */
+                        windowMinutes?: number;
+                        /** @default 5 */
+                        bucketMinutes?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Sweep result (subjects/persisted/byAgreement/byConfidenceLevel/conflicts/notes) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PerceptionSweepResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/commands/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending control commands for an edge gateway (NO-60a, poll-based downlink)
+         * @description 边缘网关轮询待投递命令（机器对机器；`X-Ingest-Key` 鉴权 + key→org 绑定）。 只返回本租户 + 目标设备匹配 + 命令状态 `sent`（尚未被网关接收）+ 请求行非终态的命令。 每条命令带**平台签发的授权号** `control:<requestId>`——高危命令在边缘侧的授权闸门 由此满足，且授权号可回溯到真实审批过的请求。只读：不改变任何状态。
+         */
+        get: {
+            parameters: {
+                query: {
+                    deviceId: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pending commands for the device (each carries authorizationRef + payload) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            deviceId: string;
+                            commands: {
+                                commandId: string;
+                                requestId: string;
+                                commandKey: string;
+                                attemptNo: number;
+                                /** @description 平台签发：`control:<requestId>` */
+                                authorizationRef: string;
+                                /** @description NO-62a/65a 授权范围指纹。配置了 `EWOH_CONTROL_FINGERPRINT_SECRET` 时为 `hmac-sha256:v2:<32hex>`（边缘持同一密钥可验签，验不过不碰设备）； 未配置时为 `fnv1a64:v1` 一致性指纹（启动会告警）。 */
+                                authorizationFingerprint?: string;
+                                /** @description NO-65a：**可重建的授权范围**（边缘据此重算签名材料）。 缺了它边缘无法验证签名，只能盲信指纹。 */
+                                authorizationScope?: {
+                                    requestId?: string;
+                                    deviceId?: string;
+                                    commandKey?: string;
+                                    approvalInstanceId?: string | null;
+                                };
+                                /** @description NO-62b 投递优先级（越小越先；stop=0） */
+                                priority?: number;
+                                priorityLabel?: string;
+                                payload?: Record<string, never> | null;
+                                sentAt?: string | null;
+                                orgId?: string | null;
+                            }[];
+                            /** @description 本设备待投递积压（本轮可见范围内） */
+                            queued?: number;
+                            /** @description 本轮因授权复核未通过被撤回的命令数 */
+                            revoked?: number;
+                            /** @description NO-65b：本轮因设备仍在执行上一条运动命令（`gateway_received`）而**暂缓投递** 的命令。暂缓 ≠ 失败：命令保持 `sent`，设备空下来后下一轮照常投递； 安全动作（stop/pause/return_to_dock/clear_fault）永不暂缓。 */
+                            deferred?: {
+                                commandId?: string;
+                                commandKey?: string;
+                                /**
+                                 * @description device_busy = 一车一活；quota = 本分钟投递配额用尽（均非失败）
+                                 * @enum {string}
+                                 */
+                                reason?: "device_busy" | "quota";
+                                /** @description 占用设备的在飞命令 `<commandKey>:<commandId>` */
+                                blockedBy?: string;
+                            }[];
+                            /** @description NO-67b 单设备投递配额（每分钟）。`usedInWindow` = 本轮开始前窗口内已投递条数； `remaining` = 本轮还能投几条（null = 不限，0 = 已用尽 → 后续普通命令排队到下一分钟）。 安全动作（stop）永不受配额约束，也不占配额。 */
+                            quota?: {
+                                perMinute?: number;
+                                usedInWindow?: number;
+                                remaining?: number | null;
+                            };
+                            oldestSentAt?: string | null;
+                            truncated?: boolean;
+                            checkedAt?: string;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                TooManyRequests: components["responses"]["TooManyRequests"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/commands/{commandId}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edge gateway execution receipt by commandId (executed | failed)
+         * @description 机器身份（边缘网关，`X-Ingest-Key`）按 `commandId` 回执执行结果——人面回执路径 （`POST /api/control/requests/:id/receipts`）要 Bearer 用户令牌，边缘网关没有也不该持有 （NO-60a 实测：只用服务端密钥会 401，命令停在 `gateway_received`、执行结果丢失）。 本端点按 commandId 定位请求与命令键，**复用同一套校验与落库** （终态/重复回执/租户/`ewoh_control_result`），不另写一份。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    commandId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        result: "executed" | "failed";
+                        /** @description 执行细节（设备状态/适配器判定/时间等） */
+                        receipt?: Record<string, never>;
+                    };
+                };
+            };
+            responses: {
+                /** @description Receipt recorded (command/request status updated, control_result row written) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ControlRequest"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                NotFound: components["responses"]["NotFound"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/commands/{commandId}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edge gateway delivery acknowledgement (pending_gateway → gateway_received | failed)
+         * @description 投递确认（状态机 `contracts/state-machines/control.yaml`）。`delivered=true` → `gateway_received`；`delivered=false` **必须给原因** → `failed`（否则平台只知道 "没送到"、不知道为什么）。幂等：已确认过同一命令 → 返回当前状态 + `alreadyAcked=true`（边缘 at-least-once），不重复写结果行；已进入终态 → 409。 无论接受还是拒绝都写 `ewoh_control_result`（resultType=gateway_ack）与审计。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    commandId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        delivered: boolean;
+                        /** @description delivered=false 时必填（投递失败原因） */
+                        reason?: string;
+                        details?: Record<string, never>;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledgement recorded (gateway_received / failed / alreadyAcked) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            commandId: string;
+                            status: string;
+                            alreadyAcked: boolean;
+                            requestId: string;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                NotFound: components["responses"]["NotFound"];
+                Conflict: components["responses"]["Conflict"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List improvement actions derived from published retrospectives (NO-55a)
+         * @description 改进行动项 = 复盘经验条目/缺口 → **有人负责、有期限、有验收判据、有完成证据**的工作项。 与阈值提案（可激活的参数变更）并列：行动项改"做法"，提案改"参数"。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "proposed" | "accepted" | "rejected" | "completed" | "dropped";
+                    priority?: "low" | "medium" | "high";
+                    owner?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Actions (org-scoped, earliest due first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementAction"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Derive/refresh improvement actions from published retrospectives (idempotent, read-only)
+         * @description 扫**已发布复盘**的结构化经验条目（severity=warning|critical）与缺口清单，派生行动项候选。 幂等：行动项号确定性，重复扫描只刷新来源事实（标题/详情/优先级/证据）， **不覆盖人的决定**（已接受的责任/期限/完成痕迹、已拒绝/放弃的理由原样保留）。 只读复盘记录，只写行动项与 `learning.action_scan` 审计。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description 聚焦扫描：只扫指定复盘（不传则扫最近 100 篇已发布复盘） */
+                        retrospectiveIds?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Scan result (created/refreshed/decisionsPreserved/rejected + 读了什么) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementScanResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Overdue improvement actions (accepted + past due), earliest due first */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Overdue actions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementAction"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/overdue-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Notify owners and workshop leads about overdue improvement actions (NO-56b)
+         * @description 逾期待办**主动叫人**：收件人 = 负责人账号（经受控函数从 person 反查， 查不到就如实进 `unresolvedOwners`）+ 班组长角色兜底；通知号确定性 （`NTF-ACT-<行动项号>-action_overdue-<role|user>-<收件人>-<渠道>`）→ 重复扫描只累加 duplicates。 **只读行动项**：不改状态、不代替人完成，只写提醒与 `learning.action_overdue_sweep` 审计。 完成/放弃/拒绝时按前缀把提醒落到终态（`action_completed` / `action_dropped`，与主事实同事务）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep result (scanned/created/duplicates/notified/unresolvedOwners) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            orgId?: string;
+                            scanned?: number;
+                            created?: number;
+                            duplicates?: number;
+                            notified?: {
+                                actionId?: string;
+                                recipients?: string[];
+                            }[];
+                            unresolvedOwners?: string[];
+                            /** Format: date-time */
+                            generatedAt?: string;
+                        };
+                    };
+                };
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/{actionId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Human accepts an action (owner + due date + acceptance criteria are mandatory)
+         * @description 平台不替现场承诺期限：负责人、期限、验收判据三项必填；同时可纠正建议类型 （`kindSource` 变 `human`）。状态不对（已接受/已拒绝等）→ 409；缺事实 → 400。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description 负责人（人或角色） */
+                        owner: string;
+                        /** Format: date-time */
+                        dueAt: string;
+                        /** @description 让别人能判断"做完了没有" */
+                        acceptanceCriteria: string;
+                        /** @enum {string} */
+                        kind?: "process_change" | "training" | "tooling" | "maintenance" | "threshold_review";
+                    };
+                };
+            };
+            responses: {
+                /** @description Accepted action (owner/due/criteria/acceptedBy/acceptedAt recorded) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementAction"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/{actionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human marks an accepted action complete (outcome note mandatory) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description 对着验收判据说清楚做了什么、结果如何 */
+                        outcomeNote: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Completed action (completedBy/completedAt/outcomeNote recorded) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementAction"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/{actionId}/effect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recurrence metric for an improvement action (before/after deviation counts; NO-58a)
+         * @description 复发度量：该行动项的**对象归属**（device/person/station，由复盘 incident `target_id` 派生） 在"完成前后各一个窗口"内的执行偏差计数。诚实边界： ① 没有对象归属 → `conclusion=no_subject`（复发**不可度量**，不硬算）； ② 尚未完成 → 只给"完成前"计数（`not_completed`）； ③ 合计样本 < 3 → `insufficient_sample`（不给趋势结论）； ④ 计数下降/未下降只是**事实**，不等于"这条改进有效"（订单结构/季节变化同样影响）。 只读：不改任何事实、不写通知。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    windowDays?: number;
+                };
+                header?: never;
+                path: {
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recurrence metric (counts + explicit conclusion and reason) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementActionEffect"];
+                    };
+                };
+                NotFound: components["responses"]["NotFound"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/actions/{actionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human rejects (proposed) or drops (accepted) an action with a mandatory reason */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        decision: "rejected" | "dropped";
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Action rejected/dropped (decidedBy/decidedAt/decidedReason recorded) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImprovementAction"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List run-memory learning signals for the current tenant (NO-54a)
+         * @description 运行记忆信号 = 提醒治理（处置率/账龄）、数据质量积压、执行偏差复发的**实测快照** 加上证据引用、样本量、可信度与方向。信号**不是提案**：只有 POST /api/learning/signals/{signalId}/promote 才会创建学习提案。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "notification_fatigue" | "data_quality_backlog" | "deviation_repeat";
+                    status?: "open" | "promoted" | "dismissed";
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Signals (org-scoped, newest seen first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningSignal"][];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/signals/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Derive/refresh learning signals from run memory (idempotent, read-only w.r.t. facts)
+         * @description 扫描提醒治理指标、数据质量积压与执行偏差复发，派生带证据的信号。幂等： 同一窗口重复扫描只刷新实测快照（`last_seen_at`），**不覆盖人的决定** （promoted/dismissed 原样保留）；条件恶化（严重度升级）会生成新的信号号。 边界：只读业务事实（不改告警/偏差/提醒），只写信号与审计；样本不足的信号 `confidence=null` 且 `actionable=null`（原则 7）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @default 30 */
+                        windowDays?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Scan result (created/refreshed/decisionsPreserved/rejected + memory read counts) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningSignalScanResult"];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/signals/{signalId}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Human turns an actionable signal into a learning proposal (target value supplied by the human)
+         * @description 人点"生成提案"：目标阈值由**人**填写（平台只给方向 raise/lower 与依据，不替现场定数值）。 服务端两道防漂移：信号必须仍是 `open`；重新读取当前生效阈值并与信号扫描时的基线比对， 不一致 → 409（必须重新扫描）。创建出的提案仍走影子评估 → 人审激活阶梯，绝不自动生效。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    signalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        candidateValue: number;
+                        note?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Signal marked promoted + created proposal (proposal starts at proposed/shadow_evaluated) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            signal?: components["schemas"]["LearningSignal"];
+                            proposal?: Record<string, never>;
+                            created?: boolean;
+                            proposalId?: string;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/signals/{signalId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Human dismisses a signal with a mandatory reason (never silently ignored) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    signalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Signal dismissed (decidedBy/decidedAt/decidedReason recorded; re-scan preserves it) */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LearningSignal"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -14829,7 +16972,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique) */
+        /**
+         * Start an exoskeleton-person binding session (ADR-032: contract fail-closed + active-unique + execution-boundary guards)
+         * @description Starts an explicit, temporary, auditable wearer binding. The device row is locked (SELECT ... FOR UPDATE) for the duration of the transaction, so session starts are serialized against plan dispatch for the same device. Two execution-boundary rules apply: (1) the device must not already have another ACTIVE session (partial unique index + explicit conflict); (2) NO-39a — the device must not be committed to another person by an in-flight task (status dispatched/received/executing/paused/exception): a wearer different from the task assignee is rejected with 409 EXO_SESSION_TASK_CONFLICT, a task without an assignee is rejected as well (fail-closed), and only the assignee may wear the device (human-machine pairing). Pre-dispatch tasks are proposals, not execution boundaries, and therefore do not block a session start; they are re-checked at dispatch time instead.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -14849,6 +16995,8 @@ export interface paths {
                         expectedEndAt?: string;
                         operatorId?: string;
                         reason?: string;
+                        /** @description NO-40a: optional business task (ewoh_production_task.id) this wear belongs to. When set and expectedEndAt is omitted, the task plan end is inherited as the expected end (source task_plan_end); an explicit expectedEndAt always wins (source operator). A task bound to a different device is rejected with 409. Unknown task ids are rejected with 400 (the binding declaration is never silently ignored). */
+                        taskId?: string;
                     };
                 };
             };
@@ -14867,9 +17015,200 @@ export interface paths {
                 BadRequest: components["responses"]["BadRequest"];
                 Unauthorized: components["responses"]["Unauthorized"];
                 Forbidden: components["responses"]["Forbidden"];
+                Conflict: components["responses"]["Conflict"];
                 InternalError: components["responses"]["InternalError"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/reminder-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep active exoskeleton sessions and raise idempotent reminders (NO-37a)
+         * @description Scans ACTIVE exoskeleton sessions and creates idempotent in-app notifications on two dimensions. Time: sessions past their expected end (with a 15-minute grace) or worn continuously for at least 4 hours. Evidence (NO-42a, reusing the NO-41a cross-check): sessions whose declared wearer disagrees with the telemetry-reported wearer (telemetry_wearer_mismatch, high) or whose telemetry shows a fresh frame with no wearer and quiet metrics (telemetry_inactive_suspect, medium). Every tag carries its own deterministic id (NTF-EXO-<session>-<tag>[-user-<who>]-<channel>), so re-sweeping only increments duplicates; 'consistent', 'activity_only', 'stale_telemetry' and 'no_telemetry' never raise a reminder. The sweep is read-only with respect to session state. Recipients are the workshop_lead role plus the wearer's own bound account (ewoh_user.person_id, resolved through the SECURITY DEFINER helper ewoh_find_active_users_by_person); wearers without a bound account are reported in unresolvedWearers instead of being silently dropped. Notification ids are derived from (sessionId, bucket, recipient, channel), so repeated sweeps only increment duplicates. The sweep is read-only with respect to session state: it never ends a session and never issues device commands. The same implementation runs on a periodic worker (EXO_SESSION_REMINDER_WORKER_INTERVAL_MS, default 10 minutes).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep counters (scanned/overdue/longRunning/created/duplicates/unresolvedWearers) + per-session notifications */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/consistency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cross-check declared wearer (session) against device telemetry (NO-41a)
+         * @description Read-only reconciliation of every ACTIVE session against the latest telemetry frame of its device (DISTINCT ON (device_id), indexed by (org_id, device_id, ts DESC)). Verdicts: consistent (frame names the session wearer), wearer_mismatch (frame names a DIFFERENT person - a hard conflict that a human must resolve, the platform takes no side), activity_only (device is moving but the frame reported no wearer), inactive_suspect (frame reported no wearer and all metrics are quiet - "suspected" not "proven"), stale_telemetry (latest frame older than the freshness window, or unparsable timestamp: no conclusion), no_telemetry (no frame at all: absence of evidence, NOT evidence of absence). Notes in the response carry the same caveats for the UI to display verbatim.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Per-session verdicts + summary counts + freshness window + caveat notes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/device-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Device context for starting a session (NO-40a: in-flight tasks + bindable plan end)
+         * @description Read-only context for one exoskeleton device: whether it is registered in the asset ledger, the ACTIVE session (if any), the in-flight tasks committed to it (dispatched/received/executing/paused/exception) and one actionable suggestion. The suggestion binds a task only when exactly one in-flight task exists (choosing among several is a human decision and is therefore not guessed), marks whether that task's assignee equals the person about to wear the device (human-machine pairing), and exposes the task plan end as an inheritable expectedEndAt (expired plan ends are never inherited). Binding the task at session start makes deviation samples comparable, which is what NO-38a aggregates.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Canonical device identity (device:<business device id>). */
+                    exoId: string;
+                    /** @description Canonical person identity considered as the next wearer (for assignee matching). */
+                    personId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Device context (registered/activeSession/inFlightTasks/suggestion) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exo/sessions/deviation-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aggregate planned-vs-actual session deviation (NO-38a runtime memory)
+         * @description Aggregates COMPLETED (ended/aborted) exoskeleton sessions whose started_at falls inside the requested window into per-device or per-person deviation groups. Only sessions that record BOTH expectedEndAt and actualEndAt are comparable; sessions missing either timestamp are counted as notComparable and excluded from every rate. onTimeRate is null (never 0%) when the comparable sample is below the minSample threshold, and the response carries explicit notes describing the caveats. Results are capped and flagged with truncated=true when the cap is hit, so a partial window is never presented as full history.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Window length in days (default 30, normalized server-side). */
+                    days?: number;
+                    /** @description Grouping dimension (default device). */
+                    groupBy?: "device" | "person";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deviation summary (totals + groups + minSample + truncated + caveat notes) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14920,6 +17259,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exo/sessions/{sessionId}/correct-wearer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand the exoskeleton over to the person the telemetry says is actually wearing it
+         * @description Closes the current session at the wearer hand-over point (CAS on the active session, reason plus a pointer to the successor) and opens a successor session for the actual wearer in one transaction. The declared wearer is never overwritten in place: the platform keeps both the mistaken and the corrected record, because 缺失 ≠ 事实 and the audit trail must show who wore what, when, and who decided the correction. Telemetry alone never triggers this call; a human (or an approved workflow) invokes it.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Actual wearer; bare uuid and `person:<uuid>` are equivalent (ADR-006) */
+                        personId: string;
+                        endedBy?: string;
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Correction applied (previous session ended, successor session started). The ended session's pending alerts are closed in the same transaction with `resolution=session_corrected` and `resolutionRef` pointing at the successor session; the response reports `resolvedNotificationCount` / `annotatedNotificationCount`. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exo/sessions/{sessionId}/end": {
         parameters: {
             query?: never;
@@ -14929,7 +17324,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** End a session normally (state machine + endedBy required) */
+        /**
+         * End a session normally (state machine + endedBy required)
+         * @description Ends the session and, in the SAME transaction, closes every pending alert that was raised about it (NO-44a): those rows get `status=resolved` plus `resolution=session_ended`, `resolvedBy`, `resolvedAt`, `resolutionRef`, so an alert never lingers in someone's to-do list after the matter is handled and never disappears without a trace. The response therefore carries `resolvedNotificationCount` (pending → resolved) and `annotatedNotificationCount` (rows that were already read and only received the disposition metadata). Both fields are **absent** on the idempotent re-end path: "no disposition happened in this call" is not the same fact as "closed zero alerts".
+         */
         post: {
             parameters: {
                 query?: never;
@@ -14980,7 +17378,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Abort a session (state machine + endedBy required) */
+        /**
+         * Abort a session (state machine + endedBy required)
+         * @description Same disposition wiring as `end`, with `resolution=session_aborted` so an abnormal termination stays distinguishable from a normal hand-off in the alert history.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -15029,11 +17430,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List in-app notifications (tenant + role scoped, ADR-030) */
+        /**
+         * List in-app notifications (tenant + role scoped, ADR-030)
+         * @description Returns the notifications visible to the caller (tenant + role/user scoped). Notifications are derived facts; their `status` is one of pending / read / resolved / sent / failed, and `resolution` records **why a pending alert was closed by a disposition of its subject** (NO-44a: session ended / aborted / corrected). `read` means "a human looked at it"; `resolution` means "the matter was closed by an audited disposition" — the two are not interchangeable and `resolved` is never downgraded back to `read`.
+         */
         get: {
             parameters: {
                 query?: {
-                    status?: "pending" | "read";
+                    status?: "pending" | "read" | "resolved";
                 };
                 header?: never;
                 path?: never;
@@ -15047,9 +17451,70 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/json": ({
+                            notificationId?: string;
+                            /** @description pending / read / resolved / sent / failed（投递状态与处置状态互不替代） */
+                            status?: string;
+                            /** @description 主事实引用（外骨骼提醒=会话号）；处置按它定位待办提醒 */
+                            externalRef?: string | null;
+                            /**
+                             * @description 处置类型（NULL=未被处置关闭）；未登记值由调用方原样展示。 session_* = 外骨骼会话侧（收工/中止/按实际佩戴人更正）； approval_* = 执行边界授权侧（失效 / 被新审批取代）； andon_cleared = 安灯被关闭（acknowledged/processing 不关闭提醒）； agent_approval_* = Agent 待批命令被人处理 / 超时作废
+                             * @enum {string|null}
+                             */
+                            resolution?: "session_ended" | "session_aborted" | "session_corrected" | "approval_expired" | "approval_superseded" | "andon_cleared" | "agent_approval_decided" | "agent_approval_expired" | null;
+                            resolvedAt?: string | null;
+                            resolvedBy?: string | null;
+                            /** @description 处置指向的引用（更正=新会话号；收工/中止=会话号） */
+                            resolutionRef?: string | null;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Notification governance metrics (disposition rate/latency, aging, repeat sources)
+         * @description Read-only operating memory for the notification layer (NO-46a). Answers the management questions the disposition work made possible: how fast are alerts closed, which objects keep generating them, how many are left unattended, and whether push delivery failures were missed. Scope is identical to the notification list (tenant + role / addressed-to-me), so the numbers never cover more than the caller can act on. Time-to-resolve only counts comparable rows (both timestamps parseable and ordered); `dispositionRate` is null when the window holds fewer than `minSample` alerts — the UI must say "insufficient evidence" instead of showing 0%. Notification kinds come from the deterministic id rules; unregistered shapes land in other/unknown rather than being guessed.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Governance summary (totals / rates / latency / aging / byKind / topSources + notes) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
                         "application/json": {
                             [key: string]: unknown;
-                        }[];
+                        };
                     };
                 };
                 Unauthorized: components["responses"]["Unauthorized"];
@@ -15194,6 +17659,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/field/my-work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Field workbench projection — only the caller's own work
+         * @description 现场作业台只读投影。范围由服务端从签名令牌中的账号↔人员绑定 (personId) 推导，**不接受**客户端传入 personId。未绑定人员返回 403 FIELD_WORK_PERSON_UNBOUND（fail-closed，不返回空列表充数）。 与 GET /api/scheduler/executions 的区别：后者是全厂执行台账，仅限 dispatcher/workshop_lead/global_admin；本端点允许 worker 读取本人工作。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Caller's own field work */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description 服务端权威的账号↔人员绑定值 */
+                            personId: string;
+                            executions: components["schemas"]["SchedulingExecution"][];
+                            total: number;
+                        };
+                    };
+                };
+                /** @description 未绑定业务人员或缺少认证上下文 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scheduler/executions": {
         parameters: {
             query?: never;
@@ -15208,6 +17724,8 @@ export interface paths {
                     planId?: string;
                     taskId?: string;
                     status?: string;
+                    /** @description 按被分配人筛选执行记录（现场作业台"我的任务"）。服务端过滤， 与 org 作用域条件叠加，不因该参数放宽租户隔离。 */
+                    personId?: string;
                 };
                 header?: never;
                 path?: never;
@@ -15686,10 +18204,724 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/telemetry/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch-ingest UI telemetry events (fire-and-forget, silent failure) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        events: {
+                            /** @enum {string} */
+                            name: "object_workbench_view" | "approval_deeplink_click" | "terminal_action_click" | "nav_source";
+                            /** @description Epoch ms of the event */
+                            at?: number;
+                            /** @description Event properties (object ids / action names / statuses only) */
+                            props?: Record<string, never>;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Accepted count (never throws; invalid events are skipped) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accepted?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/telemetry/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aggregate UI telemetry by event name (org-scoped, default last 30 days) */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated counts by event name */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            from?: string;
+                            to?: string;
+                            total?: number;
+                            byName?: {
+                                [key: string]: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scheduler/plans/{planId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel/roll back schedule plan (DR-5, standalone_077)
+         * @description 受控部分回退：未开始 assignment（proposed/approved/dispatched/acknowledged） → cancelled + 释放预占 + 任务 rollback_dispatch 回 pending_dispatch； 未开始 Execution 标记 CANCELLED。已开始的 assignment 物理不可撤销， 显式列入 irreversibleAssignmentIds（不静默）。reason 必填（可审计）。 方案状态 CAS → cancelled；PlanCancelled outbox 事件（SSE 可见）。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    planId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description 取消/回滚原因（必填：回滚必须可解释、可审计）。 */
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Cancelled plan (with cancel summary) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SchedulePlanV2"];
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                NotFound: components["responses"]["NotFound"];
+                Conflict: components["responses"]["Conflict"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shifts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List shift definitions (DR-2, standalone_074) */
+        get: {
+            parameters: {
+                query?: {
+                    activeOnly?: "true" | "1";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Shift definitions (org-scoped) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShiftDefinition"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Register a shift definition (HH:mm window + crosses-midnight) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        shiftId?: string;
+                        name: string;
+                        code?: string;
+                        /** @description HH:mm 本地时区 */
+                        startTime: string;
+                        /** @description HH:mm 本地时区 */
+                        endTime: string;
+                        crossesMidnight?: boolean;
+                        /** Format: uuid */
+                        leadUserId?: string;
+                        description?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created shift definition */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            record?: components["schemas"]["ShiftDefinition"];
+                            created?: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shifts/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve current and next shift at server time (null = explicitly unknown) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description ResolvedShift: current=null 表示不在任何班次窗口内（显式未知，不猜默认班） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            current?: components["schemas"]["ShiftDefinition"] | null;
+                            next?: components["schemas"]["ShiftDefinition"] | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shifts/handovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List shift handover records (structured open items) */
+        get: {
+            parameters: {
+                query?: {
+                    shiftId?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Handover records (org-scoped, newest first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShiftHandover"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Record a shift handover (ShiftHandoverRecorded catalog event) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        handoverId?: string;
+                        shiftId: string;
+                        /** Format: date */
+                        shiftDate?: string;
+                        /** Format: uuid */
+                        fromUserId?: string;
+                        /** Format: uuid */
+                        toUserId: string;
+                        openItems?: components["schemas"]["ShiftHandoverOpenItem"][];
+                        notes?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Recorded handover (idempotent re-create returns existing) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            record?: components["schemas"]["ShiftHandover"];
+                            created?: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data-quality/gap-sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep open data-quality alerts and notify the people who must verify them (NO-53a)
+         * @description 摄入侧自动分级开 `DataQualityAlert` 后，没人被主动叫到 → 告警只是躺在事件表里。 本端点扫描本租户 open 的 `DataQualityAlert`（仅 `requiresHumanVerification` 的告警码才打扰人），把"该核实这批数据"叫到 责任人（班次感知：本班优先/全天 兜底/他班报缺口）+ 角色兜底。边界：只读业务事实（不改告警状态、不写 evidence）， 只写确定性通知与审计；人工判定只能走 POST /api/data-quality/confirmations， 缺失字段如实进正文不猜。幂等：重复扫描只累加 duplicates。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sweep result (idempotent; re-running only accumulates duplicates) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            orgId?: string;
+                            /** @description 本租户 open DataQualityAlert 数 */
+                            scanned?: number;
+                            /** @description 其中需要人核实的告警数 */
+                            notifyRequired?: number;
+                            created?: number;
+                            duplicates?: number;
+                            unresolvedResponsiblePersons?: string[];
+                            outOfShiftResponsiblePersons?: string[];
+                            notifications?: {
+                                alertEventId?: string;
+                                /**
+                                 * @description 当前实现只产生 quality_alert；quality_aging（长时间未核实再催）为预留桶，尚未写入
+                                 * @enum {string}
+                                 */
+                                bucket?: "quality_alert" | "quality_aging";
+                                recipients?: string[];
+                            }[];
+                            /** Format: date-time */
+                            generatedAt?: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data-quality/confirmations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch query confirmation status for events */
+        get: {
+            parameters: {
+                query: {
+                    eventIds: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Confirmations (org-scoped) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DataQualityConfirmation"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Register human data-quality verdict for one event (DR-4, standalone_076)
+         * @description confirmed=可信可用于决策（联动 resolve 同源 open DataQualityAlert）； contested=不可信相关决策需复核（告警保持 open 持续可见）。判定人取 服务端会话（不信任客户端自报身份）。幂等：同事件改判=覆盖+审计。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        eventId: string;
+                        /** @enum {string} */
+                        verdict: "confirmed" | "contested";
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Confirmation record + linked alert resolution count */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            record?: components["schemas"]["DataQualityConfirmation"];
+                            created?: boolean;
+                            linkedAlertsResolved?: number;
+                            /** @description 同事务内被处置的"待核实提醒"条数（NO-53a 处置终态） */
+                            resolvedNotificationCount?: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrospective": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retrospective run-memory records (DR-3, standalone_075) */
+        get: {
+            parameters: {
+                query?: {
+                    scope?: "plan" | "incident" | "shift";
+                    status?: "draft" | "published" | "superseded";
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retrospective records (org-scoped, newest first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetrospectiveRecord"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrospective/from-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble a retrospective from a scheduling plan (closed-loop run memory)
+         * @description 组装感知/数据质量/决策/授权/执行/反馈六段（只引用既有台账证据， 缺失环节显式进 gaps，不伪造）；AI 总结（LLM 事务外调用 + 规则模板 兜底，narrativeSource 双路留痕）。同 target 重新组装 = 旧 published 置 superseded + 新 draft。
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        planId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Assembled retrospective */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            record?: components["schemas"]["RetrospectiveRecord"];
+                            created?: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrospective/{retrospectiveId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one retrospective record */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    retrospectiveId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Retrospective record */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetrospectiveRecord"];
+                    };
+                };
+                NotFound: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrospective/{retrospectiveId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish a draft retrospective (run memory stable state) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    retrospectiveId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Published retrospective */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetrospectiveRecord"];
+                    };
+                };
+                NotFound: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retrospective/{retrospectiveId}/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revise lessons (AI-suggested lessons are human-editable; memory belongs to people) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    retrospectiveId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        lessons?: components["schemas"]["RetrospectiveLesson"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated retrospective */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RetrospectiveRecord"];
+                    };
+                };
+                NotFound: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description NO-62c plan staleness diagnosis (also embedded in the 409 PLAN_STALE body as `staleness`). */
+        PlanStalenessReport: {
+            snapshotVersion?: string;
+            /** @description false = the bound snapshot row no longer exists (differences cannot be computed, never reported fresh). */
+            snapshotFound?: boolean;
+            stale?: boolean;
+            summary?: string;
+            /** Format: date-time */
+            checkedAt?: string;
+            externalChangeCount?: number;
+            selfInflictedCount?: number;
+            changes?: {
+                /** @enum {string} */
+                kind?: "entity_version" | "reservation";
+                entityKey?: string;
+                entityType?: string;
+                entityId?: string;
+                /** @enum {string} */
+                change?: "added" | "removed" | "changed";
+                selfInflicted?: boolean;
+                label?: string;
+            }[];
+        };
         /** @enum {string} */
         TimelineSource: "workflow" | "alert" | "device" | "system" | "user" | "edge" | "evidence";
         /** @enum {string} */
@@ -16029,8 +19261,13 @@ export interface components {
             workerName?: string;
             /** @description Device model */
             deviceModel?: string;
-            /** @description Battery percentage 0-100 */
-            batteryPct?: number;
+            /**
+             * @description Device category (device-category vocabulary); unknown/historical rows report 'unknown'.
+             * @enum {string|null}
+             */
+            deviceCategory?: "exoskeleton" | "environment_sensor" | "camera" | "location_tag" | "unknown" | null;
+            /** @description Battery percentage 0-100; null for devices without a battery (environment sensors, cameras, locator tags) — never coerced to 0. */
+            batteryPct?: number | null;
             /** @description Current online state */
             online?: boolean;
             lastTelemetryAt?: string | null;
@@ -16049,6 +19286,26 @@ export interface components {
             temperatureC?: number | null;
             faultCode?: string | null;
             lastRawRef?: string | null;
+            /** @description Declared device capabilities as Canonical CapabilityModel records (ADR-043): kind=device_capability/exo_capability, providerType=device/exo, name in the registered capability vocabulary. Unregistered names are returned verbatim with registered=false — never hidden. */
+            capabilities?: {
+                /** @description Capability name (canonical CapabilityRecord.name; open vocabulary, registered in contracts/capability) */
+                name: string;
+                /** @description Alias of name (kept for existing callers) */
+                key?: string;
+                /** @enum {string} */
+                kind: "device_capability" | "exo_capability";
+                /** @enum {string} */
+                providerType: "device" | "exo";
+                /** @enum {string} */
+                mode: "observation" | "execution" | "interaction";
+                capabilityId: string;
+                label?: string;
+                status: string;
+                /** @description Source fact-field paths in the platform ingest DTO (e.g. temperature, detections[].track_id) */
+                fields?: string[];
+                grantedAt?: string | null;
+                registered: boolean;
+            }[] | null;
             boundPersonId?: string | null;
             boundPersonName?: string | null;
         };
@@ -16101,6 +19358,60 @@ export interface components {
             protocolVersion?: string;
             /** @description Device temperature in Celsius */
             temperatureC?: number;
+        };
+        SetDeviceCapabilityStatusRequest: {
+            /**
+             * @description 目标状态（active=恢复生效；disabled=人工停用）
+             * @enum {string}
+             */
+            status: "active" | "disabled";
+            /** @description 变更理由（必填，写入台账留痕与审计） */
+            reason: string;
+        };
+        /** @description 人工停用/恢复留痕（没有人工操作过则为 null，自动声明不冒充人工确认） */
+        DeviceCapabilityLifecycleInfo: {
+            /** @enum {string} */
+            action?: "disable" | "restore";
+            operator?: string;
+            reason?: string;
+            /** Format: date-time */
+            at?: string;
+            /** @enum {string|null} */
+            previousStatus?: "active" | "disabled" | null;
+        };
+        SetDeviceCapabilityStatusResponse: {
+            deviceId: string;
+            capabilityId: string;
+            capabilityName: string;
+            /** @enum {string} */
+            status: "active" | "disabled";
+            /** @enum {string|null} */
+            previousStatus?: "active" | "disabled" | null;
+            /** @description false = 幂等 no-op（未产生新的状态变更与审计记录） */
+            changed: boolean;
+            /** Format: date-time */
+            effectiveFrom?: string | null;
+            /** Format: date-time */
+            effectiveTo?: string | null;
+            /** Format: date-time */
+            updatedAt?: string;
+            contractValid: boolean;
+            /** @description 恢复时按词表纠正的历史脏字段（kind/capabilityId/subject） */
+            repairedFields: string[];
+        };
+        /** @description 任务能力要求（缺省字段表示不改动） */
+        TaskCapabilityRequirementsRequest: {
+            /** @description 设备能力要求（开放词表；未登记名允许但会有 warnings） */
+            requiredDeviceCapabilities?: string[];
+            /** @description 工位能力要求（与工位投影 capabilities 匹配） */
+            requiredStationCapabilities?: string[];
+        };
+        TaskCapabilityRequirementsResult: {
+            taskId: string;
+            requiredDeviceCapabilities: string[];
+            requiredStationCapabilities: string[];
+            /** @description 当前无法匹配的能力要求提示（不阻断写入，但必须可见） */
+            warnings: string[];
         };
         BindDeviceRequest: {
             /** @description Target spatial entity id */
@@ -16616,6 +19927,8 @@ export interface components {
             shadowEval?: {
                 [key: string]: unknown;
             };
+            /** @description Operator who proposed the change (B5 generator avoidance: proposer cannot approve own proposal) */
+            proposedBy?: string;
             approvedBy?: string;
             /** Format: date-time */
             approvedAt?: string;
@@ -16631,6 +19944,406 @@ export interface components {
         LearningProposalResponse: {
             proposal: components["schemas"]["LearningProposal"];
             created: boolean;
+        };
+        LearningThresholdBaselineEntry: {
+            /** @enum {string} */
+            ruleId: "rule:worker-overload";
+            /** @enum {string} */
+            parameter: "workloadThreshold";
+            /** @description Engine built-in constant; null = not registered (source=engine_default_unknown, never fabricated) */
+            engineDefault?: number | null;
+            /** @description Currently effective value (approved override ?? engine constant) */
+            effective: number | null;
+            /** @enum {string} */
+            source: "approved_proposal" | "engine_default" | "engine_default_unknown";
+            /** @description Approving proposal + shadow-evidence provenance; null when source=engine_default */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
+            counts: {
+                [key: string]: unknown;
+            };
+        };
+        OrderChain: {
+            orderNo: string;
+            status: string;
+            priority?: string | null;
+            /** Format: date-time */
+            dueAt?: string | null;
+            /** @description 无期限时为 null（不猜是否逾期） */
+            overdue: boolean | null;
+            tasks: {
+                taskId?: string;
+                title?: string;
+                status?: string;
+                source?: string;
+                planStart?: string | null;
+                planEnd?: string | null;
+                stepCount?: number;
+                openStepCount?: number;
+                stepIds?: string[];
+            }[];
+            materials: {
+                materialId?: string;
+                name?: string | null;
+                unit?: string | null;
+                requiredTotal?: number;
+                onHand?: number;
+                shortage?: number;
+                belowThreshold?: boolean;
+                orderNos?: string[];
+            }[];
+            /** @description 链路缺口（封闭词表，页面必须逐条显示） */
+            gaps: ("task_link_missing" | "steps_missing" | "material_link_missing" | "due_at_missing")[];
+            assignedTaskCount?: number;
+            notes: string[];
+        };
+        OrderChainResult: {
+            orgId: string;
+            /** Format: date-time */
+            generatedAt: string;
+            chains: components["schemas"]["OrderChain"][];
+            summary: {
+                orders?: number;
+                overdue?: number;
+                withGaps?: number;
+                gapCounts?: {
+                    [key: string]: number;
+                };
+                materialsInShortage?: number;
+                openSteps?: number;
+            };
+            notes?: string[];
+        };
+        PlannedVsActualSummary: {
+            windowDays: number;
+            totalRows: number;
+            comparableRows: number;
+            /** @description 无可比也无可判定行时为 null */
+            coverage?: number | null;
+            /** @description 样本不足时 null（不给比率） */
+            meanAbsPctError?: number | null;
+            medianAbsPctError?: number | null;
+            p90AbsPctError?: number | null;
+            meanSignedMs?: number | null;
+            overrunCount?: number;
+            underrunCount?: number;
+            onTimeCount?: number;
+            byReason: {
+                [key: string]: number;
+            };
+            byDeviationType?: {
+                [key: string]: number;
+            };
+            /** @description 只报事实（系统性倾向），不替现场下结论 */
+            biasNote?: string | null;
+            notes: string[];
+            /** Format: date-time */
+            generatedAt?: string;
+        };
+        /** @description 多源感知融合快照（NO-56a §5）。置信度是**可解释加权**（可用源权重和 / 应有源权重和）， 不是标定概率；无可用源时 `confidence.level='unknown'` 且 `confidence.score=null`。 */
+        PerceptionFusion: {
+            subjectId: string;
+            /** Format: date-time */
+            windowStart: string;
+            /** Format: date-time */
+            windowEnd: string;
+            /** Format: date-time */
+            fusedAt: string;
+            /** @enum {string} */
+            agreement: "consistent" | "partial" | "conflict" | "insufficient";
+            position?: {
+                x?: number | null;
+                y?: number | null;
+                z?: number | null;
+                /** @description 坐标→工位；null = 未解析（不猜） */
+                stationId?: string | null;
+                basis?: string[];
+            } | null;
+            posture?: {
+                pitchDeg?: number | null;
+                action?: string | null;
+                basis?: string[];
+            } | null;
+            /** @description 多源工位结论；来源互相矛盾时 stationId=null（不投票、不取第一个） */
+            station?: {
+                stationId?: string | null;
+                basis?: string;
+                sources?: string[];
+            } | null;
+            confidence: {
+                /** @enum {string} */
+                level: "high" | "medium" | "low" | "unknown";
+                score?: number | null;
+                /** @description 权重依据（可解释；明确写了"不是概率"） */
+                basis: string;
+                usableSources: string[];
+                degraded: boolean;
+                missingSources: string[];
+                unknownConfidenceSources?: string[];
+                /** @description 被排除的证据（过期/不可信/维度不符），逐条带原因 */
+                excludedSources: {
+                    source?: string;
+                    sourceId?: string;
+                    dimension?: string;
+                    /** @enum {string} */
+                    status?: "stale" | "untrusted" | "dimension_mismatch";
+                    reason?: string;
+                }[];
+            };
+            conflicts: {
+                dimension?: string;
+                /** @enum {string} */
+                severity?: "low" | "medium" | "high";
+                participants?: {
+                    source?: string;
+                    sourceId?: string;
+                    value?: string;
+                }[];
+                detail?: string;
+            }[];
+            /** @description §5 五条规则逐条留痕（哪条命中、依据是什么） */
+            ruleTrace: {
+                rule?: string;
+                fired?: boolean;
+                detail?: string;
+            }[];
+            /** @description 低置信度/有冲突/证据不足一律 false */
+            strongAdviceAllowed: boolean;
+            notes?: string[];
+        };
+        PerceptionSweepResult: {
+            orgId: string;
+            /** Format: date-time */
+            windowStart: string;
+            /** Format: date-time */
+            windowEnd: string;
+            windowMinutes?: number;
+            bucketMinutes?: number;
+            subjects: number;
+            persisted: number;
+            created?: number;
+            refreshed?: number;
+            byAgreement: {
+                [key: string]: number;
+            };
+            byConfidenceLevel: {
+                [key: string]: number;
+            };
+            conflictSubjects: string[];
+            degradedSubjects?: string[];
+            /** @description 视觉 track 未绑定到主体（不硬塞给某个人） */
+            unmatchedVisionDetections?: number;
+            /** @description 坐标未解析到工位（不猜最近工位） */
+            stationUnresolved?: number;
+            rejected?: {
+                subjectId?: string;
+                errors?: string[];
+            }[];
+            notes?: string[];
+        };
+        /** @description 行动项复发度量（NO-58a）。`conclusion` 只有五种：no_subject / not_completed / insufficient_sample / recurrence_dropped / recurrence_persisted；任何结论都**只描述计数**， 不代表因果（页面必须原样展示 reason 与"不等于这条改进有效"）。 */
+        ImprovementActionEffect: {
+            actionId: string;
+            /** @enum {string|null} */
+            subjectType: "device" | "person" | "station" | null;
+            subjectId: string | null;
+            /** @enum {string} */
+            status: "proposed" | "accepted" | "rejected" | "completed" | "dropped";
+            /** Format: date-time */
+            completedAt: string | null;
+            /** @description 前后各一个窗口的天数 */
+            windowDays: number;
+            before: {
+                /** @description ISO 时间；不可度量时为空串 */
+                from: string;
+                to: string;
+                deviations: number;
+            };
+            after: {
+                from: string;
+                to: string;
+                deviations: number;
+            };
+            /** @enum {string} */
+            conclusion: "no_subject" | "not_completed" | "insufficient_sample" | "recurrence_dropped" | "recurrence_persisted";
+            /** @description 结论文案（含门槛与"不等于改进有效"的说明） */
+            reason: string;
+            /** @description 观察期未结束等补充说明 */
+            notes: string[];
+            /** Format: date-time */
+            generatedAt: string;
+        };
+        /** @description 改进行动项（NO-55a）：复盘经验条目/缺口 → 有人负责、有期限、有验收判据、有完成证据。 与阈值提案并列（行动项改做法、提案改参数）；`threshold_review` 类型表示需要人去提案面板改参数。 */
+        ImprovementAction: {
+            /** @description 确定性行动项号 `ACT-<lesson|gap>-<来源对象>-<slug>`（重复扫描幂等） */
+            actionId: string;
+            /** @enum {string} */
+            sourceType: "retrospective_lesson" | "retrospective_gap";
+            /** @description 来源复盘号 */
+            sourceRef: string;
+            /**
+             * @description 对象归属类型（NO-58a）；与 subjectId 成对，null = 未绑定 → 复发不可度量
+             * @enum {string|null}
+             */
+            subjectType?: "device" | "person" | "station" | null;
+            /** @description 对象 id（incident 复盘的 targetId 派生） */
+            subjectId?: string | null;
+            title: string;
+            detail: string;
+            /** @enum {string} */
+            kind: "process_change" | "training" | "tooling" | "maintenance" | "threshold_review";
+            /**
+             * @description suggested=平台建议（接受时应确认）
+             * @enum {string}
+             */
+            kindSource: "suggested" | "human";
+            /** @enum {string} */
+            priority: "low" | "medium" | "high";
+            /** @enum {string} */
+            status: "proposed" | "accepted" | "rejected" | "completed" | "dropped";
+            evidenceRefs: {
+                /** @enum {string} */
+                type: "retrospective" | "lesson" | "gap" | "event" | "plan" | "execution" | "annotation";
+                id: string;
+                at?: string | null;
+                detail?: Record<string, never>;
+            }[];
+            /** @description accepted/completed 必填 */
+            owner?: string | null;
+            /**
+             * Format: date-time
+             * @description accepted/completed 必填（平台不替现场承诺期限）
+             */
+            dueAt?: string | null;
+            /** @description accepted/completed 必填（让别人能判断做完了没有） */
+            acceptanceCriteria?: string | null;
+            acceptedBy?: string | null;
+            /** Format: date-time */
+            acceptedAt?: string | null;
+            completedBy?: string | null;
+            /** Format: date-time */
+            completedAt?: string | null;
+            /** @description completed 必填（结果说明） */
+            outcomeNote?: string | null;
+            /** @description 完成时回流的知识条目号（NO-57c）；null = 未回流（页面必须显式显示，不许当成已归档） */
+            outcomeRef?: string | null;
+            /** @enum {string|null} */
+            outcomeKind?: "knowledge_entry" | null;
+            decidedBy?: string | null;
+            /** Format: date-time */
+            decidedAt?: string | null;
+            /** @description rejected/dropped 必填 */
+            decidedReason?: string | null;
+            /** Format: date-time */
+            detectedAt: string;
+        };
+        ImprovementScanResult: {
+            orgId: string;
+            /** Format: date-time */
+            generatedAt: string;
+            scannedRetrospectives: number;
+            derived: number;
+            created: number;
+            refreshed: number;
+            /** @description 已由人处理过、本次只刷新来源事实的行动项数 */
+            decisionsPreserved: number;
+            rejected: {
+                actionId?: string;
+                errors?: string[];
+            }[];
+            actions: components["schemas"]["ImprovementAction"][];
+            /** @description 本次扫描读了什么（0 也要如实给出） */
+            memory: {
+                publishedRetrospectives?: number;
+                lessons?: number;
+                gaps?: number;
+            };
+        };
+        /** @description 运行记忆信号（NO-54a）。实测快照 + 证据引用 + 样本量 + 可信度 + 方向； confidence=null 表示样本不足（不给结论），此时 actionable 必为 null 且 notActionableReason 必填（页面上要能读出"为什么只能提示"）。 */
+        LearningSignal: {
+            /** @description 确定性信号号 `SIG-<KIND>-<subject>-<window>d-<severity>`（重复扫描同窗口同严重度 → 同一行） */
+            signalId: string;
+            /** @enum {string} */
+            kind: "notification_fatigue" | "data_quality_backlog" | "deviation_repeat";
+            /** @enum {string} */
+            severity: "low" | "medium" | "high";
+            /** @enum {string} */
+            status: "open" | "promoted" | "dismissed";
+            subjectKey: string;
+            windowDays: number;
+            sampleSize: number;
+            /**
+             * @description 可信度；null = 样本不足（sampleSize < 5），不给结论
+             * @enum {string|null}
+             */
+            confidence?: "low" | "medium" | "high" | null;
+            /** @description 实测快照（数字 + 口径门槛），页面据此展示"依据是什么" */
+            metrics: Record<string, never>;
+            narrative: {
+                hypothesis: string;
+                expectedEffect: string;
+                risk: string;
+                /** @description 缺什么导致结论受限（空数组 = 没有已知缺口） */
+                missing: string[];
+            };
+            evidenceRefs: {
+                /** @enum {string} */
+                type: "notification_kind" | "notification_source" | "quality_alert" | "execution_deviation" | "threshold_baseline";
+                id: string;
+                /** @description 证据时间；null = 时间未知（不用扫描时刻冒充） */
+                at?: string | null;
+                detail?: Record<string, never>;
+            }[];
+            /** @description 可执行（可生成提案）时的方向与基线；null = 只能提示（见 notActionableReason） */
+            actionable?: {
+                ruleId: string;
+                parameter: string;
+                /** @enum {string} */
+                direction: "raise" | "lower";
+                baselineValue: number;
+                baselineSource: string;
+            } | null;
+            notActionableReason?: string | null;
+            /** Format: date-time */
+            detectedAt: string;
+            decidedBy?: string | null;
+            /** Format: date-time */
+            decidedAt?: string | null;
+            decidedReason?: string | null;
+            promotedProposalId?: string | null;
+        };
+        LearningSignalScanResult: {
+            orgId: string;
+            windowDays: number;
+            /** Format: date-time */
+            generatedAt: string;
+            /** @description 派生出的信号总数（含已存在被刷新的） */
+            derived: number;
+            created: number;
+            refreshed: number;
+            /** @description 已由人处理过、本次只刷新快照的信号数 */
+            decisionsPreserved: number;
+            /** @description 契约校验未通过、**未落库**的信号（绝不写非法行） */
+            rejected: {
+                signalId?: string;
+                errors?: string[];
+            }[];
+            signals: components["schemas"]["LearningSignal"][];
+            /** @description 本次扫描读了什么（0 也要如实给出，"没有信号"要能追到"读了什么"） */
+            memory: {
+                notificationTruncated?: boolean;
+                notificationScanned?: number;
+                openQualityAlerts?: number;
+                pendingQualityReminders?: number;
+                deviationObjects?: number;
+            };
+        };
+        LearningThresholdBaseline: {
+            /** Format: date-time */
+            readAt: string;
+            engineVersion: string;
+            entries: components["schemas"]["LearningThresholdBaselineEntry"][];
         };
         LearningEvaluateResponse: {
             record: components["schemas"]["LearningEvaluation"];
@@ -17145,6 +20858,8 @@ export interface components {
                 deviceId?: string | null;
                 stationId?: string | null;
             };
+            /** @enum {string} */
+            reportedSource?: "manual_report" | "simulated";
         };
         CreateRunRequest: {
             trigger?: string;
@@ -17689,6 +21404,8 @@ export interface components {
             /** @description ISO 8601 timestamp */
             event_time: string;
             worker_name?: string;
+            /** @description NO-41a: telemetry wearer reported by the device (observe.wearer / edge frame worker_id). Persisted as ewoh_telemetry.worker_id and cross-checked against the declared session wearer by GET /api/exo/sessions/consistency. Absence is a data gap, NOT evidence that nobody is wearing the device. */
+            worker_id?: string;
             device_model?: string;
             firmware_version?: string;
             hardware_version?: string;
@@ -17837,8 +21554,37 @@ export interface components {
             splat_url?: string;
             pointcloud_url?: string;
         };
+        /** @description 执行机构（AGV/PLC）状态帧（NO-59b）：边缘统一帧三段 device/motion/business 压平后的 平台口径。`last_authorization_ref` 是最后一次被平台授权号（control:/approval:/plan:/task:）， 用于把"设备当前在动"追溯到具体授权。 */
+        ActuatorFrameDto: {
+            device_id: string;
+            /** @description ISO 8601 timestamp */
+            event_time: string;
+            /**
+             * @description 封闭词表；词表外状态被拒绝（不默认 idle 假装在线）
+             * @enum {string}
+             */
+            state: "idle" | "moving" | "arrived" | "paused" | "fault" | "offline";
+            x?: number;
+            y?: number;
+            battery_pct?: number;
+            fault_code?: string | null;
+            current_task_id?: string | null;
+            target_station_id?: string | null;
+            /** @description 最后一次被接受的平台授权号（命令可追溯） */
+            last_authorization_ref?: string | null;
+            station_id?: string | null;
+            sequence?: number;
+            /** @enum {string} */
+            source_type?: "real" | "controlled_test" | "simulated" | "unknown";
+            /** @description 传输级幂等键（重放不写第二行） */
+            record_id?: string;
+            /** @description 0-1 */
+            data_confidence?: number;
+        };
         LocationFrameDto: {
             entity_id: string;
+            /** @description Physical locator device id (UWB tag/beacon); used to register the device in the platform inventory. Falls back to entity_id when absent. */
+            tag_id?: string;
             /** @enum {string} */
             locator: "uwb" | "wifi" | "visual" | "fusion";
             /** @description 0-1 */
@@ -17862,6 +21608,8 @@ export interface components {
             error?: string;
             is_late?: boolean;
             clock_drift?: boolean;
+            /** @description True only for transient write failures (DB/connection); edge uplink retries these. Absent/false = permanent rejection (dead-letter). */
+            retryable?: boolean;
         };
         BatchIngestResponse: {
             total: number;
@@ -18114,12 +21862,23 @@ export interface components {
             attemptId?: string;
             commandKey?: string;
             attemptNo?: number;
-            /** @enum {string} */
-            status?: "pending" | "sent" | "gateway_received" | "executed" | "failed" | "expired";
+            /**
+             * @description NO-62a：`revoked` = **投递前授权复核未通过，命令被平台撤回**（从未投给设备）。 它不是 `failed`（设备执行失败）——"未执行/被撤回"与"执行失败"必须可区分。
+             * @enum {string}
+             */
+            status?: "pending" | "sent" | "gateway_received" | "executed" | "failed" | "expired" | "revoked";
+            /** @description NO-62a：授权范围指纹（请求/设备/命令/审批实例/参数；`fnv1a64:v1`）。 审批之后任意一项被改写 → 投递与回执两侧 fail-closed。 */
+            authorizationFingerprint?: string | null;
+            /** @description NO-62a：撤回原因（封闭词表）：authorization_expired / authorization_revoked / approval_missing / approval_not_granted / fingerprint_mismatch / request_terminal / device_org_mismatch。NULL = 未撤回。 */
+            revokedReason?: string | null;
             /** @description Gateway receipt */
             receipt?: {
                 [key: string]: unknown;
             };
+            /** @description 命令参数（NO-60a）：执行机构要"去哪"这类信息随命令下发并留痕 （`dispatch_task` 必须给 `targetStationId`）。null = 该命令无参数。 */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
         };
         ControlRequest: {
             id?: string;
@@ -19269,6 +23028,9 @@ export interface components {
             deviationType?: components["schemas"]["SchedulingDeviationType"];
             deviationReason?: string | null;
             triggerReplan?: boolean;
+            note?: string | null;
+            /** @enum {string} */
+            reportedSource?: "manual_report" | "simulated";
         };
         SchedulerKpiSnapshot: {
             /** Format: date-time */
@@ -19377,6 +23139,87 @@ export interface components {
                 x?: number;
                 y?: number;
             }[];
+        };
+        /** @description 班次定义（standalone_074，DR-2）。跨零点窗口显式标记，判定用共享纯函数。 */
+        ShiftDefinition: {
+            shiftId?: string;
+            name?: string;
+            code?: string | null;
+            /** @description HH:mm 本地时区 */
+            startTime?: string;
+            /** @description HH:mm 本地时区 */
+            endTime?: string;
+            crossesMidnight?: boolean;
+            active?: boolean;
+            leadUserId?: string | null;
+            description?: string | null;
+        };
+        ShiftHandoverOpenItem: {
+            title: string;
+            /** @enum {string} */
+            severity?: "info" | "warning" | "critical";
+            relatedObjectType?: string;
+            relatedObjectId?: string;
+            note?: string;
+        };
+        /** @description 交接班记录：结构化遗留事项 + 交接事实留痕。 */
+        ShiftHandover: {
+            handoverId?: string;
+            shiftId?: string;
+            /** Format: date */
+            shiftDate?: string;
+            fromUserId?: string | null;
+            toUserId?: string;
+            openItems?: components["schemas"]["ShiftHandoverOpenItem"][];
+            notes?: string | null;
+            /** @enum {string} */
+            status?: "pending" | "confirmed";
+            confirmedAt?: string | null;
+        };
+        /** @description 数据质量人工确认（standalone_076，DR-4 闭环第②步）。 */
+        DataQualityConfirmation: {
+            eventId?: string;
+            /** @enum {string} */
+            verdict?: "confirmed" | "contested";
+            note?: string | null;
+            /** @description 服务端会话身份 */
+            confirmedBy?: string;
+            confirmedAt?: string;
+            context?: {
+                dataQuality?: string | null;
+                source?: string | null;
+                observedAt?: string | null;
+                receivedAt?: string | null;
+            } | null;
+        };
+        RetrospectiveLesson: {
+            title: string;
+            detail: string;
+            /** @enum {string} */
+            severity?: "info" | "warning" | "critical";
+            evidenceIds?: string[];
+        };
+        /** @description 复盘/运行记忆（standalone_075，DR-3）：闭环六段组装产物（assembled 只引用既有台账证据）。 */
+        RetrospectiveRecord: {
+            retrospectiveId?: string;
+            /** @enum {string} */
+            scope?: "plan" | "incident" | "shift";
+            targetId?: string;
+            title?: string;
+            periodStart?: string | null;
+            periodEnd?: string | null;
+            triggerEventId?: string | null;
+            /** @enum {string} */
+            status?: "draft" | "published" | "superseded";
+            /** @description 六段结构（perception/dataQuality/decision/authorization/execution/feedback + gaps）。 */
+            assembled?: Record<string, never>;
+            narrative?: string | null;
+            /** @enum {string|null} */
+            narrativeSource?: "llm" | "rule_fallback" | null;
+            narrativeModel?: string | null;
+            publishedAt?: string | null;
+            createdBy?: string | null;
+            createdAt?: string;
         };
     };
     responses: {

@@ -34,15 +34,12 @@ import {
   cleanupE2EFixture,
   connectOwner,
   createE2EFixture,
+  seedSchedulerFixture,
   type E2EFixture,
   type OwnerSql,
 } from '../helpers/e2e-db';
 import { startE2EApp, type E2EAppHandle } from '../helpers/e2e-app';
-import {
-  apiRequest,
-  jsonHeaders,
-  login,
-} from '../helpers/e2e-http';
+import { apiRequest, jsonHeaders, login } from '../helpers/e2e-http';
 
 const e2eConfig = resolveE2EConfig();
 
@@ -96,37 +93,30 @@ if (!e2eConfig) {
     let handle: E2EAppHandle | undefined;
     let baseUrl = '';
     let token = '';
+    let approverToken = '';
 
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // 清基：避免 MANUAL 冷却跨运行 debounce + 历史快照/reservation 残留导致
-      // PLAN_STALE。R2-APT-009：删除限定本 run 的 fixture org 范围（原全表
-      // DELETE 会摧毁共享库其他租户的调度事实/快照历史）；assignment 表无
-      // org 列，经 plan 子查询按 org 定位；快照表 NULL 行为全局资产仅清本 org。
-      try {
-        const orgIds = [fixture.orgA.id, fixture.orgB.id];
-        const postgres = (await import('postgres')).default;
-        const runtime = postgres(e2eConfig.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_replan_trigger WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe(
-          'DELETE FROM ewoh_scheduling_plan_assignment WHERE plan_id IN (SELECT plan_id FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[]))',
-          [orgIds],
-        );
-        await runtime.unsafe('DELETE FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_resource_reservation WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.end();
-      } catch {
-        // 清理失败不阻断测试（触发类型可避开冷却）。
-      }
+      // Each fixture owns fresh UUID orgs; no pre-cleanup is necessary.
+      await seedSchedulerFixture(owner, fixture.orgA.id);
       handle = await startE2EApp(e2eConfig, fixture.orgA.id);
       baseUrl = handle.baseUrl;
-      const loginRes = await login(baseUrl, 'admin', 'admin-password');
+      const loginRes = await login(
+        baseUrl,
+        fixture.dispatcherA.username,
+        fixture.dispatcherA.password,
+      );
       // NestJS POST 默认 201（与 ewoh-http E2E 的 login 断言一致）。
       expect(loginRes.status).toBe(201);
       token = loginRes.body.accessToken;
+      const approverLogin = await login(
+        baseUrl,
+        fixture.approverA.username,
+        fixture.approverA.password,
+      );
+      expect(approverLogin.status).toBe(201);
+      approverToken = approverLogin.body.accessToken;
     }, 120_000);
 
     afterAll(async () => {
@@ -159,23 +149,12 @@ if (!e2eConfig) {
       expect(plan).toBeDefined();
 
       // 2) 审批（携带 version + snapshotVersion；stale 场景见 E）。
-      // B5 适配：置空 created_by 模拟存量行（生成/审批同一 bootstrap token，
-      // 否则触发 SELF_APPROVAL_FORBIDDEN；守卫对 NULL 放行是设计语义）。
-      {
-        const pg0 = (await import('postgres')).default;
-        const conn0 = pg0(e2eConfig.runtimeDatabaseUrl, { max: 1 });
-        try {
-          await conn0`UPDATE ewoh_schedule_plan SET created_by = NULL WHERE plan_id = ${plan!.planId}`;
-        } finally {
-          await conn0.end();
-        }
-      }
       const approve = await apiRequest(
         baseUrl,
         `/api/scheduler/plans/${plan!.planId}/approve`,
         {
           method: 'POST',
-          headers: makeHeaders(token),
+          headers: makeHeaders(approverToken),
           body: JSON.stringify({
             version: plan!.version,
             snapshotVersion: plan!.snapshotVersion,
@@ -200,11 +179,12 @@ if (!e2eConfig) {
     it('B: 设备离线 → conflict → partial replan → 冻结 → plan diff → 审批', async () => {
       // 数据准备：向 ewoh_device 写入 telemetry_updated_at=过期 触发 DEVICE_OFFLINE
       // 事件；world-state 装配后该设备 status=offline。
-      const conflicts = await apiRequest<{ data: Array<{ id: string; status: string }> }>(
-        baseUrl,
-        '/api/scheduler/conflicts',
-        { method: 'GET', headers: makeHeaders(token) },
-      );
+      const conflicts = await apiRequest<{
+        data: Array<{ id: string; status: string }>;
+      }>(baseUrl, '/api/scheduler/conflicts', {
+        method: 'GET',
+        headers: makeHeaders(token),
+      });
       expect(conflicts.status).toBe(200);
 
       // R2-APT-005：先建立基线方案并批准（TASK_CREATED 避开 MANUAL 30s 冷却），
@@ -226,22 +206,12 @@ if (!e2eConfig) {
       expect(baseline.status).toBe(201);
       const plan0 = baseline.body.plans?.[0];
       if (plan0) {
-        // B5 适配：同上（同 token 生成+审批，置空 created_by 走存量行语义）。
-        {
-          const pg0 = (await import('postgres')).default;
-          const conn0 = pg0(e2eConfig.runtimeDatabaseUrl, { max: 1 });
-          try {
-            await conn0`UPDATE ewoh_schedule_plan SET created_by = NULL WHERE plan_id = ${plan0.planId}`;
-          } finally {
-            await conn0.end();
-          }
-        }
         const approve0 = await apiRequest(
           baseUrl,
           `/api/scheduler/plans/${plan0.planId}/approve`,
           {
             method: 'POST',
-            headers: makeHeaders(token),
+            headers: makeHeaders(approverToken),
             body: JSON.stringify({
               version: plan0.version,
               snapshotVersion: plan0.snapshotVersion,
@@ -253,7 +223,9 @@ if (!e2eConfig) {
         expect(approve0.status).toBe(200);
       } else {
         // R2-APT-005：fixture 无任务数据时基线无方案——显式注明跳过 diff 前置，不静默。
-        console.warn('[B SKIP] baseline runs 201 无方案（fixture 无任务数据），plan diff/冻结断言缺少基线，本轮显式跳过');
+        console.warn(
+          '[B SKIP] baseline runs 201 无方案（fixture 无任务数据），plan diff/冻结断言缺少基线，本轮显式跳过',
+        );
       }
 
       // 局部重排：trigger=DEVICE_OFFLINE + entityId=<deviceId>。
@@ -314,7 +286,7 @@ if (!e2eConfig) {
         `/api/scheduler/plans/${plan1.planId}/approve`,
         {
           method: 'POST',
-          headers: makeHeaders(token),
+          headers: makeHeaders(approverToken),
           body: JSON.stringify({
             version: plan1.version,
             snapshotVersion: plan1.snapshotVersion,
@@ -403,7 +375,7 @@ if (!e2eConfig) {
         `/api/scheduler/plans/${plan0.planId}/approve`,
         {
           method: 'POST',
-          headers: makeHeaders(token),
+          headers: makeHeaders(approverToken),
           body: JSON.stringify({
             version: plan0.version,
             snapshotVersion: plan0.snapshotVersion,
@@ -421,7 +393,13 @@ if (!e2eConfig) {
       expect(dispatch0.status).toBe(200);
 
       // R2-APT-005 锁定事实：首个 execution 置 STARTED（执行中任务进入 lockedAssignments）。
-      const execs = await apiRequest<{ executions: Array<{ assignmentId: string; status: string; taskId?: string }> }>(
+      const execs = await apiRequest<{
+        executions: Array<{
+          assignmentId: string;
+          status: string;
+          taskId?: string;
+        }>;
+      }>(
         baseUrl,
         `/api/scheduler/executions?planId=${encodeURIComponent(plan0.planId)}`,
         { method: 'GET', headers: makeHeaders(token) },
@@ -429,14 +407,23 @@ if (!e2eConfig) {
       expect(execs.status).toBe(200);
       const firstExec = execs.body.executions?.[0];
       if (!firstExec) {
-        console.warn('[D SKIP] dispatch 后无 execution 记录，无法构造锁定事实，锁定不变量断言本轮显式跳过');
+        console.warn(
+          '[D SKIP] dispatch 后无 execution 记录，无法构造锁定事实，锁定不变量断言本轮显式跳过',
+        );
         return;
       }
-      const started = await apiRequest(baseUrl, `/api/scheduler/executions/${firstExec.assignmentId}/update`, {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({ status: 'STARTED', actualStartAt: new Date().toISOString() }),
-      });
+      const started = await apiRequest(
+        baseUrl,
+        `/api/scheduler/executions/${firstExec.assignmentId}/update`,
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            status: 'STARTED',
+            actualStartAt: new Date().toISOString(),
+          }),
+        },
+      );
       expect(started.status).toBe(201);
       expect((started.body as { status: string }).status).toBe('STARTED');
 
@@ -457,7 +444,9 @@ if (!e2eConfig) {
       expect(replan.status).toBe(201);
       const plan1 = replan.body.plans?.[0];
       if (!plan1) {
-        console.warn('[D SKIP] replan 未产生新方案（debounced/无任务），锁定不变量断言本轮显式跳过');
+        console.warn(
+          '[D SKIP] replan 未产生新方案（debounced/无任务），锁定不变量断言本轮显式跳过',
+        );
         return;
       }
 
@@ -465,8 +454,12 @@ if (!e2eConfig) {
       // 保持原 personId，或经 plan diff 验证其无 PERSON_CHANGED。
       const lockedTaskId =
         firstExec.taskId ?? plan0.assignments.find((a) => a.taskId)?.taskId;
-      const lockedBefore = plan0.assignments.find((a) => a.taskId === lockedTaskId);
-      const lockedAfter = plan1.assignments.find((a) => a.taskId === lockedTaskId);
+      const lockedBefore = plan0.assignments.find(
+        (a) => a.taskId === lockedTaskId,
+      );
+      const lockedAfter = plan1.assignments.find(
+        (a) => a.taskId === lockedTaskId,
+      );
       if (lockedAfter && lockedBefore) {
         // 锁定（执行中）任务在 replan 后被改派即违反 frozen 语义
         expect(lockedAfter.personId === lockedBefore.personId).toBe(true);
@@ -485,6 +478,10 @@ if (!e2eConfig) {
     });
 
     it('E: stale snapshot approve 被拒（version/snapshotVersion 校验）', async () => {
+      // A-D intentionally exercise lifecycle transitions. Seed a fresh
+      // pending task for this independent stale-approval fact so its plan is
+      // not suppressed by the earlier dispatch or trigger cooldown.
+      const staleFixture = await seedSchedulerFixture(owner!, fixture!.orgA.id);
       // 1) 先创建一个方案（用 TASK_CREATED 触发，避开 MANUAL 30s 冷却去抖）。
       const run = await apiRequest<SchedulingRunResponse>(
         baseUrl,
@@ -492,7 +489,11 @@ if (!e2eConfig) {
         {
           method: 'POST',
           headers: makeHeaders(token),
-          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_CREATED' }),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'TASK_CREATED',
+            entityId: staleFixture.taskId,
+          }),
         },
       );
       const plan = run.body.plans?.[0];
@@ -504,7 +505,7 @@ if (!e2eConfig) {
         `/api/scheduler/plans/${plan!.planId}/approve`,
         {
           method: 'POST',
-          headers: makeHeaders(token),
+          headers: makeHeaders(approverToken),
           body: JSON.stringify({
             version: (plan!.version ?? 0) + 999,
             snapshotVersion: plan!.snapshotVersion,
@@ -522,7 +523,7 @@ if (!e2eConfig) {
         `/api/scheduler/plans/${plan!.planId}/approve`,
         {
           method: 'POST',
-          headers: makeHeaders(token),
+          headers: makeHeaders(approverToken),
           body: JSON.stringify({
             version: plan!.version,
             snapshotVersion: 'WS-OLD-NOT-FRESH',
@@ -540,26 +541,54 @@ if (!e2eConfig) {
     // ======================================================================
 
     it('F: dispatch 后建立 Execution 记录；actual 回填 → STARTED', async () => {
-      const run = await apiRequest<SchedulingRunResponse>(baseUrl, '/api/scheduler/runs', {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_UPDATED' }),
-      });
+      // Use a fresh pending task; A dispatched the original seed task and a
+      // repeated trigger for it is correctly ineligible/debounced.
+      const executionFixture = await seedSchedulerFixture(owner!, fixture!.orgA.id);
+      const run = await apiRequest<SchedulingRunResponse>(
+        baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'TASK_UPDATED',
+            entityId: executionFixture.taskId,
+          }),
+        },
+      );
       expect(run.status).toBe(201);
       const plan = run.body.plans?.[0];
       expect(plan).toBeDefined();
-      const approve = await apiRequest(baseUrl, `/api/scheduler/plans/${plan!.planId}/approve`, {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({ version: plan!.version, snapshotVersion: plan!.snapshotVersion, operator: 'e2e' }),
-      });
+      const approve = await apiRequest(
+        baseUrl,
+        `/api/scheduler/plans/${plan!.planId}/approve`,
+        {
+          method: 'POST',
+          headers: makeHeaders(approverToken),
+          body: JSON.stringify({
+            version: plan!.version,
+            snapshotVersion: plan!.snapshotVersion,
+            operator: 'e2e',
+          }),
+        },
+      );
       expect(approve.status).toBe(200);
-      const dispatch = await apiRequest(baseUrl, `/api/scheduler/plans/${plan!.planId}/dispatch`, {
-        method: 'POST',
-        headers: makeHeaders(token),
-      });
+      const dispatch = await apiRequest(
+        baseUrl,
+        `/api/scheduler/plans/${plan!.planId}/dispatch`,
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+        },
+      );
+      if (dispatch.status !== 200) {
+        throw new Error(`F dispatch failed: ${dispatch.status} ${JSON.stringify(dispatch.body)}`);
+      }
       expect(dispatch.status).toBe(200);
-      const execs = await apiRequest<{ executions: Array<{ assignmentId: string; status: string }> }>(
+      const execs = await apiRequest<{
+        executions: Array<{ assignmentId: string; status: string }>;
+      }>(
         baseUrl,
         `/api/scheduler/executions?planId=${encodeURIComponent(plan!.planId)}`,
         { method: 'GET', headers: makeHeaders(token) },
@@ -567,18 +596,29 @@ if (!e2eConfig) {
       if (plan!.assignments.length > 0) {
         expect(execs.body.executions.length).toBeGreaterThan(0);
         expect(execs.body.executions[0].status).toBe('PLANNED');
-        const upd = await apiRequest<{ status: string }>(baseUrl, `/api/scheduler/executions/${execs.body.executions[0].assignmentId}/update`, {
-          method: 'POST',
-          headers: makeHeaders(token),
-          body: JSON.stringify({ status: 'STARTED', actualStartAt: new Date().toISOString() }),
-        });
+        const upd = await apiRequest<{ status: string }>(
+          baseUrl,
+          `/api/scheduler/executions/${execs.body.executions[0].assignmentId}/update`,
+          {
+            method: 'POST',
+            headers: makeHeaders(token),
+            body: JSON.stringify({
+              status: 'STARTED',
+              actualStartAt: new Date().toISOString(),
+            }),
+          },
+        );
         expect(upd.status).toBe(201);
         expect(upd.body.status).toBe('STARTED');
       }
     });
 
     it('G: KPI 聚合端点可用（真实聚合不抛错）', async () => {
-      const res = await apiRequest<{ delivery: unknown; stability: unknown; solver: unknown }>(baseUrl, '/api/scheduler/kpi', {
+      const res = await apiRequest<{
+        delivery: unknown;
+        stability: unknown;
+        solver: unknown;
+      }>(baseUrl, '/api/scheduler/kpi', {
         method: 'GET',
         headers: makeHeaders(token),
       });
@@ -589,11 +629,15 @@ if (!e2eConfig) {
     });
 
     it('H: Policy Replay 持久化（candidate v1 + seed）', async () => {
-      const replay = await apiRequest<{ replayId?: string; seed?: number }>(baseUrl, '/api/scheduler/policy/replay', {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({ candidatePolicyVersion: 1, seed: 42 }),
-      });
+      const replay = await apiRequest<{ replayId?: string; seed?: number }>(
+        baseUrl,
+        '/api/scheduler/policy/replay',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({ candidatePolicyVersion: 1, seed: 42 }),
+        },
+      );
       if (replay.status === 201 || replay.status === 200) {
         expect(replay.body.replayId).toBeTruthy();
         expect(replay.body.seed).toBe(42);
@@ -607,19 +651,27 @@ if (!e2eConfig) {
     });
 
     it('I: Policy Activation Gate 端点可用 + 未就绪策略激活被拒', async () => {
-      const gate = await apiRequest<{ passed: boolean; checks: unknown[] }>(baseUrl, '/api/scheduler/policy/1/gate', {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({}),
-      });
+      const gate = await apiRequest<{ passed: boolean; checks: unknown[] }>(
+        baseUrl,
+        '/api/scheduler/policy/1/gate',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({}),
+        },
+      );
       expect(gate.status).toBe(201);
       expect(gate.body).toHaveProperty('passed');
       expect(gate.body).toHaveProperty('checks');
-      const activate = await apiRequest(baseUrl, '/api/scheduler/policy/999/activate', {
-        method: 'POST',
-        headers: makeHeaders(token),
-        body: JSON.stringify({ operator: 'e2e', reason: 'test' }),
-      });
+      const activate = await apiRequest(
+        baseUrl,
+        '/api/scheduler/policy/999/activate',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({ operator: 'e2e', reason: 'test' }),
+        },
+      );
       // 策略不存在/未 SHADOW → 拒绝（不返回成功激活）
       expect(activate.status).not.toBe(200);
     });

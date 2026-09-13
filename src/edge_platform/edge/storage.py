@@ -11,12 +11,23 @@ Storage 是平台唯一完整的 SQLite 持久化实现（遥测/推理/事件/�
 - SQLite 文件权限收紧 0600。
 """
 
+import hashlib
 import json
 import os
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
+
+from edge_platform.edge.frame_errors import FrameContractError
+
+
+def _sha8(text: str) -> str:
+    """短摘要（死信 id 用；与归一化层同算法，互不依赖）。
+
+    `usedforsecurity=False`：这是标识符摘要，不是密码学用途（bandit B324）。
+    """
+    return hashlib.sha1(text.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
 
 # EDGE-021：list_events 服务层硬上限（路由层另有同值钳制）
 MAX_LIST_EVENTS_LIMIT = 1000
@@ -51,6 +62,19 @@ CREATE INDEX IF NOT EXISTS idx_risk_event_device ON risk_event(device_id);
 --   handled_at, end_time, closed_by, close_reason, rule_version}；evidence_json 存储
 --   {window_before_sec, window_after_sec, record_ids, data_quality, evidence_window_sec,
 --    evidence_quality, evidence_samples, evidence_summary}。
+-- 帧死信（2026-09-10 边缘韧性收口）：不可归一化 / 缺契约字段的帧在此留痕。
+-- 此前这类帧只出现在 ERROR 日志里（本地库没有、平台也没有）——现场丢的是数据。
+-- 死信行保留原始载荷与原因，供人工重放与计数（绝不静默丢弃）。
+CREATE TABLE IF NOT EXISTS frame_dead_letter (
+  dead_letter_id TEXT PRIMARY KEY,
+  device_id TEXT,
+  kind TEXT,
+  reason TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  source_type TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_frame_dead_letter_created ON frame_dead_letter(created_at);
 -- Task 14.3：治理与审计表（CREATE TABLE IF NOT EXISTS，幂等，不影响旧表）
 CREATE TABLE IF NOT EXISTS device_protocol_version (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,7 +257,7 @@ CREATE TABLE IF NOT EXISTS world_state_snapshot (
   timestamp TEXT,
   persons_json TEXT, devices_json TEXT, tasks_json TEXT,
   stations_json TEXT, assignments_json TEXT, reservations_json TEXT,
-  events_json TEXT, topology_version TEXT
+  events_json TEXT, topology_version TEXT, metadata_json TEXT
 );
 -- E-08：按时间窗口取世界快照（回放/追溯）
 CREATE INDEX IF NOT EXISTS idx_world_state_snapshot_ts ON world_state_snapshot(timestamp);
@@ -301,6 +325,7 @@ class Storage:
         with self._lock, self._db:
             self._db.executescript(SCHEMA)
             self._ensure_assignment_columns()
+            self._ensure_world_state_snapshot_columns()
             # EDGE-003：(exo_id, status='active') 唯一约束（partial unique index）。
             # 旧库若已存在重复活跃绑定则创建失败——保留旧行为并告警（并发新写入
             # 已由 self._lock 串行化 + 路由层先检后写收敛）。
@@ -332,11 +357,51 @@ class Storage:
             if name not in cols:
                 self._db.execute(f'ALTER TABLE assignment ADD COLUMN "{name}" {decl}')  # nosec B608 - fixed internal column list
 
+    def _ensure_world_state_snapshot_columns(self):
+        """为旧库补齐快照 provenance 列；新旧 Edge SQLite 库均可幂等启动。"""
+        columns = {column["name"] for column in self._db.execute("PRAGMA table_info(world_state_snapshot)").fetchall()}
+        if "metadata_json" not in columns:
+            self._db.execute("ALTER TABLE world_state_snapshot ADD COLUMN metadata_json TEXT")
+
     def close(self):
         self._db.close()
 
     # -- 遥测 --
+    def ensure_device(self, device_id, device_type, source_type, model=None, firmware_version=None):
+        """设备自动登记（幂等）。
+
+        背景：`insert_telemetry` 只 `UPDATE device SET last_seen/online`，
+        环境/摄像头/定位设备的 `device` 行从未建立 → 更新命中 0 行 → 设备永远
+        不在设备清单里（现场看到"没有设备"，而数据其实一直在进来）。
+        这里以 `INSERT OR IGNORE` 显式登记，`model` 未知时写 `unknown`
+        （绝不编造型号）；已存在的行不被覆盖（保留人工登记的权威信息）。
+        """
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR IGNORE INTO device "
+                "(device_id, device_type, model, firmware_version, person_id, online, source_type, last_seen) "
+                "VALUES (?,?,?,?,NULL,1,?,NULL)",
+                (
+                    device_id,
+                    device_type or "unknown",
+                    model or "unknown",
+                    firmware_version,
+                    source_type or "unknown",
+                ),
+            )
+
     def insert_telemetry(self, msg):
+        """写入遥测行（严格契约）。
+
+        缺 `record_id` / `device_id` / `timestamp` / `source_type` 时抛
+        :class:`FrameContractError` —— 调用方（AdapterManager）转死信留痕。
+        绝不使用 `msg.get()` 兜默认值把"缺字段"伪装成一条正常数据。
+        """
+        missing = tuple(k for k in ("record_id", "device_id", "timestamp", "source_type") if not msg.get(k))
+        if missing:
+            raise FrameContractError("telemetry", "遥测行缺必填字段", missing)
+        quality = msg.get("quality") if isinstance(msg.get("quality"), dict) else {}
+        status = quality.get("status") or "unknown"
         with self._lock, self._db:
             self._db.execute(
                 "INSERT OR REPLACE INTO telemetry VALUES (?,?,?,?,?,?,?)",
@@ -346,13 +411,56 @@ class Storage:
                     msg["timestamp"],
                     msg.get("sequence", 0),
                     json.dumps(msg.get("telemetry", {}), ensure_ascii=False),
-                    msg.get("quality", {}).get("status", "good"),
+                    status,
                     msg["source_type"],
                 ),
             )
             self._db.execute(
                 "UPDATE device SET last_seen=?, online=1 WHERE device_id=?", (msg["timestamp"], msg["device_id"])
             )
+
+    # -- 帧死信（不可归一化帧的留痕与重放载体） --
+    def insert_frame_dead_letter(self, entry):
+        """记录一条死信；返回 dead_letter_id（幂等：同 record_id 覆盖原因）。
+
+        `dead_letter_id` 优先取来源 record_id（缺失时用 (device, created_at) 摘要），
+        因此同一坏帧反复出现只占一行、原因可更新，不会无限膨胀。
+        """
+        device_id = entry.get("device_id")
+        payload = entry.get("payload")
+        payload_json = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
+        created_at = entry.get("created_at") or datetime.now(timezone.utc).isoformat()
+        dead_letter_id = entry.get("dead_letter_id") or entry.get("record_id") or (
+            f"dl:{_sha8(f'{device_id}|{payload_json}')}"
+        )
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO frame_dead_letter "
+                "(dead_letter_id, device_id, kind, reason, payload_json, source_type, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    dead_letter_id,
+                    device_id,
+                    entry.get("kind"),
+                    str(entry.get("reason") or "unspecified"),
+                    payload_json,
+                    entry.get("source_type"),
+                    created_at,
+                ),
+            )
+        return dead_letter_id
+
+    def list_frame_dead_letters(self, limit=100):
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM frame_dead_letter ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(int(limit), 1000)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_frame_dead_letters(self):
+        with self._lock:
+            return self._db.execute("SELECT COUNT(*) c FROM frame_dead_letter").fetchone()["c"]
 
     def latest_telemetry(self, device_id):
         with self._lock:
@@ -1335,12 +1443,13 @@ class Storage:
             self._db.execute(
                 "INSERT INTO world_state_snapshot (snapshot_id, timestamp, persons_json, devices_json,"
                 " tasks_json, stations_json, assignments_json, reservations_json, events_json,"
-                " topology_version) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " topology_version, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(snapshot_id) DO UPDATE SET timestamp=excluded.timestamp,"
                 " persons_json=excluded.persons_json, devices_json=excluded.devices_json,"
                 " tasks_json=excluded.tasks_json, stations_json=excluded.stations_json,"
                 " assignments_json=excluded.assignments_json, reservations_json=excluded.reservations_json,"
-                " events_json=excluded.events_json, topology_version=excluded.topology_version",
+                " events_json=excluded.events_json, topology_version=excluded.topology_version,"
+                " metadata_json=excluded.metadata_json",
                 (
                     snapshot_id,
                     s.get("timestamp", ""),
@@ -1352,6 +1461,9 @@ class Storage:
                     json.dumps(s.get("reservations", []), ensure_ascii=False),
                     json.dumps(s.get("events", []), ensure_ascii=False),
                     s.get("topology_version", ""),
+                    json.dumps(
+                        {"version": 1, "source_timestamps": s.get("source_timestamps") or {}}, ensure_ascii=False,
+                    ),
                 ),
             )
 
@@ -1377,6 +1489,10 @@ class Storage:
         for k in ("persons_json", "devices_json", "tasks_json", "stations_json", "assignments_json",
                   "reservations_json", "events_json"):
             d[k.replace("_json", "")] = json.loads(d.pop(k) or "[]")
+        metadata = json.loads(d.pop("metadata_json") or "{}")
+        if metadata and metadata.get("version") != 1:
+            raise ValueError("Unsupported world state snapshot metadata version")
+        d["source_timestamps"] = metadata.get("source_timestamps", {})
         return d
 
     def counts(self):
@@ -1399,5 +1515,3 @@ class Storage:
             for t in ("telemetry", "inference", "risk_event"):
                 self._db.execute(f"DELETE FROM {t} WHERE source_type!='real'")  # nosec B608 - fixed internal table list
             self._db.execute("UPDATE device SET online=0 WHERE source_type!='real'")
-
-

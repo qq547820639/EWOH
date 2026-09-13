@@ -331,11 +331,33 @@ export class SchedulerPlanApplicationService {
     return this.planService.rejectPlan(planId, body, toOrgContext(actor));
   }
 
+  /**
+   * DR-5 方案取消/回滚：委托 planService.cancelPlan（assignment 取消 + 预占
+   * 释放 + 任务回退 + PlanCancelled outbox），并把未开始的 Execution 行标记
+   * CANCELLED（可回退集合内）——执行跟踪与派工事实同进退。
+   */
+  async cancelPlanV2(
+    planId: string,
+    body: { reason?: string },
+    actor?: OrgContext,
+  ): Promise<SchedulingPlanV2> {
+    const plan = await this.planService.cancelPlan(planId, body, toOrgContext(actor));
+    const cancelledIds = plan.cancel?.cancelledAssignmentIds ?? [];
+    if (cancelledIds.length > 0 && this.executionService) {
+      await this.executionService.cancelForAssignments(cancelledIds, toOrgContext(actor));
+    }
+    return plan;
+  }
+
   async dispatchPlanV2(
     planId: string,
     actor?: OrgContext,
+    wave?: { assignmentIds?: string[] },
   ): Promise<SchedulingPlanV2> {
-    const plan = await this.planService.dispatchPlan(planId, toOrgContext(actor));
+    // 同 plan.service：未指定波次时保持两参调用形状（表征测试以调用形状为 oracle）。
+    const plan = wave
+      ? await this.planService.dispatchPlan(planId, toOrgContext(actor), wave)
+      : await this.planService.dispatchPlan(planId, toOrgContext(actor));
     // P4-EXEC：dispatch 后建立 Execution 记录（planned 事实；actual 由执行反馈回填）。
     if (this.executionService) {
       // DATA-FLOW-L3 修复（2026-08-18）：Execution 建档失败从"单次尝试"升级为
@@ -425,7 +447,8 @@ export class SchedulerPlanApplicationService {
     }
 
     // 守卫 2：版本存在且为 shadow 候选（active=false），不可重复 activate。
-    const status = await this.policyService.getPolicyVersionStatus(configVersion);
+    // org 透传（与守卫 3 同纪律）：configVersion 按 org 递增，不带 org 会命中他租户同版本号行。
+    const status = await this.policyService.getPolicyVersionStatus(configVersion, ctx.primaryOrgId);
     if (!status) {
       throw new NotFoundException(
         `Scheduling policy version ${configVersion} not found`,
@@ -436,7 +459,14 @@ export class SchedulerPlanApplicationService {
     }
 
     // 守卫 3：已完成 replay 评估（shadow → 评估 → activate 闭环）。
-    if (!this.policyReplayService?.isEvaluated(configVersion)) {
+    // R2-WP-B：守卫必须带 org——configVersion 按 org 递增，不同租户可同版本号，
+    // 不带 org 会命中他租户的评估记录（跨租户绕过 shadow replay 门禁）。
+    if (
+      !(await this.policyReplayService?.isEvaluated(
+        configVersion,
+        ctx.primaryOrgId,
+      ))
+    ) {
       throw new ConflictException(
         'POLICY_NOT_EVALUATED: 候选策略须先完成 shadow replay 评估',
       );

@@ -155,7 +155,13 @@ describe('并发 / 竞争测试', () => {
       ],
       tasks: [{ id: 'TASK-1', status: 'pending_dispatch', version: 1 }],
     });
+    // dispatch 路径使用**波次感知**版本（分波次派工）；过期语义两处一致，
+    // 因此这里两者都要注入拒绝行为——只注入旧方法会让本用例失去检测能力
+    // （批量补桩曾把带行为的 mock 覆盖成 resolve，导致 stale 未被拒绝却测试通过）。
     mocks.worldStateSnapshotService.assertFreshForApprove.mockRejectedValue(
+      new ConflictException('PLAN_STALE'),
+    );
+    mocks.worldStateSnapshotService.assertFreshForWave.mockRejectedValue(
       new ConflictException('PLAN_STALE'),
     );
 

@@ -279,6 +279,12 @@ test.describe('UX-0011/WeakNet', () => {
         status: 409,
         body: { message: 'STATE_CONFLICT: step already advanced' },
       },
+      // 冲突解析端点（resolveConflict → forceResolveMobileStep）：采用任一方后调用。
+      // 缺这条 mock → force-resolve 命中 404 → 队列项被保留、不出现"已采用服务端值"，
+      // 测试会以"产品没实现"的形式假失败（ux009-network.spec.js 一直有这条）。
+      'POST /api/mobile/workbench/orders/WO-1001/steps/S1/force-resolve': () => ({
+        applied: true,
+      }),
     });
     await openSession(page, baseUrl, ROLES.worker, '/mobile-workbench');
     await expect(page.locator('h1')).toHaveText('移动工作台');

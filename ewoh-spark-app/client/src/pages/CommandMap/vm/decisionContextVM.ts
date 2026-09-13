@@ -21,6 +21,7 @@ import type {
 import { decisionReasonLabel } from './decisionExplainVM';
 import { taskMoveReasonLabel } from './taskMoveExplainVM';
 import { SOLVER_STATUS_LABELS } from './solverStatusChainVM';
+import { softConstraintLabel } from '@shared/reject-reason';
 
 export type DecisionSectionId =
   | 'WHAT_HAPPENED'
@@ -242,7 +243,8 @@ export function decisionContextVM(input: DecisionContextInput): DecisionContextV
     push(costRows, '计划变更', plan.metrics.changeCost != null ? `${plan.metrics.changeCost.toFixed(0)} 项` : null);
   }
   for (const [key, value] of Object.entries(trace?.softCosts ?? {})) {
-    push(costRows, `软成本 · ${key}`, typeof value === 'number' ? value.toFixed(2) : String(value));
+    // 软成本键中文化（词表唯一来源；未知键显式标注未登记，不露裸键）
+    push(costRows, `软成本 · ${softConstraintLabel(key)}`, typeof value === 'number' ? value.toFixed(2) : String(value));
   }
   sections.push({ id: 'COST', title: '成本', rows: costRows });
 

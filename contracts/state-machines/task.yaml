@@ -20,6 +20,11 @@ transitions:
   - { from: pending_approval, to: draft, role: approver, condition: rejected_with_reason }
   - { from: pending_dispatch, to: dispatched, role: dispatcher, condition: resources_reserved }
   - { from: dispatched, to: received, role: worker, condition: accept }
+  # DR-5 方案取消/回滚（2026-09-11）：任务被派发/接收但尚未开始执行时，
+  # 调度侧取消派工可将其退回待派发池（重新可排程）。开始执行后不可回退
+  # （物理执行不可撤销，只能走 exception/cancelled 处置路径）。
+  - { from: dispatched, to: pending_dispatch, role: dispatcher, condition: rollback_before_start }
+  - { from: received, to: pending_dispatch, role: dispatcher, condition: rollback_before_start }
   - { from: received, to: executing, role: worker, condition: start }
   - { from: executing, to: paused, role: [worker, dispatcher], condition: reason_required }
   - { from: executing, to: exception, role: [system, worker], condition: anomaly }

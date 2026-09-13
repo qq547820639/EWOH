@@ -82,6 +82,7 @@ class TelemetryWorldProjector:
             "skipped_no_device": 0,
             "skipped_no_kind": 0,
             "rejected_source": 0,
+            "rejected_quality": 0,
             "rejected_contract": 0,
         }
         self._running = False
@@ -222,54 +223,98 @@ class TelemetryWorldProjector:
                 source,
             )
             return {"projected": False, "entity_id": entity_id, "skipped_reason": "bad_source"}
+        # UR8（2026-09-13 审查）：帧质量是投影置信度的事实来源——此前无视 quality
+        # 一律以 confidence=1.0 写入，invalid（越量程/非数值）帧的读数被伪造成
+        # 满置信度的世界事实。现在：good→帧置信度（缺省 1.0）；degraded→帧置信度
+        # （缺省 0.5）；invalid/unknown→fail-closed 拒绝（计数 + 留痕，绝不补投）。
+        quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+        quality_status = str(quality.get("status") or "unknown")
+        quality_confidence = quality.get("confidence")
+        if quality_status == "good":
+            confidence = (
+                float(quality_confidence) if isinstance(quality_confidence, (int, float)) else 1.0
+            )
+        elif quality_status == "degraded":
+            confidence = (
+                float(quality_confidence) if isinstance(quality_confidence, (int, float)) else 0.5
+            )
+        else:
+            self._counters["rejected_quality"] += 1
+            logger.warning(
+                "world projection: 帧质量不可信（%s），拒绝投影: %s",
+                quality_status,
+                device_id,
+            )
+            return {"projected": False, "entity_id": entity_id, "skipped_reason": "bad_quality"}
+        confidence = max(0.0, min(1.0, confidence))
         ts = row.get("timestamp")
         from edge_platform.world_model.contract_store import WorldStoreContractError
 
         # 首见实体：声明 + 因果事件（采集链驱动的事件事实）
         if entity_id not in self._declared:
-            declaration = {
-                "entityId": entity_id,
-                "kind": kind,
-                "tenantId": self._tenant,
-                "factoryId": self._factory,
-                "timeSemantics": {"validFrom": ts or now_iso(), "validTo": None},
-                "status": "active",
-                "source": source,
-                "version": 1,
-            }
-            try:
-                self._store.declare_entity(declaration)
-            except WorldStoreContractError as exc:
-                self._counters["rejected_contract"] += 1
-                logger.warning("world projection: 实体声明被契约拒绝 %s: %s", entity_id, exc)
-                return {"projected": False, "entity_id": entity_id, "skipped_reason": "declaration_rejected"}
-            self._declared.add(entity_id)
-            self._counters["declarations"] += 1
-            try:
-                self._store.record_event(
-                    entity_id,
-                    "ENTITY_OBSERVED",
-                    {"kind": kind, "source_type": source},
-                    ts=ts or now_iso(),
-                )
-                self._counters["events_recorded"] += 1
-            except Exception:
-                logger.exception("world projection: 因果事件登记失败 %s", entity_id)
-            # NO-04a：实体声明随事件骨干上行（Catalog 信封事件，契约校验 fail-closed）
-            self._emit_catalog_event(
-                "EntityDeclared",
-                entity_id,
-                device_id,
-                source,
-                ts,
-                {
-                    "kind": kind,
-                    "factory_id": self._factory,
-                    "tenant_id": self._tenant,
-                    "version": 1,
-                    "status": "active",
-                },
+            # UR8（2026-09-13 审查）：重启恢复（run.py 用 worldstate.json from_dict
+            # 还原 ContractWorldStore）后，声明已在持久层且 version≥1；投影器内存
+            # _declared 集合却已清空。若照旧以 version=1 重复声明，会被
+            # declaration_version_not_increasing 永久拒绝，重启后该实体所有帧
+            # declaration_rejected——世界模型冻结在重启前（已实测复现）。
+            # 故先查持久层：已存在且 kind/tenant/factory 与当前配置一致的声明
+            # 直接采纳为"已声明"（与进程内第二帧起不再声明的语义对齐，不重放
+            # EntityDeclared/ENTITY_OBSERVED）；配置变更（不同 tenant/factory/kind）
+            # 则仍走 declare_entity，由契约不可变校验 fail-closed 拒绝。
+            getter = getattr(self._store, "declaration", None)
+            prev = getter(entity_id) if callable(getter) else None
+            adopted = (
+                isinstance(prev, dict)
+                and prev.get("kind") == kind
+                and prev.get("tenantId") == self._tenant
+                and prev.get("factoryId") == self._factory
             )
+            if adopted:
+                self._declared.add(entity_id)
+            else:
+                declaration = {
+                    "entityId": entity_id,
+                    "kind": kind,
+                    "tenantId": self._tenant,
+                    "factoryId": self._factory,
+                    "timeSemantics": {"validFrom": ts or now_iso(), "validTo": None},
+                    "status": "active",
+                    "source": source,
+                    "version": 1,
+                }
+                try:
+                    self._store.declare_entity(declaration)
+                except WorldStoreContractError as exc:
+                    self._counters["rejected_contract"] += 1
+                    logger.warning("world projection: 实体声明被契约拒绝 %s: %s", entity_id, exc)
+                    return {"projected": False, "entity_id": entity_id, "skipped_reason": "declaration_rejected"}
+                self._declared.add(entity_id)
+                self._counters["declarations"] += 1
+                try:
+                    self._store.record_event(
+                        entity_id,
+                        "ENTITY_OBSERVED",
+                        {"kind": kind, "source_type": source},
+                        ts=ts or now_iso(),
+                    )
+                    self._counters["events_recorded"] += 1
+                except Exception:
+                    logger.exception("world projection: 因果事件登记失败 %s", entity_id)
+                # NO-04a：实体声明随事件骨干上行（Catalog 信封事件，契约校验 fail-closed）
+                self._emit_catalog_event(
+                    "EntityDeclared",
+                    entity_id,
+                    device_id,
+                    source,
+                    ts,
+                    {
+                        "kind": kind,
+                        "factory_id": self._factory,
+                        "tenant_id": self._tenant,
+                        "version": 1,
+                        "status": "active",
+                    },
+                )
 
         telemetry = row.get("telemetry") or {}
         state_json = {k: telemetry[k] for k in _STATE_FIELDS if k in telemetry and telemetry[k] is not None}
@@ -285,7 +330,7 @@ class TelemetryWorldProjector:
                 entity_type=kind,
                 state_json=state_json,
                 source_type=source,
-                confidence=1.0,
+                confidence=confidence,  # UR8：帧质量决定投影置信度，不再恒 1.0
                 ts=ts,
             )
         except WorldStoreContractError as exc:

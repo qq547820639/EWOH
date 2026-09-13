@@ -22,7 +22,11 @@ def _world_store_or_error(ctx, h):
     """取 world_store；未装配返回 (None, 503 响应)。"""
     ws = getattr(ctx, "world_store", None)
     if ws is None:
-        return None, h._new_error("world_store_unavailable", "契约世界状态存储未装配", 503)
+        # send_json/_new_error intentionally return None. Return a separate
+        # handled marker so the caller stops dispatching after the 503 and
+        # never dereferences the absent store or emits a second response.
+        h._new_error("world_store_unavailable", "契约世界状态存储未装配", 503)
+        return None, True
     return ws, None
 
 

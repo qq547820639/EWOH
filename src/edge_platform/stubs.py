@@ -55,12 +55,46 @@ class Bus:
 
 
 class AdapterManager:
-    """契约：edge/manager.py 的 stub。"""
+    """契约：edge/manager.py 的 stub。
+
+    NO-59b：补齐执行机构命令通道需要的只读方法（``register``/``find_adapter``/
+    ``device_info``/``health``）——替身必须与真实 manager 同形，否则路由层不可测
+    （本仓库反复踩过"替身漏方法 → 路径永不被覆盖"）。
+    """
 
     def __init__(self, storage, bus, listeners=None):
         self.storage, self.bus = storage, bus
         self.listeners = listeners or {9001: "real", 9002: "controlled_test", 9003: "simulated"}
         self.running = False
+        self._adapters = []
+
+    def register(self, adapter):
+        self._adapters.append(adapter)
+
+    def find_adapter(self, device_id):
+        wanted = str(device_id or "").strip()
+        for adapter in list(self._adapters):
+            if getattr(adapter, "device_id", None) == wanted:
+                return adapter
+        return None
+
+    def device_info(self):
+        out = []
+        for adapter in list(self._adapters):
+            try:
+                out.append(adapter.device_info())
+            except Exception:
+                out.append({"device_id": getattr(adapter, "device_id", "?")})
+        return out
+
+    def health(self):
+        out = []
+        for adapter in list(self._adapters):
+            try:
+                out.append(adapter.health())
+            except Exception:
+                out.append({"device_id": getattr(adapter, "device_id", "?"), "status": "error"})
+        return out
 
     def start(self):
         self.running = True
@@ -139,14 +173,25 @@ class DemoSimulator:
         self.device_ids = list(device_ids)
         self.period = 1.0 / hz
         self._stop = threading.Event()
+        self._lifecycle_lock = threading.Lock()
+        self._thread = None
         self._seq = {d: 0 for d in self.device_ids}
         self._last_event = 0
 
     def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
+        with self._lifecycle_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
 
     def stop(self):
-        self._stop.set()
+        with self._lifecycle_lock:
+            self._stop.set()
+            worker = self._thread
+        if worker is not None and worker is not threading.current_thread():
+            worker.join()
 
     def _run(self):
         t0 = time.time()
@@ -220,7 +265,7 @@ class DemoSimulator:
                             "source_type": "simulated",
                         }
                     )
-            time.sleep(self.period)
+            self._stop.wait(self.period)
 
 
 def seed_base(storage):

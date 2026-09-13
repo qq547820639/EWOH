@@ -20,6 +20,7 @@ _METRIC_SPECS = [
     ("high_load_persons_count", "高负荷人员数", False),
     ("total_travel_distance_m", "行走距离(米)", False),
     ("low_battery_devices_count", "低电量风险设备数", False),
+    ("unknown_battery_devices_count", "电量数据不可信设备数", False),
     ("congestion_delta", "拥堵变化", False),
     ("confidence", "置信度", True),
 ]
@@ -51,6 +52,8 @@ def _metric_value(metrics, key):
         return len(getattr(metrics, "high_load_persons", []) or [])
     if key == "low_battery_devices_count":
         return len(getattr(metrics, "low_battery_devices", []) or [])
+    if key == "unknown_battery_devices_count":
+        return len(getattr(metrics, "unknown_battery_devices", []) or [])
     return float(getattr(metrics, key, 0.0) or 0.0)
 
 
@@ -157,7 +160,9 @@ def _build_recommendation(plans, metric_table):
 
     # 推荐逻辑：首期安全优先——若负荷均衡方案高负荷人员为 0，倾向推荐；
     # 否则推荐产量最高方案（均需班组长确认，spec「人在回路」）。
-    if safe is not None and val(getattr(safe, "plan_id", ""), "high_load_persons_count") == 0:
+    if any(val(getattr(plan, "plan_id", ""), "unknown_battery_devices_count") > 0 for plan in plans):
+        parts.append("存在电量数据不可信的设备，请先补充或核实遥测，再比较方案安全性。")
+    elif safe is not None and val(getattr(safe, "plan_id", ""), "high_load_persons_count") == 0:
         parts.append(
             "综合安全与负荷均衡考虑，建议优先采用负荷均衡方案；如产能压力较大可由班组长确认后改用产能优先方案。"
         )

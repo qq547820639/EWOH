@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger, BadRequestException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ewohExoConfig, ewohEvent } from '@server/database/schema';
 import { validateExoConfig, type ExoConfigRecord } from '@shared/exo-config';
@@ -169,6 +169,27 @@ export class ExoConfigService {
     // NEST-431：激活主事实与观测事件同事务（沿袭既有模式）。
     const nowIso = new Date().toISOString();
     const updated = await this.db.transaction(async (tx) => {
+      // R2-SAM-007 补口（2026-09-13 对抗审查）：先取**组锁**——同组（org+exo+mode）
+      // 的全部 assist_profile 行（不分状态、按 id 定序防死锁）FOR UPDATE。
+      // 只锁/只读 active 行挡不住并发：两个激活都以“旧 active”快照起手时，
+      // 后提交者对旧 active 的 supersede UPDATE（where status='active'）在先行者
+      // 提交后命中 0 行是**静默**的，随后双双激活目标 → 同组两条 active
+      // （active 唯一只靠服务层，DB 的 idx_ewoh_exo_config_active_profile 是普通
+      // 索引，不设 UNIQUE）。FOR UPDATE 阻塞等待先行者提交后返回最新已提交版本，
+      // 后行者必然看到先行者刚激活的行并把它 supersede——同组激活在此串行化。
+      await tx
+        .select({ id: ewohExoConfig.id })
+        .from(ewohExoConfig)
+        .where(
+          and(
+            eq(ewohExoConfig.orgId, orgId),
+            eq(ewohExoConfig.exoId, target.exoId),
+            eq(ewohExoConfig.kind, 'assist_profile'),
+            eq(ewohExoConfig.supportMode, target.supportMode),
+          ),
+        )
+        .orderBy(asc(ewohExoConfig.id))
+        .for('update');
       const active = await tx
         .select()
         .from(ewohExoConfig)

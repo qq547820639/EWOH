@@ -43,6 +43,10 @@ function standaloneTransform(sql, options = {}) {
   let text = sql.split(USER_PROFILE_DEFAULT).join('uuid DEFAULT NULL');
   text = text.replace(/DO \$ewoh_type\$[\s\S]*?\$ewoh_type\$;/g, '');
   text = text
+    .split('__EWOH_ROLE_USER_AUTHENTICATED__').join('authenticated')
+    .split('__EWOH_ROLE_AUTHENTICATED__').join('authenticated')
+    .split('__EWOH_ROLE_ANON__').join('anon')
+    .split('__EWOH_ROLE_SERVICE__').join('service_role')
     .split('user_authenticated_workspace_aadknm4yzbyds').join('authenticated')
     .split('authenticated_workspace_aadknm4yzbyds').join('authenticated')
     .split('anon_workspace_aadknm4yzbyds').join('anon')

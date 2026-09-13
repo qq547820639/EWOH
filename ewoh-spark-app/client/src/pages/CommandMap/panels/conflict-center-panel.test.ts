@@ -19,6 +19,7 @@ describe('v0.7 A3 ConflictCenterPanel 类型映射完整性', () => {
     'person_unavailable',
     'device_offline',
     'low_battery',
+    'battery_unknown',
     'predecessor_violation',
     'station_capacity',
     'forbidden_zone',
@@ -27,6 +28,7 @@ describe('v0.7 A3 ConflictCenterPanel 类型映射完整性', () => {
     'stale_plan',
     'reservation_conflict',
     'reservation_expiring',
+    'perception_inconsistent',
   ];
 
   it('TYPE_META 覆盖后端全部冲突类型（无展示漂移）', () => {

@@ -165,8 +165,8 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
     // 旧缓存条目（升级过渡期无消费者，仅释放内存）。
     queryClient.removeQueries({ queryKey: ['schedule-route-graph'] });
     // 使用前缀匹配，使所有 ['scheduler-plan', planId] / ['scheduler-run', runId] 都失效。
-    queryClient.invalidateQueries({ queryKey: ['scheduler-plan'] });
-    queryClient.invalidateQueries({ queryKey: ['scheduler-run'] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.schedulerPlanPrefix });
+    queryClient.invalidateQueries({ queryKey: queryKeys.schedulerRunPrefix });
     onResyncRef.current?.();
   }, [queryClient]);
 

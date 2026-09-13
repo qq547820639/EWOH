@@ -16,7 +16,7 @@ import type {
  * 不 import lib/auth——auth → api/auth → lib/http 的链条携带 Vite 专属的
  * import.meta 语法，会把整个 jest 环境拖进非必要 的 transform 失败面。
  */
-function currentOrgScope(): string {
+export function currentOrgScope(): string {
   try {
     const raw =
       typeof window !== 'undefined'
@@ -30,6 +30,14 @@ function currentOrgScope(): string {
     // 解析失败视作无组织上下文。
   }
   return 'no-org';
+}
+
+export function tenantQueryKey(...segments: readonly unknown[]) {
+  return [currentOrgScope(), ...segments] as const;
+}
+
+function schedulerKey(...segments: readonly unknown[]) {
+  return ['scheduler', currentOrgScope(), ...segments] as const;
 }
 
 export const queryKeys = {
@@ -46,103 +54,160 @@ export const queryKeys = {
   get spatialEntities() {
     return ['spatial-entities', currentOrgScope()] as const;
   },
-  spatialHierarchy: ['spatial-hierarchy'] as const,
+  get spatialHierarchy() { return tenantQueryKey('spatial-hierarchy'); },
   get worldState() {
     return ['world-state', currentOrgScope()] as const;
   },
   get overview() {
     return ['overview', currentOrgScope()] as const;
   },
-  events: (status?: string) => ['events', status ?? 'all'] as const,
-  devices: (query?: DeviceSearchQuery) => ['devices', query ?? {}] as const,
-  deviceBindings: (deviceId?: string) => ['device-bindings', deviceId ?? 'none'] as const,
+  get factoryOperationsOverview() {
+    return ['factory-operations', currentOrgScope(), 'overview'] as const;
+  },
+  factoryOperationsEvents: (page: number, pageSize: number) =>
+    ['factory-operations', currentOrgScope(), 'events', page, pageSize] as const,
+  get factoryOperationsPlans() {
+    return ['factory-operations', currentOrgScope(), 'plans'] as const;
+  },
+  events: (status?: string) => tenantQueryKey('events', status ?? 'all'),
+  devices: (query?: DeviceSearchQuery) => tenantQueryKey('devices', query ?? {}),
+  deviceBindings: (deviceId?: string) => tenantQueryKey('device-bindings', deviceId ?? 'none'),
   get replaySnapshots() {
     return ['world-replay', currentOrgScope()] as const;
   },
-  schedulerPlans: (status?: string) => ['scheduler-plans', status ?? 'all'] as const,
+  schedulerPlans: (status?: string) => ['scheduler-plans', currentOrgScope(), status ?? 'all'] as const,
   /** 当前活跃的调度方案列表（V2），由 createRun 结果 + SSE 事件流写入缓存维护。 */
-  schedulerActivePlans: ['scheduler-active-plans'] as const,
+  get schedulerActivePlans() {
+    return ['scheduler-active-plans', currentOrgScope()] as const;
+  },
   /** 单个方案详情（V2）。 */
-  schedulerPlan: (planId: string) => ['scheduler-plan', planId] as const,
+  get schedulerPlanPrefix() { return ['scheduler-plan', currentOrgScope()] as const; },
+  schedulerPlan: (planId: string) => ['scheduler-plan', currentOrgScope(), planId] as const,
   /** 单个调度运行记录（V2）。 */
-  schedulerRun: (runId: string) => ['scheduler-run', runId] as const,
+  get schedulerRunPrefix() { return ['scheduler-run', currentOrgScope()] as const; },
+  schedulerRun: (runId: string) => ['scheduler-run', currentOrgScope(), runId] as const,
   /** 调度运行历史分页列表 + 活跃方案（V2）。 */
-  schedulerRuns: (filters?: ListRunsRequest) => ['scheduler', 'runs', filters ?? {}] as const,
+  schedulerRuns: (filters?: ListRunsRequest) =>
+    filters ? schedulerKey('runs', filters) : schedulerKey('runs'),
   /** map 与调度共享的当前世界状态快照（V2）。 */
-  schedulerSnapshot: ['scheduler', 'snapshot'] as const,
+  get schedulerSnapshot() {
+    return schedulerKey('snapshot');
+  },
   /** P1-D：统一调度上下文（GET /api/scheduler/context，版本边界 + dataQuality）。 */
-  schedulerContext: ['scheduler-context'] as const,
+  get schedulerContext() {
+    return ['scheduler-context', currentOrgScope()] as const;
+  },
   /** 单个任务的候选资源（V2，后端资格判定 + 路径可行性计算）。 */
-  schedulerTaskCandidates: (taskId: string) => ['scheduler-task-candidates', taskId] as const,
+  schedulerTaskCandidates: (taskId: string) =>
+    ['scheduler-task-candidates', currentOrgScope(), taskId] as const,
   /** 统一调度冲突列表（V2 冲突中心 / 命令图冲突面板）。 */
-  schedulerConflicts: (filters?: ConflictsListRequest) => ['scheduler', 'conflicts', filters ?? {}] as const,
+  schedulerConflicts: (filters?: ConflictsListRequest) =>
+    filters ? schedulerKey('conflicts', filters) : schedulerKey('conflicts'),
   /** 单个调度冲突详情（V2）。 */
-  schedulerConflict: (conflictId: string) => ['scheduler-conflict', conflictId] as const,
+  schedulerConflict: (conflictId: string) => ['scheduler-conflict', currentOrgScope(), conflictId] as const,
   /** Phase 4 执行反馈：方案执行记录列表（planned vs actual，决策驾驶舱消费）。 */
-  schedulerExecutions: (planId?: string) => ['scheduler', 'executions', planId ?? 'all'] as const,
+  schedulerExecutions: (planId?: string) => schedulerKey('executions', planId ?? 'all'),
+  /**
+   * 执行记录查询的**前缀键**（不含尾部过滤段）。React Query 失效靠前缀匹配，
+   * 更长的键匹配不到更短的查询键：回执提交后要同时命中按方案过滤
+   * （schedulerExecutions(planId)）、现场按人收敛（'field-my-work'）与全量列表
+   * （schedulerExecutions()），必须用这三者的公共前缀失效。
+   */
+  get schedulerExecutionsPrefix() { return schedulerKey('executions'); },
   /** P1-CMAP-002：统一资源状态权威投影（ResourceProjection SSOT）。 */
-  schedulerResourceState: ['scheduler-resource-state'] as const,
+  get schedulerResourceState() {
+    return ['scheduler-resource-state', currentOrgScope()] as const;
+  },
   /** 当前生效调度策略 + 配置（Task 6）。 */
-  schedulerPolicy: ['scheduler-policy'] as const,
+  get schedulerPolicy() {
+    return ['scheduler-policy', currentOrgScope()] as const;
+  },
   /** 全部策略版本列表（Task 6）。 */
-  schedulerPolicyVersions: ['scheduler-policy-versions'] as const,
+  get schedulerPolicyVersions() {
+    return ['scheduler-policy-versions', currentOrgScope()] as const;
+  },
   /** 候选策略版本 vs 生效版本的 shadow 对比（Task 6）。 */
-  schedulerPolicyComparison: (version: number) => ['scheduler-policy', 'compare', version] as const,
-  commandCenter: ['command-center'] as const,
-  commandCenterOverview: ['command-center', 'overview'] as const,
-  commandCenterEvents: ['command-center', 'events'] as const,
-  digitalWorld: ['digital-world'] as const,
-  personnel: (query?: PersonnelQuery) => ['personnel', query ?? {}] as const,
-  alerts: ['alerts'] as const,
-  organizationTree: ['organization-tree'] as const,
-  organizations: ['organizations'] as const,
-  models: ['models'] as const,
-  dataAssets: ['data-assets'] as const,
-  systemConfigs: ['system-configs'] as const,
-  aiSuggestions: ['ai-suggestions'] as const,
-  aiPlans: ['ai-plans'] as const,
-  aiConfigStatus: ['ai-config-status'] as const,
-  environmentSummary: ['environment-summary'] as const,
-  mobileWorkbench: (personId: string) => ['mobile-workbench', personId] as const,
-  mobileOrder: (orderId: string) => ['mobile-order', orderId] as const,
-  scaleTemplates: ['scale-templates'] as const,
-  scaleProfiles: ['scale-profiles'] as const,
-  scaleAssets: ['scale-assets'] as const,
-  scaleCompatibility: ['scale-compatibility'] as const,
-  scaleDashboard: ['scale-dashboard'] as const,
-  scaleDifferences: ['scale-differences'] as const,
-  scaleFleetStatus: ['scale-fleet-status'] as const,
-  workflowInstances: ['workflow-instances'] as const,
-  operationsSummary: ['operations-summary'] as const,
-  operationsAssets: ['operations-assets'] as const,
-  operationsTasks: ['operations-tasks'] as const,
-  operationsTools: ['operations-tools'] as const,
-  operationsWorkCenters: ['operations-work-centers'] as const,
-  operationsStandardHours: ['operations-standard-hours'] as const,
-  operationsEfficiency: ['operations-efficiency'] as const,
-  operationsEfficiencySummary: ['operations-efficiency-summary'] as const,
-  roleWorkbench: (role: string) => ['role-workbench', role] as const,
-  parameters: ['parameters'] as const,
-  parameterSummary: ['parameter-summary'] as const,
-  aasAssets: ['aas-assets'] as const,
-  aasSemantics: (assetId: string) => ['aas-assets', assetId, 'semantics'] as const,
-  traces: ['observability-traces'] as const,
-  workOverview: ['work-overview'] as const,
-  workGraph: ['work-graph'] as const,
-  workItems: (filters?: Record<string, unknown>) => ['work-items', filters ?? {}] as const,
-  workEvidence: (filters?: Record<string, unknown>) => ['work-evidence', filters ?? {}] as const,
-  workAgents: ['work-agents'] as const,
-  workGates: ['work-gates'] as const,
-  workGateHistory: (gateId: string) => ['work-gate-history', gateId] as const,
-  workBlockedReason: (itemId: string) => ['work-blocked-reason', itemId] as const,
-  workRisks: ['work-risks'] as const,
-  workResources: ['work-resources'] as const,
-  workHandoffs: ['work-handoffs'] as const,
-  workCatalog: ['work-catalog'] as const,
-  workGitSync: ['work-git-sync'] as const,
-  workSiteReadiness: ['work-site-readiness'] as const,
+  schedulerPolicyComparison: (version: number) =>
+    ['scheduler-policy', currentOrgScope(), 'compare', version] as const,
+  get approvals() { return tenantQueryKey('approvals'); },
+  get notifications() { return tenantQueryKey('notifications'); },
+  /**
+   * NO-53a：班次工作台只取"未处置"提醒（GET /api/notifications?status=pending）。
+   * 必须与上面的全量列表分键——同一 queryKey 配不同 queryFn 会让两个页面互相
+   * 命中对方的缓存（班组长会看到已处置的提醒，或审批台只剩 pending）。
+   */
+  get notificationsPending() { return tenantQueryKey('notifications', 'pending'); },
+  get commandCenter() { return tenantQueryKey('command-center'); },
+  get commandCenterOverview() { return tenantQueryKey('command-center', 'overview'); },
+  get commandCenterEvents() { return tenantQueryKey('command-center', 'events'); },
+  get digitalWorld() { return tenantQueryKey('digital-world'); },
+  personnel: (query?: PersonnelQuery) => tenantQueryKey('personnel', query ?? {}),
+  get alerts() { return tenantQueryKey('alerts'); },
+  get organizationTree() { return tenantQueryKey('organization-tree'); },
+  get organizations() { return tenantQueryKey('organizations'); },
+  get models() { return tenantQueryKey('models'); },
+  get dataAssets() { return tenantQueryKey('data-assets'); },
+  get systemConfigs() { return tenantQueryKey('system-configs'); },
+  get aiSuggestions() { return tenantQueryKey('ai-suggestions'); },
+  get aiPlans() { return tenantQueryKey('ai-plans'); },
+  get aiConfigStatus() { return tenantQueryKey('ai-config-status'); },
+  get environmentSummary() { return tenantQueryKey('environment-summary'); },
+  mobileWorkbench: (personId: string) => tenantQueryKey('mobile-workbench', personId),
+  mobileOrder: (orderId: string) => tenantQueryKey('mobile-order', orderId),
+  get scaleTemplates() { return tenantQueryKey('scale-templates'); },
+  get scaleProfiles() { return tenantQueryKey('scale-profiles'); },
+  get scaleAssets() { return tenantQueryKey('scale-assets'); },
+  get scaleCompatibility() { return tenantQueryKey('scale-compatibility'); },
+  get scaleDashboard() { return tenantQueryKey('scale-dashboard'); },
+  get scaleDifferences() { return tenantQueryKey('scale-differences'); },
+  get scaleFleetStatus() { return tenantQueryKey('scale-fleet-status'); },
+  get workflowInstances() { return tenantQueryKey('workflow-instances'); },
+  get operationsSummary() { return tenantQueryKey('operations-summary'); },
+  get operationsAssets() { return tenantQueryKey('operations-assets'); },
+  get operationsTasks() { return tenantQueryKey('operations-tasks'); },
+  get operationsTools() { return tenantQueryKey('operations-tools'); },
+  get operationsWorkCenters() { return tenantQueryKey('operations-work-centers'); },
+  get operationsStandardHours() { return tenantQueryKey('operations-standard-hours'); },
+  get operationsEfficiency() { return tenantQueryKey('operations-efficiency'); },
+  get operationsEfficiencySummary() { return tenantQueryKey('operations-efficiency-summary'); },
+  roleWorkbench: (role: string) => tenantQueryKey('role-workbench', role),
+  get parameters() { return tenantQueryKey('parameters'); },
+  get parameterSummary() { return tenantQueryKey('parameter-summary'); },
+  get aasAssets() { return tenantQueryKey('aas-assets'); },
+  aasSemantics: (assetId: string) => tenantQueryKey('aas-assets', assetId, 'semantics'),
+  get traces() { return tenantQueryKey('observability-traces'); },
+  get workOverview() { return tenantQueryKey('work-overview'); },
+  get workGraph() { return tenantQueryKey('work-graph'); },
+  workItems: (filters?: Record<string, unknown>) => tenantQueryKey('work-items', filters ?? {}),
+  workEvidence: (filters?: Record<string, unknown>) => tenantQueryKey('work-evidence', filters ?? {}),
+  get workAgents() { return tenantQueryKey('work-agents'); },
+  get workGates() { return tenantQueryKey('work-gates'); },
+  workGateHistory: (gateId: string) => tenantQueryKey('work-gate-history', gateId),
+  workBlockedReason: (itemId: string) => tenantQueryKey('work-blocked-reason', itemId),
+  get workRisks() { return tenantQueryKey('work-risks'); },
+  get workResources() { return tenantQueryKey('work-resources'); },
+  get workHandoffs() { return tenantQueryKey('work-handoffs'); },
+  get workCatalog() { return tenantQueryKey('work-catalog'); },
+  get workGitSync() { return tenantQueryKey('work-git-sync'); },
+  get workSiteReadiness() { return tenantQueryKey('work-site-readiness'); },
   simulationRuns: (filters?: { kind?: string; status?: string }) =>
-    ['simulation', 'runs', filters ?? {}] as const,
+    tenantQueryKey('simulation', 'runs', filters ?? {}),
   /** NO-13q / ADR-066：决策历史跨 kind 检索（GET /api/scheduler/decision-history）。 */
-  decisions: ['decision-history'] as const,
+  get decisions() { return tenantQueryKey('decision-history'); },
+  // ── DR-2/DR-3/DR-4（2026-09-11）：班次/复盘/数据质量确认 ──────────────
+  /** 当前班次 + 下一班（DR-2 班次工作台）。 */
+  get shiftCurrent() { return tenantQueryKey('shift-current'); },
+  /** 班次定义（active 过滤在 queryFn 内）。 */
+  get shiftDefinitions() { return tenantQueryKey('shift-definitions'); },
+  /** 交接班记录（最近 N 条）。 */
+  get shiftHandovers() { return tenantQueryKey('shift-handovers'); },
+  /** 数据质量确认状态（按事件 id 集合分键，避免交叉污染）。 */
+  dataQualityConfirmations: (eventIds: readonly string[]) =>
+    tenantQueryKey('data-quality-confirmations', [...eventIds].sort()),
+  /** 复盘/运行记忆列表（DR-3）。 */
+  retrospectives: (filters?: { scope?: string; status?: string }) =>
+    tenantQueryKey('retrospectives', filters ?? {}),
+  /** 单条复盘详情。 */
+  retrospective: (retrospectiveId: string) =>
+    tenantQueryKey('retrospectives', 'detail', retrospectiveId),
 };

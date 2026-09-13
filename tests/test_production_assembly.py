@@ -172,8 +172,12 @@ class ProductionAssemblyTest(unittest.TestCase):
         from edge_platform.runtime.bootstrap import RuntimeFactory
 
         comps = RuntimeFactory(db_path=self.db_path).assemble("simulation")
-        self.assertTrue(comps.is_simulation)
-        self.assertIsNotNone(comps.simulator)
+        try:
+            self.assertTrue(comps.is_simulation)
+            self.assertIsNotNone(comps.simulator)
+        finally:
+            comps.simulator.stop()
+            comps.storage.close()
 
 
 if __name__ == "__main__":

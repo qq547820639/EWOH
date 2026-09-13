@@ -14,11 +14,11 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
         await cb();
       }),
     };
+    const receiptService = { applyFromActuals: jest.fn().mockImplementation(async (input: Record<string, unknown>) => { const row = state.feedback[0]; if (row) { row.actualStart = new Date(String(input.actualStart)); row.actualEnd = new Date(String(input.actualEnd)); row.actualTravel = input.actualTravel; row.actualResourceJson = input.actualResource; } return { receipt: { matchedRows: 1, advancedAssignments: 1, advancedTaskSteps: 0, skips: [], policy: 'receipt-provenance-v1', source: 'unknown', productionTrainingEligible: false, reason: 'test', evidence: {} } }; }) };
     const svc = new SchedulingFeedbackService(
-      db,
-      requestDatabaseContext as unknown as RequestDatabaseContext,
+      db, requestDatabaseContext as unknown as RequestDatabaseContext, undefined, undefined, receiptService as never,
     );
-    return { svc, db, state };
+    return { svc, db, state, receiptService };
   }
 
   function seedPlan() {
@@ -53,7 +53,7 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
   }
 
   it('dispatch 记录 planned 基线后，回填 actual 并派生 KPI', async () => {
-    const { svc, state } = buildService(seedPlan());
+    const { svc, state, receiptService } = buildService(seedPlan());
     const ctx = testOrgContext();
 
     // 1) dispatch 时记录 baseline（观测型，含 solver runtime / replan / conflict）。
@@ -97,11 +97,7 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
       },
       ctx,
     );
-    const updatedRow = state.feedback[0];
-    expect(updatedRow.actualStart).toEqual(new Date('2026-08-08T08:02:00.000Z'));
-    expect(updatedRow.actualEnd).toEqual(new Date('2026-08-08T08:35:00.000Z'));
-    expect(updatedRow.actualTravel).toBe(150);
-    expect(updatedRow.actualResourceJson).toEqual({ personId: 'p1', deviceId: 'd1', stationId: 's2' });
+    expect(receiptService.applyFromActuals).toHaveBeenCalledWith(expect.objectContaining({ planId, assignmentId, actualStart: '2026-08-08T08:02:00.000Z' }), ctx);
 
     // 3) 审批结果反馈。
     await svc.recordAcceptance(planId, true, ctx);
@@ -143,7 +139,7 @@ describe('SchedulingFeedbackService（Task 7 调度反馈，planned vs actual）
   });
 
   it('override / fallback 反馈被计入 KPI 比率', async () => {
-    const { svc, state } = buildService(seedPlan());
+    const { svc, state, receiptService } = buildService(seedPlan());
     const ctx = testOrgContext();
 
     await svc.recordBaseline(planId, { overrideCount: 2, solverFallback: true }, ctx);

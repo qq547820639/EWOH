@@ -41,8 +41,8 @@ describeOrSkip('PostgreSQL 临时故障（Task 15.2 fault-injection）', () => {
     baseUrl = handle.baseUrl;
     const loginRes = await login(
       baseUrl,
-      'admin',
-      process.env.EWOH_E2E_ADMIN_PASS || 'admin-password',
+      fixture.dispatcherA.username,
+      fixture.dispatcherA.password,
     );
     expect(loginRes.status).toBe(201);
     token = loginRes.body.accessToken;
@@ -60,7 +60,10 @@ describeOrSkip('PostgreSQL 临时故障（Task 15.2 fault-injection）', () => {
     return apiRequest(baseUrl, '/api/scheduler/runs', {
       method: 'POST',
       headers: jsonHeaders(token),
-      body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'TASK_UPDATED' }),
+      body: JSON.stringify({
+        strategy: 'scheduling_v2',
+        trigger: 'TASK_UPDATED',
+      }),
     });
   }
 
@@ -70,7 +73,10 @@ describeOrSkip('PostgreSQL 临时故障（Task 15.2 fault-injection）', () => {
     expect(baseline.status).toBeLessThan(500);
 
     const postgres = (await import('postgres')).default;
-    const admin = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
+    // The runtime role is deliberately denied pg_signal_backend. Use the
+    // explicitly configured audit owner to terminate only runtime-role
+    // connections opened by this standalone app.
+    const admin = postgres(e2eConfig!.ownerDatabaseUrl, { max: 1 });
     try {
       // 反复终止应用后端连接（排除本测试进程），确保故障窗口内至少一个请求命中坏连接。
       let observed5xx = false;
@@ -78,6 +84,8 @@ describeOrSkip('PostgreSQL 临时故障（Task 15.2 fault-injection）', () => {
         const backends = await admin`
           SELECT pid FROM pg_stat_activity
           WHERE datname = current_database()
+            AND usename = 'ewoh_api'
+            AND application_name = ${handle.databaseApplicationName}
             AND pid <> pg_backend_pid()
         `;
         for (const b of backends) {
@@ -88,10 +96,14 @@ describeOrSkip('PostgreSQL 临时故障（Task 15.2 fault-injection）', () => {
           observed5xx = true;
           // 15.6：降级可观测 —— 结构化 JSON error（非 hang、非无痕成功）。
           expect(degraded.body).toHaveProperty('error');
-          expect(typeof (degraded.body as { error: unknown }).error).toBe('object');
-          const error = (degraded.body as {
-            error: { code?: string; message?: string };
-          }).error;
+          expect(typeof (degraded.body as { error: unknown }).error).toBe(
+            'object',
+          );
+          const error = (
+            degraded.body as {
+              error: { code?: string; message?: string };
+            }
+          ).error;
           expect(typeof error.code).toBe('string');
           expect(typeof error.message).toBe('string');
         }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Param, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Param, Query, Req, HttpCode } from '@nestjs/common';
 import { DashboardService, parseBatteryParam } from './dashboard.service';
 import { Roles } from '../shared/roles.decorator';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -6,6 +6,7 @@ import type {
   DeviceSearchQuery,
   CreateDeviceDto,
   BindDeviceRequest,
+  SetDeviceCapabilityStatusRequest,
 } from '@shared/api.interface';
 
 /**
@@ -27,6 +28,7 @@ export class DeviceContractController {
     @Query('batteryMin') batteryMin?: string,
     @Query('batteryMax') batteryMax?: string,
     @Query('sourceType') sourceType?: string,
+    @Query('category') category?: string,
     @Query('model') model?: string,
     @Query('orderby') orderby?: string,
     /** BUG-006 修复：分页参数 */
@@ -42,6 +44,7 @@ export class DeviceContractController {
     if (batteryMinNum !== undefined) query.batteryMin = batteryMinNum;
     if (batteryMaxNum !== undefined) query.batteryMax = batteryMaxNum;
     if (sourceType) query.sourceType = sourceType;
+    if (category) query.category = category;
     if (model) query.model = model;
     if (orderby) query.orderby = orderby;
     // BUG-006 修复：解析并应用 limit/offset 分页
@@ -68,6 +71,31 @@ export class DeviceContractController {
     @Req() request?: { userContext?: OrgContext },
   ) {
     return this.dashboardService.createDevice(body, request?.userContext);
+  }
+
+  /**
+   * 人工停用 / 恢复设备能力（能力台账的唯一人工写入口）。
+   *
+   * 为什么必须存在：摄入声明路径刻意不复活被人工停用的能力，但此前没有设置
+   * `status` 的入口——能力错了只能改库；而能力直接决定派工资格。
+   * 语义（理由必填、幂等、租户隔离、恢复 fail-closed、审计同源）见 Service 注释。
+   * 路由用**能力名**（如 `observe.temperature`）而非 capabilityId：可读且唯一。
+   */
+  // 状态变更不是"创建资源"：显式 200（与 dispatch/approve 等状态端点一致）。
+  @Post(':id/capabilities/:capabilityKey/status')
+  @HttpCode(200)
+  setCapabilityStatus(
+    @Param('id') id: string,
+    @Param('capabilityKey') capabilityKey: string,
+    @Body() body: SetDeviceCapabilityStatusRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    return this.dashboardService.setDeviceCapabilityStatus(
+      id,
+      capabilityKey,
+      body,
+      request?.userContext,
+    );
   }
 
   @Post(':id/bindings')

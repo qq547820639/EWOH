@@ -1,8 +1,22 @@
 {
   "schemaVersion": "1.0.0",
-  "description": "Canonical Capability Model（ADR-043 / §3/§4）：机器/人员/外骨骼/工位能力统一语义契约。kind/providerType 为封闭结构注册表；name 为开放词表（工厂技能/能力名天然开放，knownValues 为平台已知值登记——未知 name 合法但不静默，测试向量锁定已知值集合）。",
-  "capabilityKinds": ["skill", "certification", "device_capability", "station_capability", "exo_capability"],
-  "providerTypes": ["person", "device", "exo", "machine", "robot", "station", "tool"],
+  "description": "Canonical Capability Model（ADR-043 / §3/§4）：机器/人员/外骨骼/工位能力统一语义契约。kind/providerType 为封闭结构注册表；name 为开放词表（工厂技能/能力名天然开放，knownValues 为平台已知值登记——未知 name 合法但不静默，测试向量锁定已知值集合）。 2026-09-10：登记感知/交互类设备能力（observe.* / interact.*）与 deviceObservationFields（能力名 → **平台摄入 DTO 字段路径**）。口径说明：字段路径讲平台事实面（/api/ingest/* 的 DTO，如 temperature / detections[].track_id），不是边缘本地行口径（temperature_c）；两者之间的映射由 edgesensor_frames 显式完成，两侧测试对账，字段改名立刻失败。 2026-09-11：登记**执行类**设备能力（exo-lift/exo-lite/vacuum/crane）——它们此前只存在于调度侧型号白名单，既不在词表内、也无法被人工停用/校验（\"能做什么\"的执行能力不可管控）；执行类能力不产出观测字段，故 deviceObservationFields 为 []（空数组表示\"该能力不产生观测列\"，不是\"未登记\"）。 2026-09-11（NO-19a）：新增 capabilityRiskLevels + capabilityRisk（能力名 → 安全相关等级）与 rules.highRiskRelaxationRequiresSafetyReview。口径：high = 直接作用于人体或吊装载荷（exo-lift / interact.assist / crane / forklift）；medium = 有执行动作但风险可控，或\"观测人员\"涉及隐私（exo-lite / vacuum / observe.person_detection|pose|action|position|wearer / material_handling）；low = 设备自身状态与环境量、普通作业资格。用途：放宽能力要求的建议必须按风险分级提示——高风险放宽需安全负责人确认，调度员不得单独决定。 2026-09-12（NO-59b）：登记**执行机构（AGV/PLC）能力** transport.move（执行，high：会让设备在共享空间动起来 → 命令必须带平台授权号）与 observe.actuator_state（执行机构状态观测）；deviceObservationFields 给出平台摄入 DTO 字段路径（/api/ingest/actuator 的 state/battery_pct/fault_code）；执行类能力不产出观测列故为 []。",
+  "capabilityKinds": [
+    "skill",
+    "certification",
+    "device_capability",
+    "station_capability",
+    "exo_capability"
+  ],
+  "providerTypes": [
+    "person",
+    "device",
+    "exo",
+    "machine",
+    "robot",
+    "station",
+    "tool"
+  ],
   "knownValues": [
     "forklift",
     "first_aid",
@@ -10,13 +24,30 @@
     "vacuum",
     "assembly",
     "inspection",
-    "material_handling"
+    "material_handling",
+    "observe.temperature",
+    "observe.vibration",
+    "observe.noise",
+    "observe.air_quality",
+    "observe.person_detection",
+    "observe.pose",
+    "observe.action",
+    "observe.position",
+    "observe.load",
+    "observe.battery",
+    "observe.wearer",
+    "interact.assist",
+    "exo-lite",
+    "crane",
+    "transport.move",
+    "observe.actuator_state"
   ],
   "rules": {
     "certificationRequiresIssuer": true,
     "certificationRequiresExpiry": true,
     "auditRequired": true,
-    "timeOrderRequired": true
+    "timeOrderRequired": true,
+    "highRiskRelaxationRequiresSafetyReview": true
   },
   "properties": {
     "capabilityId": {
@@ -25,7 +56,13 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["skill", "certification", "device_capability", "station_capability", "exo_capability"]
+      "enum": [
+        "skill",
+        "certification",
+        "device_capability",
+        "station_capability",
+        "exo_capability"
+      ]
     },
     "name": {
       "type": "string",
@@ -34,7 +71,15 @@
     },
     "providerType": {
       "type": "string",
-      "enum": ["person", "device", "exo", "machine", "robot", "station", "tool"]
+      "enum": [
+        "person",
+        "device",
+        "exo",
+        "machine",
+        "robot",
+        "station",
+        "tool"
+      ]
     },
     "subject": {
       "type": "string",
@@ -52,13 +97,105 @@
     },
     "evidence": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": []
     },
     "auditTrail": {
       "type": "boolean"
     }
   },
-  "required": ["capabilityId", "kind", "name", "providerType", "subject", "auditTrail"],
-  "additionalProperties": false
+  "required": [
+    "capabilityId",
+    "kind",
+    "name",
+    "providerType",
+    "subject",
+    "auditTrail"
+  ],
+  "additionalProperties": false,
+  "deviceObservationFields": {
+    "observe.temperature": [
+      "temperature"
+    ],
+    "observe.vibration": [
+      "vibration"
+    ],
+    "observe.noise": [
+      "noise"
+    ],
+    "observe.air_quality": [
+      "air_quality"
+    ],
+    "observe.person_detection": [
+      "detections[].track_id",
+      "detections[].confidence"
+    ],
+    "observe.pose": [
+      "detections[].skeleton"
+    ],
+    "observe.action": [
+      "detections[].action"
+    ],
+    "observe.position": [
+      "x",
+      "y",
+      "z",
+      "confidence"
+    ],
+    "observe.load": [
+      "load.cumulative_load_score",
+      "load.torque_nm"
+    ],
+    "observe.battery": [
+      "device.battery_pct"
+    ],
+    "observe.wearer": [
+      "worker_id"
+    ],
+    "interact.assist": [
+      "load.assist_level"
+    ],
+    "exo-lift": [],
+    "exo-lite": [],
+    "vacuum": [],
+    "crane": [],
+    "observe.actuator_state": [
+      "state",
+      "battery_pct",
+      "fault_code"
+    ],
+    "transport.move": []
+  },
+  "capabilityRiskLevels": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "capabilityRisk": {
+    "forklift": "high",
+    "first_aid": "low",
+    "exo-lift": "high",
+    "vacuum": "medium",
+    "assembly": "low",
+    "inspection": "low",
+    "material_handling": "medium",
+    "observe.temperature": "low",
+    "observe.vibration": "low",
+    "observe.noise": "low",
+    "observe.air_quality": "low",
+    "observe.person_detection": "medium",
+    "observe.pose": "medium",
+    "observe.action": "medium",
+    "observe.position": "medium",
+    "observe.load": "low",
+    "observe.battery": "low",
+    "observe.wearer": "medium",
+    "interact.assist": "high",
+    "exo-lite": "medium",
+    "crane": "high",
+    "transport.move": "high",
+    "observe.actuator_state": "low"
+  }
 }

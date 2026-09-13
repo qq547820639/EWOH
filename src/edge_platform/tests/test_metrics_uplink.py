@@ -9,14 +9,21 @@ HTTP 以 urllib 桩替换（纯单元，不发真实请求）。
 from __future__ import annotations
 
 import json
+import os
+import sys
 import time
 import unittest
 import urllib.error
 from unittest import mock
 
-from edge_platform.edge.bridge.metrics_uplink import MetricsUplink
-from edge_platform.monitoring import MetricsCollector
-from edge_platform.monitoring.exporter import METRIC_DEFS
+# UR8（2026-09-13 审查）：补齐与其他测试文件一致的 sys.path 引导——本文件此前
+# 缺失，`python -m unittest discover -s src/edge_platform/tests` 从仓库根运行时
+# import edge_platform 直接 ModuleNotFoundError（定向验证命令跑不起来）。
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+from edge_platform.edge.bridge.metrics_uplink import MetricsUplink  # noqa: E402
+from edge_platform.monitoring import MetricsCollector  # noqa: E402
+from edge_platform.monitoring.exporter import METRIC_DEFS  # noqa: E402
 
 
 def _snapshot_fixture():

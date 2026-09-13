@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -352,7 +353,11 @@ export class WorkOrchestrationService {
     }
     const text = readFileSync(file, 'utf8');
     const lines = text.split(/\r?\n/);
-    const max = Math.min(Math.max(1, Number(limit ?? 200)), 500);
+    // 非法 limit（NaN，如 ?limit=abc）按缺省 200 处理：NaN 会一路穿透
+    // Math.min/Math.max 让 slice(0, NaN) 返回空数组——证据内容被静默
+    // 伪造成"空文件"（非法输入不得静默变空）。
+    const requested = Number(limit ?? 200);
+    const max = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 200), 500);
     return {
       evidenceId,
       path: entry.path,
@@ -1019,15 +1024,32 @@ export class WorkOrchestrationService {
       );
     }
     this.assertWritable();
+    // 读取与写入是两条语句：写入必须以"调用方校验时所依据的前置状态"为
+    // 谓词，否则两个互斥转移（accepted/rejected）可在读-写间隙先后落库，
+    // 状态机被静默违反。命中 0 行 = 并发抢先，显式 409 而非伪造成功。
     if (body.status === 'accepted') {
-      await this.domainPersistence.acceptHandoffWithTaskUpdate(handoffId, {
+      const accepted = await this.domainPersistence.acceptHandoffWithTaskUpdate(handoffId, {
         evidenceId: `EVD-${handoffId}`,
         workItemId: current.scope,
         verifier: actor?.userId ?? 'anonymous',
         result: 'handoff_accepted',
       });
+      if (!accepted) {
+        throw new ConflictException(
+          `Handoff ${handoffId} state changed concurrently, retry from current state`,
+        );
+      }
     } else {
-      await this.domainPersistence.updateHandoffStatus(handoffId, body.status);
+      const updated = await this.domainPersistence.updateHandoffStatus(
+        handoffId,
+        body.status,
+        current.state,
+      );
+      if (!updated) {
+        throw new ConflictException(
+          `Handoff ${handoffId} state changed concurrently, retry from current state`,
+        );
+      }
     }
     return {
       handoffId,
@@ -1372,44 +1394,65 @@ export class WorkOrchestrationService {
     return 'not specified';
   }
 
+  /**
+   * 读 gate-decisions.json。文件缺失按空处理；但解析失败/形状不对必须
+   * fail-fast——原实现 catch→[] 会让下一次决定写入把既有决定集整份静默
+   * 覆盖（不可逆丢失），这里显式 500 让运维先修复文件。
+   */
   private loadGateDecisions(): GateDecisionRecord[] {
     const file = join(this.artifactsDir(), 'work', 'gate-decisions.json');
     if (!existsSync(file)) return [];
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(readFileSync(file, 'utf8')) as GateDecisionRecord[];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `gate decisions file is corrupt (${file}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
+    if (!Array.isArray(parsed)) {
+      throw new InternalServerErrorException(
+        `gate decisions file must be a JSON array: ${file}`,
+      );
+    }
+    return parsed as GateDecisionRecord[];
   }
 
   private appendGateDecisionHistory(record: GateDecisionRecord): void {
     const file = join(this.artifactsDir(), 'work', 'gate-decision-history.json');
-    let history: GateDecisionRecord[] = [];
-    if (existsSync(file)) {
-      try {
-        const parsed = JSON.parse(readFileSync(file, 'utf8')) as GateDecisionRecord[];
-        if (Array.isArray(parsed)) {
-          history = parsed;
-        }
-      } catch {
-        history = [];
-      }
-    }
+    // loadGateHistory 对损坏文件 fail-fast（见下）——绝不按空数组覆盖历史。
+    const history = this.loadGateHistory();
     history.push(record);
     mkdirSync(join(this.artifactsDir(), 'work'), { recursive: true });
     writeFileSync(file, `${JSON.stringify(history, null, 2)}\n`, 'utf8');
   }
 
+  /**
+   * 读 gate-decision-history.json。它是撤销（revoke）恢复前一条决定的唯一
+   * 事实源：损坏后按空处理会让下一次写入销毁全部审计历史。缺失按空，
+   * 解析失败/形状不对显式 500 fail-fast。
+   */
   private loadGateHistory(): GateHistoryRecord[] {
     const file = join(this.artifactsDir(), 'work', 'gate-decision-history.json');
     if (!existsSync(file)) return [];
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(readFileSync(file, 'utf8')) as GateHistoryRecord[];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `gate decision history file is corrupt (${file}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
+    if (!Array.isArray(parsed)) {
+      throw new InternalServerErrorException(
+        `gate decision history file must be a JSON array: ${file}`,
+      );
+    }
+    return parsed as GateHistoryRecord[];
   }
 
   private appendGateHistory(record: GateHistoryRecord): void {

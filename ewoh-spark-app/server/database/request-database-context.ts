@@ -12,6 +12,9 @@ export interface TransactionSetting {
   value: string;
 }
 
+/** 只读形态的事务设置（调用方可传自有字面量数组，无需依赖本模块的具体类型）。 */
+export type TransactionSettingLike = TransactionSetting;
+
 /** NEST-504：根句柄回落告警去重（每实例一次，避免请求风暴刷屏日志）。 */
 function warnOnce(alreadyWarned: boolean | undefined, message: string): true {
   if (!alreadyWarned) {
@@ -105,6 +108,40 @@ export class RequestDatabaseContext {
       ],
       operation,
     );
+  }
+
+  /**
+   * NO-62a：**脱离当前请求事务**地提交一段写入（独立连接 + 独立事务）。
+   *
+   * 为什么必须有它（本轮实测抓到的真缺陷）：`OrgContextInterceptor` 把每个 HTTP 请求
+   * 包在一个事务里执行；**handler 抛异常 → 整个请求事务回滚**。
+   * 于是"安全决策 + 抛 409/404"这种最需要留痕的路径，恰恰会把刚刚写下的
+   * 撤回/审计/结果行一起回滚掉（实测：投递前授权复核判定拒绝 → 命令撤回写入
+   * 被 409 带走，命令留在 `sent`，下一轮还会被投递）。
+   *
+   * 语义边界（不要滥用）：
+   *   · 只用于**错误/拒绝路径上必须存活**的事实：撤回、拒绝留痕、补偿事件；
+   *   · 正常成功路径一律走 `runInTransaction`（同请求同事务，保证原子性）；
+   *   · 它开的是**新连接**：调用方不得在同一操作里依赖外层的行锁或未提交读，
+   *     也不得写入与外层事务存在锁序冲突的行。
+   *   · 通过 `storage.run(newTx, …)` 建立新上下文：内部用 DRIZZLE_DATABASE 代理
+   *     拿到的仍是这个新事务（GUC/RLS 生效），不会掉进"根句柄无 GUC"的静默空读陷阱。
+   */
+  async runDetachedTransaction<T>(
+    settings: readonly TransactionSetting[],
+    operation: (db: StandaloneDatabase) => Promise<T>,
+  ): Promise<T> {
+    return this.rootDatabase.transaction(async (transaction) => {
+      for (const setting of settings) {
+        await transaction.execute(
+          sql`select set_config(${setting.name}, ${setting.value}, true)`,
+        );
+      }
+      return this.storage.run(
+        transaction as unknown as StandaloneDatabase,
+        () => operation(transaction as unknown as StandaloneDatabase),
+      );
+    });
   }
 
   async runInTransaction<T>(

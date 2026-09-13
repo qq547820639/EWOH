@@ -90,7 +90,12 @@ function configRow(configId: string, orgId: string, overrides: Record<string, un
   };
 }
 
-function createConfigDb(rows: Array<Record<string, unknown>> = []) {
+function createConfigDb(
+  rows: Array<Record<string, unknown>> = [],
+  /** 对抗审查（2026-09-13）：模拟 READ COMMITTED 下的并发激活提交——
+   * 首个事务内 select 求值**之后**触发一次（快照已取、并发事务随后提交）。 */
+  options: { onFirstTxSelect?: () => void } = {},
+) {
   const state = { rows: [...rows] };
   const events: Array<Record<string, unknown>> = [];
   let nextEventInsertError: unknown = null;
@@ -99,6 +104,9 @@ function createConfigDb(rows: Array<Record<string, unknown>> = []) {
       then: (resolve: (v: unknown[]) => void) => resolve(data),
       orderBy: jest.fn(() => thenable(data)),
       limit: jest.fn(() => thenable(data.slice(0, 100))),
+      // `FOR UPDATE` 在假 DB 里无锁语义；真实锁等待返回即见最新已提交版本，
+      // 由 PG 承担（替身只保证方法链不炸、返回行集合）。
+      for: jest.fn(() => thenable(data)),
     };
   }
   const db = {
@@ -133,7 +141,17 @@ function createConfigDb(rows: Array<Record<string, unknown>> = []) {
     const tx = {
       select: () => ({
         from: () => ({
-          where: (cond: unknown) => thenable(state.rows.filter((r) => matches(cond, r))),
+          where: (cond: unknown) => {
+            // 先按当前状态求值（快照），再让"并发事务"提交——对齐 READ COMMITTED
+            // 的语句级快照语义：本语句看不到快照之后提交的变更，后续语句才看得到。
+            const data = state.rows.filter((r) => matches(cond, r));
+            if (options.onFirstTxSelect) {
+              const fn = options.onFirstTxSelect;
+              (options as { onFirstTxSelect?: () => void }).onFirstTxSelect = undefined;
+              fn();
+            }
+            return thenable(data);
+          },
         }),
       }),
       insert: (table: unknown) => ({
@@ -256,6 +274,42 @@ describe('ExoConfigService（ADR-051/ADR-052 / §7）', () => {
     expect(old?.supersededBy ?? null).toBeNull();
     expect(target?.status).toBe('retired');
     expect(harness.events).toHaveLength(0);
+  });
+
+  it('对抗审查：并发激活同一 (org+exo+mode) 不得产生两条 active（active 唯一）', async () => {
+    // READ COMMITTED 竞态编排：本事务以旧快照起手（只见 ap-old active）；
+    // 快照之后并发事务 T1 提交了「ap-old→superseded、ap-b→active」。
+    // 旧实现：本事务对 ap-old 的 supersede UPDATE（where status='active'）
+    // 命中 0 行是**静默**的，随后照常激活 ap-c → 组内出现 ap-b/ap-c 两条 active
+    // （DB 只有普通索引，active 唯一只靠服务层——失守）。
+    const rows = [
+      configRow('exo-config:ap-old', ORG_A),
+      configRow('exo-config:ap-b', ORG_A, {
+        id: '00000000-0000-4000-8000-000000000002',
+        status: 'superseded',
+        recordJson: { configId: 'exo-config:ap-b', kind: 'assist_profile', exoId: EXO_ID, tenantId: ORG_A, status: 'superseded', supportMode: 'lift_assist', effectiveFrom: '2026-08-16T09:00:00Z', auditTrail: [{ actor: 'person:op-1', action: 'recorded', at: '2026-08-16T09:00:00Z' }] },
+      }),
+      configRow('exo-config:ap-c', ORG_A, {
+        id: '00000000-0000-4000-8000-000000000003',
+        status: 'retired',
+        recordJson: { configId: 'exo-config:ap-c', kind: 'assist_profile', exoId: EXO_ID, tenantId: ORG_A, status: 'retired', supportMode: 'lift_assist', effectiveFrom: '2026-08-16T10:00:00Z', auditTrail: [{ actor: 'person:op-1', action: 'recorded', at: '2026-08-16T10:00:00Z' }] },
+      }),
+    ];
+    const { service } = createConfigDb(rows, {
+      onFirstTxSelect: () => {
+        const concurrent = rows.find((r) => r.configId === 'exo-config:ap-old');
+        if (concurrent) {
+          concurrent.status = 'superseded';
+          concurrent.supersededBy = 'exo-config:ap-b';
+        }
+        const b = rows.find((r) => r.configId === 'exo-config:ap-b');
+        if (b) b.status = 'active';
+      },
+    });
+    await service.activateProfile(ORG_A, 'exo-config:ap-c', 'person:op-2');
+    const activeIds = rows.filter((r) => r.status === 'active').map((r) => r.configId).sort();
+    // active 唯一：无论并发如何交错，提交后同组至多一条 active，且是本次目标。
+    expect(activeIds).toEqual(['exo-config:ap-c']);
   });
 
   it('非 assist_profile 不可激活（显式拒绝）', async () => {

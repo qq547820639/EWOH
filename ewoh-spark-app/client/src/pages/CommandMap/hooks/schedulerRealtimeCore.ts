@@ -7,6 +7,8 @@
  * React Hook（useSchedulerStream / useCommandMapSchedulerState）组合这些纯函数。
  */
 
+import { queryKeys } from '@client/src/hooks/queryKeys';
+
 export type RealtimeSource = 'sse' | 'resync' | 'poll';
 
 /** 对外暴露的实时连接健康状态（V2 枚举，供 Provider / UI 徽标消费）。 */
@@ -38,12 +40,12 @@ export function mapToV2Status(params: {
  * 在 SSE 断开期间停留陈旧状态，地图叠加层与冲突中心会展示过时数据。
  * 返回的 key 数组与 useCommandMapSchedulerState 等消费方使用的 queryKey 一致。
  */
-export function pollingInvalidateKeys(): Array<Array<string | Record<string, unknown>>> {
+export function pollingInvalidateKeys(): Array<readonly unknown[]> {
   return [
-    ['scheduler-active-plans'],
-    ['scheduler', 'snapshot'],
-    ['scheduler-resource-state'],
-    ['scheduler', 'conflicts', {}],
+    queryKeys.schedulerActivePlans,
+    queryKeys.schedulerSnapshot,
+    queryKeys.schedulerResourceState,
+    queryKeys.schedulerConflicts(),
     ['scheduler-routes'],
   ];
 }

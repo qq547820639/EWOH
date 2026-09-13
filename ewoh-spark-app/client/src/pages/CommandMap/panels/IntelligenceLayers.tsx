@@ -21,10 +21,19 @@ import type {
   CurrentWorldState,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import {
+  describeCapabilityRequirements,
+  describeRelaxationSuggestions,
+  formatCapabilityInput,
+  parseCapabilityInput,
+} from '../vm/taskRequirementsVM';
 import { candidateExplainVM, type CandidateExplainItem } from '../vm/candidateExplainVM';
 import { Badge } from '@client/src/components/ui/badge';
 import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
 import { useVirtualList } from '@client/src/lib/virtualList';
+import { buildPlanIssueItems, hasUnregisteredCode } from './intelligence-layers-logic';
+import type { PlanIssueItem } from './intelligence-layers-logic';
+import React from 'react';
 
 /**
  * 智能调度驾驶舱（Task 8）右侧叠加层。
@@ -41,6 +50,23 @@ interface IntelligenceLayersProps {
   selectedTaskId: string | null;
   onSelectTask: (taskId: string | null) => void;
   onClose: () => void;
+  /** NO-16a：保存任务能力要求（父层调 API + 刷新候选）；缺省则只读展示。 */
+  onSaveRequirements?: (
+    taskId: string,
+    deviceNames: string[],
+    stationNames: string[],
+    approvalId?: string,
+  ) => void;
+  savingRequirements?: boolean;
+  /** 上次保存返回的"当前无法匹配"提示。 */
+  requirementWarnings?: string[];
+  /** NO-20a：放宽高风险能力需审批时的提示与入口。 */
+  approvalRequired?: { message: string; relaxedHighRisk: string[] } | null;
+  onRequestApproval?: (taskId: string, deviceNames: string[], stationNames: string[]) => void;
+  pendingApprovalId?: string | null;
+  /** NO-22a：审批时效文案（"还有多久能用"；无通过时间时如实说明）。 */
+  pendingApprovalFreshness?: string | null;
+  onRefreshApproval?: () => void;
 }
 
 /** 由后端 priority.level 映射徽标颜色（展示用，非调度逻辑）。 */
@@ -109,50 +135,20 @@ function Section({
   );
 }
 
-/** 冲突层：从方案 violations + 分配失败/阻断 + 决策轨迹排除原因 + 候选 reservation 冲突聚合。 */
-function ConflictLayer({ plan }: { plan: SchedulingPlanV2 }) {
-  const conflicts = useMemo(() => {
-    const items: Array<{ severity: 'error' | 'warn' | 'info'; text: string }> = [];
-    for (const v of plan.violations ?? []) {
-      const rec = v as Record<string, unknown>;
-      const kind = String(rec.kind ?? rec.type ?? 'violation');
-      const detail = String(rec.detail ?? rec.reason ?? rec.message ?? '');
-      items.push({
-        severity: 'error',
-        text: `违反约束 · ${kind}${detail ? `：${detail}` : ''}`,
-      });
-    }
-    for (const a of plan.assignments) {
-      if (a.status === 'blocked' || a.status === 'failed') {
-        items.push({
-          severity: 'error',
-          text: `任务 ${a.taskId} 分配状态 ${a.status}${a.reasons[0] ? `：${a.reasons[0]}` : ''}`,
-        });
-      }
-    }
-    for (const a of plan.assignments) {
-      for (const rej of a.decisionTrace?.rejectedAlternatives ?? []) {
-        const reason = Array.isArray(rej.reason) ? rej.reason.join('；') : '';
-        if (!reason) continue;
-        items.push({
-          severity: 'info',
-          text: `候选 ${rej.personId ?? rej.deviceId ?? '资源'} 被排除：${reason}`,
-        });
-      }
-    }
-    return items;
-  }, [plan]);
-
-  if (conflicts.length === 0) {
-    return (
-      <div className="text-[10px] text-emerald-400/80 flex items-center gap-1">
-        <Check className="w-3 h-3" /> 后端未上报冲突
-      </div>
-    );
-  }
+/**
+ * 问题条目列表（导出以便静态渲染测试直接断言——冲突层默认折叠，
+ * `renderToStaticMarkup` 看不到折叠内容，而"未派工原因可读"必须被钉住）。
+ */
+export function PlanIssueList({ items }: { items: PlanIssueItem[] }): React.ReactElement {
+  const hasUnregistered = hasUnregisteredCode(items);
   return (
     <div className="space-y-1">
-      {conflicts.map((c, i) => (
+      {hasUnregistered && (
+        <div className="text-[10px] text-amber-400/80">
+          存在未登记原因（已保留原始码）：请把新码补进共享词表，现场才能看到中文解释。
+        </div>
+      )}
+      {items.map((c, i) => (
         <div
           key={i}
           className={cn(
@@ -170,6 +166,20 @@ function ConflictLayer({ plan }: { plan: SchedulingPlanV2 }) {
       ))}
     </div>
   );
+}
+
+/** 冲突层：问题条目由纯逻辑模块聚合（violations + 分配失败/阻断 + 决策轨迹排除原因）。 */
+function ConflictLayer({ plan }: { plan: SchedulingPlanV2 }) {
+  const conflicts = useMemo(() => buildPlanIssueItems(plan), [plan]);
+
+  if (conflicts.length === 0) {
+    return (
+      <div className="text-[10px] text-emerald-400/80 flex items-center gap-1">
+        <Check className="w-3 h-3" /> 后端未上报冲突
+      </div>
+    );
+  }
+  return <PlanIssueList items={conflicts} />;
 }
 
 /** 方案差异：展示后端 baselineDelta（较基线）与求解停留信息。 */
@@ -317,13 +327,47 @@ function CandidateRow({ item }: { item: CandidateExplainItem }) {
 
 /** 候选资源面板（P0）：candidateExplainVM 统一展示模型——合格按评分排序（带 rank），
  *  排除分组显示硬约束原因；locked/preferred 状态透传后端字段，前端不判资格。 */
-function CandidatesList({
+export function CandidatesList({
   candidates,
   selectedTaskId,
+  onSaveRequirements,
+  savingRequirements,
+  requirementWarnings,
+  approvalRequired,
+  onRequestApproval,
+  pendingApprovalId,
+  pendingApprovalFreshness,
+  onRefreshApproval,
 }: {
   candidates: TaskCandidatesResponse | null;
   selectedTaskId: string | null;
+  /** 保存任务能力要求（父层负责调 API 与刷新候选）。 */
+  onSaveRequirements?: (
+    taskId: string,
+    deviceNames: string[],
+    stationNames: string[],
+    approvalId?: string,
+  ) => void;
+  savingRequirements?: boolean;
+  /** 上次保存返回的"当前无法匹配"提示（不阻断写入，但必须可见）。 */
+  requirementWarnings?: string[];
+  /** NO-20a：保存需要审批时展示（含服务端原因与审批入口）。 */
+  approvalRequired?: { message: string; relaxedHighRisk: string[] } | null;
+  /** 发起审批（父层调 API）；返回审批号后由现场复制/检查后重试。 */
+  onRequestApproval?: (taskId: string, deviceNames: string[], stationNames: string[]) => void;
+  /** 已发起的审批号（等待/已通过；重试保存时带上）。 */
+  pendingApprovalId?: string | null;
+  /** NO-22a：审批时效文案（"还有多久能用"；未通过/无通过时间时如实说明）。 */
+  pendingApprovalFreshness?: string | null;
+  /** 检查审批状态（父层调 API；已通过则可直接重试保存）。 */
+  onRefreshApproval?: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [deviceInput, setDeviceInput] = useState('');
+  const [stationInput, setStationInput] = useState('');
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [approvalIdInput, setApprovalIdInput] = useState('');
+
   if (!selectedTaskId) {
     return <div className="text-[10px] text-white/40">在优先级层点击任务以查看候选资源</div>;
   }
@@ -331,15 +375,178 @@ function CandidatesList({
     return <div className="text-[10px] text-white/40">候选加载中…</div>;
   }
   const vm = candidateExplainVM(candidates);
-  if (vm.eligible.length === 0 && vm.rejected.length === 0) {
-    return <div className="text-[10px] text-white/40">后端未返回候选资源</div>;
-  }
+  // 注意：候选为空时**不能**提前 return——"没有候选"恰恰是最需要看到并修改
+  // 能力要求的场景（要求写错会让任务永远匹配不到资源）。
+  const hasAnyCandidate = vm.eligible.length > 0 || vm.rejected.length > 0;
+  const relaxationNotes = describeRelaxationSuggestions(candidates);
+  const beginEdit = () => {
+    setDeviceInput(formatCapabilityInput(candidates.requiredDeviceCapabilities));
+    setStationInput(formatCapabilityInput(candidates.requiredStationCapabilities));
+    setParseError(null);
+    setEditing(true);
+  };
+  const submit = () => {
+    const device = parseCapabilityInput(deviceInput);
+    const station = parseCapabilityInput(stationInput);
+    const errors = [...device.errors, ...station.errors];
+    if (errors.length > 0) {
+      // 前端先拦（与后端同口径），避免"点了保存才发现 400"
+      setParseError(errors.join('；'));
+      return;
+    }
+    setParseError(null);
+    // 放宽高风险能力时，审批号随保存一起提交（服务端会逐字核对是否"正好批准了本次变更"）
+    onSaveRequirements?.(
+      selectedTaskId,
+      device.names,
+      station.names,
+      approvalIdInput.trim() || undefined,
+    );
+    setEditing(false);
+  };
+
   return (
     <div className="space-y-1">
       <div className="text-[9px] text-white/50">
         {candidates.taskTitle ?? candidates.taskId} · 求解器 {candidates.solverVersion} ·{' '}
         {vm.eligibleCount} 合格 / {vm.rejectedCount} 排除
       </div>
+      {/* 能力要求：决定该任务能被哪些资源承接；写错会让任务永远匹配不到资源 */}
+      <div className="rounded border border-white/10 px-2 py-1" data-testid="task-capability-requirements">
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] text-white/60">能力要求</span>
+          <span className="text-[9px] text-white/80" data-testid="task-capability-summary">
+            {describeCapabilityRequirements(candidates)}
+          </span>
+          {onSaveRequirements && !editing && (
+            <button
+              type="button"
+              className="ml-auto text-[9px] text-cyan-300 hover:underline"
+              data-testid="task-capability-edit"
+              onClick={beginEdit}
+            >
+              修改
+            </button>
+          )}
+        </div>
+        {editing && (
+          <div className="mt-1 space-y-1">
+            <label className="block text-[9px] text-white/50">
+              设备能力（逗号/顿号分隔，留空=不要求）
+              <input
+                className="mt-0.5 w-full rounded border border-white/15 bg-transparent px-1 py-0.5 text-[10px] text-white"
+                value={deviceInput}
+                data-testid="task-capability-device-input"
+                onChange={(e) => setDeviceInput(e.target.value)}
+                placeholder="exo-lift、vacuum"
+              />
+            </label>
+            <label className="block text-[9px] text-white/50">
+              工位能力（留空=不要求）
+              <input
+                className="mt-0.5 w-full rounded border border-white/15 bg-transparent px-1 py-0.5 text-[10px] text-white"
+                value={stationInput}
+                data-testid="task-capability-station-input"
+                onChange={(e) => setStationInput(e.target.value)}
+                placeholder="workstation"
+              />
+            </label>
+            {parseError && (
+              <div className="text-[9px] text-red-400" role="alert" data-testid="task-capability-error">
+                {parseError}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded border border-cyan-400/40 px-1.5 py-0.5 text-[9px] text-cyan-200 disabled:opacity-50"
+                data-testid="task-capability-save"
+                disabled={Boolean(savingRequirements)}
+                onClick={submit}
+              >
+                {savingRequirements ? '保存中…' : '保存并要求重排'}
+              </button>
+              <button
+                type="button"
+                className="text-[9px] text-white/50 hover:underline"
+                onClick={() => setEditing(false)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+        {approvalRequired && (
+          <div className="mt-1 space-y-1 rounded border border-amber-400/40 px-1.5 py-1" data-testid="task-capability-approval">
+            <div className="text-[9px] text-amber-300">{approvalRequired.message}</div>
+            {onRequestApproval && (
+              <button
+                type="button"
+                className="rounded border border-amber-400/40 px-1.5 py-0.5 text-[9px] text-amber-200"
+                data-testid="task-capability-request-approval"
+                onClick={() => onRequestApproval(selectedTaskId, [], [])}
+              >
+                发起安全审批（放宽{approvalRequired.relaxedHighRisk.join('、')}）
+              </button>
+            )}
+            {pendingApprovalId && (
+              <div className="space-y-1 text-[9px] text-white/70">
+                <div data-testid="task-capability-approval-id">审批号：{pendingApprovalId}（等待安全管理员审批）</div>
+                {pendingApprovalFreshness && (
+                  <div className="text-[9px] text-white/60" data-testid="task-capability-approval-freshness">
+                    {pendingApprovalFreshness}
+                  </div>
+                )}
+                {onRefreshApproval && (
+                  <button
+                    type="button"
+                    className="rounded border border-white/20 px-1.5 py-0.5 text-[9px] text-white/80"
+                    data-testid="task-capability-refresh-approval"
+                    onClick={onRefreshApproval}
+                  >
+                    检查审批状态
+                  </button>
+                )}
+              </div>
+            )}
+            <label className="block text-[9px] text-white/60">
+              已获批？粘贴审批号后重新保存
+              <input
+                className="mt-0.5 w-full rounded border border-white/15 bg-transparent px-1 py-0.5 text-[10px] text-white"
+                value={approvalIdInput}
+                data-testid="task-capability-approval-input"
+                onChange={(e) => setApprovalIdInput(e.target.value)}
+                placeholder="审批实例 id"
+              />
+            </label>
+          </div>
+        )}
+        {requirementWarnings && requirementWarnings.length > 0 && (
+          <ul className="mt-1 space-y-0.5" data-testid="task-capability-warnings">
+            {requirementWarnings.map((w) => (
+              <li key={w} className="text-[9px] text-amber-300">
+                {w}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {!hasAnyCandidate && (
+        <div className="text-[10px] text-white/40" data-testid="task-candidates-empty">
+          后端未返回候选资源
+        </div>
+      )}
+      {/* NO-17a：零候选且因能力被挡时，给出"放宽哪一项会得到什么"的建议。
+          只建议——不自动放宽，改要求仍是人工动作（面板内的"修改"入口就在上方）。 */}
+      {relaxationNotes.length > 0 && (
+        <ul className="space-y-0.5" data-testid="task-capability-relaxation">
+          {relaxationNotes.map((note) => (
+            <li key={note} className="text-[9px] text-amber-300">
+              {note}
+            </li>
+          ))}
+        </ul>
+      )}
       {vm.eligible.map((c) => (
         <CandidateRow key={`${c.personId}-${c.deviceId ?? 'none'}-ok`} item={c} />
       ))}
@@ -357,6 +564,14 @@ const IntelligenceLayers = ({
   candidates,
   selectedTaskId,
   onSelectTask,
+  onSaveRequirements,
+  savingRequirements,
+  requirementWarnings,
+  approvalRequired,
+  onRequestApproval,
+  pendingApprovalId,
+  pendingApprovalFreshness,
+  onRefreshApproval,
   onClose,
 }: IntelligenceLayersProps): React.ReactElement => {
   const priorityTasks = useMemo(() => {
@@ -485,7 +700,17 @@ const IntelligenceLayers = ({
               icon={<Users className="w-3 h-3 text-cyan-400" />}
               defaultOpen={!!selectedTaskId}
             >
-              <CandidatesList candidates={candidates} selectedTaskId={selectedTaskId} />
+              <CandidatesList
+                candidates={candidates}
+                selectedTaskId={selectedTaskId}
+                onSaveRequirements={onSaveRequirements}
+                savingRequirements={savingRequirements}
+                requirementWarnings={requirementWarnings}
+                approvalRequired={approvalRequired}
+                onRequestApproval={onRequestApproval}
+                pendingApprovalId={pendingApprovalId}
+                onRefreshApproval={onRefreshApproval}
+              />
             </Section>
 
             {/* 冲突层 */}

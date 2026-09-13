@@ -1,4 +1,8 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  PREDICTION_PROVIDER,
+  type EmpiricalDurationPredictionProvider,
+} from './prediction/empirical-duration-prediction-provider';
 import type {
   ObjectiveWeights,
   SchedulingConstraint,
@@ -98,6 +102,10 @@ export class SolverService {
     private readonly candidateEngine: CandidateEngineService,
     // Task A / P0：CANARY 自动回滚（canary 归 0；模块内已提供，测试直构时可空）。
     @Optional() private readonly shadowEvaluatorService?: ShadowEvaluatorService,
+    // ADR-056 消费侧（2026-09-13）：经验时长提供者（可选）——透传给 heuristic 求解器。
+    // 仅在策略 prediction.durationModelMode='advisory' 时被消费；缺省注入不影响行为。
+    @Optional() @Inject(PREDICTION_PROVIDER)
+    private readonly durationPrediction?: EmpiricalDurationPredictionProvider,
     // Task A / P0：CANARY 回滚 outbox 审计事件（模块内已提供，测试直构时可空）。
     @Optional() private readonly outboxService?: OutboxService,
     // NO-13d / ADR-053：目标评估器（P0-5 统一评估语义；缺省时 rule-based 直构同款）。
@@ -112,6 +120,8 @@ export class SolverService {
       metricsService,
       undefined,
       candidateEngine,
+      undefined,
+      this.durationPrediction,
     );
     this.cpSatSolver = new CpSatSchedulingSolver(
       this.heuristicSolver,

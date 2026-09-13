@@ -1,5 +1,6 @@
 import {
   PLAN_STATUS_BADGE,
+  READ_ACTIONS,
   WRITE_ACTIONS,
   planActions,
   planJourney,
@@ -51,6 +52,10 @@ describe('planActions（OD-5 终态行动条 · 动作单一事实源）', () =>
     const actions = planActions('dispatched', 'PLN/with special?chars');
     const navigable = actions.find((a) => a.route);
     expect(navigable?.route).toContain(encodeURIComponent('PLN/with special?chars'));
+    expect(actions.find((a) => a.kind === 'viewExecution')?.route).toBe(
+      `/factory-operations?plan=${encodeURIComponent('PLN/with special?chars')}`,
+    );
+    expect(actions.find((a) => a.kind === 'viewHistory')?.route).toBe('/decision-history');
   });
 
   it('每个状态至多一个主行动（避免双主按钮争夺注意力）', () => {
@@ -60,16 +65,31 @@ describe('planActions（OD-5 终态行动条 · 动作单一事实源）', () =>
     }
   });
 
-  it('WRITE_ACTIONS 与导航动作互斥', () => {
+  it('动作三分互斥：导航（route）/ 写操作 / 只读，每个动作恰好属于一类', () => {
     for (const status of ALL_STATUSES) {
       for (const action of planActions(status, PLAN_ID)) {
-        if (action.route) {
-          expect(WRITE_ACTIONS.has(action.kind as PlanActionKind)).toBe(false);
-        } else {
-          expect(WRITE_ACTIONS.has(action.kind as PlanActionKind)).toBe(true);
-        }
+        const categories = [
+          Boolean(action.route),
+          WRITE_ACTIONS.has(action.kind as PlanActionKind),
+          READ_ACTIONS.has(action.kind as PlanActionKind),
+        ].filter(Boolean).length;
+        expect(categories).toBe(1);
       }
     }
+  });
+
+  it('NO-62c：检查新鲜度是**只读**动作（不混进写操作，避免"看一眼就改了东西"）', () => {
+    const draft = planActions('draft', PLAN_ID);
+    expect(draft.find((a) => a.kind === 'checkFreshness')).toMatchObject({
+      kind: 'checkFreshness',
+      variant: 'secondary',
+    });
+    expect(READ_ACTIONS.has('checkFreshness')).toBe(true);
+    expect(WRITE_ACTIONS.has('checkFreshness')).toBe(false);
+    // 生成人回避（不能自批）时仍可检查新鲜度，但不得出现"审批通过"
+    const self = planActions('draft', PLAN_ID, { createdBy: 'u1', currentUserId: 'u1' });
+    expect(self.some((a) => a.kind === 'approve')).toBe(false);
+    expect(self.some((a) => a.kind === 'checkFreshness')).toBe(true);
   });
 
   it('未知状态返回空数组而非抛错', () => {

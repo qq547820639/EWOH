@@ -17,6 +17,11 @@ STREAM_ASSETS = "assets"
 STREAM_INFERENCE = "inference"
 STREAM_DEVICE_STATUS = "device_status"
 STREAM_WORLD_STATE = "world_state"
+#: 非外骨骼传感器帧（环境/摄像头/定位）归一化后的本地行。
+#: 刻意与 STREAM_TELEMETRY 分开：STREAM_TELEMETRY 的消费者（推理管线、世界投影）
+#: 讲的是外骨骼遥测词汇，把环境/定位行混进去会产出无意义推理；
+#: 多源上行桥（edge/bridge/sensor_uplink）订阅本流做平台投递。
+STREAM_SENSOR_FRAMES = "sensor_frames"
 
 #: 真实 MessageBus 支持的全部流。新增生产流必须先在此登记（装配 smoke test 校验）。
 ALL_STREAMS: tuple[str, ...] = (
@@ -27,6 +32,7 @@ ALL_STREAMS: tuple[str, ...] = (
     STREAM_INFERENCE,
     STREAM_DEVICE_STATUS,
     STREAM_WORLD_STATE,
+    STREAM_SENSOR_FRAMES,
 )
 
 #: 消息信封最小字段（用于可观测性与追踪）。
@@ -119,7 +125,7 @@ class InferencePipelineProtocol(Protocol):
 
 @runtime_checkable
 class ModelRegistryProtocol(Protocol):
-    """模型注册表契约。"""
+    """模型版本注册表契约。"""
 
     def active(self) -> Any: ...
 

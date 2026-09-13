@@ -5,11 +5,13 @@ import {
   Logger,
   Optional,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { ewohAgentApproval, ewohAgentManifest, ewohEvent, ewohNotification } from '@server/database/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { resolveNotificationsFor } from '../notification/notification-resolution.link';
 import { validateAgentManifest } from '@shared/agent-manifest';
 import { isCatalogEventType } from '@shared/event-catalog';
 import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
@@ -424,6 +426,16 @@ export class AgentService {
     });
   }
 
+  /**
+   * NO-47a：Agent 待批命令提醒的通知号前缀（处置侧据此限定范围）。
+   *
+   * 确定性 id 的理由与安灯一致：随机 id 既不幂等（重试/重放会重复打扰），
+   * 也无法被治理度量按类型归类（实测：度量词表里认不出这类提醒）。
+   */
+  private agentApprovalNotificationPrefix(approvalId: string): string {
+    return `NTF-AGENT-${String(approvalId).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80)}-`;
+  }
+
   private async notifyApprovalPending(
     orgId: string,
     agentId: string,
@@ -433,7 +445,7 @@ export class AgentService {
   ): Promise<void> {
     try {
       await this.db.insert(ewohNotification).values({
-        notificationId: `NTF-${randomUUID().slice(0, 8)}`,
+        notificationId: `${this.agentApprovalNotificationPrefix(approvalId)}pending-app`,
         orgId,
         recipientType: 'role',
         recipientId: roles[0] ?? 'workshop_lead',
@@ -443,6 +455,10 @@ export class AgentService {
         severity: 'high',
         status: 'pending',
         externalRef: approvalId,
+      }).onConflictDoNothing({
+        // standalone_100：唯一性收敛为 (org_id, notification_id)——target 必须与
+        // 仲裁索引逐列一致（与 deterministic-notifications 同步修改，实测事故）。
+        target: [ewohNotification.orgId, ewohNotification.notificationId],
       });
     } catch (error) {
       // 通知旁路：失败显式留痕不阻断审批主流程（审批实例本身是事实源）。
@@ -460,7 +476,7 @@ export class AgentService {
     orgId: string,
     approvalId: string,
     approved: boolean,
-    actor?: { userId: string },
+    actor?: { userId: string; roles?: string[] },
   ): Promise<ExecuteAgentCommandResult> {
     // 待批事实 = ewoh_agent_approval 台账行（进程重启后仍可解析，ADR-039）。
     // NEST-305：按 (orgId, approvalId) 定位——他租户审批不可被解析（404 语义）。
@@ -479,6 +495,28 @@ export class AgentService {
     }
     if (row.status !== 'pending') {
       throw new BadRequestException(`approval_already_resolved:${row.status}`);
+    }
+    // FR5（2026-09-13）：审批角色强制。台账 rolesJson（NO-12f：通知发给"值班长"）
+    // 记录了**谁能批**，但解析端点此前只看"是谁"不看"有没有资格角色"——
+    // viewer/worker 等任意已认证角色都能批准 L1 agent 任务（写命令！）。
+    // 现在强制：rolesJson 非空时 actor.roles 必须与其有交集，否则 403 fail-closed。
+    // rolesJson 为空 = 部署未声明约束（不发明约束，放行并保持原语义）；
+    // TTL 超期解析在下方按 policy 权威执行，不受本闸门约束（无人工操作者）。
+    const requiredApprovalRoles = Array.isArray(row.rolesJson)
+      ? (row.rolesJson as string[]).filter((r) => typeof r === 'string' && r.trim() !== '')
+      : [];
+    const actorApprovalRoles = Array.isArray(actor?.roles) ? actor!.roles! : [];
+    if (
+      requiredApprovalRoles.length > 0
+      && !actorApprovalRoles.some((r) => requiredApprovalRoles.includes(r))
+    ) {
+      throw new ForbiddenException(
+        'AGENT_APPROVAL_ROLE_FORBIDDEN: 该审批需要角色 '
+          + requiredApprovalRoles.join('/')
+          + '（当前账号角色：'
+          + (actorApprovalRoles.join('/') || '无')
+          + '）',
+      );
     }
     const agentId = row.agentId;
     const command = row.command;
@@ -570,25 +608,37 @@ export class AgentService {
     resolution: Record<string, unknown>,
     decisionJson?: DecisionRecord | null,
   ): Promise<void> {
-    const [updated] = await this.db
-      .update(ewohAgentApproval)
-      .set({
-        status,
-        resolvedAt: new Date(),
-        resolvedBy: actor?.userId ?? 'system',
-        resolutionJson: resolution,
-        ...(decisionJson ? { decisionJson } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(
-        eq(ewohAgentApproval.orgId, orgId),
-        eq(ewohAgentApproval.approvalId, approvalId),
-        eq(ewohAgentApproval.status, 'pending'),
-      ))
-      .returning();
-    if (!updated) {
-      throw new BadRequestException(`approval_already_resolved:${status}`);
-    }
+    // NO-47a：台账 CAS 与"待审批提醒终态"同事务——命令已被人处理（或超时作废）后，
+    // 那条"请值班长审批"的提醒就不再需要人处理；分开提交会留下"已处置但仍待办"的噪音。
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(ewohAgentApproval)
+        .set({
+          status,
+          resolvedAt: new Date(),
+          resolvedBy: actor?.userId ?? 'system',
+          resolutionJson: resolution,
+          ...(decisionJson ? { decisionJson } : {}),
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(ewohAgentApproval.orgId, orgId),
+          eq(ewohAgentApproval.approvalId, approvalId),
+          eq(ewohAgentApproval.status, 'pending'),
+        ))
+        .returning();
+      if (!updated) {
+        throw new BadRequestException(`approval_already_resolved:${status}`);
+      }
+      await resolveNotificationsFor(tx, {
+        orgId,
+        externalRef: approvalId,
+        notificationIdPrefix: this.agentApprovalNotificationPrefix(approvalId),
+        resolution: status === 'expired' ? 'agent_approval_expired' : 'agent_approval_decided',
+        resolvedBy: actor?.userId ?? 'system:agent-approval',
+        resolutionRef: approvalId,
+      });
+    });
   }
 
   private async executeAuthorized(

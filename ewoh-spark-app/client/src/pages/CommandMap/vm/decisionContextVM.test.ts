@@ -71,7 +71,8 @@ function makeTrace(overrides: Partial<DecisionTrace> = {}): DecisionTrace {
       { personId: 'P-Zhao', deviceId: null, stationId: null, rejectReasons: ['missing_skill'] },
     ],
     hardConstraints: ['REQUIRED_SKILL'],
-    softCosts: { lateness: 1.5, travel: 2.0 },
+    // 真实键名（候选引擎写入 camelCase：latenessMs/travelMs/…，不是策略权重的 UPPER_SNAKE）
+    softCosts: { latenessMs: 1500, travelMs: 2000 },
     weightsSnapshot: { lateness: 1, travel: 1 },
     policyVersion: 7,
     solverVersion: 'cp-sat-v3',
@@ -208,7 +209,8 @@ describe('decisionContextVM：9 段决策上下文映射', () => {
     const vm = decisionContextVM(baseInput())!;
     const rows = sectionById(vm, 'WHY').rows;
     const chain = rows.find((r) => r.label === '原因链')!;
-    expect(chain.value).toBe('设备离线 → 路线阻断');
+    // 触发码的实体后缀保留（D-1 是哪台设备、R-7 是哪条路线）
+    expect(chain.value).toBe('设备离线（D-1） → 路线阻断（R-7）');
   });
 
   it('IMPACT 直映 ReplanImpact 计数与 PlanCompareResult 计数', () => {
@@ -255,8 +257,11 @@ describe('decisionContextVM：9 段决策上下文映射', () => {
     const rows = sectionById(vm, 'COST').rows;
     expect(rows.find((r) => r.label === '预计延期')!.value).toBe('12 min');
     expect(rows.find((r) => r.label === '人员总移动')!.value).toBe('310 m');
-    const soft = rows.find((r) => r.label === '软成本 · lateness')!;
-    expect(soft.value).toBe('1.50');
+    // 软成本键现在经唯一词表中文化（此前显示裸键 latenessMs/travelMs）
+    const soft = rows.find((r) => r.label === '软成本 · 迟到')!;
+    expect(soft.value).toBe('1500.00');
+    const travel = rows.find((r) => r.label === '软成本 · 行走')!;
+    expect(travel.value).toBe('2000.00');
   });
 
   it('RECOMMENDED_ACTION 直映 conflict.resolution', () => {

@@ -17,8 +17,14 @@ import threading
 import time
 
 from edge_platform.edge.adapters.base import BaseAdapter
-from edge_platform.edge.modeling.frame_adapter import is_grouped_frame, unified_to_telemetry_row
-from edge_platform.runtime.protocols import STREAM_TELEMETRY, EventBusProtocol, StorageProtocol
+from edge_platform.edge.frame_errors import FrameContractError
+from edge_platform.edge.modeling.sensor_frames import FRAME_KIND_EXOSKELETON, normalize_frame
+from edge_platform.runtime.protocols import (
+    STREAM_SENSOR_FRAMES,
+    STREAM_TELEMETRY,
+    EventBusProtocol,
+    StorageProtocol,
+)
 
 logger = logging.getLogger("ewoh.edge.manager")
 
@@ -65,6 +71,8 @@ class AdapterManager:
         self._threads: list[threading.Thread] = []
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
+        #: 进程内死信计数（health() 暴露；权威留痕在 storage.frame_dead_letter）。
+        self._dead_lettered_total = 0
         self._running = False
         # ---- Task 13.2 监督参数与状态 ----
         self.supervisor_interval = supervisor_interval
@@ -86,6 +94,7 @@ class AdapterManager:
             "start_failures": 0,
             "start_succeeded": False,
             "degraded": False,
+            "reader_degraded": False,
             "last_error": None,
             "next_attempt_at": 0.0,
             "attempting": False,
@@ -142,6 +151,9 @@ class AdapterManager:
                     "last_respawn_at": s.get("last_respawn_at"),
                     "start_failures": s.get("start_failures", 0),
                     "start_succeeded": s.get("start_succeeded", False),
+                    "reader_degraded": s.get("reader_degraded", False),
+                    # 2026-09-10：该适配器转入死信的帧数（不可归一化 → 留痕，不静默丢）
+                    "dead_lettered": s.get("dead_lettered", 0),
                     "last_error": s.get("last_error"),
                 }
                 for a, s in self._supervision.items()
@@ -160,10 +172,17 @@ class AdapterManager:
                 h["respawns"] = sup["respawns"]
                 h["last_respawn_at"] = sup["last_respawn_at"]
                 h["start_failures"] = sup["start_failures"]
+                h["dead_lettered"] = sup["dead_lettered"]
                 if sup["last_error"]:
                     h["last_error"] = sup["last_error"]
                 h["supervised"] = True
-                if not thread_alive and not self._stop_event.is_set():
+                if sup["dead_lettered"] and not self._stop_event.is_set() and h.get("status") not in ("offline",):
+                    # 有帧被拒（契约不符/未登记类别）：设备仍在跑，但它的事实没有全部进来——
+                    # 显式降级，避免"设备健康"掩盖数据缺口。
+                    h["status"] = "degraded"
+                if sup["reader_degraded"] and not self._stop_event.is_set():
+                    h["status"] = "degraded"
+                elif not thread_alive and not self._stop_event.is_set():
                     # 应运行但读取线程未运行：监督标注降级/离线
                     if sup["start_succeeded"]:
                         h["status"] = "degraded"  # 线程崩溃，等待退避 respawn
@@ -173,6 +192,22 @@ class AdapterManager:
                         h["status"] = "offline"  # start 尚未成功（退避重试中）
             out.append(h)
         return out
+
+    def find_adapter(self, device_id: str):
+        """按 device_id 查找已注册适配器（执行机构命令通道/状态查询用）。
+
+        只做查找，**不做任何授权判定**——授权在适配器与路由层（NO-59b）。
+        未注册返回 None（调用方必须显式处理，不许当成"设备正常"）。
+        """
+        wanted = str(device_id or "").strip()
+        if wanted == "":
+            return None
+        with self._lock:
+            adapters = list(self._adapters)
+        for adapter in adapters:
+            if getattr(adapter, "device_id", None) == wanted:
+                return adapter
+        return None
 
     def device_info(self) -> list[dict]:
         out = []
@@ -238,7 +273,6 @@ class AdapterManager:
                 daemon=True,
                 name=f"adapter-{device}",
             )
-            t.start()
         except Exception:
             logger.exception("adapter %s reader thread spawn failed", device)
             return
@@ -251,9 +285,19 @@ class AdapterManager:
             self._threads.append(t)
             if respawn:
                 sup["respawns"] += 1
+                sup["reader_degraded"] = True
                 sup["last_respawn_at"] = time.time()
                 # 退避窗口：本次 respawn 后，下一次 respawn 至少间隔 delay(respawns)
                 sup["next_attempt_at"] = time.time() + self._respawn_delay(sup["respawns"])
+        try:
+            t.start()
+        except Exception:
+            with self._lock:
+                if sup.get("thread") is t:
+                    sup["thread"] = None
+                if t in self._threads:
+                    self._threads.remove(t)
+            logger.exception("adapter %s reader thread start failed", device)
 
     def _start_supervisor(self) -> None:
         with self._lock:
@@ -312,6 +356,16 @@ class AdapterManager:
         重试——按连续失败次数指数退避（1s→60s 封顶），达到阈值后升级为 ERROR
         级 degraded 日志（supervisor health 层面仍可见线程存活状态）。
         EDGE-043：帧持久化失败做一次有界重试，最终失败 ERROR 留痕（不静默丢帧）。
+
+        2026-09-10 边缘韧性收口（多源帧契约）：
+        - 所有类别的帧统一走 `normalize_frame`（此前只有分组外骨骼帧被转换，
+          环境/摄像头/定位帧因键不匹配在 insert_telemetry 直接 KeyError →
+          本地库与平台都收不到，即 data-flow §4.4 记录的断点）；
+        - 不可归一化 / 缺契约字段的帧写入 **死信表** 并计数（不静默丢弃）；
+        - 设备首次出现时自动登记（否则 device 行不存在，last_seen/online 永远
+          更新不到，"设备清单里没有这台设备"）；
+        - 非外骨骼行发布到 STREAM_SENSOR_FRAMES（STREAM_TELEMETRY 的消费者
+          讲的是外骨骼词汇，混流会产出无意义推理）。
         """
         consecutive_failures = 0
         while not self._stop_event.is_set():
@@ -332,27 +386,102 @@ class AdapterManager:
                 time.sleep(min(60.0, 1.0 * (2 ** min(consecutive_failures, 6))))
                 continue
             consecutive_failures = 0
+            with self._lock:
+                supervision = self._supervision.get(adapter)
+                if supervision is not None:
+                    supervision["reader_degraded"] = False
             if msg is None:
                 continue
-            row = unified_to_telemetry_row(msg) if is_grouped_frame(msg) else msg
-            # EDGE-043：持久化失败有界重试（共 2 次尝试），最终失败显式 ERROR。
+
+            # 1) 归一化（唯一契约转换点）：失败 → 死信留痕 + 计数，绝不静默丢弃。
+            try:
+                frame = normalize_frame(msg)
+            except FrameContractError as exc:
+                self._record_frame_dead_letter(adapter, msg, exc)
+                continue
+
+            row = frame["local_row"]
+            # 2) 设备自动登记（幂等）：设备存在，last_seen/online 才有落点。
+            try:
+                self.storage.ensure_device(
+                    row["device_id"],
+                    device_type=frame["kind"],
+                    source_type=row["source_type"],
+                    model=getattr(adapter, "model", None),
+                )
+            except Exception:
+                logger.exception("adapter %s ensure_device failed", row.get("device_id"))
+            # 3) 持久化（有界重试；最终失败进死信，仍然不丢原始载荷）。
+            persisted = False
             for attempt in (1, 2):
                 try:
                     self.storage.insert_telemetry(row)
+                    persisted = True
                     break
-                except Exception:
+                except Exception as exc:
                     if attempt == 2:
                         logger.error(
-                            "adapter %s frame persistence failed（重试后仍失败，帧丢失留痕）: %s",
+                            "adapter %s frame persistence failed（重试后仍失败，转死信）: %s",
                             getattr(adapter, "device_id", "?"),
                             row.get("record_id"),
                         )
+                        if isinstance(exc, FrameContractError):
+                            self._record_frame_dead_letter(adapter, msg, exc)
                     else:
                         time.sleep(0.05)
+            if not persisted:
+                continue
+            # 4) 分流发布：
+            #    - 外骨骼：STREAM_TELEMETRY 发**本地行**（推理管线/世界投影的既有输入，
+            #      形状不变——这是兼容性约束，不是偏好）；
+            #    - 所有类别：STREAM_SENSOR_FRAMES 发**归一化信封**（含 uplink 载荷），
+            #      由多源上行桥按 endpoint 投递到平台。
             try:
-                self.bus.publish(STREAM_TELEMETRY, row)
+                self.bus.publish(STREAM_SENSOR_FRAMES, frame)
             except Exception:
                 logger.exception("adapter %s frame publish failed", getattr(adapter, "device_id", "?"))
+            if frame["kind"] == FRAME_KIND_EXOSKELETON:
+                try:
+                    self.bus.publish(STREAM_TELEMETRY, row)
+                except Exception:
+                    logger.exception(
+                        "adapter %s frame publish failed", getattr(adapter, "device_id", "?")
+                    )
+
+    def _record_frame_dead_letter(self, adapter: BaseAdapter, msg, exc: FrameContractError) -> None:
+        """死信留痕 + 适配器/管理器计数（不可归一化帧的唯一处置路径）。"""
+        device_id = getattr(adapter, "device_id", None) or (msg.get("device_id") if isinstance(msg, dict) else None)
+        try:
+            self.storage.insert_frame_dead_letter(
+                {
+                    "device_id": device_id,
+                    "kind": exc.kind,
+                    "reason": exc.reason,
+                    "payload": msg,
+                    "source_type": msg.get("source_type") if isinstance(msg, dict) else None,
+                }
+            )
+        except Exception:
+            # 死信写入自身失败：绝不再吞——ERROR 里带原始载荷摘要，至少日志可追。
+            logger.exception(
+                "adapter %s frame dead-letter write failed（原始帧仍丢失，请检查存储）",
+                device_id,
+            )
+        with self._lock:
+            supervision = self._supervision.get(adapter)
+            if supervision is not None:
+                supervision["dead_lettered"] = int(supervision.get("dead_lettered", 0)) + 1
+            self._dead_lettered_total += 1
+        logger.error(
+            "adapter %s frame rejected（已转死信）: %s",
+            device_id,
+            exc,
+        )
+
+    @property
+    def dead_lettered_total(self) -> int:
+        """本进程启动以来转入死信的帧数（健康检查可见；0 不代表没丢过——见死信表）。"""
+        return self._dead_lettered_total
 
 
 __all__ = ["AdapterManager"]

@@ -33,6 +33,24 @@ export const KNOWN_CAPABILITY_VALUES = [
   'assembly',
   'inspection',
   'material_handling',
+  'observe.temperature',
+  'observe.vibration',
+  'observe.noise',
+  'observe.air_quality',
+  'observe.person_detection',
+  'observe.pose',
+  'observe.action',
+  'observe.position',
+  'observe.load',
+  'observe.battery',
+  'observe.wearer',
+  'interact.assist',
+  // 执行类能力（2026-09-11 登记：此前只在调度侧型号白名单，词表外 → 不可校验/不可停用）
+  'exo-lite',
+  'crane',
+  // 执行机构（AGV/PLC，2026-09-12 NO-59b）
+  'transport.move',
+  'observe.actuator_state',
 ] as const;
 
 const KIND_SET: ReadonlySet<string> = new Set(CAPABILITY_KINDS);

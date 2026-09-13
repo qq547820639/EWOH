@@ -80,7 +80,7 @@ describe("taskMoveExplainVM：'Why did this task move?' 原因链", () => {
       'ROUTE_BLOCKED:R-7',
       '负荷均衡：选中 P-Li',
     ]);
-    expect(vm.causeChain.map((c) => c.label)).toEqual(['设备离线', '路线阻断', '负荷均衡：选中 P-Li']);
+    expect(vm.causeChain.map((c) => c.label)).toEqual(['设备离线（D-1）', '路线阻断（R-7）', '负荷均衡：选中 P-Li']);
     expect(vm.causeChain.map((c) => c.origin)).toEqual(['trigger', 'trigger', 'trace']);
   });
 
@@ -106,15 +106,16 @@ describe("taskMoveExplainVM：'Why did this task move?' 原因链", () => {
   it('只有 flat 原因时按服务端顺序渲染为链', () => {
     const diff = makeDiff({ reasons: ['ROUTE_BLOCKED:R-7'] });
     const vm = taskMoveExplainVM({ diff, impact: null, trace: null })!;
-    expect(vm.causeChain.map((c) => c.label)).toEqual(['路线阻断']);
+    expect(vm.causeChain.map((c) => c.label)).toEqual(['路线阻断（R-7）']);
   });
 });
 
 describe('taskMoveReasonLabel：原因码 → 展示文案（纯映射）', () => {
   it('触发码与带实体后缀的触发码均映射', () => {
     expect(taskMoveReasonLabel('DEVICE_OFFLINE')).toBe('设备离线');
-    expect(taskMoveReasonLabel('DEVICE_OFFLINE:D-1')).toBe('设备离线');
-    expect(taskMoveReasonLabel('ROUTE_BLOCKED:R-7')).toBe('路线阻断');
+    // 实体后缀不再被丢弃：现场需要知道是哪台设备
+    expect(taskMoveReasonLabel('DEVICE_OFFLINE:D-1')).toBe('设备离线（D-1）');
+    expect(taskMoveReasonLabel('ROUTE_BLOCKED:R-7')).toBe('路线阻断（R-7）');
   });
 
   it('回退到 decisionReasonLabel 的约束/拒绝码表', () => {
@@ -122,7 +123,11 @@ describe('taskMoveReasonLabel：原因码 → 展示文案（纯映射）', () =
     expect(taskMoveReasonLabel('MAX_WORKLOAD')).toBe('负荷超限');
   });
 
-  it('未知码原样透传（不伪造文案）', () => {
-    expect(taskMoveReasonLabel('SOME_UNKNOWN_CODE')).toBe('SOME_UNKNOWN_CODE');
+  it('未知码显式标注未登记（不伪造文案，保留原码可排查）', () => {
+    expect(taskMoveReasonLabel('SOME_UNKNOWN_CODE')).toBe('未登记原因（SOME_UNKNOWN_CODE）');
+  });
+
+  it('带实体后缀的触发码保留实体信息（DEVICE_OFFLINE:D-1）', () => {
+    expect(taskMoveReasonLabel('DEVICE_OFFLINE:D-1')).toBe('设备离线（D-1）');
   });
 });

@@ -1,0 +1,26 @@
+# 全新库全链 verify 已知失败基线（NO-53a，2026-09-12 首次跑通整条链后登记）
+#
+# 含义：这些 `--verify-standalone*` 命令在**全新库、全链迁移完成**的数据库上仍然失败，
+# 原因都是**验证资产自身**的历史遗留（不是迁移本身装不上——apply 是 100% 成功的）。
+#
+# 纪律：基线只允许"缩小"——修好一项就从这里删一行（脚本会提示 FIXED）；
+# 新增失败不在基线内 → `scripts/migration-fresh-chain-check.js` 非零退出（回归即失败）。
+#
+# ── 2026-09-12（第 58 轮）：**基线已清零（12 → 0）** ─────────────────────────────
+# 全部 12 项都是"验证资产自身"的缺陷，逐项修好后从这里删除：
+#   1. standalone_067：verify 缺自证标记行；
+#   2. standalone_058/059/060/068：只做 DO 断言、**从不输出自证标记** → 追加标记行；
+#   3. standalone_065：标记误写成 `standalone_057_verified` → 与本迁移号对齐；
+#   4. standalone_063：verify 从未登记进 `SIMPLE_VERIFY_COMMANDS`（命令清单里有、映射里没有
+#      → runner 读不到文件，报 `path argument must be of type string`）→ 登记表驱动映射；
+#   5. standalone_057：`FROM (VALUES 'a','b')` 是**语法错误**（基线曾误记为"psql 专属 \gexec"）
+#      → 改为括号化行；
+#   6. standalone_064/069：psql 专属 `\gset` + `:var` → 改为纯 SQL 自证（成立才返回标记行）；
+#   7. standalone_053：探针行 `status='approved'` 未满足后续收紧的
+#      `chk_ewoh_learning_proposal_shadow_gate` / `_approval` / `_rule` → 按终态约束构造，
+#      并把 `SQLERRM` 写进断言消息（此前 `EXCEPTION WHEN OTHERS` 静默吞错，只看到 `roundtrip=f`）；
+#   8. standalone_056：可见性探针以 **owner（superuser）** 连接，属主/超级用户绕过 RLS
+#      → 探针永远"两行都可见"；改为 `SET LOCAL ROLE ewoh_api`（service_role 成员、NOBYPASSRLS）
+#      下探针，结束后 `RESET ROLE` 再清理。
+#
+# 新增失败必须**修验证资产本身**，不要在这里加新行来解释"为什么暂时过不去"。

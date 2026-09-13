@@ -18,6 +18,8 @@ export type PlanActionKind =
   | 'reject'
   | 'dispatch'
   | 'replan'
+  | 'cancel'
+  | 'checkFreshness'
   | 'viewExecution'
   | 'viewHistory'
   | 'viewReport';
@@ -32,12 +34,24 @@ export interface PlanAction {
   route?: string;
 }
 
-/** 写操作型动作（需调用 mutation），用于调用方分流。 */
+/**
+ * 写操作型动作（需调用 mutation），用于调用方分流。
+ *
+ * 注意与 {@link READ_ACTIONS} 的区别：写动作会**改变事实**（审批/派工/取消/重排），
+ * 读动作只取数。两者必须互斥——把只读动作混进写动作集合，会让"点了会不会改东西"
+ * 无法从契约判断（原则 6：建议/授权/执行必须明确区分）。
+ */
 export const WRITE_ACTIONS: ReadonlySet<PlanActionKind> = new Set<PlanActionKind>([
   'approve',
   'reject',
   'dispatch',
   'replan',
+  'cancel',
+]);
+
+/** 只读动作（不改任何事实）：目前只有 NO-62c 的"检查新鲜度"。 */
+export const READ_ACTIONS: ReadonlySet<PlanActionKind> = new Set<PlanActionKind>([
+  'checkFreshness',
 ]);
 
 /**
@@ -60,27 +74,35 @@ export function planActions(
   const selfApproval = Boolean(
     guard?.createdBy && guard?.currentUserId && guard.createdBy === guard.currentUserId,
   );
-  const execution = `/work-orchestration?plan=${encodeURIComponent(planId)}`;
-  const history = `/decision-history?plan=${encodeURIComponent(planId)}`;
+  const execution = `/factory-operations?plan=${encodeURIComponent(planId)}`;
+  const history = '/decision-history';
 
   switch (status) {
     case 'draft':
     case 'shadow':
       return selfApproval
-        ? [{ kind: 'reject', label: '驳回', variant: 'danger' }]
+        ? [
+            // NO-62c：即使不能自批，也要能先看"这个方案还新不新鲜"。
+            { kind: 'checkFreshness', label: '检查新鲜度', variant: 'secondary' },
+            { kind: 'reject', label: '驳回', variant: 'danger' },
+          ]
         : [
             { kind: 'approve', label: '审批通过', variant: 'primary' },
+            { kind: 'checkFreshness', label: '检查新鲜度', variant: 'secondary' },
             { kind: 'reject', label: '驳回', variant: 'danger' },
           ];
     case 'approved':
       return [
         { kind: 'dispatch', label: '下发执行', variant: 'primary' },
+        { kind: 'checkFreshness', label: '检查新鲜度', variant: 'secondary' },
         { kind: 'replan', label: '重新排程', variant: 'secondary' },
+        { kind: 'cancel', label: '取消方案', variant: 'ghost' },
       ];
     case 'dispatched':
     case 'executing':
       return [
         { kind: 'viewExecution', label: '查看执行态势', variant: 'primary', route: execution },
+        { kind: 'cancel', label: '取消派工/回滚', variant: 'danger' },
         { kind: 'replan', label: '触发重排', variant: 'secondary' },
         { kind: 'viewHistory', label: '查看决策历史', variant: 'ghost', route: history },
       ];
@@ -93,6 +115,11 @@ export function planActions(
       return [
         { kind: 'replan', label: '重新排程', variant: 'primary' },
         { kind: 'viewHistory', label: '查看驳回理由', variant: 'secondary', route: history },
+      ];
+    case 'cancelled':
+      return [
+        { kind: 'replan', label: '重新排程', variant: 'primary' },
+        { kind: 'viewHistory', label: '查看取消原因', variant: 'secondary', route: history },
       ];
     case 'superseded':
       return [
@@ -140,6 +167,10 @@ export const PLAN_STATUS_BADGE: Record<
     label: '已替代',
     className: 'border-risk-unknown-border bg-risk-unknown-soft text-risk-unknown-foreground',
   },
+  cancelled: {
+    label: '已取消',
+    className: 'border-risk-blocked-border bg-risk-blocked-soft text-risk-blocked-foreground',
+  },
 };
 
 /**
@@ -162,6 +193,7 @@ export interface JourneyStep {
 const TERMINAL_STATUSES: ReadonlySet<PlanStatus> = new Set<PlanStatus>([
   'rejected',
   'superseded',
+  'cancelled',
 ]);
 
 export function planJourney(
@@ -170,7 +202,7 @@ export function planJourney(
   planId: string,
 ): JourneyStep[] {
   const planRoute = `/o/scheduling_plan/${encodeURIComponent(planId)}`;
-  const executionRoute = `/work-orchestration?plan=${encodeURIComponent(planId)}`;
+  const executionRoute = `/factory-operations?plan=${encodeURIComponent(planId)}`;
 
   // 是否已跨过评审：draft / shadow 之外均视为已通过评审。
   const reviewed = status !== 'draft' && status !== 'shadow';

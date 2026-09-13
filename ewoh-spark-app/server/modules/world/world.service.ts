@@ -493,10 +493,18 @@ export class WorldService {
       );
       const entityTypeById = new Map<string, string>();
       if (stateEntityIds.length > 0) {
+        // NEST-606 同口径补 org 谓词：entityId 只在租户内唯一（uq (org_id,
+        // entity_id)），跨租户同号实体的类型可能不同——无谓词查询会把**他租户**
+        // 的登记读进来，把本租户实体错分进 persons/devices（同时也是一次跨租户读）。
+        const typeOrg = this.orgCondition(ewohSpatialEntity.orgId, actor);
         const typeRows = await this.db
           .select({ entityId: ewohSpatialEntity.entityId, entityType: ewohSpatialEntity.entityType })
           .from(ewohSpatialEntity)
-          .where(inArray(ewohSpatialEntity.entityId, stateEntityIds));
+          .where(
+            typeOrg
+              ? and(inArray(ewohSpatialEntity.entityId, stateEntityIds), typeOrg)
+              : inArray(ewohSpatialEntity.entityId, stateEntityIds),
+          );
         for (const r of typeRows)
           entityTypeById.set(r.entityId, r.entityType ?? '');
       }
@@ -615,7 +623,13 @@ export class WorldService {
     if (!source) {
       throw new NotFoundException(`Event ${body.eventId} not found`);
     }
-    const orgId = actor?.primaryOrgId ?? source.orgId ?? null;
+    // 派生事实跟随**源事件**的租户归属：global_admin 跨租户检索时操作者
+    // primaryOrgId 与源事件 org 可以不同——若按操作者 org 落 REPLAY_* 事件与
+    // 因果链行，源租户用户看不到本方事件的标注，getEventChain（源租户谓词）
+    // 也枚举不到这条 derived_from_replay 链节点（派生事实与源事实跨租户脱钩）。
+    // 非 admin 路径源事件已被 org 谓词过滤，source.orgId 恒等于操作者 org，
+    // 行为不变；存量 NULL-org 源事件回退操作者 org（保持旧行为）。
+    const orgId = source.orgId ?? actor?.primaryOrgId ?? null;
     const newEventId = `RPL-${randomUUID().slice(0, 8)}`;
     const createdAt = new Date();
     await this.db.insert(ewohEvent).values({

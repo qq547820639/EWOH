@@ -238,7 +238,12 @@ class HardConstraints:
     def _check_device_fault(self, person, task, device):
         pid = person.get("person_id", "")
         did = (device or {}).get("device_id", "")
-        if did and did in self.device_faults:
+        unavailable = bool(device) and (
+            device.get("online") in (False, 0)
+            or device.get("faulty") is True
+            or str(device.get("status", "")).lower() in {"offline", "fault", "faulty", "maintenance"}
+        )
+        if did and (did in self.device_faults or unavailable):
             return ConstraintViolation(
                 DEVICE_FAULT,
                 pid,
@@ -255,6 +260,8 @@ class HardConstraints:
                 pid,
                 f"人员 {pid} 处于安全冻结状态，需人工解除后方可调度",
             )
+        if person.get("active") in (False, 0):
+            return ConstraintViolation(SAFETY, pid, f"人员 {pid} 当前不可参与作业")
         if ctx.get("safety_block"):
             return ConstraintViolation(
                 SAFETY,

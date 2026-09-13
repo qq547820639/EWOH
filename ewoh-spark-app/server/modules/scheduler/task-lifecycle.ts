@@ -2,7 +2,10 @@
  * 统一任务生命周期判定（Task 0.3）。
  * 基于 task.service.ts `nextTaskStatus` 的真实状态机：
  * draft → pending_confirm → pending_approval → pending_dispatch → dispatched → received → executing → paused / exception → completed / cancelled。
- * 同时兼容历史别名（pending / queued）以不破坏既有 seed 测试。
+ *
+ * 历史别名（pending / queued）**不在** contracts/state-machines/task.yaml 里。
+ * 它们只作为"迁移期存量数据"被识别，不再由任何写路径产生；见
+ * `TASK_LEGACY_PRE_DISPATCH_STATUSES` 与 `normalizePreDispatchStatus`。
  */
 
 /**
@@ -15,7 +18,7 @@ export const TASK_SCHEDULABLE_STATUSES: readonly string[] = [
   'pending_confirm',
   'pending_approval',
   'pending_dispatch',
-  // 历史别名（兼容既有 seed 测试）
+  // 历史别名：仅用于识别存量数据（见文件头说明），不再写入。
   'pending',
   'queued',
 ];
@@ -28,8 +31,27 @@ export const TASK_LOCKED_STATUSES: readonly string[] = [
   'exception',
 ];
 
+/**
+ * 契约内"已就绪、等待派发"状态。
+ *
+ * 2026-09-10 缺陷修复：此前 `TASK_SCHEDULABLE_STATUSES` 接受历史别名
+ * `pending`/`queued`，但 `TASK_DISPATCHABLE_STATUSES` 不接受——于是存量为
+ * 这两个状态的任务**可以被排程、被审批，却永远无法派发**（dispatch 抛
+ * `PLAN_TASK_NOT_DISPATCHABLE`）。半程迁移把用户带进死路：方案 approved，
+ * 任务卡死，且没有任何提示说明原因。现在两处判定一致，且存量状态在派发时
+ * 被显式归一化到契约状态（`normalizePreDispatchStatus`），使 plan 与 task
+ * 状态不会长期分叉。
+ */
+export const TASK_PRE_DISPATCH_STATUS = 'pending_dispatch';
+
+/** 契约外历史别名（迁移期存量数据专用，非可写入状态）。 */
+export const TASK_LEGACY_PRE_DISPATCH_STATUSES: readonly string[] = [
+  'pending',
+  'queued',
+];
+
 export const TASK_DISPATCHABLE_STATUSES: readonly string[] = [
-  'pending_dispatch',
+  TASK_PRE_DISPATCH_STATUS,
   'dispatched',
   'received',
   'executing',
@@ -47,6 +69,31 @@ export const TASK_TERMINAL_STATUSES: readonly string[] = [
   'cancelled',
 ];
 
+/**
+ * 是否为"派发前"状态（契约状态或契约外历史别名）。
+ * 派发流程据此决定是否推进状态机。
+ */
+export function isPreDispatchStatus(status: string): boolean {
+  return status === TASK_PRE_DISPATCH_STATUS
+    || TASK_LEGACY_PRE_DISPATCH_STATUSES.includes(status);
+}
+
+/**
+ * 是否为需要归一化的契约外历史状态（`pending`/`queued`）。
+ * 归一化只在迁移期需要，调用方应记录可观测日志。
+ */
+export function requiresPreDispatchNormalization(status: string): boolean {
+  return TASK_LEGACY_PRE_DISPATCH_STATUSES.includes(status);
+}
+
+/**
+ * 把契约外历史状态映射到契约状态；契约内状态原样返回。
+ * 仅供状态机推进前的存量数据收敛使用，不得用于放宽终态/锁定态校验。
+ */
+export function normalizePreDispatchStatus(status: string): string {
+  return requiresPreDispatchNormalization(status) ? TASK_PRE_DISPATCH_STATUS : status;
+}
+
 export const TaskLifecycle = {
   /**
    * 可调度：尚未派发执行、可进入排程的任务状态。
@@ -63,10 +110,17 @@ export const TaskLifecycle = {
   },
 
   /**
-   * 可下发：pending_dispatch 及其后续已派发/执行中状态（供 dispatch 预检使用）。
+   * 可下发：契约内 pending_dispatch 及其后续已派发/执行中状态，外加迁移期
+   * 历史别名（否则存量任务会被永久卡在 dispatch 之前）。
    */
   isDispatchable(status: string): boolean {
-    return TASK_DISPATCHABLE_STATUSES.includes(status);
+    return TASK_DISPATCHABLE_STATUSES.includes(status)
+      || TASK_LEGACY_PRE_DISPATCH_STATUSES.includes(status);
+  },
+
+  /** 派发前状态（含历史别名）：派发后应推进到 dispatched。 */
+  isPreDispatch(status: string): boolean {
+    return isPreDispatchStatus(status);
   },
 
   /**

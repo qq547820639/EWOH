@@ -52,10 +52,6 @@ const WHITELIST = {
       max: 2, audit: 'CLI-303',
       reason: '修复后的条件展示标注：仅在真实后端未接入时显示「演示 / 待接入真数据」（不再永久标签），源码注释同步声明。',
     },
-    'ewoh-spark-app/client/src/components/app-shell/PendingInbox.tsx': {
-      max: 3, audit: 'CLI-303 簇裁决',
-      reason: '审计点名的显式演示标注：待同步数量为离线队列真实值，风险告警/指挥中心入口显式标注「演示导航（待接入真实数据）」防误认。',
-    },
     'ewoh-spark-app/client/src/lib/appContext.ts': {
       max: 2, audit: 'CLI-303 簇裁决',
       reason: '注释：组织/工厂/产线为演示用本地默认值且 UI 明确标注「演示/待接入真数据」，不伪造后端数据。',

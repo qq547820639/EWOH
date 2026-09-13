@@ -26,15 +26,16 @@ from edge_platform.scheduler.models import (  # noqa: E402
     CandidateAssignment,
     Reservation,
     SchedulePlan,
+    WorldStateSnapshot,
 )
 from edge_platform.scheduler.repository import SchedulingRepository  # noqa: E402
-from edge_platform.scheduler.scheduler_service import SchedulerService  # noqa: E402
+from edge_platform.scheduler.scheduler_service import PlanStaleError, SchedulerService  # noqa: E402
 from edge_platform.spatial import new_id  # noqa: E402
 from edge_platform.stubs import Storage  # noqa: E402
 
 
 class _FakeWorldState:
-    """confirm() 的 _validate_world_state 依赖；未挂 _world_snapshot 时不会真正被调用。"""
+    """Accept stored snapshots while isolating persistence and hydration behavior."""
 
     def build_snapshot(self, storage):
         return None
@@ -120,6 +121,7 @@ class SchedulerHydrateRegressionTest(unittest.TestCase):
         self.storage = Storage(self.db_path)
         self.storage.init_db()
         self.repo = SchedulingRepository(self.storage)
+        self.repo.save_snapshot(WorldStateSnapshot(snapshot_id="WS-HYDRATE"))
 
     def tearDown(self):
         self.storage.close()
@@ -127,8 +129,30 @@ class SchedulerHydrateRegressionTest(unittest.TestCase):
 
     def _persist_plan(self):
         plan = _make_plan()
+        plan.world_state_version = "WS-HYDRATE"
         self.repo.save_plan(plan)
         return plan
+
+    def test_missing_original_snapshot_blocks_confirm_and_execute(self):
+        for status, action in ((PLAN_PENDING_REVIEW, "confirm"), (PLAN_APPROVED, "execute")):
+            for snapshot_id in ("", "WS-MISSING"):
+                with self.subTest(action=action, snapshot_id=snapshot_id):
+                    plan = _make_plan()
+                    plan.status = status
+                    plan.world_state_version = snapshot_id
+                    self.repo.save_plan(plan)
+                    service = _make_service(self.repo)
+                    service.hydrate_from_repository()
+                    with self.assertRaisesRegex(PlanStaleError, "原始世界快照"):
+                        if action == "confirm":
+                            service.confirm(plan.plan_id, "leader1", "同意")
+                        else:
+                            service.execute(plan.plan_id)
+                    self.assertEqual(service.get_plan(plan.plan_id).status, status)
+                    self.assertEqual(self.repo.get_plan(plan.plan_id)["status"], status)
+                    self.assertEqual(self.repo.list_assignments(), [])
+                    self.assertEqual(self.repo.list_reservations(), [])
+                    self.assertEqual(self.repo.list_decisions(), [])
 
     def test_hydrate_restores_candidate_assignments_and_full_chain(self):
         """持久化 → 新实例 hydrate → confirm → execute 全链路成功。"""
@@ -202,6 +226,7 @@ class SchedulerHydrateRegressionTest(unittest.TestCase):
         end = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
         plan = SchedulePlan(
             plan_id="PLN-HYDRATE-2",
+            world_state_version="WS-HYDRATE",
             request_id="REQ-HYDRATE-2",
             version=1,
             status=PLAN_PENDING_REVIEW,
@@ -262,6 +287,7 @@ class SchedulerHydrateRegressionTest(unittest.TestCase):
         end = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
         plan = SchedulePlan(
             plan_id="PLN-HYDRATE-3",
+            world_state_version="WS-HYDRATE",
             request_id="REQ-HYDRATE-3",
             version=1,
             status=PLAN_PENDING_REVIEW,

@@ -13,6 +13,11 @@ Plan 状态机：shadow → simulating → pending_review → approved → dispa
 """
 
 import logging
+import threading
+from copy import deepcopy
+from datetime import datetime
+from functools import wraps
+from hashlib import sha256
 
 from edge_platform.spatial import new_id, now_iso
 
@@ -21,14 +26,18 @@ from .models import (
     PLAN_ARCHIVED,
     PLAN_DISPATCHED,
     PLAN_PENDING_REVIEW,
+    PLAN_SHADOW,
+    PLAN_SIMULATING,
     TASK_DISPATCHED,
     TASK_EXECUTING,
     Assignment,
     CandidateAssignment,
     ScheduleFeedback,
     ScheduleRequestMW,
+    WorldStateSnapshot,
     validate_plan_transition,
 )
+from .plan_evaluation import evaluate_plan
 from .replanner import Replanner
 from .reservation import ReservationConflictError
 
@@ -72,6 +81,14 @@ def _serialize_task(task):
     if callable(to_dict):
         return to_dict()
     return task
+
+
+def _serialized(method):
+    @wraps(method)
+    def invoke(self, *args, **kwargs):
+        with self._mutation_lock:
+            return method(self, *args, **kwargs)
+    return invoke
 
 
 def shortest_task_path(from_state, to_state):
@@ -140,6 +157,7 @@ class SchedulerService:
         self.repository = repository
         self.event_bus = event_bus
         self.advisory_only = bool(advisory_only)
+        self._mutation_lock = threading.RLock()
         self._requests = {}
         self._plans = {}
         self._assignments = {}
@@ -384,8 +402,11 @@ class SchedulerService:
 
     # ---- 请求 ----
 
+    @_serialized
     def create_request(self, task_ids, trigger_type, policy_id, created_by):
         """创建调度请求（status=pending）。"""
+        if not task_ids or any(not isinstance(task_id, str) or not task_id.strip() for task_id in task_ids):
+            raise ValueError("调度请求必须包含明确的任务 ID")
         req = ScheduleRequestMW(
             request_id=new_id("REQMW"),
             trigger_type=trigger_type,
@@ -415,15 +436,19 @@ class SchedulerService:
 
     # ---- 生成方案 ----
 
+    @_serialized
     def generate_plans(self, request_id, storage=None):
         """先 build_snapshot → 生成 k 份影子方案 → 存入 registry → 审计。"""
         req = self.get_request(request_id)
         storage = storage or self.storage
         snapshot = self.world_state_service.build_snapshot(storage)
-        tasks = list(getattr(snapshot, "tasks", []) or [])
-        if not tasks:
-            # 用请求中的任务 id 兜底，构造最小任务描述
-            tasks = [{"task_id": tid} for tid in req.task_ids]
+        available_tasks = {
+            task["task_id"]: task for task in (getattr(snapshot, "tasks", []) or [])
+        }
+        missing = sorted(set(req.task_ids) - set(available_tasks))
+        if missing:
+            raise PlanConflictError(f"请求任务缺少可信状态，不能生成方案: {', '.join(missing)}")
+        tasks = [available_tasks[task_id] for task_id in dict.fromkeys(req.task_ids)]
         policy = {"request_id": req.request_id, "policy_id": req.policy_id}
         plans = self.planner.generate_top_k(snapshot, tasks, policy, k=3)
         for plan in plans:
@@ -454,8 +479,40 @@ class SchedulerService:
             )
         return plans
 
+    @_serialized
+    def simulate(self, plan_id, actor_id, reason):
+        self._assert_writable()
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("提交评估必须填写理由")
+        plan = self._get_plan(plan_id)
+        if plan.status != PLAN_SHADOW:
+            raise IllegalStateError(f"仅 shadow 方案可提交评估，当前：{plan.status}")
+        snapshot = self._reference_snapshot(plan)
+        if snapshot is None:
+            raise PlanStaleError("方案缺少原始世界快照，请重新生成方案")
+        self._validate_world_state(plan, plan.world_state_version)
+        request = self.get_request(plan.request_id)
+        evaluation = evaluate_plan(plan, snapshot, request.task_ids)
+        updated = deepcopy(plan)
+        validate_plan_transition(updated.status, PLAN_SIMULATING)
+        updated.status = PLAN_SIMULATING
+        target = PLAN_PENDING_REVIEW if evaluation["feasible"] else PLAN_SHADOW
+        validate_plan_transition(updated.status, target)
+        updated.status = target
+        updated.constraint_summary = {**updated.constraint_summary, "evaluation": evaluation}
+        self._persist_plan(updated)
+        self._plans[plan_id] = updated
+        self._record_decision(updated, "simulate", actor_id, reason)
+        self._audit(actor_id, "simulate_plan", "plan", plan_id, plan.to_dict(), updated.to_dict(), reason)
+        self._publish(
+            "schedule.evaluated", entity_id=plan_id, version=updated.version,
+            payload={"request_id": plan.request_id, "status": target, "evaluation": evaluation},
+        )
+        return updated
+
     # ---- 确认 / 驳回 ----
 
+    @_serialized
     def confirm(self, plan_id, actor_id, reason, world_state_version=None):
         """确认方案：校验理由、状态、世界状态新鲜度，并为每个 assignment 做预约。
 
@@ -541,6 +598,15 @@ class SchedulerService:
         )
         return plan
 
+    def _reference_snapshot(self, plan):
+        snapshot = getattr(plan, "_world_snapshot", None)
+        if snapshot is None and plan.world_state_version and self.repository is not None:
+            stored = self.repository.get_snapshot(plan.world_state_version)
+            if stored:
+                snapshot = WorldStateSnapshot(**{key: value for key, value in stored.items() if key != "id"})
+                plan._world_snapshot = snapshot
+        return snapshot
+
     def _validate_world_state(self, plan, world_state_version):
         """确认前校验世界状态：版本匹配、不过期、关键未变化。"""
         if world_state_version and world_state_version != plan.world_state_version:
@@ -548,9 +614,9 @@ class SchedulerService:
                 f"传入世界状态版本 {world_state_version} 与方案版本 "
                 f"{plan.world_state_version} 不符"
             )
-        ref_snapshot = getattr(plan, "_world_snapshot", None)
+        ref_snapshot = self._reference_snapshot(plan)
         if ref_snapshot is None:
-            return
+            raise PlanStaleError("方案缺少原始世界快照，请重新生成方案")
         if self.world_state_service.is_stale(ref_snapshot):
             raise PlanStaleError("方案基于的世界状态已过期，请重新生成方案")
         if self.storage is not None:
@@ -558,6 +624,7 @@ class SchedulerService:
             if self.world_state_service.key_changed(ref_snapshot, current):
                 raise PlanStaleError("确认前检测到世界状态关键变化，请重新规划")
 
+    @_serialized
     def reject(self, plan_id, actor_id, reason):
         """驳回方案：状态 → archived，并写审计。"""
         plan = self._get_plan(plan_id)
@@ -580,7 +647,8 @@ class SchedulerService:
 
     # ---- 执行（派工） ----
 
-    def execute(self, plan_id):
+    @_serialized
+    def execute(self, plan_id, actor_id="system"):
         """仅 PLAN_APPROVED 可执行 → 生成正式 Assignment（status=dispatched），
         标记 PLAN_DISPATCHED；非 approved 抛异常（未确认不得执行）。
         P0-SCHED-OWNERSHIP：advisory 模式（connected production）下拒绝——
@@ -592,6 +660,7 @@ class SchedulerService:
             raise IllegalStateError(
                 f"未经确认不得执行（当前状态：{plan.status}）"
             )
+        self._validate_world_state(plan, plan.world_state_version)
         # EDGE-110：先做状态机校验再创建/持久化 assignments——
         # 原实现先生成派工落库后校验，验证失败时派工已泄露到存储。
         validate_plan_transition(plan.status, PLAN_DISPATCHED)
@@ -624,7 +693,7 @@ class SchedulerService:
         plan.executed_at = now_iso()
         self._persist_plan(plan)
         self._audit(
-            "system",
+            actor_id,
             "execute_plan",
             "plan",
             plan_id,
@@ -636,6 +705,7 @@ class SchedulerService:
 
     # ---- 反馈 / 重排 ----
 
+    @_serialized
     def feedback(self, plan_id, actual_outcome):
         """记录执行结果回流（ScheduleFeedback），供学习闭环使用。
 
@@ -660,6 +730,72 @@ class SchedulerService:
         )
         return fb
 
+    @_serialized
+    def record_execution_feedback(self, plan_id, actor_id, idempotency_key):
+        self._assert_writable()
+        if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key.strip()) <= 128:
+            raise ValueError("执行反馈必须提供 1..128 字符幂等键")
+        plan = self._get_plan(plan_id)
+        if plan.status != PLAN_DISPATCHED:
+            raise IllegalStateError("仅已派工方案可记录执行反馈")
+        feedback_id = "FB-" + sha256(f"{plan_id}:{idempotency_key}".encode()).hexdigest()
+        if feedback_id in self._feedback:
+            return self._feedback[feedback_id]
+        assignments = [assignment for assignment in self._assignments.values() if assignment.plan_id == plan_id]
+        if not assignments or any(assignment.status not in {"completed", "cancelled"} for assignment in assignments):
+            raise IllegalStateError("请先完成或取消已派发任务，再记录本轮执行反馈")
+        snapshot = self._reference_snapshot(plan)
+        sources = {
+            device["device_id"]: device.get("source_type")
+            for device in (snapshot.devices if snapshot else [])
+        }
+        actual = {}
+        for assignment in assignments:
+            actual_seconds = None
+            planned_seconds = None
+            try:
+                planned_seconds = (
+                    datetime.fromisoformat(assignment.planned_end.replace("Z", "+00:00"))
+                    - datetime.fromisoformat(assignment.planned_start.replace("Z", "+00:00"))
+                ).total_seconds()
+                if planned_seconds < 0:
+                    planned_seconds = None
+                if assignment.actual_start and assignment.actual_end:
+                    actual_seconds = (
+                        datetime.fromisoformat(assignment.actual_end.replace("Z", "+00:00"))
+                        - datetime.fromisoformat(assignment.actual_start.replace("Z", "+00:00"))
+                    ).total_seconds()
+                    if actual_seconds < 0:
+                        actual_seconds = None
+            except (ValueError, TypeError):
+                raise PlanConflictError("执行时间记录无效，请核实后重试") from None
+            actual[assignment.task_id] = {
+                "assignment_id": assignment.assignment_id,
+                "status": assignment.status,
+                "source_type": sources.get(assignment.device_id),
+                "actual_start": assignment.actual_start or None,
+                "actual_end": assignment.actual_end or None,
+                "duration_seconds": actual_seconds,
+                "duration_delta_seconds": (
+                    actual_seconds - planned_seconds
+                    if actual_seconds is not None and planned_seconds is not None else None
+                ),
+            }
+        feedback = ScheduleFeedback(
+            feedback_id=feedback_id, plan_id=plan_id, accepted=True,
+            predicted={assignment.task_id: assignment.to_dict() for assignment in plan.assignments},
+            actual=actual, operator_comment=f"执行记录汇总；操作人：{actor_id}",
+        )
+        self._persist_feedback(feedback)
+        self._feedback[feedback_id] = feedback
+        self._audit(actor_id, "execution_feedback", "plan", plan_id, None, feedback.to_dict(), "observed outcomes")
+        self._publish(
+            "schedule.feedback_recorded", entity_id=feedback_id, version=1,
+            payload={"plan_id": plan_id, "feedback_id": feedback_id},
+        )
+        return feedback
+
+    @_serialized
     def replan(self, plan_id, trigger_type, actor_id, reason):
         """局部重调度：冻结 executing/locked 分配，生成新版本方案（version+1）。
 
@@ -677,7 +813,7 @@ class SchedulerService:
         tasks = [_serialize_task(t) for t in getattr(plan, "_all_tasks", [])]
         policy = {"request_id": plan.request_id, "policy_id": ""}
         world_state = getattr(plan, "_world_snapshot", None)
-        if world_state is None and self.storage is not None:
+        if self.storage is not None:
             world_state = self.world_state_service.build_snapshot(self.storage)
         new_plan = self.replanner.replan(
             world_state,
@@ -751,6 +887,7 @@ class SchedulerService:
             items = [r for r in items if getattr(r, "status", "") == status]
         return items
 
+    @_serialized
     def set_assignment_status(self, assignment_id, new_status, actor_id, reason="", force=False):
         """校验合法的派工状态转换并落地（start/pause/complete/cancel/override）。
 
@@ -867,6 +1004,7 @@ class SchedulerService:
 
     # ---- 任务（Phase 6 API） ----
 
+    @_serialized
     def create_task(self, actor_id="", **fields):
         """创建任务（Task 模型），持久化并发布 task.created 事件，返回 Task。"""
         from .models import Task
@@ -897,6 +1035,7 @@ class SchedulerService:
             return []
         return self.repository.list_tasks(status=status)
 
+    @_serialized
     def update_task(self, task_id, actor_id="", expected_version=None, reason="", **fields):
         """乐观锁更新任务：字段含 status 时做状态机校验。返回更新后的 dict。"""
         if self.repository is None:

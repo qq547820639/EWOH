@@ -215,7 +215,7 @@ function reconcile(rootDir) {
   // Canonical "managed tables" footprint = managed_tables only. The
   // additional_hardened_existing_tables are EXISTING tables hardened with
   // RLS/org_id (e.g. ewoh_organization, ewoh_personnel), NOT part of the
-  // managed 51-table footprint, so they must not be added to the count.
+  // final 74-table managed footprint, so they must not be added to the count.
   const totalComputed = managedCount;
   const additionalCountDetail = additionalCount > 0 ? `; additional_hardened ${additionalCount} (separate, not counted)` : '';
 
@@ -271,8 +271,8 @@ function reconcile(rootDir) {
         `state=${stateClaimed ?? 'n/a'}, release=${releaseClaimed ?? 'n/a'}).`,
     });
     recommendations.push(
-      'C1: 51-table footprint has no single authoritative source. Reconcile db/contracts/schema-manifest.yaml ' +
-        'with CHANGELOG (48->51), state.json postgres_ddl_rls_gate, and release-manifest evidence.postgres_gate. ' +
+      'C1: the final managed footprint has no single authoritative source. Reconcile db/contracts/schema-manifest.yaml ' +
+        'with CHANGELOG, state.json postgres_ddl_rls_gate, and release-manifest evidence.postgres_gate. ' +
         'Do not auto-edit any authoritative source; decide the canonical count and update all sources consistently.',
     );
   }

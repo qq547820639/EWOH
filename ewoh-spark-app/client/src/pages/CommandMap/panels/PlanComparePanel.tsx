@@ -2,10 +2,18 @@
  *
  * 数据 = 后端 comparePlansV2（PlanCompareResult）+ active plans 下拉选择。
  * 前端只做选择与展示；change 分类/churn/reasons 全部来自后端。
+ *
+ * UR7（2026-09-13 对抗审查）：取数源与 CommandMapShell 统一——同一 queryKey
+ * （['scheduler-compare', baseline, candidate]）。此前面板自带一份手动 fetch，
+ * 与 shell 自动查询（地图 PlanCompareLayer / PlanDiffDrawer 消费）各自请求：
+ * 打开对比后地图已画出 diff 而面板为空，点击后面板取自第二个时点的请求，
+ * 方案被 SSE 更新过时面板摘要与地图叠加层不一致。改为消费同一 React Query
+ * 缓存后单一取数源；「执行对比」= refetch（需要刷新时的显式动作）。
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getActivePlans, comparePlansV2 } from '@client/src/api/scheduler';
+import { queryKeys } from '@client/src/hooks/queryKeys';
 import type { SchedulingPlanV2, PlanCompareResult, ReplanPreviewResult } from '@shared/api.interface';
 import type { PlanCompareMode, PlanCompareUiState } from '../vm/planCompareVM';
 
@@ -75,17 +83,35 @@ export function PlanComparePanel({
   replanPreview,
 }: PlanComparePanelProps): React.ReactElement {
   const { data: plansData } = useQuery<SchedulingPlanV2[]>({
-    queryKey: ['scheduler-active-plans'],
+    // CLI-715：缓存键按当前登录组织分片（还原此处的无 org 原始键写法）。
+    queryKey: queryKeys.schedulerActivePlans,
     queryFn: getActivePlans,
   });
   const plans = plansData ?? [];
 
-  const [result, setResult] = useState<PlanCompareResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const baseline = plans.find((p) => p.planId === ui.baselinePlanId) ?? null;
   const candidate = plans.find((p) => p.planId === ui.candidatePlanId) ?? null;
+
+  // UR7：与 CommandMapShell.compareResultQuery 同 key 同语义——单一取数源。
+  // 非法配对（缺 id / baseline === candidate）返回 null，与 shell 的 queryFn 一致。
+  const pairValid =
+    !!ui.baselinePlanId && !!ui.candidatePlanId && ui.baselinePlanId !== ui.candidatePlanId;
+  const compareQuery = useQuery<PlanCompareResult | null>({
+    queryKey: ['scheduler-compare', ui.baselinePlanId, ui.candidatePlanId],
+    queryFn: async () => {
+      if (!pairValid || !ui.baselinePlanId || !ui.candidatePlanId) return null;
+      return comparePlansV2(ui.baselinePlanId, ui.candidatePlanId);
+    },
+    enabled: pairValid,
+  });
+  const result = compareQuery.data ?? null;
+  // isFetching 覆盖 shell 自动取数与本面板的手动 refetch（同一缓存的在途状态）。
+  const loading = compareQuery.isFetching;
+  const error = compareQuery.isError
+    ? (compareQuery.error instanceof Error
+        ? compareQuery.error.message
+        : String(compareQuery.error))
+    : null;
 
   // 默认选择：最后两个方案（新方案为 candidate）。
   useEffect(() => {
@@ -97,20 +123,6 @@ export function PlanComparePanel({
       });
     }
   }, [plans, ui, onUiChange]);
-
-  const runCompare = useMemo(() => {
-    if (!ui.baselinePlanId || !ui.candidatePlanId || ui.baselinePlanId === ui.candidatePlanId) {
-      return null;
-    }
-    return () => {
-      setLoading(true);
-      setError(null);
-      comparePlansV2(ui.baselinePlanId!, ui.candidatePlanId!)
-        .then(setResult)
-        .catch((e: unknown) => setError((e as Error)?.message ?? String(e)))
-        .finally(() => setLoading(false));
-    };
-  }, [ui.baselinePlanId, ui.candidatePlanId]);
 
   const diffByTask = result?.diffByTask ?? [];
   const focusCount = diffByTask.length;
@@ -186,8 +198,8 @@ export function PlanComparePanel({
 
       <button
         type="button"
-        onClick={() => runCompare?.()}
-        disabled={!runCompare || loading}
+        onClick={() => void compareQuery.refetch()}
+        disabled={!pairValid || loading}
         className="rounded-md bg-cyan-600/80 px-2 py-1 text-[10px] font-medium text-white hover:bg-cyan-500/80 disabled:opacity-40"
       >
         {loading ? '对比中…' : '执行对比'}

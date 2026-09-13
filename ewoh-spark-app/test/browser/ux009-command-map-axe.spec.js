@@ -221,4 +221,36 @@ test.describe('UX-009/CommandMapAxe', () => {
     await expect(firstRow).toHaveAttribute('aria-selected', 'true');
     await runAxeScan(page, 'command-map-conflicts-table');
   });
+
+  /**
+   * 回归（2026-09 axe color-contrast 偶发 serious）：
+   * 1) 数据新鲜度徽标是「软底（bg-*-/20）+ 语义前景（*-on-soft）」组合——主色直接作
+   *    文字色时深色表面实测 4.16:1（warning/20）与 2.70:1（info/20）；
+   * 2) 色调切换（无证据→实时）曾在帧饥饿时长时间保留旧色调的 computed style：
+   *    reduced-motion 全局规则把 transition-duration 压到 0.01ms，而
+   *    transition-property 仍是初始值 all，于是每次换色都生成 CSSTransition，
+   *    currentTime 停在 0 时 axe 采样到的是**上一种色调**的颜色。
+   * 因此这里同时锁定「过渡被显式关闭」与「整行无对比度违规」。
+   */
+  test('数据新鲜度徽标：颜色过渡被显式关闭且无对比度违规', async ({ page }) => {
+    await mockApi(page, COMMAND_MAP_MOCK);
+    await openSession(page, baseUrl, ROLES.dispatcher, '/command-map');
+    await expect(page.locator('#command-map-main')).toBeVisible();
+    const row = page.getByRole('group', { name: '数据新鲜度' });
+    await expect(row).toBeVisible();
+    // 每个徽标（tooltip 触发器）都必须没有可运行的 transition：色调变化立即生效。
+    const transitionProperties = await row
+      .locator('[data-slot="tooltip-trigger"]')
+      .evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).transitionProperty));
+    expect(transitionProperties.length).toBeGreaterThan(0);
+    for (const value of transitionProperties) {
+      expect(value).toBe('none');
+    }
+    // 等待一次数据更新后再扫描（覆盖「色调刚切换」的窗口）。
+    await page.waitForTimeout(150);
+    const results = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
+    expect(
+      results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join('; ')}`),
+    ).toEqual([]);
+  });
 });

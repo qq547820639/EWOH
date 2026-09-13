@@ -621,7 +621,9 @@ describe('DomainPersistenceService', () => {
   });
 
   it('releases a lock only when the holder matches or admin', async () => {
-    const { db } = buildDb({ selectRows: [lockRow()] });
+    // 乐观锁 CAS（服务端 returning 判命中）需要替身返回命中行：
+    // 0 行 = 并发已被改写 → 服务端 409（正是"没写成不得伪造成已释放"）。
+    const { db } = buildDb({ selectRows: [lockRow()], updateReturning: [{ id: 'lock-1' }] });
     const service = new DomainPersistenceService(db as never);
     const result = await service.releaseLock({
       orgId: 'org-1',

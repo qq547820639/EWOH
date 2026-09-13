@@ -16,6 +16,7 @@ import {
   createEventBatcher,
   type EventBatch,
 } from './schedulerRealtimeCore';
+import { queryKeys } from '@client/src/hooks/queryKeys';
 
 describe('schedulerRealtimeCore.nextSequence（单调守卫 + 缺口检测）', () => {
   it('正常增量 seq = last + 1 → accept 且无 gap', () => {
@@ -110,10 +111,10 @@ describe('schedulerRealtimeCore.mapToV2Status（内部状态 → V2 枚举）', 
 describe('schedulerRealtimeCore.pollingInvalidateKeys（轮询兜底刷新决策关键集）', () => {
   it('覆盖活跃方案 / 快照 / 资源 / 冲突 / 路由（Task 2.3/2.4）', () => {
     const keys = pollingInvalidateKeys();
-    expect(keys).toContainEqual(['scheduler-active-plans']);
-    expect(keys).toContainEqual(['scheduler', 'snapshot']);
-    expect(keys).toContainEqual(['scheduler-resource-state']);
-    expect(keys).toContainEqual(['scheduler', 'conflicts', {}]);
+    expect(keys).toContainEqual(queryKeys.schedulerActivePlans);
+    expect(keys).toContainEqual(queryKeys.schedulerSnapshot);
+    expect(keys).toContainEqual(queryKeys.schedulerResourceState);
+    expect(keys).toContainEqual(queryKeys.schedulerConflicts());
     expect(keys).toContainEqual(['scheduler-routes']);
   });
 });

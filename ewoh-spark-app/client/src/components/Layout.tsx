@@ -267,7 +267,7 @@ const Layout = () => {
             ref={menuButtonRef}
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-muted lg:hidden"
+            className="inline-flex h-8 min-h-8 w-8 min-w-8 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-muted lg:hidden"
             aria-label={UI_ARIA_LABELS.openNavigation}
           >
             <Menu className="h-4 w-4" />

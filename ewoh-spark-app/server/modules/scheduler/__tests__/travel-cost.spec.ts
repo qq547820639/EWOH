@@ -224,6 +224,29 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(c.feasible).toBe(false);
   });
 
+  it('缺 org 上下文 → 跳过缓存写（不落 system 哨兵、不污染主事务；2026-09-13 回归）', async () => {
+    const insert = jest.fn(() => ({
+      values: jest.fn(() => ({
+        onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+      })),
+    }));
+    const db = { insert } as never;
+    const svc2 = new TravelCostService(
+      db as never,
+      { getActivePolicy: jest.fn(), getConfig: jest.fn() } as never,
+      {} as never,
+    );
+    // matrix 为最小形状——缺 org 时服务层在触碰 db 前即返回，形状仅需可引用。
+    const minimalMatrix = {
+      matrixId: 'RCM-X', taskId: 't-x', snapshotVersion: 'WS-X', policyVersion: 1,
+      solverVersion: 'heuristic-v2', routeGraphVersion: null, candidateSetHash: null,
+      candidates: [], generatedAt: new Date().toISOString(),
+    } as never;
+    await svc2.persistMatrix(minimalMatrix, null);
+    await svc2.persistMatrix(minimalMatrix, '');
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it('决策 D-D：矩阵落库缓存（persistMatrix 写、getCachedMatrix 读、同键幂等覆盖）', async () => {
     const { svc, rows } = makeSvc({ calculateRouteBetween: jest.fn() });
     const cand = { personId: 'p1', deviceId: null, stationId: 'S1' };
@@ -245,7 +268,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       ],
       generatedAt: new Date().toISOString(),
     };
-    await svc.persistMatrix(matrix);
+    await svc.persistMatrix(matrix, 'org-1');
     expect(rows).toHaveLength(1);
 
     const cached = await svc.getCachedMatrix('t1', 'WS-MATRIX-0001', 1, '1', hash);
@@ -255,7 +278,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
     expect(cached!.candidates[0].feasible).toBe(true);
 
     // 幂等覆盖：再次写不新增行。
-    await svc.persistMatrix(matrix);
+    await svc.persistMatrix(matrix, 'org-1');
     expect(rows).toHaveLength(1);
   });
 
@@ -273,7 +296,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
-    await svc.buildMatrix(snapshot, TASK, candidates);
+    await svc.buildMatrix(snapshot, TASK, candidates, 'org-1');
     expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1);
 
     // 切换策略版本（同 snapshot/task/candidates）→ 不应复用缓存，应重新计算。
@@ -281,7 +304,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       version: 2, solverVersion: 'heuristic-v3',
       weights: { lateness: 3, travel: 1, wait: 1, workload: 1, station: 1, change: 0.5, risk: 1, energy: 0.5 },
     });
-    const matrix2 = await svc.buildMatrix(snapshot, TASK, candidates);
+    const matrix2 = await svc.buildMatrix(snapshot, TASK, candidates, 'org-1');
     expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(2);
     expect(matrix2.policyVersion).toBe(2);
     expect(matrix2.candidateSetHash).toBe(candidateSetHash(candidates));
@@ -326,10 +349,10 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       stations: [{ id: 'S1', name: 'S1', x: 0, y: 0, capacity: 2 }],
     });
     const candidates = [{ personId: 'p1', deviceId: 'd1', stationId: 'S1' }];
-    const first = await svc.buildMatrix(snapshot, TASK, candidates);
+    const first = await svc.buildMatrix(snapshot, TASK, candidates, 'org-1');
     expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1);
 
-    const second = await svc.buildMatrix(snapshot, TASK, candidates);
+    const second = await svc.buildMatrix(snapshot, TASK, candidates, 'org-1');
     expect(routing.calculateRouteBetween).toHaveBeenCalledTimes(1); // 命中缓存，未重算
     expect(second.matrixId).toBe(first.matrixId);
   });
@@ -355,7 +378,7 @@ describe('P2-T1: TravelCostService / RouteCostMatrix', () => {
       ],
       generatedAt: new Date().toISOString(),
     };
-    await svc.persistMatrix(matrix);
+    await svc.persistMatrix(matrix, 'org-1');
     expect(rows).toHaveLength(1);
     // 与 standalone_026 全键唯一索引列对齐（route_graph_version 数值序列化为字符串）。
     expect(rows[0]).toMatchObject({

@@ -37,6 +37,8 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
 import { MesModule } from './modules/mes/mes.module';
 import { OeeModule } from './modules/oee/oee.module';
 import { ErpModule } from './modules/erp/erp.module';
+import { MasterDataModule } from './modules/master-data/master-data.module';
+import { MaterialsModule } from './modules/materials/materials.module';
 import { MobileModule } from './modules/mobile/mobile.module';
 import { ScaleModule } from './modules/scale/scale.module';
 import { EventCatalogModule } from './modules/events/event-catalog.module';
@@ -60,10 +62,14 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { InferenceModule } from './modules/inference/inference.module';
 import { ReasoningModule } from './modules/reasoning/reasoning.module';
 import { LearningModule } from './modules/learning/learning.module';
+import { PerceptionModule } from './modules/perception/perception.module';
 import { ReliabilityModule } from './modules/reliability/reliability.module';
 import { SimulationModule } from './modules/simulation/simulation.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { ExoSessionModule } from './modules/exo/exo-session.module';
+import { ShiftModule } from './modules/shift/shift.module';
+import { DataQualityModule } from './modules/data-quality/data-quality.module';
+import { RetrospectiveModule } from './modules/retrospective/retrospective.module';
 
 @Module({
   imports: [
@@ -96,6 +102,8 @@ import { ExoSessionModule } from './modules/exo/exo-session.module';
     MesModule,
     OeeModule,
     ErpModule,
+    MasterDataModule,
+    MaterialsModule,
     MobileModule,
     ScaleModule,
     EventCatalogModule,
@@ -115,10 +123,14 @@ import { ExoSessionModule } from './modules/exo/exo-session.module';
     InferenceModule,
     ReasoningModule,
     LearningModule,
+    PerceptionModule,
     ReliabilityModule,
     SimulationModule,
     NotificationModule,
     ExoSessionModule,
+    ShiftModule,
+    DataQualityModule,
+    RetrospectiveModule,
     WorkOrchestrationModule,
     TimelineModule,
     ObservabilityModule,

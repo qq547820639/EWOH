@@ -12,6 +12,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './test/browser',
+  globalSetup: './test/browser/browser-global-setup.ts',
   testMatch: /scheduler-command-map\.e2e\.spec\.ts/,
   timeout: 120_000,
   workers: 1,

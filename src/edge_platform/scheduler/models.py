@@ -93,8 +93,9 @@ TASK_TRANSITIONS = {
     TASK_PENDING_CONFIRM: {TASK_PENDING_APPROVAL, TASK_PENDING_DISPATCH},
     TASK_PENDING_APPROVAL: {TASK_PENDING_DISPATCH, TASK_DRAFT},
     TASK_PENDING_DISPATCH: {TASK_DISPATCHED},
-    TASK_DISPATCHED: {TASK_RECEIVED},
-    TASK_RECEIVED: {TASK_EXECUTING},
+    # DR-5 方案取消/回滚：派发后/接收后、开始执行前可退回待派发池。
+    TASK_DISPATCHED: {TASK_RECEIVED, TASK_PENDING_DISPATCH},
+    TASK_RECEIVED: {TASK_EXECUTING, TASK_PENDING_DISPATCH},
     TASK_EXECUTING: {TASK_PAUSED, TASK_EXCEPTION, TASK_COMPLETED},
     TASK_PAUSED: {TASK_EXECUTING},
     TASK_EXCEPTION: {TASK_EXECUTING},
@@ -471,6 +472,7 @@ class WorldStateSnapshot:
     reservations: list = field(default_factory=list)
     events: list = field(default_factory=list)
     topology_version: str = ""
+    source_timestamps: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.snapshot_id:
@@ -490,6 +492,7 @@ class WorldStateSnapshot:
             "reservations": list(self.reservations),
             "events": list(self.events),
             "topology_version": self.topology_version,
+            "source_timestamps": dict(self.source_timestamps),
         }
 
 

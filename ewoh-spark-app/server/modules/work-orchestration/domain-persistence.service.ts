@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
+  CURRENT_ORG_ID_FALLBACK_SQL,
   ewohEvidenceMetadata,
   ewohFactoryReplicationSessions,
   ewohGitSyncState,
@@ -177,7 +178,10 @@ export class DomainPersistenceService {
           'only the lock holder or a global admin can release this lock',
         );
       }
-      await db
+      // 乐观锁必须核对命中行数：version 已被并发 renew/release 推进时
+      // UPDATE 命中 0 行，若仍返回 released=true 就是把"没写成"伪造成
+      // "已释放"（调用方以为锁已归还，实际锁仍被持有）。
+      const [updated] = await db
         .update(ewohResourceLocks)
         .set({ active: false, version: sql`${ewohResourceLocks.version} + 1` })
         .where(
@@ -185,7 +189,13 @@ export class DomainPersistenceService {
             eq(ewohResourceLocks.id, row.id),
             eq(ewohResourceLocks.version, row.version),
           ),
+        )
+        .returning({ id: ewohResourceLocks.id });
+      if (!updated) {
+        throw new ConflictException(
+          `Resource ${input.resourceKey} lock changed concurrently (release not applied)`,
         );
+      }
       return { released: true, holder: row.holder };
     });
   }
@@ -284,10 +294,13 @@ export class DomainPersistenceService {
       const [row] = await db
         .select()
         .from(ewohIdempotencyKeys)
+        // 唯一索引是 (org_id, scope, idempotency_key)：读取必须带上与写入列默认
+        // 值同源的租户谓词，否则同 (scope, key) 的跨租户键会互相回放响应。
         .where(
           and(
             eq(ewohIdempotencyKeys.scope, scope),
             eq(ewohIdempotencyKeys.idempotencyKey, key),
+            sql`${ewohIdempotencyKeys.orgId} = ${CURRENT_ORG_ID_FALLBACK_SQL}`,
           ),
         );
       return row?.response as T | undefined;
@@ -381,13 +394,16 @@ export class DomainPersistenceService {
    * 2.C composite: accept a handoff (transferring responsibility) and register the
    * transfer as evidence atomically, so a mid-failure cannot leave the handoff
    * accepted without the responsibility-transfer evidence.
+   * expectedFrom='open'：转移合法性已在调用方校验，但读取与写入是两条语句——
+   * WHERE 必须带上调用方所见的前置状态，否则并发下两个互斥转移会先后落库，
+   * 状态机被静默违反（TOCTOU）。
    */
   async acceptHandoffWithTaskUpdate(
     handoffId: string,
     evidence?: EvidenceMetadataRecord,
   ): Promise<HandoffRecord | null> {
     return this.requestContext.systemTransaction(async (db) => {
-      const handoff = await this.updateHandoffStatusOn(db, handoffId, 'accepted');
+      const handoff = await this.updateHandoffStatusOn(db, handoffId, 'accepted', 'open');
       if (evidence) await this.upsertEvidenceOn(db, evidence);
       return handoff;
     });
@@ -396,9 +412,10 @@ export class DomainPersistenceService {
   async updateHandoffStatus(
     handoffId: string,
     state: 'accepted' | 'rejected' | 'closed',
+    expectedFrom?: string,
   ): Promise<HandoffRecord | null> {
     return this.requestContext.systemTransaction((db) =>
-      this.updateHandoffStatusOn(db, handoffId, state),
+      this.updateHandoffStatusOn(db, handoffId, state, expectedFrom),
     );
   }
 
@@ -617,25 +634,38 @@ export class DomainPersistenceService {
       return this.toLockRecord(updated);
     }
 
-    const [inserted] = await db
-      .insert(ewohResourceLocks)
-      .values({
-        orgId: input.orgId,
-        resourceKey: input.resourceKey,
-        resourceId: input.resourceId,
-        holder: input.holder,
-        purpose: input.purpose,
-        acquiredAt: this.dbNow,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-        renewedAt: this.dbNow,
-        active: true,
-        version: 1,
-      })
-      .returning();
-    if (!inserted) {
+    // 并发插入撞 (org_id, resource_key) 唯一键（23505）必须转 409 冲突，
+    // 而不是把驱动原始错误当 500 抛给调用方——锁竞争是预期内的业务冲突。
+    let insertedRow: Record<string, unknown> | undefined;
+    try {
+      const rows = await db
+        .insert(ewohResourceLocks)
+        .values({
+          orgId: input.orgId,
+          resourceKey: input.resourceKey,
+          resourceId: input.resourceId,
+          holder: input.holder,
+          purpose: input.purpose,
+          acquiredAt: this.dbNow,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          renewedAt: this.dbNow,
+          active: true,
+          version: 1,
+        })
+        .returning();
+      insertedRow = rows[0] as Record<string, unknown> | undefined;
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new ConflictException(
+          `Resource ${input.resourceKey} locked concurrently`,
+        );
+      }
+      throw error;
+    }
+    if (!insertedRow) {
       throw new ConflictException(`Resource ${input.resourceKey} locked concurrently`);
     }
-    return this.toLockRecord(inserted);
+    return this.toLockRecord(insertedRow);
   }
 
   private async createHandoffOn(
@@ -678,14 +708,25 @@ export class DomainPersistenceService {
     db: DbOrTx,
     handoffId: string,
     state: 'accepted' | 'rejected' | 'closed',
+    expectedFrom?: string,
   ): Promise<HandoffRecord | null> {
     const update: Record<string, unknown> = { state };
     if (state === 'accepted') update.acceptedAt = this.dbNow;
     if (state === 'closed') update.closedAt = this.dbNow;
+    // expectedFrom：调用方校验转移合法性时所依据的前置状态。写入时以它作
+    // 谓词，读-写间隙里被并发转移抢先的行命中 0 行 → 返回 null（调用方转
+    // 409），互斥转移不再静默双写。
     const [updated] = await db
       .update(ewohHandoffs)
       .set(update)
-      .where(eq(ewohHandoffs.handoffId, handoffId))
+      .where(
+        expectedFrom
+          ? and(
+              eq(ewohHandoffs.handoffId, handoffId),
+              eq(ewohHandoffs.state, expectedFrom),
+            )
+          : eq(ewohHandoffs.handoffId, handoffId),
+      )
       .returning();
     return updated ? this.toHandoffRecord(updated) : null;
   }
@@ -815,10 +856,12 @@ export class DomainPersistenceService {
     const [row] = await db
       .select()
       .from(ewohIdempotencyKeys)
+      // 同上：读取与写入（列默认值）用同一租户表达式，避免跨租户回放响应。
       .where(
         and(
           eq(ewohIdempotencyKeys.scope, scope),
           eq(ewohIdempotencyKeys.idempotencyKey, key),
+          sql`${ewohIdempotencyKeys.orgId} = ${CURRENT_ORG_ID_FALLBACK_SQL}`,
         ),
       );
     return row?.response as T | undefined;

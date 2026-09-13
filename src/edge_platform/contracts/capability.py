@@ -36,8 +36,25 @@ KNOWN_VALUES = (
     "assembly",
     "inspection",
     "material_handling",
+    "observe.temperature",
+    "observe.vibration",
+    "observe.noise",
+    "observe.air_quality",
+    "observe.person_detection",
+    "observe.pose",
+    "observe.action",
+    "observe.position",
+    "observe.load",
+    "observe.battery",
+    "observe.wearer",
+    "interact.assist",
+    # 执行类能力（2026-09-11 登记）：此前只在调度侧型号白名单，词表外 → 不可校验/不可停用
+    "exo-lite",
+    "crane",
+    # 执行机构（AGV/PLC，2026-09-12 NO-59b）：边缘 actuator 适配器上行的执行层能力
+    "transport.move",
+    "observe.actuator_state",
 )
-
 _KIND_SET = frozenset(CAPABILITY_KINDS)
 _PROVIDER_SET = frozenset(PROVIDER_TYPES)
 
@@ -114,3 +131,64 @@ def validate_capability(record):
     if record.get("auditTrail") is not True:
         return ["audit_required"]
     return []
+
+
+#: 能力名 → 来源字段路径（**平台摄入 DTO 口径**，与 contracts/capability/capability.schema.json
+#: deviceObservationFields 同源；边缘归一化器字段漂移对账用）。
+# 能力安全相关等级（NO-19a；与 contracts/capability/capability.schema.json 的
+# `capabilityRiskLevels` + `capabilityRisk` 精确对账，由 tests/test_capability_field_parity.py 锁定）。
+CAPABILITY_RISK_LEVELS = ("low", "medium", "high")
+
+CAPABILITY_RISK = {
+    # 高：直接作用于人体或吊装载荷，或让设备在共享空间里动起来（NO-59b：transport.move）
+    "exo-lift": "high",
+    "interact.assist": "high",
+    "crane": "high",
+    "forklift": "high",
+    "transport.move": "high",
+    # 中：有执行动作但风险可控；或"观测人员"涉及隐私
+    "exo-lite": "medium",
+    "vacuum": "medium",
+    "observe.person_detection": "medium",
+    "observe.pose": "medium",
+    "observe.action": "medium",
+    "observe.position": "medium",
+    "observe.wearer": "medium",
+    "material_handling": "medium",
+    # 低：设备自身状态/环境量、普通作业资格
+    "observe.temperature": "low",
+    "observe.vibration": "low",
+    "observe.noise": "low",
+    "observe.air_quality": "low",
+    # 执行机构自身状态（位置/电量/故障）：低风险，但"命令面"另由高危能力把关
+    "observe.actuator_state": "low",
+    "observe.load": "low",
+    "observe.battery": "low",
+    "first_aid": "low",
+    "assembly": "low",
+    "inspection": "low",
+}
+
+DEVICE_OBSERVATION_FIELDS = {
+    "observe.temperature": ("temperature",),
+    "observe.vibration": ("vibration",),
+    "observe.noise": ("noise",),
+    "observe.air_quality": ("air_quality",),
+    "observe.person_detection": ("detections[].track_id", "detections[].confidence"),
+    "observe.pose": ("detections[].skeleton",),
+    "observe.action": ("detections[].action",),
+    "observe.position": ("x", "y", "z", "confidence"),
+    "observe.load": ("load.cumulative_load_score", "load.torque_nm"),
+    "observe.battery": ("device.battery_pct",),
+    "observe.wearer": ("worker_id",),
+    "interact.assist": ("load.assist_level",),
+    # 执行类能力不产出观测字段：空元组表示"该能力不产生观测列"（不是"未登记"）
+    "exo-lift": (),
+    "exo-lite": (),
+    "vacuum": (),
+    "crane": (),
+    # NO-59b：执行机构（AGV/PLC）。执行能力不产出观测列；状态观测给出可核对字段，
+    # 字段名与 /api/ingest/actuator 的 DTO 一致（state/battery_pct/fault_code）。
+    "transport.move": (),
+    "observe.actuator_state": ("state", "battery_pct", "fault_code"),
+}

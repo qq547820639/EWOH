@@ -3,38 +3,31 @@
  * Tests the full login flow, dashboard, navigation, and core business pages.
  */
 import { test, expect } from '@playwright/test';
+const { resolveBrowserBaseUrl, browserCredentials } = require('./runtime-target');
 
-const BASE_URL = 'http://121.43.230.202:3000';
-const ADMIN_USER = 'admin';
+const BASE_URL = resolveBrowserBaseUrl();
 
 // R-03 交付收口（2026-08-30）：原硬编码 token 会过期导致整批注入用例失败——
 // 改为运行时调用真实 login API 获取新鲜 token；密码经 EWOH_TEST_ADMIN_PASS
 // 环境变量注入，绝不入库。
-const ADMIN_PASS = process.env.EWOH_TEST_ADMIN_PASS ?? '';
 
 let ACCESS_TOKEN = '';
-const AUTH_USER = JSON.stringify({
-  userId: 'admin',
-  username: 'admin',
-  roles: ['global_admin'],
-  orgId: '00000000-0000-4000-8000-000000000001',
-});
+let AUTH_USER = '';
 
 test.beforeAll(async () => {
-  if (!ADMIN_PASS) {
-    test.skip(true, '需要 EWOH_TEST_ADMIN_PASS 环境变量（真实平台凭据不入库）');
-    return;
-  }
+  const credentials = browserCredentials();
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
+    body: JSON.stringify(credentials),
   });
   if (!res.ok) {
     throw new Error(`真实平台登录失败 (${res.status})——请核对新凭据或服务状态`);
   }
-  const data = (await res.json()) as { accessToken: string };
+  const data = (await res.json()) as { accessToken: string; user: unknown };
   ACCESS_TOKEN = data.accessToken;
+  expect(data.user).toBeDefined();
+  AUTH_USER = JSON.stringify(data.user);
 });
 
 test.use({ serviceWorkers: 'block' });
@@ -209,18 +202,23 @@ test.describe('Responsive After Login', () => {
 
 // ─── Section 6: Logout Flow ───
 test.describe('Logout Flow', () => {
-  test('clearing session redirects to login', async ({ page }) => {
+  // 2026-09-13 重写：原用例"清空 Web Storage 后应跳登录页"断言的是**废弃架构**。
+  // 现行认证（CLI-501/701）：refresh token 在 **httpOnly cookie**（服务端下发/吊销，
+  // JS 不可见），access token 才在 sessionStorage。只清 Web Storage 撤销不了会话
+  // ——刷新走 httpOnly cookie 照常续期，用户保持登录是**安全设计的正确行为**
+  // （XSS 拿不到 30 天长期凭证，清 JS 存储也不构成登出）。真实登出 =
+  // 服务端吊销 refresh cookie（POST /api/auth/logout）+ 客户端清理 + 跳转，
+  // 即侧栏的「退出登录」按钮。本用例改为走这条真实路径。
+  test('退出登录按钮：服务端吊销 refresh 会话并重定向登录页', async ({ page }) => {
     await injectSessionAndGo(page, '/command-center');
     await page.waitForTimeout(2000);
 
-    // Clear session（access token 同时存在于 sessionStorage 与 localStorage，
-    // 仅清其一在有效 token 下不会触发登录页重定向——auth 存储双通道见 lib/auth.ts）
-    await page.evaluate(() => {
-      sessionStorage.clear();
-      localStorage.clear();
-    });
-    await page.goto(`${BASE_URL}/command-center`);
-    await page.waitForURL(/\/login/, { timeout: 10000 });
+    await page.getByTitle('退出登录').click();
+    await page.waitForURL(/\/login/, { timeout: 10_000 });
     await expect(page).toHaveURL(/\/login/);
+
+    // 登出后重新访问受保护页：refresh cookie 已被服务端吊销，不得再进入业务页。
+    await page.goto(`${BASE_URL}/command-center`);
+    await page.waitForURL(/\/login/, { timeout: 10_000 });
   });
 });

@@ -144,6 +144,59 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
     );
   });
 
+  it('边缘方言：pose.pitch_deg 与帧内 entity_id 必须落库（2026-09-12 实测缺陷回归）', async () => {
+    // 缺陷背景：mapper 只认 `pose.trunk_pitch_deg`，而边缘模拟器/桩与部分直连设备用
+    // `pose.pitch_deg` → 俯仰角静默落 NULL；单帧路径又把 entity_id 无条件覆盖成
+    // 身份映射结果（未登记映射时写 NULL）→"谁被佩戴"永久丢失，感知融合只能报"缺外骨骼源"。
+    const { db, insertRows } = createIngestDb([[{}], []]);
+    const service = new IngestService(
+      db as never,
+      createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
+      createIdentityService() as unknown as never,
+    );
+
+    const result = await service.ingestExoskeleton({
+      device_id: 'EXO-DIALECT-1',
+      entity_id: 'person:P-DIALECT',
+      worker_id: 'worker.zhangwei',
+      event_time: new Date().toISOString(),
+      source_type: 'real',
+      pose: { pitch_deg: 28.4, joint_angles_deg: { left_knee: 45 } },
+    });
+
+    expect(result.accepted).toBe(true);
+    const telemetry = insertRows.find((entry) => entry.table === ewohTelemetry)?.row;
+    expect(telemetry?.pitchDeg).toBe(28.4);
+    expect(telemetry?.entityId).toBe('person:P-DIALECT');
+    expect(telemetry?.workerId).toBe('worker.zhangwei');
+    expect(telemetry?.deviceId).toBe('EXO-DIALECT-1');
+  });
+
+  it('规范字段仍然优先：trunk_pitch_deg 覆盖同名别名', async () => {
+    const { db, insertRows } = createIngestDb([[{}], []]);
+    const service = new IngestService(
+      db as never,
+      createRuleEngine() as unknown as never,
+      createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
+      createIdentityService() as unknown as never,
+    );
+    await service.ingestExoskeleton({
+      device_id: 'EXO-DIALECT-2',
+      entity_id: 'person:P-DIALECT-2',
+      event_time: new Date().toISOString(),
+      pose: { pitch_deg: 10, trunk_pitch_deg: 50 },
+      pitch_deg: 5,
+    });
+    const telemetry = insertRows.find((entry) => entry.table === ewohTelemetry)?.row;
+    // 规范字段（trunk_pitch_deg）优先于别名（pose.pitch_deg / 顶层 pitch_deg）
+    expect(telemetry?.pitchDeg).toBe(50);
+  });
+
   it('normalizes a legacy 0-100 load_score to 0-1', async () => {
     const { db, insertRows } = createIngestDb([[{}], []]);
     const service = new IngestService(

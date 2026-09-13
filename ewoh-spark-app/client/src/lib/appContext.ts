@@ -187,7 +187,7 @@ export function resolveBreadcrumb(
     }
     if (groupLabel) break;
   }
-  if (!groupLabel || !itemLabel) return [{ label: '首页', to: '/command-center' }];
+  if (!groupLabel || !itemLabel) return [{ label: '首页', to: '/factory-operations' }];
   return [{ label: groupLabel }, { label: itemLabel, to: path }];
 }
 

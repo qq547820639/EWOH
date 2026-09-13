@@ -46,10 +46,28 @@ function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const text =
     typeof value === 'object' ? JSON.stringify(value) : String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+  const escaped = escapeCsvFormula(text);
+  if (/[",\n\r]/.test(escaped)) {
+    return `"${escaped.replace(/"/g, '""')}"`;
   }
-  return text;
+  return escaped;
+}
+
+/**
+ * R2-SOP-011：CSV 公式注入防护（CWE-1236）。导出内容含用户可控文本
+ * （工单标题/备注/过滤词等），以 =、+、@ 或制表符开头且非纯数字的单元格
+ * 被表格软件当公式执行（DDE/超链接钓鱼）。统一前置 `'` 降级为文本；
+ * 纯数字（含负数/小数）保持原样，不破坏程序化消费。
+ */
+export function escapeCsvFormula(text: string): string {
+  const first = text.charAt(0);
+  if (first !== '=' && first !== '@' && first !== '\t' && first !== '\r' && first !== '+' && first !== '-') {
+    return text;
+  }
+  if ((first === '+' || first === '-') && Number.isFinite(Number(text))) {
+    return text;
+  }
+  return `'${text}`;
 }
 
 @Injectable()
@@ -126,6 +144,16 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
       });
       return true;
     } catch (error) {
+      // 取消竞争收口：complete/fail 的状态机违约若源于用户取消
+      // （cancelling/cancelled），不得改写为 failed、更不得重排重试——
+      // 否则已取消的导出会被静默复活并最终产出可下载产物。
+      const current = await this.store.get(taskId);
+      if (current && (current.status === 'cancelling' || current.status === 'cancelled')) {
+        this.logger.log(
+          `workbench export ${taskId} cancelled mid-run; not requeued (attempts=${claimed.attempts ?? 1})`,
+        );
+        return false;
+      }
       const message =
         error instanceof Error ? error.message : String(error);
       this.logger.warn(
@@ -156,6 +184,15 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
     let total = 0;
     let page = 1;
     for (;;) {
+      // 每页拉取前核对任务状态：已被取消（cancelling/cancelled）时立即中止，
+      // 不再继续产出。否则"用户取消 + worker 恰在产出中"的竞争下，取消被
+      // 静默忽略，导出照常完成并留下可下载产物。
+      const current = await this.store.get(task.id);
+      if (!current || current.status !== 'running') {
+        throw new Error(
+          `workbench export ${task.id} aborted: task status is '${current?.status ?? 'unknown'}' (cancelled or reassigned)`,
+        );
+      }
       const result = await this.roleWorkbench.getWorkbenchList(
         task.role,
         task.listKey,

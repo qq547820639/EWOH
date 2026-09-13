@@ -50,4 +50,5 @@ BEGIN
   END IF;
 END $$;
 
-SELECT 1 AS standalone_057_verified;
+-- 自证标记必须与本迁移号一致（此前误写成 057 → runner 断言 065 标记永远失败，2026-09-12 NO-58 烧账修复）。
+SELECT 1 AS standalone_065_verified;

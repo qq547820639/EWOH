@@ -931,7 +931,10 @@ export class OperationsService {
       standardMinutes,
       deviationMinutes,
       efficiencyPercent,
-      completedAt: body.completedAt ?? now,
+      // NEST-226 语义落地：completedAt 未提供 ≠ "刚好现在完成"。回退 now()
+      // 是把未知完成时间伪造成确定事实（完成时刻被虚增为录入时刻），
+      // 显式 null = 完成时间未知（与 EfficiencyEntryValue 的字段契约一致）。
+      completedAt: body.completedAt ?? null,
       reason: body.reason?.trim() ?? null,
       source: body.source ?? 'manual',
       updatedAt: now,

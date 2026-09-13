@@ -76,6 +76,20 @@ function writeJsonPath(
   value: unknown,
 ) {
   const segments = path.split('.');
+  // CWE-1321：`__proto__` 段会把遍历指针引到 Object.prototype（`{}['__proto__']`
+  // 即 Object.prototype，typeof 为 'object' 天然通过下面的守卫），随后的赋值
+  // 变成全局原型污染——进程级生效、重启前不可恢复。prototype/constructor 段
+  // 一并拒绝（同族攻击面）。路径来自登记时的 mapping rule.to（客户端可控），
+  // 所以必须在写入口（本函数是唯一汇点）拒绝而不是信任登记侧。
+  const illegal = segments.find(
+    (segment) =>
+      segment === '__proto__' ||
+      segment === 'constructor' ||
+      segment === 'prototype',
+  );
+  if (illegal !== undefined) {
+    throw new Error(`illegal mapping target path segment: ${illegal}`);
+  }
   let current = target;
   for (const segment of segments.slice(0, -1)) {
     if (
@@ -720,7 +734,24 @@ export class ScaleService {
         });
         return;
       }
-      writeJsonPath(mapped, rule.to, transformed.value);
+      // 非法目标段（__proto__/constructor/prototype）按结构化错误单条拒绝并
+      // 继续其余规则——既不 500 中断整批，也绝不把污染写入对象/原型。
+      try {
+        writeJsonPath(mapped, rule.to, transformed.value);
+      } catch (error) {
+        errors.push({
+          code: 'ILLEGAL_TARGET_PATH',
+          sourceSystem: (manifest.source as { system?: string } | undefined)
+            ?.system,
+          sourceField: rule.from,
+          targetField: rule.to,
+          rule: index + 1,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'illegal mapping target path',
+        });
+      }
     });
     const passed = errors.length === 0;
     await this.auditService.appendAuditLog({

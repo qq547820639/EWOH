@@ -59,13 +59,13 @@ DROP POLICY IF EXISTS scheduler_plan_org_isolation ON __EWOH_SCHEMA__.ewoh_sched
 CREATE POLICY scheduler_plan_org_isolation ON __EWOH_SCHEMA__.ewoh_schedule_plan
   FOR ALL TO service_role
   USING (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     ) OR org_id IS NULL
   )
   WITH CHECK (
-    org_id = COALESCE(
+    org_id::text = COALESCE(
       NULLIF(current_setting('app.current_org_id', true), ''),
       NULLIF(current_setting('app.primary_org_id', true), '')
     ) OR org_id IS NULL
@@ -229,7 +229,7 @@ DROP INDEX IF EXISTS __EWOH_SCHEMA__.uq_ewoh_device_org_device;
 
 DO $$
 DECLARE
-  r record;
+  restore_entry text;
   v_restore text[] := ARRAY[
     'ewoh_scheduling_run|ewoh_scheduling_run_run_id_key|run_id',
     'ewoh_scheduling_plan_assignment|ewoh_scheduling_plan_assignment_assignment_id_key|assignment_id',
@@ -247,8 +247,8 @@ DECLARE
   ];
   v_parts text[];
 BEGIN
-  FOREACH r IN ARRAY v_restore LOOP
-    v_parts := string_to_array(r, '|');
+  FOREACH restore_entry IN ARRAY v_restore LOOP
+    v_parts := string_to_array(restore_entry, '|');
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint con
         JOIN pg_class c ON c.oid = con.conrelid

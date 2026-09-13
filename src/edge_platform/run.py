@@ -309,6 +309,27 @@ def main():
         print(f"[EWOH] 事件上行已启用 → {settings.event_uplink_url}/api/ingest/events")
     else:
         print("[EWOH] 事件上行未启用（需 EWOH_EVENT_UPLINK_URL）")
+    # 2026-09-10：Edge→Cloud 多源传感器帧上行（环境/摄像头/定位 → /api/ingest/*）。
+    # 消费 STREAM_SENSOR_FRAMES 上的归一化信封；外骨骼默认走 edge_to_spark 专用通道。
+    sensor_uplink = None
+    if settings.sensor_uplink_url:
+        from edge_platform.edge.bridge.sensor_uplink import SensorUplinkBridge
+
+        sensor_uplink = SensorUplinkBridge(
+            bus,
+            settings.sensor_uplink_url,
+            ingest_key=settings.sensor_uplink_key,
+            org_id=settings.sensor_uplink_org_id,
+            queue_path=str(Path(args.db).with_suffix(".sensor-uplink-queue.jsonl")),
+            include_exoskeleton=settings.sensor_uplink_include_exoskeleton,
+        )
+        sensor_uplink.start()
+        print(
+            f"[EWOH] 传感器帧上行已启用 → {settings.sensor_uplink_url}/api/ingest/"
+            f"{{environment|camera|location}}（含外骨骼={settings.sensor_uplink_include_exoskeleton}）"
+        )
+    else:
+        print("[EWOH] 传感器帧上行未启用（需 EWOH_SENSOR_UPLINK_URL 或 EWOH_EVENT_UPLINK_URL）")
     # NO-12d：Edge→Cloud 指标上行（周期快照，ADR-028）。
     # EWOH_METRICS_UPLINK_URL 为空 = 显式关闭（启动打印原因，不静默）。
     metrics_uplink = None
@@ -347,6 +368,7 @@ def main():
         world_projection=world_projection,
         event_uplink=event_uplink,
         metrics_uplink=metrics_uplink,
+        sensor_uplink=sensor_uplink,
     )
     httpd = server.build_server((args.host, args.port), ctx)
     print(f"[EWOH] 平台运行于 http://{args.host}:{int(args.port)} （无公网依赖，可离线演示）")

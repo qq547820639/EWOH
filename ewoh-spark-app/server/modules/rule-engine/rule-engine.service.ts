@@ -90,7 +90,10 @@ export class RuleEngineService {
 
       // 规则 5: DATA_DEGRADED（连续 3 条 degraded）
       if (row.dataQuality === 'degraded') {
-        const consecutive = await this.countRecentDegraded(row.deviceId);
+        // UR4 审查（2026-09-13）：device_id 只在租户内唯一（ewoh_device 唯一键
+        // (org_id, device_id)），连续 degraded 统计必须限定本租户的遥测——
+        // 否则 A 租户的 degraded 历史会给 B 租户同号设备"凑"出降级事件。
+        const consecutive = await this.countRecentDegraded(row.deviceId, row.orgId ?? null);
         if (consecutive >= RuleEngineService.DEGRADED_CONSECUTIVE) {
           if (await this.tryFire('DATA_DEGRADED', row, sourceType, 'L2', 'data', `设备 ${row.deviceId} 数据连续降级 (${consecutive} 条)`, {
             consecutive_degraded: consecutive,
@@ -126,13 +129,20 @@ export class RuleEngineService {
 
   // ===== 内部 =====
 
-  /** 查询最近 N 条遥测，统计末尾连续 degraded 数量 */
-  private async countRecentDegraded(deviceId: string): Promise<number> {
+  /**
+   * 查询最近 N 条遥测，统计末尾连续 degraded 数量。
+   * UR4 审查（2026-09-13）：带 org 谓词——device_id 跨租户可重号，不限定本
+   * 租户会把别的租户的降级历史统计进来（伪造本租户的降级事实）。
+   */
+  private async countRecentDegraded(deviceId: string, orgId: string | null = null): Promise<number> {
     try {
       const recent = await this.db
         .select({ dataQuality: ewohTelemetry.dataQuality })
         .from(ewohTelemetry)
-        .where(eq(ewohTelemetry.deviceId, deviceId))
+        .where(and(
+          eq(ewohTelemetry.deviceId, deviceId),
+          orgId ? eq(ewohTelemetry.orgId, orgId) : undefined,
+        ))
         .orderBy(desc(ewohTelemetry.ts))
         .limit(RuleEngineService.DEGRADED_CONSECUTIVE);
       let count = 0;
@@ -166,11 +176,15 @@ export class RuleEngineService {
     // ADR-009 / NO-04b：事件类型收敛到 Canonical Event Catalog + 信封嵌入
     // （occurred/observed/received 同刻 = 云侧本地生成；Late 语义由共享 helper 计算）。
     const catalogEventType = RULE_EVENT_TYPE_MAP[eventCode] ?? eventType;
-    const dedupKey = `${eventCode}:${row.deviceId}`;
+    // UR4 审查（2026-09-13）：进程内去重键必须带租户维度。ewoh_device 唯一键
+    // 是 (org_id, device_id)（standalone_057），同号设备可跨租户存在；无 org 的
+    // key 会让 A 租户的触发把 B 租户同号设备 30s 窗口内的安全告警
+    // （LOW_BATTERY/POSTURE_RISK 等）静默吞掉。hasRecentEvent 的 DB 查询必须同口径。
+    const dedupKey = `${row.orgId ?? ''}:${eventCode}:${row.deviceId}`;
     if (!this.canTrigger(dedupKey)) return false;
 
     try {
-      if (await this.hasRecentEvent(eventCode, row.deviceId)) {
+      if (await this.hasRecentEvent(eventCode, row.deviceId, row.orgId ?? null)) {
         this.markTriggered(dedupKey);
         return false;
       }
@@ -242,9 +256,14 @@ export class RuleEngineService {
     }
   }
 
+  /**
+   * UR4 审查（2026-09-13）：事件去重查询带 org 谓词——同号设备跨租户存在时，
+   * 不带 org 会读到别的租户 30s 内的事件，把本租户的告警静默吞掉。
+   */
   private async hasRecentEvent(
     eventCode: string,
     deviceId: string,
+    orgId: string | null = null,
   ): Promise<boolean> {
     const [recent] = await this.db
       .select({ eventId: ewohEvent.eventId })
@@ -253,6 +272,7 @@ export class RuleEngineService {
         and(
           eq(ewohEvent.eventCode, eventCode),
           eq(ewohEvent.deviceId, deviceId),
+          orgId ? eq(ewohEvent.orgId, orgId) : undefined,
           gte(
             ewohEvent.createdAt,
             new Date(Date.now() - RuleEngineService.DEDUP_MS),

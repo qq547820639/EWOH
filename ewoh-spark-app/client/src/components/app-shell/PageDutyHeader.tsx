@@ -39,7 +39,7 @@ export function PageDutyHeader({ currentPath }: { currentPath: string }): React.
             <span
               key={page.path}
               aria-current="page"
-              className="inline-flex min-h-11 items-center rounded-md border border-primary bg-primary/5 px-3 text-xs font-medium text-primary sm:min-h-0"
+              className="inline-flex min-h-11 items-center rounded-md border border-primary bg-primary/5 px-3 text-xs font-medium text-primary-on-soft sm:min-h-0"
             >
               {page.label} · {page.duty}
             </span>

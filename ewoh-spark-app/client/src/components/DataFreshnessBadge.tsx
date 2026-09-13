@@ -14,15 +14,19 @@ import {
 } from '@client/src/lib/dataFreshness';
 
 /** 新鲜度状态 → 深色主题徽标样式（与 Command Map 徽标风格一致，CLI-336：
- *  全部使用语义设计令牌）。 */
+ *  全部使用语义设计令牌）。
+ *
+ *  A11Y（UX-009 axe color-contrast）：软底（/20）+ 主色文字在深色表面上不达标
+ *  （实测 warning/20 = 4.16:1、info/20 ≈ 3.5:1 → serious）。凡「软底 + 文字」
+ *  一律使用 *-on-soft 前景令牌：按所在表面取值（亮底深字、深底亮字）。 */
 export const FRESHNESS_STATUS_CLASSES: Record<FreshnessStatus, string> = {
   LIVE: toneBadge.normal,
   DELAYED: toneBadge.degraded,
-  STALE: 'bg-warning/20 text-warning border-warning/30',
+  STALE: 'bg-warning/20 text-warning-on-soft border-warning/30',
   OFFLINE: 'bg-destructive/20 text-destructive-on-soft border-destructive/30',
   REPLAY: toneBadge.conflict,
-  SHADOW: 'bg-info/20 text-info border-info/30',
-  RESYNCING: 'bg-info/20 text-info border-info/30',
+  SHADOW: 'bg-info/20 text-info-on-soft border-info/30',
+  RESYNCING: 'bg-info/20 text-info-on-soft border-info/30',
   DEGRADED: toneBadge.degraded,
 };
 
@@ -82,7 +86,13 @@ export function DataFreshnessBadge({
       <TooltipTrigger asChild>
         <Badge
           variant="outline"
-          className={`gap-1 border border-white/10 px-1.5 py-0 text-[9px] ${FRESHNESS_STATUS_CLASSES[status]} ${className}`}
+          // A11Y/一致性：新鲜度色调切换必须「立即生效」。reduced-motion 全局规则把
+          // transition-duration 压到 0.01ms，而 transition-property 仍是初始值 all，
+          // 于是每次色调变化都会生成一条 CSSTransition；在帧饥饿（无头浏览器、
+          // 高负载现场终端）下 currentTime 停在 0，computed style 长时间返回**旧色调**
+          // （实测 axe 采样到「过期」橙色叠在 /20 软底上 = 4.16:1 serious）。
+          // 显式置空 transition-property：既不产生过渡，也不会把旧色调当事实展示。
+          className={`gap-1 border border-white/10 px-1.5 py-0 text-[9px] [transition-property:none] ${FRESHNESS_STATUS_CLASSES[status]} ${className}`}
         >
           <span className="font-medium text-white/80">{source}</span>
           <span className="font-semibold">{FRESHNESS_STATUS_LABELS[status]}</span>

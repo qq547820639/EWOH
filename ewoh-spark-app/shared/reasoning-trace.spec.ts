@@ -162,3 +162,72 @@ describe('evaluateReasoningRules（确定性引擎，§18 模板渲染真实值�
     expect(conclusions).toEqual([]);
   });
 });
+
+/* ── NO-58b：感知门控 → 结论标"仅提示" ─────────────────────────────────── */
+
+describe('感知门控 inject（advisoryOnly）', () => {
+  const fact = (overrides: Record<string, unknown> = {}) => ({
+    subjectId: 'person:P-1',
+    kind: 'person',
+    values: { workload: 0.95, fatigue: 0.8 },
+    evidenceIds: ['event:EVT-1'],
+    ...overrides,
+  });
+
+  const gate = (allowed: boolean) => ({
+    strongAdviceAllowed: allowed,
+    level: allowed ? 'high' : 'low',
+    agreement: allowed ? 'consistent' : 'conflict',
+    reason: allowed ? null : '感知融合不许强建议：一致性 conflict / 置信度 low',
+    fusedAt: '2026-09-12T08:00:00.000Z',
+    basis: 'window …；规则留痕 1 条命中',
+  });
+
+  it('门控允许 → 结论照旧（advisoryOnly=false，无原因）', () => {
+    const [conclusion] = evaluateReasoningRules('trace-1', [fact({ perceptionGate: gate(true) })] as never);
+    expect(conclusion.advisoryOnly).toBe(false);
+    expect(conclusion.advisoryReason).toBeNull();
+    expect(conclusion.explanation).not.toContain('仅提示');
+  });
+
+  it('门控禁止 → 结论仍产出但标 advisoryOnly + 原因写进解释（事实是真的，只是不能强建议）', () => {
+    const [conclusion] = evaluateReasoningRules('trace-1', [fact({ perceptionGate: gate(false) })] as never);
+    expect(conclusion.advisoryOnly).toBe(true);
+    expect(String(conclusion.advisoryReason)).toContain('不许强建议');
+    expect(conclusion.explanation).toContain('仅提示');
+  });
+
+  it('没有门控（未评估）→ 门控字段**不出现**（缺省 ≠ 已评估为可强建议）', () => {
+    const [conclusion] = evaluateReasoningRules('trace-1', [fact()] as never);
+    // 字段缺省而不是 false：调用方能区分"平台没评估过"与"评估过且允许强建议"（原则 7）。
+    expect('advisoryOnly' in conclusion).toBe(false);
+    expect('perceptionGate' in conclusion).toBe(false);
+    expect(conclusion.advisoryOnly ?? false).toBe(false);
+    // 与边缘运行时/金标场景的结论形状一致（同一份 fixture 两侧都过）。
+    expect(conclusion.explanation).not.toContain('仅提示');
+  });
+
+  it('校验器：门控禁止却没标 advisoryOnly → 拒绝（fail-closed）', () => {
+    const [conclusion] = evaluateReasoningRules('trace-1', [fact({ perceptionGate: gate(false) })] as never);
+    const trace = {
+      traceId: 'trace-1',
+      engineVersion: '1.0.0',
+      factsRef: { snapshotVersion: 1, eventIds: ['event:EVT-1'] },
+      conclusions: [{ ...conclusion, advisoryOnly: false, advisoryReason: null }],
+      auditTrail: true,
+    };
+    expect(validateReasoningTrace(trace)).toContain('advisory_flag_inconsistent_with_gate');
+  });
+
+  it('校验器：标了 advisoryOnly 却没有原因 → 拒绝', () => {
+    const [conclusion] = evaluateReasoningRules('trace-1', [fact({ perceptionGate: gate(false) })] as never);
+    const trace = {
+      traceId: 'trace-1',
+      engineVersion: '1.0.0',
+      factsRef: { snapshotVersion: 1, eventIds: ['event:EVT-1'] },
+      conclusions: [{ ...conclusion, advisoryReason: '   ' }],
+      auditTrail: true,
+    };
+    expect(validateReasoningTrace(trace)).toContain('advisory_requires_reason');
+  });
+});

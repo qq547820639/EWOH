@@ -19,7 +19,7 @@ import {
   ewohWorldState,
   ewohEnvironment,
 } from '@server/database/schema';
-import { eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import type { SimulatorStatus } from '@shared/api.interface';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
 import { RetentionService } from './retention.service';
@@ -606,10 +606,17 @@ export class SimulatorService implements OnModuleInit, OnModuleDestroy {
 
   private async handleDeviceOffline(device: DeviceRuntime): Promise<void> {
     const orgId = this.simulatorOrgId();
+    // NEST-205：ewoh_device 唯一键是 (org_id, device_id)——只按 device_id 更新会
+    // 命中**任意租户**的同号设备（模拟器把别的租户设备改成离线）。这里把模拟器
+    // 自身的 org（含 null=未配置组织上下文）一并作为谓词，与 upsertDevice 的
+    // 冲突目标 [org_id, device_id] 保持同一作用域。
     await this.db
       .update(ewohDevice)
       .set({ online: false })
-      .where(eq(ewohDevice.deviceId, device.deviceId));
+      .where(and(
+        eq(ewohDevice.deviceId, device.deviceId),
+        orgId ? eq(ewohDevice.orgId, orgId) : isNull(ewohDevice.orgId),
+      ));
     // NEST-621：离线事件显式 orgId。
     await this.ruleEngine.fireDeviceOffline(device.deviceId, 'simulated', orgId);
   }

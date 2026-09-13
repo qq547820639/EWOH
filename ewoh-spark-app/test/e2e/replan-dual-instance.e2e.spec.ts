@@ -18,6 +18,7 @@ import {
   cleanupE2EFixture,
   connectOwner,
   createE2EFixture,
+  seedSchedulerFixture,
   type E2EFixture,
   type OwnerSql,
 } from '../helpers/e2e-db';
@@ -58,26 +59,8 @@ runDescribe(
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig!.ownerDatabaseUrl);
       fixture = await createE2EFixture(owner);
-      // R2-APT-009：清基限定本 run 的 fixture org 范围（原全表 DELETE 会摧毁
-      // 共享库中其他租户的调度事实/快照历史）。assignment 表无 org 列，经
-      // plan 子查询按 org 定位；快照表 NULL 行为全局共享资产，仅清本 org 行。
-      try {
-        const orgIds = [fixture.orgA.id, fixture.orgB.id];
-        const postgres = (await import('postgres')).default;
-        const runtime = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
-        await runtime.unsafe('DELETE FROM ewoh_replan_trigger WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_scheduling_execution WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe(
-          'DELETE FROM ewoh_scheduling_plan_assignment WHERE plan_id IN (SELECT plan_id FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[]))',
-          [orgIds],
-        );
-        await runtime.unsafe('DELETE FROM ewoh_schedule_plan WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_resource_reservation WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.unsafe('DELETE FROM ewoh_world_state_snapshot WHERE org_id = ANY($1::text[])', [orgIds]);
-        await runtime.end();
-      } catch {
-        // 清理失败不阻断
-      }
+      // Each fixture owns fresh UUID orgs; no pre-cleanup is necessary.
+      await seedSchedulerFixture(owner, fixture.orgA.id);
       handleA = await startE2EApp(e2eConfig!, fixture.orgA.id);
       baseUrlA = handleA.baseUrl;
       // 第二个独立 app 实例（同一 runtime DB、同一 org）。
@@ -187,8 +170,10 @@ runDescribe(
         expect(o.value.body.plans).toEqual([]);
       }
 
-      const postgres = (await import('postgres')).default;
-      const sql = postgres(e2eConfig!.runtimeDatabaseUrl, { max: 1 });
+      // Use the configured owner for the audit query; the HTTP requests remain
+      // scoped runtime requests, while an unscoped runtime read is correctly
+      // filtered by RLS and would falsely report zero rows.
+      const sql = owner;
       try {
         const runs = await sql`
           SELECT run_id, status FROM ewoh_scheduling_run
@@ -200,12 +185,18 @@ runDescribe(
           SELECT count(*)::int AS n FROM ewoh_replan_trigger
           WHERE org_id = ${fixture.orgA.id} AND trigger_type = 'DEVICE_OFFLINE' AND entity_id = ${entityId}`;
         expect(triggers[0].n).toBe(1);
-        // 获胜实例产出了有效 plan（绑定该 run）。
+        // Plans do not have a run_id/plan_ids column in the persisted schema;
+        // the run's authoritative plan linkage is the plan_ids JSONB on the
+        // run row itself.
+        const runPlanIds = await sql`
+          SELECT plan_ids FROM ewoh_scheduling_run WHERE run_id = ${runs[0].run_id}`;
         const plans = await sql`
-          SELECT count(*)::int AS n FROM ewoh_schedule_plan WHERE run_id = ${runs[0].run_id}`;
+          SELECT count(*)::int AS n
+          FROM ewoh_schedule_plan
+          WHERE plan_id = ANY(${(runPlanIds[0].plan_ids as string[])}::text[])`;
         expect(plans[0].n).toBeGreaterThanOrEqual(1);
       } finally {
-        await sql.end();
+        // owner is shared with fixture setup/cleanup and is closed in afterAll.
       }
     }, 90_000);
   },

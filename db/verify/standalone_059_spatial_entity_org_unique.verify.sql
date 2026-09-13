@@ -58,3 +58,7 @@ BEGIN
     RAISE EXCEPTION 'verify incomplete: 存在历史重复 (org_id, entity_id) 行 (dups=%)', dup_rows;
   END IF;
 END $$;
+
+-- 自证标记（迁移 runner 断言该行存在；此前文件只做 DO 断言、从不输出标记 →
+-- 全链 verify 永远判失败，2026-09-12 NO-58 烧账修复）。
+SELECT 1 AS standalone_059_verified;

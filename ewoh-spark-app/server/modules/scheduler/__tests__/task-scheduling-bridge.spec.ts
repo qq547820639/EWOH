@@ -10,14 +10,19 @@ import { TaskSchedulingBridge } from '../task-scheduling.bridge';
 
 function makeTaskService(opts: { createReturns?: any } = {}) {
   const events: Array<{ taskId: string; trigger: string; actor?: any }> = [];
-  const svc = new TaskService(
-    {
-      insert: () => ({
-        values: () => ({
-          returning: async () => [opts.createReturns ?? { id: 'TASK-1' }],
-        }),
+  // NO-36a：createTask 现在把「会话闸门读取 + 任务写入」放进同一事务，
+  // 测试替身必须同形提供 transaction（否则 createTask 直接 TypeError——
+  // 这正是"替身与真实写路径形状不一致"造成过一次全量红的情形）。
+  const db: any = {
+    insert: () => ({
+      values: () => ({
+        returning: async () => [opts.createReturns ?? { id: 'TASK-1' }],
       }),
-    } as any,
+    }),
+  };
+  db.transaction = async (cb: (tx: unknown) => Promise<unknown>) => cb(db);
+  const svc = new TaskService(
+    db,
     { appendAuditLog: jest.fn() } as any,
   );
   svc.onTaskEvent((taskId, trigger, actor) => {
@@ -27,12 +32,18 @@ function makeTaskService(opts: { createReturns?: any } = {}) {
 }
 
 describe('A1 TaskService 任务写事件发射', () => {
-  it('createTask 成功后 emit TASK_CREATED（带 taskId）', async () => {
+  /* NO-16a 修复：createTask 过去**不带 actor** 发事件，而桥接对缺 actor/org 的事件
+   * fail-closed 拒绝（见下一条用例）——也就是说"新建任务触发重排"这条 A1 接线
+   * 在创建路径上一直是**死的**：任务建了，调度不会被通知。现在创建与状态变更同样
+   * 透传 actor，事件才真正到达桥接。 */
+  it('createTask 成功后 emit TASK_CREATED（带 taskId + actor，桥接才会接受）', async () => {
     const { svc, events } = makeTaskService({ createReturns: { id: 'TASK-X' } });
     // NEST-612：任务写入必须带租户上下文（fail-closed）。
     const actor = { userId: 'u1', primaryOrgId: 'org1', isGlobalAdmin: false };
     await svc.createTask({ title: '搬运任务', taskType: 'transport' }, actor);
-    expect(events).toEqual([{ taskId: 'TASK-X', trigger: 'TASK_CREATED', actor: undefined }]);
+    expect(events).toEqual([
+      { taskId: 'TASK-X', trigger: 'TASK_CREATED', actor: { userId: 'u1', primaryOrgId: 'org1', isGlobalAdmin: false } },
+    ]);
   });
 
   it('transitionTaskState 成功后 emit TASK_UPDATED（带 actor）', async () => {

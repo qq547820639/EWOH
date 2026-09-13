@@ -141,10 +141,26 @@ class EventUplinkTest(unittest.TestCase):
         uplink.start()
         try:
             self.bus.publish("events", {"envelope": _envelope(event_id="EVT-LOOP")})
-            deadline = time.time() + 5
-            while time.time() < deadline and not _UplinkHandler.received_batches:
+            # 等到**这一条**事件被投递（而不是"列表非空"）：整仓测试并行/高负载时
+            # 固定 5s 轮询会偶发超时（实测全量套件跑动时出现 1 次假失败），
+            # 且"列表非空"无法区分是本用例的事件还是上一个用例的残留。
+            deadline = time.time() + 20
+            delivered = False
+            while time.time() < deadline:
+                for batch in _UplinkHandler.received_batches:
+                    envelopes = (batch.get("body") or {}).get("events") or []
+                    if any(
+                        isinstance(e, dict)
+                        and (e.get("eventId") == "EVT-LOOP"
+                             or (e.get("envelope") or {}).get("eventId") == "EVT-LOOP")
+                        for e in envelopes
+                    ):
+                        delivered = True
+                        break
+                if delivered:
+                    break
                 time.sleep(0.05)
-            self.assertEqual(len(_UplinkHandler.received_batches), 1)
+            self.assertTrue(delivered, "EVT-LOOP 未在 20s 内送达（上行链路异常，而非测试超时）")
             self.assertEqual(uplink.health()["stats"]["sent"], 1)
         finally:
             uplink.stop()

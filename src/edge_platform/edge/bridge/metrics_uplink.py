@@ -74,7 +74,8 @@ class MetricsUplink:
         self._interval = max(5.0, float(interval_sec))
         # EDGE-041：production 下 X-Ingest-Key 禁止明文 http 传输，显式禁用。
         self._disabled_reason = ""
-        if self._url.startswith(("http://", "//")) and _runtime_mode() == "production":
+        # UR8：scheme 大小写不敏感（RFC 3986）——先归一再判定，堵 "HTTP://" 旁路。
+        if self._url.lower().startswith(("http://", "//")) and _runtime_mode() == "production":
             self._disabled_reason = "insecure_http_in_production"
             logger.error(
                 "metrics uplink: production 下拒绝明文 http 上行（X-Ingest-Key 会暴露），已禁用: %s",

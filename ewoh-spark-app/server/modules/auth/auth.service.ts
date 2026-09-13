@@ -19,12 +19,25 @@ export interface AuthUser {
   passwordHash: string;
   roles: string[];
   orgId: string;
+  /**
+   * 业务人员 ID（人员域），由管理员经 owner 通道设置（db/runner/create-operator.js
+   * --person-id）。NULL/undefined = 未绑定。
+   *
+   * 用途：现场回执的"本人可报"判定与现场作业台"我的任务"，它们必须比较
+   * **同一标识空间**。此前用 userId 与 assignment.personId 直接比较，导致
+   * worker 角色永远无法回执自己的任务。
+   */
+  personId?: string | null;
 }
 
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
-  user: { userId: string; username: string; roles: string[]; orgId: string };
+  user: {
+    userId: string; username: string; roles: string[]; orgId: string;
+    /** 未绑定为 null（前端不得据此推断任务归属）。 */
+    personId: string | null;
+  };
 }
 
 export interface AuthJwtPayload extends JwtPayload {
@@ -312,6 +325,8 @@ export class AuthService {
         username: user.username,
         roles: user.roles,
         orgId: user.orgId,
+        // 签发时固化绑定；令牌有签名，客户端无法自报人员身份。
+        personId: user.personId ?? null,
       },
       secret(),
       { algorithm: 'HS256', expiresIn: accessTtl },
@@ -346,6 +361,7 @@ export class AuthService {
         username: user.username,
         roles: user.roles,
         orgId: user.orgId,
+        personId: user.personId ?? null,
       },
     };
   }
@@ -355,7 +371,7 @@ export class AuthService {
       const rows = await (this.db as {
         execute: (query: unknown) => Promise<Array<Record<string, unknown>>>;
       }).execute(
-        sql`select username, password_hash, org_id::text, roles, is_global_admin from ewoh_find_active_user(${username})`,
+        sql`select username, password_hash, org_id::text, roles, is_global_admin, person_id from ewoh_find_active_user(${username})`,
       );
       const row = rows[0];
       if (!row) {
@@ -371,6 +387,7 @@ export class AuthService {
         passwordHash: String(row.password_hash),
         roles,
         orgId: String(row.org_id),
+        personId: row.person_id == null ? null : String(row.person_id),
       };
     } catch {
       throw new ServiceUnavailableException('Authentication store is unavailable');

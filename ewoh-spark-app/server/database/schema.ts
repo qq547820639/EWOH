@@ -28,7 +28,7 @@
  * push 误判。
  */
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, numeric, pgTable, real, text, uniqueIndex, uuid, varchar, customType, bigint, doublePrecision } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, numeric, pgTable, real, text, time, date, uniqueIndex, uuid, varchar, customType, bigint, doublePrecision } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -672,6 +672,12 @@ export const ewohSchedulePlan = pgTable("ewoh_schedule_plan", {
   confirmedBy: varchar("confirmed_by", { length: 255 }),
   confirmedAt: customTimestamptz("confirmed_at", { precision: 6 }),
   confirmReason: text("confirm_reason"),
+  // --- 方案取消/回滚（standalone_077，DR-5）---
+  /** 取消/回滚原因（必填，人可读；写入路径 PlanService.cancelPlan）。 */
+  cancelledReason: text("cancelled_reason"),
+  /** 取消操作者（服务端会话 actor.userId）。 */
+  cancelledBy: varchar("cancelled_by", { length: 255 }),
+  cancelledAt: customTimestamptz("cancelled_at", { precision: 6 }),
   // --- Scheduling V2 fields (standalone_006) ---
   version: integer("version").notNull().default(1),
   snapshotVersion: varchar("snapshot_version", { length: 255 }),
@@ -845,6 +851,11 @@ export const ewohTelemetry = pgTable("ewoh_telemetry", {
   id: uuid("id").primaryKey().defaultRandom(),
   deviceId: varchar("device_id", { length: 255 }).notNull(),
   entityId: varchar("entity_id", { length: 180 }),
+  /**
+   * NO-41a（standalone_080）：遥测上报的佩戴人（`observe.wearer` 的 worker_id）。
+   * NULL = 该帧未上报佩戴人（数据缺口），**不等于**"没人佩戴"。
+   */
+  workerId: varchar("worker_id", { length: 255 }),
   ts: customTimestamptz("ts", { precision: 6 }).notNull(),
   pitchDeg: real("pitch_deg"),
   loadScore: real("load_score"),
@@ -987,10 +998,41 @@ export const ewohAssetPackage = pgTable("ewoh_asset_package", {
   index("idx_ewoh_asset_package_type").on(table.packageType, table.status),
 ]);
 
+/**
+ * 设备责任人台账（NO-49a，standalone_083）。
+ *
+ * (设备, 职责, 人) 三元组；同一设备同一职责同时只允许一位 active（部分唯一索引），
+ * 换人 = 旧行置 active=false（历史保留）。用途：把安灯/升级提醒**点名到责任人本人**，
+ * 而不是只广播给角色。
+ */
+export const ewohDeviceResponsibility = pgTable("ewoh_device_responsibility", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  /** 业务设备号（与安灯/遥测同一 id 空间）。 */
+  deviceId: varchar("device_id", { length: 255 }).notNull(),
+  /** 规范人员身份（person:<uuid> 或裸 uuid）。 */
+  personId: varchar("person_id", { length: 255 }).notNull(),
+  responsibility: varchar("responsibility", { length: 50 }).notNull(),
+  /** 适用班次（ewoh_shift.shift_id）；**空串 = 全天**（NULL 会破坏唯一索引语义，NO-51a）。 */
+  shiftId: varchar("shift_id", { length: 255 }).notNull().default(''),
+  active: boolean("active").notNull().default(true),
+  note: text("note"),
+  activatedAt: customTimestamptz("activated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  deactivatedAt: customTimestamptz("deactivated_at", { precision: 3 }),
+  deactivatedBy: varchar("deactivated_by", { length: 255 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  /** 审计主体 = 登录账号 id（username），因此是 varchar 而不是 uuid。 */
+  createdBy: varchar("_created_by", { length: 255 }),
+  updatedBy: varchar("_updated_by", { length: 255 }),
+});
+
 export const ewohNotification = pgTable("ewoh_notification", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: uuid("org_id"),
-  notificationId: varchar("notification_id", { length: 255 }).notNull().unique(),
+  // standalone_100：唯一性收敛为 (org_id, notification_id) 复合（见下方 uniqueIndex）——
+  // 全局唯一会让跨租户同通知号被 ON CONFLICT 静默吞掉（跨租户通知压制）。
+  notificationId: varchar("notification_id", { length: 255 }).notNull(),
   recipientType: varchar("recipient_type", { length: 50 }).notNull(),
   recipientId: varchar("recipient_id", { length: 255 }).notNull(),
   channel: varchar("channel", { length: 100 }).notNull(),
@@ -1003,10 +1045,32 @@ export const ewohNotification = pgTable("ewoh_notification", {
   readAt: customTimestamptz("read_at", { precision: 3 }),
   externalRef: varchar("external_ref", { length: 255 }),
   errorMessage: text("error_message"),
+  /**
+   * NO-44a：处置结果（通知的第二个终态维度）。
+   *
+   * `read_at` 只能表达"人看过了"；`resolution` 表达"这件事被某次处置了结"——
+   * 数据缺失/冲突被发现之后，只有处置落痕才算闭环（原则 6/8）。
+   * 封闭词表：session_ended / session_aborted / session_corrected（NULL = 未被处置关闭）。
+   */
+  resolution: varchar("resolution", { length: 50 }),
+  resolvedAt: customTimestamptz("resolved_at", { precision: 3 }),
+  resolvedBy: varchar("resolved_by", { length: 255 }),
+  /** 处置指向的引用（更正时=新会话号；收工/中止时=会话号），供从提醒反查那次处置。 */
+  resolutionRef: varchar("resolution_ref", { length: 255 }),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  // standalone_100：org 作用域唯一（同 org 幂等 / 跨 org 并存）。
+  uniqueIndex("uq_ewoh_notification_org_notification_id").on(
+    table.orgId,
+    table.notificationId,
+  ),
   index("idx_ewoh_notification_status").on(table.status),
+  // NO-44a：按主事实（external_ref）找待处置提醒——部分索引只覆盖 pending 行，
+  // 历史通知无限增长也不会拖慢处置路径。
+  index("idx_ewoh_notification_pending_external_ref")
+    .on(table.orgId, table.externalRef)
+    .where(sql`status = 'pending'`),
 ]);
 
 /**
@@ -1050,8 +1114,40 @@ export const ewohAgentApproval = pgTable("ewoh_agent_approval", {
   index("idx_ewoh_agent_approval_status").on(table.status),
 ]);
 
+/**
+ * 设备能力台账（2026-09-10 能力模型落地）。
+ *
+ * DDL 早在 001 就有这张表（含 `UNIQUE (org_id, device_id, capability_key)`），
+ * 但 ORM 未映射、无写入方（实测 0 行）——世界模型只知道"有这台设备"，
+ * 不知道"它能观测/执行什么"。能力键词表见 `shared/device-capability.ts`。
+ */
+export const ewohDeviceCapability = pgTable("ewoh_device_capability", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: uuid("org_id").notNull().default(sql`(nullif(current_setting('app.current_org_id', true), '')::uuid)`),
+  capabilityId: varchar("capability_id", { length: 255 }).notNull(),
+  deviceId: varchar("device_id", { length: 255 }).notNull(),
+  capabilityType: varchar("capability_type", { length: 100 }).notNull(),
+  capabilityKey: varchar("capability_key", { length: 255 }).notNull(),
+  capabilityValue: jsonb("capability_value"),
+  compatible: boolean("compatible").notNull().default(true),
+  version: integer("version").notNull().default(1),
+  status: varchar("status", { length: 50 }).notNull().default('active'),
+  effectiveFrom: customTimestamptz("effective_from", { precision: 6 }),
+  effectiveTo: customTimestamptz("effective_to", { precision: 6 }),
+  createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uq_ewoh_device_capability_org_device_key").on(table.orgId, table.deviceId, table.capabilityKey),
+]);
+
 export const ewohDevice = pgTable("ewoh_device", {
   id: uuid("id").primaryKey().defaultRandom(),
+  /**
+   * 设备类别（2026-09-10 感知层入台账）：`shared/device-category.ts` 词表。
+   * 列早在 001 DDL 中存在但 ORM 未映射 → 平台台账此前只有外骨骼一类。
+   * NULL = 历史行/未登记类别（读取侧归一为 unknown，不猜）。
+   */
+  deviceCategory: varchar("device_category", { length: 100 }),
   // R2-SOP-014：单列 .unique() 已由 057 迁移改为 (org_id, device_id) 复合唯一
   //（见下方 uq_ewoh_device_org_device），移除漂移的单列声明。
   deviceId: varchar("device_id", { length: 255 }).notNull(),
@@ -1201,6 +1297,16 @@ export const ewohFactoryReplicationSessions = pgTable("ewoh_factory_replication_
   index("idx_ewoh_factory_replication_sessions_status").on(table.status),
 ]);
 
+/**
+ * 当前租户表达式（GUC 优先，无 GUC 上下文回落本地默认租户）。
+ *
+ * 单一来源：`ewoh_idempotency_keys.org_id` 的列默认值，以及读取侧
+ * （domain-persistence 的 getIdempotency*）的租户谓词都用它——唯一索引是
+ * (org_id, scope, idempotency_key)，若读取只按 (scope, key) 过滤，同 scope/key
+ * 的不同租户会互相命中（回放他租户响应）。读写同源才不会漂移。
+ */
+export const CURRENT_ORG_ID_FALLBACK_SQL = sql`COALESCE(NULLIF(current_setting('app.current_org_id', true), ''), '00000000-0000-4000-8000-000000000001')`;
+
 export const ewohIdempotencyKeys = pgTable("ewoh_idempotency_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
   idempotencyKey: varchar("idempotency_key", { length: 500 }).notNull(),
@@ -1212,7 +1318,7 @@ export const ewohIdempotencyKeys = pgTable("ewoh_idempotency_keys", {
   // R2-SDB-006（standalone_060）：租户维度——(scope, key) 键空间跨租户共享会
   // 回放他租户响应；DB 层 DEFAULT 取 app.current_org_id GUC，无 GUC 上下文
   // 回退默认 org（与 057 存量回填口径一致）。RLS idempotency_org_isolation。
-  orgId: varchar("org_id", { length: 255 }).notNull().default(sql`COALESCE(NULLIF(current_setting('app.current_org_id', true), ''), '00000000-0000-4000-8000-000000000001')`),
+  orgId: varchar("org_id", { length: 255 }).notNull().default(CURRENT_ORG_ID_FALLBACK_SQL),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -1886,6 +1992,12 @@ export const ewohExoSession = pgTable("ewoh_exo_session", {
   endedBy: varchar("ended_by", { length: 255 }),
   reason: text("reason"),
   operatorId: varchar("operator_id", { length: 255 }),
+  /**
+   * NO-40a（standalone_079）：关联的业务任务 id（同租户 `ewoh_production_task.id`）。
+   * NULL = 未关联任何任务（"未关联"不等于"没有任务"）。不做外键：任务可被取消/回退，
+   * 而会话是物理发生过的事实，级联删除会抹掉现场事实。
+   */
+  taskId: varchar("task_id", { length: 255 }),
   recordJson: jsonb("record_json").notNull(),
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -1975,6 +2087,13 @@ export const ewohLearningProposal = pgTable("ewoh_learning_proposal", {
   baselineValue: doublePrecision("baseline_value").notNull(),
   candidateValue: doublePrecision("candidate_value").notNull(),
   shadowEvalJson: jsonb("shadow_eval_json"),
+  /**
+   * B5 同族审批独立性（standalone_073 原地加固）：提案提出者。
+   * approve 回避校验（SELF_APPROVAL_FORBIDDEN）与 DB CHECK
+   * chk_ewoh_learning_proposal_generator_avoidance 双保险；
+   * NULL=存量/legacy 行（回避校验对 NULL 放行，避免历史提案被永久锁死）。
+   */
+  proposedBy: varchar("proposed_by", { length: 128 }),
   approvedBy: varchar("approved_by", { length: 128 }),
   approvedAt: customTimestamptz("approved_at", { precision: 6 }),
   rejectedBy: varchar("rejected_by", { length: 128 }),
@@ -1998,6 +2117,137 @@ export const ewohLearningProposal = pgTable("ewoh_learning_proposal", {
   uniqueIndex("uq_ewoh_learning_proposal").on(table.orgId, table.proposalId),
   index("idx_ewoh_learning_proposal_status").on(table.orgId, table.status),
   index("idx_ewoh_learning_proposal_rule").on(table.orgId, table.ruleId),
+]);
+
+/**
+ * 运行记忆信号台账（standalone_087，NO-54a 学习回路接线）。
+ *
+ * 信号 ≠ 提案：本表只存"实测记忆 + 证据 + 样本量 + 可信度 + 方向"；
+ * 只有人点"生成提案"才会写 `ewoh_learning_proposal`（影子评估→人审激活阶梯）。
+ * 契约与 CHECK 兜底见 `shared/learning-signal.ts` 与 standalone_087。
+ */
+export const ewohLearningSignal = pgTable("ewoh_learning_signal", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  signalId: varchar("signal_id", { length: 180 }).notNull(),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  severity: varchar("severity", { length: 16 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default('open'),
+  subjectKey: varchar("subject_key", { length: 180 }).notNull(),
+  windowDays: integer("window_days").notNull(),
+  sampleSize: integer("sample_size").notNull(),
+  confidence: varchar("confidence", { length: 16 }),
+  direction: varchar("direction", { length: 16 }),
+  ruleId: varchar("rule_id", { length: 64 }),
+  parameter: varchar("parameter", { length: 32 }),
+  baselineValue: doublePrecision("baseline_value"),
+  metricsJson: jsonb("metrics_json").notNull(),
+  evidenceJson: jsonb("evidence_json").notNull(),
+  narrativeJson: jsonb("narrative_json").notNull(),
+  notActionableReason: text("not_actionable_reason"),
+  promotedProposalId: varchar("promoted_proposal_id", { length: 180 }),
+  decidedBy: varchar("decided_by", { length: 255 }),
+  decidedAt: customTimestamptz("decided_at", { precision: 3 }),
+  decidedReason: text("decided_reason"),
+  firstSeenAt: customTimestamptz("first_seen_at", { precision: 3 }).notNull(),
+  lastSeenAt: customTimestamptz("last_seen_at", { precision: 3 }).notNull(),
+  recordJson: jsonb("record_json").notNull(),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: varchar("_created_by", { length: 255 }),
+  updatedBy: varchar("_updated_by", { length: 255 }),
+}, (table) => [
+  uniqueIndex("uq_ewoh_learning_signal").on(table.orgId, table.signalId),
+  index("idx_ewoh_learning_signal_status").on(table.orgId, table.status),
+  index("idx_ewoh_learning_signal_kind").on(table.orgId, table.kind, table.severity),
+]);
+
+/**
+ * 改进行动项台账（standalone_088，NO-55a 学习回路接线第二轮）。
+ *
+ * 复盘经验条目/缺口 → 有人负责、有期限、有验收判据、有完成证据的一等工作项。
+ * 与 `ewohLearningProposal`（可激活的参数变更）并列，二者可互相引用；
+ * 契约与 CHECK 兜底见 `shared/improvement-action.ts` 与 standalone_088。
+ */
+export const ewohImprovementAction = pgTable("ewoh_improvement_action", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  actionId: varchar("action_id", { length: 180 }).notNull(),
+  sourceType: varchar("source_type", { length: 32 }).notNull(),
+  sourceRef: varchar("source_ref", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  detail: text("detail").notNull(),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  kindSource: varchar("kind_source", { length: 16 }).notNull().default('suggested'),
+  priority: varchar("priority", { length: 16 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default('proposed'),
+  evidenceJson: jsonb("evidence_json").notNull(),
+  owner: varchar("owner", { length: 255 }),
+  dueAt: customTimestamptz("due_at", { precision: 3 }),
+  acceptanceCriteria: text("acceptance_criteria"),
+  acceptedBy: varchar("accepted_by", { length: 255 }),
+  acceptedAt: customTimestamptz("accepted_at", { precision: 3 }),
+  completedBy: varchar("completed_by", { length: 255 }),
+  completedAt: customTimestamptz("completed_at", { precision: 3 }),
+  outcomeNote: text("outcome_note"),
+  /** NO-58a：对象归属（由复盘 target_id 派生）；NULL = 未绑定对象 → 复发不可度量。 */
+  subjectType: varchar("subject_type", { length: 32 }),
+  subjectId: varchar("subject_id", { length: 255 }),
+  /** NO-57c：完成时回流的知识条目号（NULL = 未回流，页面必须显式显示）。 */
+  outcomeRef: varchar("outcome_ref", { length: 255 }),
+  /** 回流产物类型（当前仅 knowledge_entry）。 */
+  outcomeKind: varchar("outcome_kind", { length: 32 }),
+  decidedBy: varchar("decided_by", { length: 255 }),
+  decidedAt: customTimestamptz("decided_at", { precision: 3 }),
+  decidedReason: text("decided_reason"),
+  detectedAt: customTimestamptz("detected_at", { precision: 3 }).notNull(),
+  recordJson: jsonb("record_json").notNull(),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: varchar("_created_by", { length: 255 }),
+  updatedBy: varchar("_updated_by", { length: 255 }),
+}, (table) => [
+  uniqueIndex("uq_ewoh_improvement_action").on(table.orgId, table.actionId),
+  index("idx_ewoh_improvement_action_status").on(table.orgId, table.status),
+  index("idx_ewoh_improvement_action_priority").on(table.orgId, table.priority, table.status),
+  index("idx_ewoh_improvement_action_due").on(table.orgId, table.dueAt),
+]);
+
+/**
+ * 多模态感知融合快照（standalone_089，NO-56a §5 感知融合层）。
+ *
+ * 存"当时系统看到的是什么、可信吗"：一致性结论、可解释加权置信度、冲突明细、
+ * 被排除证据（过期/不可信/维度不符）与五条规则留痕。契约与 CHECK 兜底见
+ * `shared/perception-fusion.ts` 与 standalone_089。
+ */
+export const ewohPerceptionFusion = pgTable("ewoh_perception_fusion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  fusionId: varchar("fusion_id", { length: 180 }).notNull(),
+  subjectId: varchar("subject_id", { length: 180 }).notNull(),
+  windowStart: customTimestamptz("window_start", { precision: 3 }).notNull(),
+  windowEnd: customTimestamptz("window_end", { precision: 3 }).notNull(),
+  fusedAt: customTimestamptz("fused_at", { precision: 3 }).notNull(),
+  agreement: varchar("agreement", { length: 16 }).notNull(),
+  confidenceLevel: varchar("confidence_level", { length: 16 }).notNull(),
+  confidenceScore: doublePrecision("confidence_score"),
+  degraded: boolean("degraded").notNull().default(false),
+  strongAdviceAllowed: boolean("strong_advice_allowed").notNull().default(false),
+  stationId: varchar("station_id", { length: 255 }),
+  conflictCount: integer("conflict_count").notNull().default(0),
+  usableSourceCount: integer("usable_source_count").notNull().default(0),
+  sourcesJson: jsonb("sources_json").notNull(),
+  conflictsJson: jsonb("conflicts_json").notNull(),
+  ruleTraceJson: jsonb("rule_trace_json").notNull(),
+  recordJson: jsonb("record_json").notNull(),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: varchar("_created_by", { length: 255 }),
+  updatedBy: varchar("_updated_by", { length: 255 }),
+}, (table) => [
+  uniqueIndex("uq_ewoh_perception_fusion").on(table.orgId, table.fusionId),
+  index("idx_ewoh_perception_fusion_subject").on(table.orgId, table.subjectId, table.fusedAt),
+  index("idx_ewoh_perception_fusion_agreement").on(table.orgId, table.agreement, table.fusedAt),
 ]);
 
 // --- Conflict Lifecycle 持久化 (standalone_013, Phase 3 / P3-T1) ---
@@ -2286,6 +2536,9 @@ export const ewohSchedulingFeedback = pgTable("ewoh_scheduling_feedback", {
   actualStart: customTimestamptz("actual_start", { precision: 3 }),
   plannedEnd: customTimestamptz("planned_end", { precision: 3 }),
   actualEnd: customTimestamptz("actual_end", { precision: 3 }),
+  receiptSource: varchar("receipt_source", { length: 32 }).notNull().default('unknown'),
+  productionTrainingEligible: boolean("production_training_eligible").notNull().default(false),
+  provenanceJson: jsonb("provenance_json"),
   plannedTravel: real("planned_travel"),
   actualTravel: real("actual_travel"),
   plannedWait: real("planned_wait"),
@@ -2567,6 +2820,22 @@ export const ewohControlCommand = pgTable("ewoh_control_command", {
   errorCode: varchar("error_code", { length: 100 }),
   errorMessage: text("error_message"),
   idempotencyKey: varchar("idempotency_key", { length: 255 }),
+  /**
+   * NO-62a：授权范围指纹（请求/设备/命令/审批实例/参数；`fnv1a64:v1`）。
+   * 审批之后任意一项被改写 → 投递与回执两侧 fail-closed。
+   */
+  authorizationFingerprint: varchar("authorization_fingerprint", { length: 64 }),
+  /** NO-62a：最近一次投递前授权复核**通过**的时间（NULL = 尚未复核）。 */
+  authorizationVerifiedAt: customTimestamptz("authorization_verified_at", { precision: 6 }),
+  /**
+   * NO-67b：**平台把命令交给网关**的时刻（投递路径唯一写入点）。
+   * 与 `authorizationVerifiedAt`（授权复核通过，下发前也会写）是两个事实——
+   * 投递配额/审计/页面都按本列计（"下发 ≠ 交付"，实测踩过一次口径混用）。
+   */
+  deliveredAt: customTimestamptz("delivered_at", { precision: 6 }),
+  /** NO-62a：投递前复核拒绝而撤回的封闭原因；NULL = 未撤回（与 revokedAt 成对）。 */
+  revokedReason: varchar("revoked_reason", { length: 64 }),
+  revokedAt: customTimestamptz("revoked_at", { precision: 6 }),
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -2623,6 +2892,205 @@ export const ewohAuditLog = pgTable("ewoh_audit_log", {
   createdAt: customTimestamptz("_created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("_updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+/**
+ * ── 班次域（standalone_074，DR-2 班次工作台）──────────────────────────────
+ * 班次是现场的第一组织事实：异常/任务/审批/交接都发生在"某个班"内。
+ * personnel.shift 自由文本升级为结构化班次定义 + 交接班记录。
+ */
+export const ewohShift = pgTable("ewoh_shift", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  shiftId: varchar("shift_id", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 32 }),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  /** 窗口是否跨零点（夜班 22:00-06:00）；判定：t>=start OR t<end。 */
+  crossesMidnight: boolean("crosses_midnight").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  leadUserId: uuid("lead_user_id"),
+  description: text("description"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_shift").on(table.orgId, table.shiftId),
+  index("idx_ewoh_shift_active").on(table.orgId, table.active),
+]);
+
+/**
+ * 交接班记录：遗留事项结构化（openItemsJson），交接事实（from/to/确认时间）完整留痕。
+ * @type { Array<{ title: string; severity?: string; relatedObjectType?: string; relatedObjectId?: string; note?: string }> }
+ */
+export const ewohShiftHandover = pgTable("ewoh_shift_handover", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  handoverId: varchar("handover_id", { length: 255 }).notNull(),
+  shiftId: varchar("shift_id", { length: 255 }).notNull(),
+  shiftDate: date("shift_date").notNull(),
+  fromUserId: uuid("from_user_id"),
+  toUserId: uuid("to_user_id").notNull(),
+  openItemsJson: jsonb("open_items_json").notNull().default([]),
+  notes: text("notes"),
+  /**
+   * NO-52a：交接时刻的"设备责任人核对快照"（{shiftId, total, covered, gaps, uncovered, gapDeviceIds}）。
+   * 存快照而非事后重算——审计要回答的是"交接当时知不知道"。
+   * @type { Record<string, unknown> | null }
+   */
+  responsibilitySnapshotJson: jsonb("responsibility_snapshot_json"),
+  status: varchar("status", { length: 32 }).notNull().default('confirmed'),
+  confirmedAt: customTimestamptz("confirmed_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_shift_handover").on(table.orgId, table.handoverId),
+  index("idx_ewoh_shift_handover_date").on(table.orgId, table.shiftDate),
+]);
+
+/**
+ * ── 复盘/运行记忆台账（standalone_075，DR-3）───────────────────────────────
+ * 闭环六段（感知/数据质量/决策/授权/执行/反馈）的组装产物：assembledJson 只引用
+ * 既有台账证据（evidenceIds），不是第二事实源；narrative 为 AI 总结双路留痕。
+ * 同一 target 至多一条非 superseded 复盘（SQL 部分唯一索引强制）。
+ */
+export const ewohRetrospective = pgTable("ewoh_retrospective", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  retrospectiveId: varchar("retrospective_id", { length: 255 }).notNull(),
+  scope: varchar("scope", { length: 32 }).notNull(),
+  targetId: varchar("target_id", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  periodStart: customTimestamptz("period_start", { precision: 3 }),
+  periodEnd: customTimestamptz("period_end", { precision: 3 }),
+  triggerEventId: varchar("trigger_event_id", { length: 255 }),
+  status: varchar("status", { length: 32 }).notNull().default('draft'),
+  assembledJson: jsonb("assembled_json").notNull(),
+  narrative: text("narrative"),
+  narrativeSource: varchar("narrative_source", { length: 32 }),
+  narrativeModel: varchar("narrative_model", { length: 255 }),
+  lessonsJson: jsonb("lessons_json").notNull().default([]),
+  dataQualityJson: jsonb("data_quality_json"),
+  publishedAt: customTimestamptz("published_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_retrospective").on(table.orgId, table.retrospectiveId),
+  index("idx_ewoh_retrospective_target").on(table.orgId, table.scope, table.targetId),
+  index("idx_ewoh_retrospective_status").on(table.orgId, table.status),
+]);
+
+/**
+ * ── 数据质量人工确认台账（standalone_076，DR-4 闭环第②步）─────────────────
+ * 登记人对单一事件数据质量的最终判定：confirmed=可信可用于决策 /
+ * contested=不可信相关决策需复核。同一事件至多一条最终判定（UNIQUE 幂等）。
+ */
+export const ewohDataQualityConfirmation = pgTable("ewoh_data_quality_confirmation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  eventId: varchar("event_id", { length: 255 }).notNull(),
+  verdict: varchar("verdict", { length: 32 }).notNull(),
+  note: text("note"),
+  confirmedBy: varchar("confirmed_by", { length: 255 }).notNull(),
+  confirmedAt: customTimestamptz("confirmed_at", { precision: 3 }).notNull(),
+  contextJson: jsonb("context_json"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_dq_confirmation").on(table.orgId, table.eventId),
+  index("idx_ewoh_dq_confirmation_event").on(table.orgId, table.eventId),
+]);
+
+/**
+ * ── 物料一等实体（standalone_099，P4-material-master / 议题 R-2）──────────────
+ * 物料主数据 / 库存事实 / 需求阈值台账三张表。此前全仓没有任何 material 表，
+ * Materials 读面只能从 ewoh_event 的自由格式载荷**投影**，而投影里
+ * `Number(null ?? 0) === 0` 会把「读不到」静默变成「库存 0」。
+ * 本实体把 quantity_status 与 quantity 用 DB CHECK 绑定（unknown ⟺ quantity IS NULL），
+ * 应用层无法把"读不到"写成 0。TENANT_SCOPED（RLS material_org_isolation /
+ * material_stock_org_isolation / material_requirement_org_isolation）。
+ */
+export const ewohMaterial = pgTable("ewoh_material", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  materialId: varchar("material_id", { length: 180 }).notNull(),
+  materialCode: varchar("material_code", { length: 180 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  /** NULL = 主数据未声明单位（不猜默认单位）。 */
+  unit: varchar("unit", { length: 32 }),
+  category: varchar("category", { length: 64 }),
+  status: varchar("status", { length: 16 }).notNull().default('active'),
+  /** sourceTypeRegistry real/simulated/derived（ADR-008 §13）。 */
+  source: varchar("source", { length: 16 }).notNull().default('real'),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_material_org_id").on(table.orgId, table.materialId),
+  index("idx_ewoh_material_org_status").on(table.orgId, table.status),
+  index("idx_ewoh_material_org_code").on(table.orgId, table.materialCode),
+]);
+
+export const ewohMaterialStock = pgTable("ewoh_material_stock", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  stockId: varchar("stock_id", { length: 180 }).notNull(),
+  materialId: varchar("material_id", { length: 180 }).notNull(),
+  locationId: varchar("location_id", { length: 180 }).notNull(),
+  locationKind: varchar("location_kind", { length: 32 }).notNull(),
+  /** NULL = 数量读不到（此时 quantityStatus 必为 'unknown'，DB CHECK 强制）。 */
+  quantity: numeric("quantity", { precision: 20, scale: 6 }),
+  unit: varchar("unit", { length: 32 }),
+  /** known=数量可信；unknown=读不到（quantity 必为 NULL）——"未知 ≠ 0"。 */
+  quantityStatus: varchar("quantity_status", { length: 16 }).notNull(),
+  sourceKind: varchar("source_kind", { length: 32 }).notNull(),
+  sourceRef: varchar("source_ref", { length: 255 }),
+  observedAt: customTimestamptz("observed_at", { precision: 3 }).notNull(),
+  note: text("note"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_material_stock_org_id").on(table.orgId, table.stockId),
+  index("idx_ewoh_material_stock_material").on(table.orgId, table.materialId, table.observedAt),
+  index("idx_ewoh_material_stock_location").on(table.orgId, table.locationId),
+]);
+
+export const ewohMaterialRequirement = pgTable("ewoh_material_requirement", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  requirementId: varchar("requirement_id", { length: 180 }).notNull(),
+  materialId: varchar("material_id", { length: 180 }).notNull(),
+  /** threshold=再订货点；demand=未完工订单需求（BOM 展开）。 */
+  requirementType: varchar("requirement_type", { length: 32 }).notNull(),
+  /** NULL = 未声明（此时 quantityStatus 必为 'unknown'，DB CHECK 强制）。 */
+  quantity: numeric("quantity", { precision: 20, scale: 6 }),
+  quantityStatus: varchar("quantity_status", { length: 16 }).notNull(),
+  unit: varchar("unit", { length: 32 }),
+  sourceKind: varchar("source_kind", { length: 32 }).notNull(),
+  sourceRef: varchar("source_ref", { length: 255 }),
+  dueAt: customTimestamptz("due_at", { precision: 3 }),
+  effectiveAt: customTimestamptz("effective_at", { precision: 3 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default('open'),
+  note: text("note"),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: uuid("_created_by"),
+  updatedBy: uuid("_updated_by"),
+}, (table) => [
+  uniqueIndex("uq_ewoh_material_req_org_id").on(table.orgId, table.requirementId),
+  index("idx_ewoh_material_req_material").on(table.orgId, table.materialId, table.requirementType, table.status),
+  index("idx_ewoh_material_req_source").on(table.orgId, table.sourceRef),
+]);
 
 /**
  * NEST-513 标注（2026-08-17）：以下 managed 表（schema-manifest.yaml 登记）由

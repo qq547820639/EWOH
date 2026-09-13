@@ -12,6 +12,7 @@ import type { ResourceStatus } from './resource';
 import type { MaintenanceConditionProjection } from './maintenance';
 import type { QualityFindingProjection } from './quality';
 import type { DecisionRecord } from './decision';
+import type { CandidateRejectReason } from './reject-reason';
 
 export type ScheduleStrategy =
   | 'keep_status'
@@ -30,6 +31,16 @@ export type CoordinateReference =
   | { type: 'FACTORY_CARTESIAN'; x: number; y: number; floorId: string | null }
   | { type: 'WGS84'; lat: number; lng: number }
   | { type: 'UNKNOWN' };
+
+/** Device battery is a measured percentage in [0, 100]; null means unavailable, never zero/full. */
+export function normalizeBatteryPct(value: unknown): number | null {
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+    ? value
+    : null;
+}
 
 export type SchedulePlanStatus =
   | 'shadow'
@@ -82,7 +93,9 @@ export type PlanStatus =
   | 'executing'
   | 'completed'
   | 'rejected'
-  | 'superseded';
+  | 'superseded'
+  /** DR-5：取消/回滚终态（未开始 assignment 已取消、预占已释放；详见 plan.cancel）。 */
+  | 'cancelled';
 
 export type AssignmentStatus =
   | 'proposed'
@@ -425,7 +438,7 @@ export interface SolverRequest {
     status: string;
     online: boolean;
     capabilities: string[];
-    batteryPct: number;
+    batteryPct: number | null;
     x: number | null;
     y: number | null;
     availableFromMs: number | null;
@@ -739,6 +752,21 @@ export interface PredictionConfig {
     /** 最小覆盖率，缺省 0.8。 */
     minCoverage?: number;
   };
+  /**
+   * 经验时长模型作为求解器时长输入的**激活开关**（ADR-056 消费侧，2026-09-13）。
+   *
+   * - `'off'`（缺省）：求解器一律用 `defaultTaskDurationMs`，与历史行为**逐字节一致**——
+   *   即使预测提供者已注入、已训练也不消费。这是确定性重放（同 snapshot+policy+seed =
+   *   同结果）在默认姿态下的护栏。
+   * - `'advisory'`：对没有计划窗（planStart/planEnd）且未锁定的任务，用经验时长模型的
+   *   预测中位数替代默认时长；提供者缺位、未训练、置信度不足、非 ml 来源 → 一律回退
+   *   默认值（绝不猜）。**仍是优化器输入**：不写生产调度状态、不替代 hard constraints
+   *   （shadow-only 边界不变）。
+   *
+   * 为什么走策略配置而不是环境变量：模型按 org 键控（ADR-070），放量天然是"逐租户
+   * 逐策略"的决策，与 CP-SAT 激活阶梯走同一治理面。
+   */
+  durationModelMode?: 'off' | 'advisory';
 }
 
 /** 优先级决策可解释输出（P0-2 / Phase 5）：含 rank 与 reasonCodes[]。 */
@@ -764,6 +792,28 @@ export interface WorldStateSnapshot {
   worldVersion: number;
   /** 各类实体的版本摘要（entityId → version）。 */
   entityVersions: Record<string, number>;
+  /**
+   * NO-64a：**内容版本**（entityId → version）——排除"随时间自然变化"的字段。
+   *
+   * 为什么必须有它：`entityVersions` 摘要里含有**派生自时间的标签**
+   * （设备 `status/online` 由遥测新鲜度推导、`telemetryUpdatedAt` 是证据时钟本身），
+   * 于是"什么都没发生、只是过了 60 秒"也会让方案被判过期 —— 现场结果是**没有任何方案
+   * 批得下去**（本仓库第 61–63 轮反复记录的 PLAN_STALE  epidemic）。
+   * 内容版本把"事实变了"与"证据变旧了"分开：前者必须拒绝，后者只在**方案真的依赖
+   * 那个实体且该实体已不可信**时才拒绝（见 `assertFreshForApprove`）。
+   *
+   * 兼容：老快照没有这个键 → 一律按严格相等判定（fail-closed，不静默放宽）。
+   */
+  entityContentVersions?: Record<string, number>;
+  /**
+   * NO-64a：实体证据快照（entityId → 来源时间/质量/状态）。
+   * 用于"证据老化"判定与过期诊断的**诚实分档**（事实变化 vs 仅证据老化），
+   * 以及告知现场"方案依赖的资源里哪些证据已经过期"。
+   */
+  entityEvidence?: Record<
+    string,
+    { sourceTs: number | null; dataQuality: 'FRESH' | 'STALE' | 'UNKNOWN'; status: string | null }
+  >;
   /** ADR-008 / NO-03b：快照构建时的契约自检结果（entityVersions 键/实体规范身份引用）。 */
   contractCheck?: { valid: boolean; errors: string[] };
   /** 当前生效的 reservation 列表（资源占用）。 */
@@ -810,6 +860,25 @@ export interface WorldStateSnapshot {
     freshnessMs?: number | null;
     /** 数据质量：FRESH / STALE / UNKNOWN（STALE/UNKNOWN 不被视为可用）。 */
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
+    /**
+     * NO-14g：**观测能力**名集（mode='observation'）——设备"能看到"什么。
+     * 与 `capabilities`（执行/交互，调度匹配语义）严格分离：传感器在这里非空、
+     * 在 capabilities 里为空（它不能执行任务，但这不妨碍它是世界模型的眼睛）。
+     */
+    observedCapabilities?: string[];
+    /**
+     * NO-15b：**被人为停用**的能力名（`ewoh_device_capability.status != 'active'`）。
+     * 不进 `capabilities`（不参与匹配），但必须可见：解释要能区分
+     * "设备没有这个能力"与"能力被人停用"，运维要能核对停用决定。
+     */
+    disabledCapabilities?: string[];
+    /** 停用留痕（谁/何时/为什么）；形状不全的项为 null 字段。 */
+    disabledCapabilityLifecycle?: Array<{
+      name: string;
+      operator: string | null;
+      reason: string | null;
+      at: string | null;
+    }>;
     /** NO-12u / ADR-044：能力投影（Canonical CapabilityRecord；契约合法记录）。 */
     capabilityRecords?: import('./capability').CapabilityRecord[];
     /**
@@ -884,14 +953,51 @@ export interface WorldStateSnapshot {
     entityId?: string;
     workerName: string | null;
     deviceModel: string | null;
-    batteryPct: number;
+    batteryPct: number | null;
     online: boolean;
     status: string | null;
-    /** 设备能力（如 'exo-lift' / 'vacuum'），用于 capability 匹配。 */
+    /**
+     * **执行/交互能力**（如 'exo-lift' / 'vacuum'），用于 capability 匹配。
+     * 语义 = "这台设备能做什么"；观测能力不在此列（见 observedCapabilities）。
+     */
     capabilities?: string[];
+    /**
+     * NO-14g：**观测能力**名集（mode='observation'，如 observe.temperature）。
+     * 语义 = "这台设备能看到什么"；供世界模型/AI 使用，不参与任务匹配。
+     * 环境/摄像/定位类设备的能力只出现在这里。
+     */
+    observedCapabilities?: string[];
+    /**
+     * NO-15b：**被人为停用**的能力名（`ewoh_device_capability.status != 'active'`）。
+     * 不进 `capabilities`（不参与匹配），但必须可见——解释要能区分
+     * "设备没有这个能力"与"能力被人停用"（前者查设备，后者查停用决定）。
+     */
+    disabledCapabilities?: string[];
+    /** 停用留痕（谁/何时/为什么）；形状不全的项为 null 字段（不半截渲染）。 */
+    disabledCapabilityLifecycle?: Array<{
+      name: string;
+      operator: string | null;
+      reason: string | null;
+      at: string | null;
+    }>;
+    /**
+     * NO-34a：**活跃外骨骼会话**（该设备正被某人佩戴）。
+     *
+     * 为什么进世界模型：佩戴中的外骨骼在物理上不可同时给另一人使用——
+     * 这是硬约束，不是提示。资格判定据此拒绝派工（`device_in_active_session`），
+     * 现场/地图也据此显示"佩戴中"。无会话 → null（不伪造）。
+     */
+    activeExoSession?: { sessionId: string; personId: string; startedAt: string } | null;
     /** 设备位置 x（location_lat 列；缺失则显式 UNKNOWN=null，绝不借用人员坐标）。 */
     x?: number | null;
     y?: number | null;
+    /**
+     * 业务设备号（`ewoh_device.device_id`，如 EXO-001 / ENV-SIM-x）。
+     * 调度键是 `id`（uuid，任务/方案引用它）；边缘遥测、能力台账、摄入事件
+     * 用业务号标识设备——本字段是两者之间的**显式 join 键**（缺省 null 表示
+     * 该设备行没有业务号，属数据缺口而非"无此设备"）。
+     */
+    deviceId?: string | null;
     /** 设备所在工位 id（设备自身空间实体 parentId 解析，未知则 null）。 */
     locationStationId?: string | null;
     /** 设备可用时间窗（available_windows 列；无则空数组）。 */
@@ -910,6 +1016,11 @@ export interface WorldStateSnapshot {
     dataQuality?: 'FRESH' | 'STALE' | 'UNKNOWN';
     /** NO-12u / ADR-044：能力投影（Canonical CapabilityRecord；契约合法记录）。 */
     capabilityRecords?: import('./capability').CapabilityRecord[];
+    /**
+     * NO-14f：能力台账缺口（契约不合法 / kind 异常 / 缺租户上下文）。
+     * 显式留痕——台账里的脏记录既不能进能力集，也不能静默消失。
+     */
+    capabilityLedgerIssues?: string[];
     /** 派生字段标记（如 capabilities 来自型号白名单兜底）。 */
     derived?: string[];
     /**
@@ -992,6 +1103,66 @@ export interface WorldStateSnapshot {
     deviceId: string | null;
     stationId: string | null;
   }>;
+  /**
+   * DR-6 世界模型扩展：物料缺口事实（ERP 出站事件聚合投影，与 /api/materials
+   * 同源）。缺失环节（无 ERP 事件）为空数组 + materialsNote 显式说明，
+   * 不伪造"库存充足"。可选字段（向后兼容）：旧快照缺失时按"无物料事实"处理。
+   */
+  materials?: WorldSnapshotMaterial[];
+  /** 物料投影口径说明（如"无 ERP 出站事件，物料事实不可用"）；null=正常投影。 */
+  materialsNote?: string | null;
+  /**
+   * DR-6 世界模型扩展：未完工订单事实（MES/ERP 订单事件投影）。调度可据此
+   * 理解订单压力（交期临近订单的关联任务优先级解释依据之一）。
+   */
+  orders?: WorldSnapshotOrder[];
+  /** 订单投影口径说明；null=正常投影。 */
+  ordersNote?: string | null;
+  /**
+   * DR-6 世界模型扩展：班次定义投影（ewoh_shift）。供快照消费方理解
+   * "当前班次"上下文；无班次定义时为空数组（显式未知，不猜测默认班）。
+   */
+  shifts?: WorldSnapshotShift[];
+}
+
+/** DR-6：世界快照物料事实行（缺口视角——只列有缺口的物料，全满足不出行）。 */
+export interface WorldSnapshotMaterial {
+  materialId: string;
+  name?: string | null;
+  unit?: string | null;
+  onHand: number;
+  requiredTotal: number;
+  /** 缺口 = requiredTotal - onHand（>0 才出现）。 */
+  shortage: number;
+  /** 关联未完工订单号（证据链）。 */
+  orderNos: string[];
+  minThreshold?: number | null;
+  /** 低于再订货点（onHand < minThreshold），即使无需求缺口也提示。 */
+  belowThreshold: boolean;
+}
+
+/** DR-6：世界快照订单事实行（未完工订单）。 */
+export interface WorldSnapshotOrder {
+  orderId: string;
+  orderNo: string;
+  status: string;
+  priority?: string | null;
+  dueAt?: string | null;
+  /** 剩余工序数（无 BOM 明细时为 null，不伪造）。 */
+  remainingOperations?: number | null;
+  /** 关联任务 id（订单→任务映射，无映射为空数组）。 */
+  taskIds: string[];
+}
+
+/** DR-6：世界快照班次定义行。 */
+export interface WorldSnapshotShift {
+  shiftId: string;
+  name: string;
+  code?: string | null;
+  startTime: string;
+  endTime: string;
+  crossesMidnight: boolean;
+  active: boolean;
 }
 
 export interface SchedulingRun {
@@ -1236,6 +1407,20 @@ export interface SchedulingPlanV2 {
    * decision_invalid:<errorCode> 等；空 = 无缺口。
    */
   decisionProjectionIssues?: Array<{ assignmentId: string; reason: string }>;
+  /**
+   * DR-5 方案取消/回滚摘要（status === 'cancelled' 时随方案回传）。
+   * 部分回滚语义：已开始的 assignment（received/executing/completed/failed）
+   * 物理上不可撤销，显式列入 irreversibleAssignmentIds（不静默吞掉）。
+   */
+  cancel?: {
+    reason: string;
+    cancelledBy: string;
+    cancelledAt: string;
+    cancelledAssignmentIds: string[];
+    irreversibleAssignmentIds: string[];
+    returnedTaskIds: string[];
+    releasedReservations: number;
+  };
 }
 
 export interface SchedulingFeedbackResource {
@@ -1260,6 +1445,8 @@ export interface RecordActualsRequest {
   actualTravel?: number | null;
   actualWait?: number | null;
   actualResource?: SchedulingFeedbackResource | null;
+  /** 操作端报告来源；服务端仅持久化为报告元数据，不得提升真实训练资格。 */
+  reportedSource?: 'manual_report' | 'simulated';
 }
 
 export interface SchedulingFeedback {
@@ -1679,7 +1866,7 @@ export interface TaskCandidateResource {
   skillMatch: boolean;
   /** 人员当前负荷（0-1）。 */
   workload: number;
-  /** 设备电量百分比；纯手工作业（无设备）时为 null。 */
+  /** 设备电量百分比；无设备或电量不可用时为 null。 */
   batteryPct: number | null;
   /** 是否存在时间/设备/工位 reservation 冲突。 */
   reservationConflict: boolean;
@@ -1690,6 +1877,19 @@ export interface TaskCandidateResource {
   // --- Command Map 增量（Phase 1 / P1-2，05 §6；可选字段，向后兼容） ---
   /** 结构化拒绝原因（与 solver 共享同一枚举；eligible=false 时非空）。 */
   rejectReasons?: CandidateRejectReason[];
+  /**
+   * NO-15b：能力相关拒绝的可读细节（哪个能力、谁在何时因何停用）。
+   * 现场据此知道该去复核停用决定还是换设备/加装。
+   */
+  capabilityNotes?: string[];
+  /**
+   * NO-38b：外骨骼会话相关的**正向**说明（例如"该设备正由本候选人员佩戴，
+   * 属人机同体配对；换人需先结束会话或改派佩戴者"）。
+   *
+   * 为什么需要：拒绝侧有 `device_in_active_session`，但合法的那一条（佩戴者本人）
+   * 此前没有任何说明——现场看到"只有他能接"却不知道为什么（原则 5）。
+   */
+  sessionNotes?: string[];
   /** 候选评分分解（可解释；不可行候选为 null/全 0）。 */
   scoreBreakdown?: ScoreBreakdown | null;
   /** 工位维度候选明细（station 决策变量，P1-4）。 */
@@ -1709,28 +1909,12 @@ export interface TaskCandidateResource {
 // ============================================================================
 
 /** 结构化候选拒绝原因（端点与求解器共享同一枚举）。 */
-export type CandidateRejectReason =
-  | 'missing_skill'
-  | 'missing_certification'
-  | 'cert_expired'
-  | 'person_unavailable'
-  | 'health_blocked'
-  | 'device_offline'
-  | 'battery_low'
-  | 'missing_device_capability'
-  | 'station_capability_mismatch'
-  | 'station_capacity_exceeded'
-  | 'station_reserved'
-  | 'device_reserved'
-  | 'time_conflict'
-  | 'zone_forbidden'
-  | 'predecessor_pending'
-  | 'safety_blocked'
-  | 'must_finish_by_violation'
-  | 'route_infeasible'
-  | 'not_in_candidate_stations'
-  | 'stale_data'
-  | 'derived_data_fail_closed';
+/**
+ * 候选拒绝原因：唯一词表在 `shared/reject-reason.ts`（运行时数组派生类型 +
+ * 编译期穷尽的文案表）。此前这里手写联合类型，与 eligibility 实际产出的键
+ * 脱节 8 个成员（维护/质量封锁等），且靠 `as CandidateRejectReason[]` 断言掩盖。
+ */
+export type { CandidateRejectReason } from './reject-reason';
 
 /** 候选评估（Task×Person×Device×Station×时间窗 → hard 是否满足 + 可解释拒绝）。 */
 export interface CandidateEvaluation {
@@ -1743,6 +1927,13 @@ export interface CandidateEvaluation {
   eligible: boolean;
   /** 结构化拒绝原因（eligible=true 时为空数组）。 */
   rejectReasons: CandidateRejectReason[];
+  /**
+   * NO-15b：能力相关拒绝的**可读细节**（哪个能力、被谁/何时/为何停用）。
+   * 只解释、不参与判定：判定仍由 `rejectReasons` 表达。
+   */
+  capabilityNotes?: string[];
+  /** NO-38b：外骨骼会话相关的正向说明（人机同体配对；只解释不判定）。 */
+  sessionNotes?: string[];
   /** 评分分解（eligible=false 时 total=Infinity）。 */
   scoreBreakdown: ScoreBreakdown;
   /** 路径成本（无可行路径为 null）。 */
@@ -1785,6 +1976,39 @@ export interface TaskCandidatesResponse {
   taskId: string;
   taskTitle: string | null;
   taskStatus: string | null;
+  /**
+   * NO-16a：任务当前的能力要求（编辑器 prefill 用；缺省 = 无要求）。
+   * 与调度匹配同一来源（任务行），前端不重算。
+   */
+  requiredDeviceCapabilities?: string[];
+  requiredStationCapabilities?: string[];
+  /**
+   * NO-17a：**反事实放宽建议**（仅在零合格候选且原因为能力要求时给出）。
+   * 只建议、不自动放宽——改要求是人工动作，且需重新生成方案（原则 4/6）。
+   */
+  capabilityRelaxationSuggestions?: Array<{
+    /**
+     * 建议放宽的能力集合（NO-18b：`kind='combination'` 时需要**同时**放宽多项才有效）。
+     * 兼容字段：单项建议时为长度 1 的数组。
+     */
+    capabilities: string[];
+    /** 展示标签（单项 = 能力名；组合 = `a + b`）。 */
+    label: string;
+    /** 单项建议 / 组合建议（组合意味着放宽任一项都无效）。 */
+    kind: 'single' | 'combination';
+    /** NO-19a：涉及能力中的最高风险等级（未登记等级 → null，不假装低风险）。 */
+    risk?: 'low' | 'medium' | 'high' | null;
+    /** true = 放宽涉及高风险能力：必须由**安全负责人**确认（原则 4/6，调度员不得单独决定）。 */
+    requiresSafetyReview?: boolean;
+    /** 建议放宽的（任务当前要求的）能力名（= 单项时的 capabilities[0]，向后兼容）。 */
+    capability: string;
+    /** 去掉该要求后会新增的合格候选数。 */
+    addedEligibleCount: number;
+    /** 这些候选设备**实际具备**的能力（供现场判断是否可替代，不是等价声明）。 */
+    sampleDeviceCapabilities: string[];
+    /** 面向现场的解释（含"仅建议/需确认/需重新生成方案"的边界说明）。 */
+    note: string;
+  }>;
   /** 任务已分配/锁定（仍返回候选，但标记当前受让人）。 */
   assigned: boolean;
   lockedAssigneeId: string | null;
@@ -1805,6 +2029,8 @@ export type SchedulingConflictType =
   | 'person_unavailable'
   | 'device_offline'
   | 'low_battery'
+  /** 设备未上报电量（未知≠低电量，两者必须区分：未知是数据缺口，低是事实）。 */
+  | 'battery_unknown'
   | 'predecessor_violation'
   | 'station_capacity'
   | 'forbidden_zone'
@@ -1813,7 +2039,12 @@ export type SchedulingConflictType =
   | 'stale_plan'
   | 'reservation_conflict'
   /** v0.7 A2：预占即将过期（倒计时 < 阈值），需提前续约/重排，避免执行中断。 */
-  | 'reservation_expiring';
+  | 'reservation_expiring'
+  /**
+   * NO-58b：该资源的**感知融合不可信**（多源冲突/过期/置信度不足 → 门控 `strongAdviceAllowed=false`）。
+   * 提示层冲突：只叫人核对感知来源，**不阻断**任何调度，也不自动改派。
+   */
+  | 'perception_inconsistent';
 
 /** 冲突生命周期状态（02 §6.1 状态机）。 */
 export type ConflictLifecycleStatus =
@@ -1948,9 +2179,20 @@ export interface SchedulingExecution {
   solverVersion: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * 展示用冗余（2026-09-11）：任务标题 / 人员姓名。执行记录本体只存 ID；
+   * 列表接口批量回填——raw UUID 不能直接呈现给班组长/调度员（现场可读性）。
+   * 目标不存在或未解析时为 null——UI 显示"未知"，不伪造。
+   */
+  taskTitle?: string | null;
+  personName?: string | null;
 }
 
 export interface ExecutionUpdateRequest {
+  /** Reporting can only downgrade eligibility; real evidence is server persisted. */
+  reportedSource?: 'manual_report' | 'simulated';
+  /** Compatibility alias for deviationReason. */
+  note?: string | null;
   /** 目标状态；终态转换（STARTED/COMPLETED/FAILED/CANCELLED）幂等。 */
   status?: SchedulingExecutionStatus;
   actualStartAt?: string | null;
@@ -2076,10 +2318,39 @@ export interface PolicyGateConfig {
   maxSolverLatencyP95Ms: number;
 }
 
+/**
+ * 单条 Gate 检查结果。
+ *
+ * `skipped` 区分"已验证通过"与"无证据可验"：早期实现把缺数据检查直接置为
+ * `ok: true`，使空库上的 Gate 在没有任何执行证据时也返回 `passed: true`，
+ * 属于把缺失数据伪造成确定结论。`ok` 仍表示"未判失败"，但消费方必须读
+ * `skipped` / `insufficientEvidence` 才能判断该结论是否有证据支撑。
+ */
+export interface PolicyGateCheck {
+  name: string;
+  ok: boolean;
+  actual: number | null;
+  threshold: number | null;
+  detail?: string;
+  /** 无证据可评（actual 为 null）→ 本条未真正校验，不代表通过。 */
+  skipped: boolean;
+}
+
 export interface PolicyGateEvaluation {
+  /** 所有已评估检查均未失败。无证据时可能为 true，须结合 insufficientEvidence 解读。 */
   passed: boolean;
-  checks: Array<{ name: string; ok: boolean; actual: number | null; threshold: number | null; detail?: string }>;
+  checks: PolicyGateCheck[];
   replayId: string | null;
+  /** 存在至少一条因缺证据而跳过的检查——此时 passed 不是"已验证"结论。 */
+  insufficientEvidence: boolean;
+  /** 证据计数与跳过的检查名，供 UI/审计直接展示可信度。 */
+  evidence: {
+    evaluated: number;
+    skipped: number;
+    skippedChecks: string[];
+    /** 候选策略是否在调用租户作用域内存在（不存在时不会返回评估结果）。 */
+    candidatePolicyExists: boolean;
+  };
   shadowEvaluation: {
     shadowRuns: number;
     shadowConflicts: number;

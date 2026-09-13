@@ -132,7 +132,15 @@ export class FileController {
     res.setHeader('Content-Type', record.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(record.filename)}"`);
     if (stream) {
-      const file = new StreamableFile(stream as import('node:stream').Readable);
+      const readable = stream as import('node:stream').Readable;
+      // 流式下载必须挂 error 兜底：定位与打开之间的 TOCTOU 删除 / 存储端
+      // 中断会让流发出 'error'，pipe 不转发错误且无人监听 ⇒ uncaught
+      // exception ⇒ 整个 API 进程退出（pipe 过程中 headers 已发出，只能
+      // 掐断连接，不能再造一个 5xx 响应）。
+      readable.on('error', () => {
+        res.destroy();
+      });
+      const file = new StreamableFile(readable);
       file.getStream().pipe(res);
       return;
     }

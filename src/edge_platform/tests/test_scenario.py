@@ -75,6 +75,25 @@ def _ctx():
 
 # ---------- 指标计算 ----------
 class ComputeMetricsTest(unittest.TestCase):
+    def test_zero_battery_is_a_risk_in_metrics_and_emergency_replacement(self):
+        context = _ctx()
+        context["devices_state"]["d1"]["battery_pct"] = 0
+        metrics = compute_metrics(context["current_assignment"], context)
+        self.assertIn("d1", metrics.low_battery_devices)
+        plans = ScenarioSimulator().generate_plans(None, context, [PlanType.EQUIPMENT_EMERGENCY])
+        self.assertNotIn("d1", {assignment["device_id"] for assignment in plans[0].assignment.values()})
+
+    def test_missing_and_nonfinite_battery_are_unknown_not_healthy(self):
+        for battery in (None, "invalid", float("nan"), float("inf"), -1, 2):
+            with self.subTest(battery=battery):
+                context = _ctx()
+                context["devices_state"]["d1"]["battery_pct"] = battery
+                metrics = compute_metrics(context["current_assignment"], context)
+                self.assertIn("d1", metrics.unknown_battery_devices)
+                self.assertLess(metrics.confidence, 1)
+                comparison = compare(ScenarioSimulator().generate_plans(None, context))
+                self.assertIn("请先补充或核实遥测", comparison.recommendation)
+
     def test_high_load_and_low_battery_identified(self):
         ctx = _ctx()
         # p1 当前负荷 0.7 + t1 负荷增量 0.2 = 0.9 > 0.8 → 高负荷

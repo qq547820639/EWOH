@@ -161,10 +161,18 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
         cpsat_worker.CPSAT_WORKER_MAX_SOLVE_MS = 10000
         cpsat_worker.CPSAT_WORKER_TIMEOUT_MARGIN_MS = 50
 
-        def slow_solve(_request):
-            # EDT-008：睡眠 2s（>> 排队等待 300ms + 线程启动抖动），保证 6 个
-            # 并发请求必然在占用窗口内到达，saturation 断言不受 CI 负载抖动影响。
-            time.sleep(2.0)
+        # EDT-008 / 2026-09-11 二次加固：**不再依赖 sleep + barrier 的时序**。
+        # 曾用"睡眠 5s + 6 线程 barrier"，在整仓并行跑动（CPU 饱和）时仍会假失败——
+        # 请求到达被调度抖动拉开，先到的两个已跑完，后来的没等到饱和就放行了。
+        # 现在用显式同步：假求解器**阻塞**到测试释放为止，因此"两个槽位被占住"
+        # 是确定事实，排队请求必然超时 → 429；断言不再受机器负载影响。
+        solve_started = threading.Semaphore(0)
+        release_solves = threading.Event()
+
+        def blocking_solve(_request):
+            solve_started.release()
+            # 有界等待：即使测试逻辑出错也不会把整套测试挂死（超时后退化为普通求解）
+            release_solves.wait(timeout=20)
             return SolverResponse(
                 solverVersion="cpsat-v1",
                 solverStatus="OPTIMAL",
@@ -172,7 +180,7 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
                 objective=1.0,
             )
 
-        cpsat_worker.solve = slow_solve
+        cpsat_worker.solve = blocking_solve
         cpsat_worker._ensure_runtime()
 
         results: list = []
@@ -185,17 +193,30 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
             with lock:
                 results.append((status, payload))
 
-        threads = [threading.Thread(target=fire) for _ in range(6)]
-        for t in threads:
+        # 分两批发（**不靠同时到达**）：先把两个槽位占满并确认真的开跑，再送多余的请求。
+        # 这样"2 个放行 + 4 个排队超时"是结构性事实，CPU 再忙也不会翻转。
+        first_wave = [threading.Thread(target=fire) for _ in range(2)]
+        for t in first_wave:
             t.start()
-        for t in threads:
-            t.join(timeout=15)
+        self.assertTrue(solve_started.acquire(timeout=10), "第 1 个求解未开始")
+        self.assertTrue(solve_started.acquire(timeout=10), "第 2 个求解未开始")
+
+        second_wave = [threading.Thread(target=fire) for _ in range(4)]
+        for t in second_wave:
+            t.start()
+        # 排队等待上限 300ms：给足余量，确保这 4 个是被"排队超时"拒绝的
+        time.sleep(0.6)
+        release_solves.set()
+
+        for t in first_wave + second_wave:
+            t.join(timeout=30)
 
         self.assertEqual(len(results), 6, "6 个请求都必须得到响应（不挂起）")
         ok = sum(1 for s, _ in results if s == 200)
         saturated = sum(1 for s, _ in results if s == 429)
-        self.assertGreaterEqual(ok, 1, "应至少有请求被放行执行")
-        self.assertGreaterEqual(saturated, 1, "超出并发上限的请求应得到 429")
+        # 结构性断言：两个槽位被占满 → 恰好 2 个放行；其余 4 个排队超时 → 恰好 4 个 429
+        self.assertEqual(ok, 2, f"恰好两个请求应被放行执行（实际 {ok}）")
+        self.assertEqual(saturated, 4, f"其余 4 个应得到 429（实际 {saturated}）")
         for s, payload in results:
             if s == 429:
                 self.assertEqual(payload["error"]["code"], "QUEUE_SATURATED")

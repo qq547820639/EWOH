@@ -12,6 +12,9 @@ roles:
       - global_config_write
       - cross_org_read
       - emergency_policy_manage
+      # approval_bypass 的唯一合法角色由契约写死，不可在此单独放宽，见 notes
+      # 「approval_bypass 裁决」。原先误记在 safety_admin 名下（R-5 漂移修复）。
+      - approval_bypass
   dispatcher:
     centers: [command-center, digital-world, scheduling, ai-decision, devices, alerts, command-map]
     high_risk:
@@ -27,7 +30,6 @@ roles:
     centers: [command-center, personnel, alerts, audit, command-map]
     high_risk:
       - sensitive_health_read
-      - approval_bypass
       - risk_dispose
   device_ops:
     centers: [devices, model-management, data-assets, command-map]
@@ -62,6 +64,7 @@ rules:
     allowed: false
 
 notes:
+  - "approval_bypass 裁决（R-5，2026-09-13）：本行**以契约为唯一事实源**。contracts/state-machines/approval.yaml 的 `pending → bypassed` 迁移写死 role: high_privilege_admin（映射 HIGH_PRIVILEGE_ROLE = global_admin），服务层 approval-persistence.service.ts `bypass()`（:653）与控制器 @Roles（APPROVAL_BYPASS_ROLES）也只放行 global_admin。按「安全侧更严」原则裁决：矩阵原先把 approval_bypass 记在 safety_admin 名下，比契约/服务层**更宽**，属漂移，现改为与契约/服务层逐字一致（仅 global_admin）。谁要把它挪回 safety_admin，必须先改契约与服务层——矩阵不得单独放宽。"
   - "system center: GET /api/system/config is available to global_admin and safety_admin; PUT is global_admin only, matching UI visibility and write sensitivity."
   - "device contract routes: /api/devices is enforced as global_admin/dispatcher/device_ops."
   - "worker centers my-tasks/my-risk are planned but not routed or implemented; worker has no routed UI center."

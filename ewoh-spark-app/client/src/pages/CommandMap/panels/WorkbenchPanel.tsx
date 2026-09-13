@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { getOverview, getEvents, handleEvent } from '@client/src/api/dashboard';
 import { getActivePlans, approvePlan, rejectPlanV2 } from '@client/src/api/scheduler';
 import { getCurrentOperator } from '@client/src/lib/auth';
+import { queryKeys } from '@client/src/hooks/queryKeys';
 import type {
   OverviewStats,
   EventInfo,
@@ -141,7 +142,7 @@ export default function WorkbenchPanel({
       setConfirmTarget(null);
       setConfirmReason('');
       queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedulerActivePlans });
     },
     onError: () => toast.error('方案批准失败'),
   });
@@ -154,7 +155,7 @@ export default function WorkbenchPanel({
       setRejectTarget(null);
       setRejectReason('');
       queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['scheduler-active-plans'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.schedulerActivePlans });
     },
     onError: () => toast.error('方案驳回失败'),
   });
@@ -190,7 +191,7 @@ export default function WorkbenchPanel({
     onSuccess: () => {
       toast.success('事件已处置');
       queryClient.invalidateQueries({ queryKey: ['workbench-events-open'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events() });
     },
     onError: () => toast.error('事件处置失败'),
   });

@@ -195,8 +195,16 @@ const MobileWorkbench = (): React.ReactElement => {
         transitionMutation.mutate({ orderId, stepId, action, body });
         return;
       }
-      void queueTransition({ orderId, stepId, action, body });
-      toast.info('已加入待同步队列，联网后自动提交');
+      // 离线入队本身可能失败（IndexedDB 被禁用/隐私模式、附件配额已满、压缩或
+      // IDB 事务失败）。此时动作既没有发出也没有排队——绝不能提示"已加入待同步
+      // 队列"（联网后永远不会提交，操作被静默丢弃），必须显式报错。
+      queueTransition({ orderId, stepId, action, body })
+        .then(() => toast.info('已加入待同步队列，联网后自动提交'))
+        .catch((error: unknown) => {
+          toast.error('离线入队失败，本次操作尚未被记录', {
+            description: errorDescription(error),
+          });
+        });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isOnline, queueTransition, transitionMutation],
@@ -213,8 +221,14 @@ const MobileWorkbench = (): React.ReactElement => {
         inspectMutation.mutate({ orderId, stepId, result, note });
         return;
       }
-      void queueInspection({ orderId, stepId, result, note });
-      toast.info('质检已加入待同步队列');
+      // 同 submitTransition：入队失败必须报错，不得假确认（见上）。
+      queueInspection({ orderId, stepId, result, note })
+        .then(() => toast.info('质检已加入待同步队列'))
+        .catch((error: unknown) => {
+          toast.error('质检离线入队失败，本次记录尚未保存', {
+            description: errorDescription(error),
+          });
+        });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isOnline, queueInspection, inspectMutation],

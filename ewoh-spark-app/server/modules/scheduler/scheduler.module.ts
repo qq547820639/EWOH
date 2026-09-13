@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AiModule } from '../ai/ai.module';
+import { PerceptionModule } from '../perception/perception.module';
 import { SchedulerController } from './scheduler.controller';
+import { PlannedVsActualService } from './planned-vs-actual.service';
+import { PlannedVsActualController } from './planned-vs-actual.controller';
 import { SchedulerService } from './scheduler.service';
 import { SchedulingNarratorService } from './narration/scheduling-narrator.service';
 import { WorldStateSnapshotService } from './world-state.service';
@@ -24,6 +27,7 @@ import { SchedulingFeedbackService } from './scheduling-feedback.service';
 import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
 import { ExecutionService } from './execution.service';
+import { ExecutionReceiptApplicationService } from './execution-receipt-application.service';
 import { KpiService } from './kpi.service';
 import { PlanCompareService } from './plan-compare.service';
 import { ConflictPreviewService } from './conflict-preview.service';
@@ -44,6 +48,7 @@ import { TaskModule } from '../task/task.module';
 import { HealthModule } from '../health/health.module';
 // NO-12s / ADR-042：审批前自动布局仿真预验证（SimulationService 注入 PlanService）。
 import { SimulationModule } from '../simulation/simulation.module';
+import { MaterialsModule } from '../materials/materials.module';
 
 /**
  * Task 6：Outbox → LISTEN/NOTIFY 低延迟 wake-up。
@@ -70,8 +75,10 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
   : [];
 
 @Module({
-  imports: [TaskModule, HealthModule, SimulationModule, AiModule],
-  controllers: [SchedulerController, SchedulerMetricsController],
+  imports: [TaskModule, HealthModule, SimulationModule, AiModule, MaterialsModule,
+    // NO-58b：感知融合门控（冲突面提示层；只读，不阻断调度）。
+    PerceptionModule],
+  controllers: [SchedulerController, SchedulerMetricsController, PlannedVsActualController ],
   providers: [
     SchedulerMetricsService,
     SchedulingFeedbackService,
@@ -94,6 +101,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     ConflictService,
     PolicyReplayService,
     ExecutionService,
+    ExecutionReceiptApplicationService,
     KpiService,
     PlanCompareService,
     ConflictPreviewService,
@@ -118,8 +126,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     // NO-13p / ADR-065：Decision History 跨 kind 检索（只读聚合读面）。
     DecisionHistoryService,
     // Task 6：NOTIFY wake-up 监听器（条件装配，默认不提供）。
-    ...SCHEDULER_NOTIFY_PROVIDERS,
-  ],
+    ...SCHEDULER_NOTIFY_PROVIDERS, PlannedVsActualService ],
   exports: [
     SchedulerService,
     SchedulerMetricsService,
@@ -139,6 +146,7 @@ const SCHEDULER_NOTIFY_PROVIDERS = SCHEDULER_NOTIFY_URL
     ConflictService,
     PolicyReplayService,
     ExecutionService,
+    ExecutionReceiptApplicationService,
     KpiService,
     PlanCompareService,
     ConflictPreviewService,

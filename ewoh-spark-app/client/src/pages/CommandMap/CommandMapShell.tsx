@@ -43,6 +43,7 @@ import type {
   SchedulingContextResponse,
 } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
+import { queryKeys } from '@client/src/hooks/queryKeys';
 import { logger } from '../../lib/logger';
 import { getCurrentOperator } from '../../lib/auth';
 import {
@@ -73,7 +74,12 @@ import {
 import { FRESHNESS_STATUS_CLASSES } from '@client/src/components/DataFreshnessBadge';
 import { planCompareMapVM, extractUnchangedTasks, DEFAULT_PLAN_COMPARE_UI, type PlanCompareUiState } from './vm/planCompareVM';
 import { useQuery as useQueryCompare } from '@tanstack/react-query';
-import { comparePlansV2 } from '@client/src/api/scheduler';
+import {
+  comparePlansV2,
+  getApprovalStatus,
+  requestCapabilityRelaxationApproval,
+  updateTaskRequirements,
+} from '@client/src/api/scheduler';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
 import { retryAll } from './queryState';
 import { getBrainSuggestions } from '@client/src/api/gamification';
@@ -82,6 +88,13 @@ import ReplayWorkspace from './ReplayWorkspace';
 import SchedulerWorkspace from './SchedulerWorkspace';
 import ConflictWorkspace from './ConflictWorkspace';
 import DecisionCockpitWorkspace from './DecisionCockpitWorkspace';
+import {
+  buildRelaxationApprovalSubject,
+  errorText,
+  isCapabilityRelaxationApprovalRequired,
+  relaxedHighRiskForSave,
+} from './vm/taskRequirementsVM';
+import { describeCapabilityApprovalFreshness } from '@shared/capability-requirements';
 
 // 按需懒加载 (Task 9 代码分割)：各底部面板仅在对应标签激活时渲染。
 // React.lazy 将重/低频组件拆分为独立 chunk，降低 CommandMap 主 chunk 的传载体积。
@@ -618,7 +631,7 @@ const CommandMapShell = (): React.ReactElement => {
       })
         .then(() => {
           toast.success('事件已处置');
-          queryClient.invalidateQueries({ queryKey: ['events'] });
+          queryClient.invalidateQueries({ queryKey: queryKeys.events() });
         })
         .catch((err) => {
           toast.error('处置失败', {
@@ -635,6 +648,116 @@ const CommandMapShell = (): React.ReactElement => {
     },
     [focusEventEntity],
   );
+
+  /**
+   * NO-16a：保存任务能力要求（能力模型唯一人工写入口的前端接线）。
+   * 成功后失效候选查询：要求变了，候选集必须重算（否则面板还显示旧要求下的结论）。
+   */
+  const [requirementWarnings, setRequirementWarnings] = useState<string[]>([]);
+  /** NO-20a：放宽高风险能力被闸门拦下时的现场提示（含服务端原因）。 */
+  const [approvalRequired, setApprovalRequired] = useState<
+    { message: string; relaxedHighRisk: string[] } | null
+  >(null);
+  const [pendingApprovalId, setPendingApprovalId] = useState<string | null>(null);
+  /** NO-22a：任务侧审批的时效文案（"还有多久能用"，与设备侧同一 shared 实现）。 */
+  const [pendingApprovalFreshness, setPendingApprovalFreshness] = useState<string | null>(null);
+  const saveRequirementsMutation = useMutation({
+    mutationFn: (params: {
+      taskId: string;
+      deviceNames: string[];
+      stationNames: string[];
+      approvalId?: string;
+    }) =>
+      updateTaskRequirements(params.taskId, {
+        requiredDeviceCapabilities: params.deviceNames,
+        requiredStationCapabilities: params.stationNames,
+        ...(params.approvalId ? { approvalId: params.approvalId } : {}),
+      }),
+    onSuccess: (data, params) => {
+      setRequirementWarnings(data.warnings ?? []);
+      // 成功（含"经审批放行"）→ 清掉闸门提示与待用审批号
+      setApprovalRequired(null);
+      setPendingApprovalId(null);
+      setPendingApprovalFreshness(null);
+      if ((data.warnings ?? []).length > 0) {
+        toast.warning('能力要求已保存，但当前无法匹配', {
+          description: data.warnings.join('；'),
+        });
+      } else {
+        toast.success('能力要求已保存', {
+          description: '已触发重排：旧方案按旧要求计算，请重新生成/审批。',
+        });
+      }
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.schedulerTaskCandidates(params.taskId),
+      });
+    },
+    onError: (err: unknown, params) => {
+      // NO-20a：放宽高风险能力需安全管理员审批——把服务端原因与入口给到现场，
+      // 而不是只弹一句"保存失败"。平台不会自动放宽，也不会替现场发起审批。
+      if (isCapabilityRelaxationApprovalRequired(err)) {
+        const message = errorText(err) || '放宽高风险能力需安全管理员审批';
+        const relaxedHighRisk = relaxedHighRiskForSave(
+          candidatesQuery.data ?? null,
+          params.deviceNames,
+        );
+        setApprovalRequired({ message, relaxedHighRisk });
+        toast.warning('需安全管理员审批', { description: message });
+        return;
+      }
+      toast.error('能力要求保存失败', { description: errorDescription(err) });
+    },
+  });
+
+  /** 发起"放宽高风险能力"的审批（由他人审批；现场随后粘贴审批号重试保存）。 */
+  const requestApprovalMutation = useMutation({
+    mutationFn: (params: { taskId: string; deviceNames: string[]; stationNames: string[] }) => {
+      const relaxed = relaxedHighRiskForSave(candidatesQuery.data ?? null, params.deviceNames);
+      return requestCapabilityRelaxationApproval({
+        taskId: params.taskId,
+        subject: buildRelaxationApprovalSubject({
+          taskId: params.taskId,
+          taskTitle: candidatesQuery.data?.taskTitle ?? null,
+          relaxedHighRisk: relaxed,
+          nextDeviceCapabilities: params.deviceNames,
+          nextStationCapabilities: params.stationNames,
+        }),
+      });
+    },
+    onSuccess: (data) => {
+      setPendingApprovalId(data.id);
+      // 新建的审批还没有"通过时间"：如实显示"等待审批"，不假装有时效
+      setPendingApprovalFreshness(describeCapabilityApprovalFreshness(data.approvedAt ?? null).label);
+      toast.success('已发起安全审批', {
+        description: `审批号 ${data.id}｜由安全管理员审批；获批后粘贴审批号再保存一次。`,
+      });
+    },
+    onError: (err: unknown) => {
+      toast.error('发起审批失败', { description: errorDescription(err) });
+    },
+  });
+
+  /** 检查审批状态：已通过则提示可直接重试保存（不自动保存——改要求仍需人工确认）。 */
+  const checkApproval = useCallback(async () => {
+    if (!pendingApprovalId) return;
+    try {
+      const approval = await getApprovalStatus(pendingApprovalId);
+      // NO-22a：时效如实展示——通过后按 24 小时有效期提示"还能用多久"
+      setPendingApprovalFreshness(describeCapabilityApprovalFreshness(approval.approvedAt ?? null).label);
+      if (approval.status === 'approved') {
+        const freshness = describeCapabilityApprovalFreshness(approval.approvedAt ?? null);
+        toast.success('审批已通过', {
+          description: freshness.valid
+            ? `请粘贴审批号后点击保存（平台不会自动代劳）。${freshness.label}`
+            : `审批已通过但${freshness.label}：请重新申请审批后再保存。`,
+        });
+      } else {
+        toast.info(`审批状态：${approval.status}`, { description: '等待安全管理员处理。' });
+      }
+    } catch (err) {
+      toast.error('审批状态查询失败', { description: errorDescription(err) });
+    }
+  }, [pendingApprovalId]);
 
   const createReplayItemMutation = useMutation({
     mutationFn: (event: { eventId: string; title: string; ts: string }) =>
@@ -886,6 +1009,18 @@ const CommandMapShell = (): React.ReactElement => {
           planOverlay={planOverlayMemo}
           candidates={candidates ?? null}
           selectedTaskId={selectedTaskId}
+          onSaveRequirements={(taskId, deviceNames, stationNames, approvalId) =>
+            saveRequirementsMutation.mutate({ taskId, deviceNames, stationNames, approvalId })
+          }
+          savingRequirements={saveRequirementsMutation.isPending}
+          requirementWarnings={requirementWarnings}
+          approvalRequired={approvalRequired}
+          onRequestApproval={(taskId, deviceNames, stationNames) =>
+            requestApprovalMutation.mutate({ taskId, deviceNames, stationNames })
+          }
+          pendingApprovalId={pendingApprovalId}
+          pendingApprovalFreshness={pendingApprovalFreshness}
+          onRefreshApproval={() => void checkApproval()}
           visibleBounds={ctl.viewportBounds}
           onVisibleBoundsChange={ctl.setViewportBounds}
           schedulerState={schedulerState}
@@ -961,7 +1096,7 @@ const CommandMapShell = (): React.ReactElement => {
             <button
               type="button"
               onClick={() => setActiveTab('brain')}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium text-primary bg-primary/10 border border-primary/30 hover:bg-primary/20 transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium text-primary-on-soft bg-primary/10 border border-primary/30 hover:bg-primary/20 transition-colors whitespace-nowrap"
               title="查看并采纳 AI 生成的调度建议"
             >
               <Brain className="w-3 h-3 text-primary" />

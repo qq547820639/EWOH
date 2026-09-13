@@ -10,6 +10,7 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type {
   PolicyActivationRecord,
+  PolicyGateCheck,
   PolicyGateConfig,
   PolicyGateEvaluation,
 } from '@shared/api.interface';
@@ -81,7 +82,16 @@ export class PolicyActivationService {
 
   /**
    * Gate 评估：Replay 结果 + Shadow 评估 + 生产 KPI（真实事实，不伪造）。
-   * 任一 hard 检查失败 → passed=false。
+   * 任一已评估检查失败 → passed=false。
+   *
+   * 治理修复（2026-09-10）：早期实现有两个伪造确定性的缺陷，现均已修正：
+   *  1. 从不校验候选策略是否存在——空库上对不存在的版本也能返回
+   *     `passed: true`，而 activate 随后 404。现在候选不存在直接 404。
+   *  2. 缺数据的检查一律 `ok: true`（"跳过"被当成"通过"）——现在逐条标注
+   *     `skipped`，并在整体上给出 `insufficientEvidence`，使"无证据"与
+   *     "已验证通过"可被机器与用户区分，而不是静默等价。
+   * `passed` 语义保持不变（无检查失败），以兼容既有消费方；但需要"已验证"
+   * 语义的调用方必须同时检查 `insufficientEvidence`。
    */
   async evaluateGate(
     candidatePolicyVersion: number,
@@ -89,10 +99,44 @@ export class PolicyActivationService {
     orgId?: string | null,
   ): Promise<PolicyGateEvaluation> {
     const gate = this.getGateConfig();
+    // 候选存在性（与 activate 同一 org 作用域口径）：不存在的策略没有可评估的
+    // 对象，必须显式 404，而不是用空 KPI 算出一个"通过"。
+    const orgScope = orgId
+      ? or(eq(ewohSchedulingPolicy.orgId, orgId), isNull(ewohSchedulingPolicy.orgId))
+      : isNull(ewohSchedulingPolicy.orgId);
+    const [candidate] = await this.db
+      .select({ configVersion: ewohSchedulingPolicy.configVersion })
+      .from(ewohSchedulingPolicy)
+      .where(
+        and(
+          eq(ewohSchedulingPolicy.configVersion, candidatePolicyVersion),
+          orgScope,
+        ),
+      )
+      .limit(1);
+    if (!candidate) {
+      throw new NotFoundException(`policy v${candidatePolicyVersion} not found`);
+    }
     // R2-SSV-02（2026-08-17）：KPI 输入透传 orgId——HTTP gate 评估与 activate
     // 现场评估按调用租户作用域（此前无 org：HTTP 必 400 / 系统流全租户聚合）。
     const kpi = await this.kpiService.aggregateForPolicyEvaluation(orgId ?? null);
     const checks: PolicyGateEvaluation['checks'] = [];
+
+    /** 构造检查项：actual 为 null = 无证据 → skipped，绝不记为"通过"。 */
+    const check = (
+      name: string,
+      actual: number | null,
+      threshold: number,
+      compare: (value: number) => boolean,
+      skippedDetail: string,
+    ): PolicyGateCheck => ({
+      name,
+      ok: actual == null ? true : compare(actual),
+      actual,
+      threshold,
+      detail: actual == null ? skippedDetail : undefined,
+      skipped: actual == null,
+    });
 
     // Replay/Shadow 评估事实
     let shadowRuns = 0;
@@ -133,6 +177,8 @@ export class PolicyActivationService {
       actual: safetyViolations,
       threshold: gate.safetyViolations,
       detail: safetyViolations > gate.safetyViolations ? 'replay/shadow 出现安全违反，拒绝激活' : undefined,
+      // 无 replay 时 shadowRuns=0 是"未评估"，不是"已确认零违反"。
+      skipped: !replayId,
     });
     // 检查 2: blocked-route assignment == 0
     checks.push({
@@ -140,53 +186,33 @@ export class PolicyActivationService {
       ok: blockedRouteAssignments <= gate.blockedRouteAssignments,
       actual: blockedRouteAssignments,
       threshold: gate.blockedRouteAssignments,
+      skipped: !replayId,
     });
-    // 检查 3: onTimeRate >= threshold
-    checks.push({
-      name: 'on_time_rate',
-      ok: kpi.onTimeRate == null ? true : kpi.onTimeRate >= gate.minOnTimeRate,
-      actual: kpi.onTimeRate,
-      threshold: gate.minOnTimeRate,
-      detail: kpi.onTimeRate == null ? '无执行数据，on-time 检查跳过' : undefined,
-    });
-    // 检查 4: latenessP95 <= threshold
-    checks.push({
-      name: 'lateness_p95',
-      ok: kpi.latenessP95Ms == null ? true : kpi.latenessP95Ms <= gate.maxLatenessP95Ms,
-      actual: kpi.latenessP95Ms,
-      threshold: gate.maxLatenessP95Ms,
-      detail: kpi.latenessP95Ms == null ? '无迟到数据，检查跳过' : undefined,
-    });
-    // 检查 5: fallbackRate <= threshold
-    checks.push({
-      name: 'fallback_rate',
-      ok: kpi.fallbackRate == null ? true : kpi.fallbackRate <= gate.maxFallbackRate,
-      actual: kpi.fallbackRate,
-      threshold: gate.maxFallbackRate,
-      detail: kpi.fallbackRate == null ? '无 fallback 数据，检查跳过' : undefined,
-    });
-    // 检查 6: conflictRate <= threshold
-    checks.push({
-      name: 'conflict_rate',
-      ok: kpi.conflictRate == null ? true : kpi.conflictRate <= gate.maxConflictRate,
-      actual: kpi.conflictRate,
-      threshold: gate.maxConflictRate,
-      detail: kpi.conflictRate == null ? '无冲突数据，检查跳过' : undefined,
-    });
-    // 检查 7: solverLatencyP95 <= threshold
-    checks.push({
-      name: 'solver_latency_p95',
-      ok: kpi.solverLatencyP95Ms == null ? true : kpi.solverLatencyP95Ms <= gate.maxSolverLatencyP95Ms,
-      actual: kpi.solverLatencyP95Ms,
-      threshold: gate.maxSolverLatencyP95Ms,
-      detail: kpi.solverLatencyP95Ms == null ? '无延迟数据，检查跳过' : undefined,
-    });
+    // 检查 3-7: KPI 阈值（无数据 → skipped，不计为已验证通过）
+    checks.push(check('on_time_rate', kpi.onTimeRate, gate.minOnTimeRate,
+      (v) => v >= gate.minOnTimeRate, '无执行数据，on-time 检查跳过（未验证，非通过）'));
+    checks.push(check('lateness_p95', kpi.latenessP95Ms, gate.maxLatenessP95Ms,
+      (v) => v <= gate.maxLatenessP95Ms, '无迟到数据，检查跳过（未验证，非通过）'));
+    checks.push(check('fallback_rate', kpi.fallbackRate, gate.maxFallbackRate,
+      (v) => v <= gate.maxFallbackRate, '无 fallback 数据，检查跳过（未验证，非通过）'));
+    checks.push(check('conflict_rate', kpi.conflictRate, gate.maxConflictRate,
+      (v) => v <= gate.maxConflictRate, '无冲突数据，检查跳过（未验证，非通过）'));
+    checks.push(check('solver_latency_p95', kpi.solverLatencyP95Ms, gate.maxSolverLatencyP95Ms,
+      (v) => v <= gate.maxSolverLatencyP95Ms, '无延迟数据，检查跳过（未验证，非通过）'));
 
     const passed = checks.every((c) => c.ok);
+    const skippedChecks = checks.filter((c) => c.skipped).map((c) => c.name);
     const evaluation: PolicyGateEvaluation = {
       passed,
       checks,
       replayId: replayId ?? null,
+      insufficientEvidence: skippedChecks.length > 0,
+      evidence: {
+        evaluated: checks.length - skippedChecks.length,
+        skipped: skippedChecks.length,
+        skippedChecks,
+        candidatePolicyExists: true,
+      },
       shadowEvaluation: {
         shadowRuns,
         shadowConflicts,
@@ -200,6 +226,13 @@ export class PolicyActivationService {
     try {
       this.metricsService.recordPolicyEvent('gate');
       if (!passed) this.logger.warn(`policy v${candidatePolicyVersion} gate FAILED: ${checks.filter((c) => !c.ok).map((c) => c.name).join(', ')}`);
+      else if (skippedChecks.length) {
+        this.logger.warn(
+          `policy v${candidatePolicyVersion} gate PASSED WITHOUT EVIDENCE：`
+            + `${skippedChecks.length}/${checks.length} 项无证据跳过（${skippedChecks.join(', ')}）——`
+            + '这不是"已验证"结论，激活须显式确认。',
+        );
+      }
     } catch {
       // 观测失败不阻断
     }
@@ -219,6 +252,11 @@ export class PolicyActivationService {
       replayId?: string | null;
       gateResult?: PolicyGateEvaluation | null;
       orgId?: string | null;
+      /**
+       * 显式确认"在证据不足的情况下激活"。仅当 Gate 因缺数据跳过检查时才需要；
+       * 用于把"空库也能通过 Gate"从静默行为变为人审决定（记入审计）。
+       */
+      acknowledgeInsufficientEvidence?: boolean;
     },
     ctx?: OrgContext,
   ): Promise<PolicyActivationRecord> {
@@ -255,6 +293,18 @@ export class PolicyActivationService {
     if (!gateResult.passed) {
       throw new ConflictException(
         `POLICY_GATE_FAILED: ${gateResult.checks.filter((c) => !c.ok).map((c) => c.name).join(', ')}`,
+      );
+    }
+    // 证据门禁（2026-09-10）：`passed` 只表示"没有检查失败"。当若干检查因数
+    // 据缺失被跳过时，激活一个未经证据校验的策略必须是人的显式决定，而不是
+    // 由空数据静默推导出的"通过"。未显式确认 → 拒绝并说明缺哪些证据。
+    if (gateResult.insufficientEvidence && !opts.acknowledgeInsufficientEvidence) {
+      const skipped = gateResult.evidence?.skippedChecks
+        ?? gateResult.checks.filter((c) => c.skipped).map((c) => c.name);
+      throw new ConflictException(
+        `POLICY_GATE_INSUFFICIENT_EVIDENCE: ${skipped.join(', ')} `
+          + '未获得证据，Gate 结论不是"已验证通过"。'
+          + '如确认要在证据不足下激活，需显式 acknowledgeInsufficientEvidence=true（将记入审计）。',
       );
     }
 
@@ -324,7 +374,12 @@ export class PolicyActivationService {
         afterVersion: policyVersion,
         operator: opts.operator,
         reason: opts.reason ?? null,
-        gateResultJson: gateResult as unknown as Record<string, unknown>,
+        gateResultJson: {
+          ...(gateResult as unknown as Record<string, unknown>),
+          // 审计留痕：本次激活是否在证据不足的情况下由人显式确认。
+          acknowledgedInsufficientEvidence:
+            Boolean(gateResult.insufficientEvidence) && Boolean(opts.acknowledgeInsufficientEvidence),
+        },
         rollbackTarget,
       });
     });
@@ -396,7 +451,15 @@ export class PolicyActivationService {
       throw new ConflictException(`activation ${activationId} already rolled back`);
     }
     const target = activation.rollbackTarget ?? activation.beforeVersion;
-    if (target == null) throw new ConflictException('no rollback target');
+    if (target == null) {
+      // 首次激活没有可回退的历史版本。这不是系统故障，而是"无可回退目标"，
+      // 必须说清楚，否则用户只会看到一句 no rollback target 而不知发生了什么。
+      throw new ConflictException(
+        'NO_ROLLBACK_TARGET: 该激活记录没有可回退的历史策略版本'
+          + '（本次是首个激活，激活前不存在 ACTIVE 策略）。'
+          + '如需改变当前生效策略，请注册新的候选版本并重新走 Replay → SHADOW → Gate → 人审激活。',
+      );
+    }
 
     // NEST-032/165：策略行更新按 org 作用域（本 org + NULL 全局行）。
     const policyOrgScope = orgId

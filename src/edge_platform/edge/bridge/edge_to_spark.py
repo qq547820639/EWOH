@@ -53,6 +53,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _runtime_mode() -> str:
+    """UR8：EDGE-041 production 判定（读取失败按 development 宽松，与其他 uplink 一致）。
+
+    本脚本可独立于 edge_platform 包运行（真机模式才导入包），故用 try/except 兜底。
+    """
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 # ===== 模拟外骨骼数据源（无真机时用于端到端测试） =====
 
 
@@ -212,6 +225,10 @@ class SparkBridge:
     特性：
     - 断线重连（指数退避，最大 60s）
     - 批量缓冲（断网时本地队列，恢复后批量补传，≤100 条/批）
+    - UR8（2026-09-13 审查）：云端 4xx（非 429）拒绝的批次转死信文件
+      （<queue_path>.dead-letter.jsonl），不再永久阻塞队头——与 event_uplink
+      的 P1 整改同款毒信封语义（云端已校验并拒绝，重试不会成功）。
+    - UR8：EDGE-041 同款守卫——production 下拒绝经明文 http 发送 X-Ingest-Key。
     """
 
     BATCH_SIZE = 100
@@ -225,12 +242,24 @@ class SparkBridge:
         org_id: str = "",
         queue_path: str = "",
     ):
-        self.spark_url = spark_url.rstrip("/")
+        # UR8（2026-09-13 审查）：先 strip——urlsplit/urllib 容忍 URL 前后空白
+        # （" http://host" 照常发往 http），不 strip 则下方明文 http 守卫被空白
+        # 绕过，production 下 X-Ingest-Key 仍走明文。
+        self.spark_url = (spark_url or "").strip().rstrip("/")
         self.ingest_key = ingest_key
         self.org_id = org_id
         self.source = source
         self._buffer: list = []
         self._queue_path = queue_path
+        self.dead_lettered = 0  # UR8：转死信的帧数（可观测）
+        self.disabled_reason = ""  # UR8：EDGE-041 守卫禁用原因（空 = 未禁用）
+        if self.spark_url.lower().startswith(("http://", "//")) and _runtime_mode() == "production":
+            # scheme 按 RFC 3986 大小写不敏感——先归一再判定，堵 "HTTP://" 旁路。
+            self.disabled_reason = "insecure_http_in_production"
+            print(
+                "[bridge] ERROR: production 下拒绝明文 http 上行"
+                f"（X-Ingest-Key 会暴露），已禁用: {self.spark_url}"
+            )
         # DATA-FLOW-L2（2026-08-18）：磁盘持久化缓冲——断网/崩溃不丢帧，
         # 启动时断点续传（对齐 event_uplink 的 queue_path 模式；损坏显式 ERROR 空队列启动）。
         if self._queue_path and os.path.exists(self._queue_path):
@@ -259,6 +288,10 @@ class SparkBridge:
 
     def run(self):
         """主循环：持续读取帧并尝试发送。"""
+        if self.disabled_reason:
+            # UR8：EDGE-041 守卫——禁用状态下绝不发出携带凭据的请求。
+            print(f"[bridge] 已禁用（{self.disabled_reason}），不启动上行")
+            return
         self._running = True
         if hasattr(self.source, "start"):
             self.source.start()
@@ -295,14 +328,27 @@ class SparkBridge:
         """将缓冲区帧批量发送到 spark-app。"""
         if not self._buffer:
             return
+        if self.disabled_reason:
+            # UR8：守卫在任意发送入口都生效——禁用状态下绝不发出携带凭据的请求。
+            print(f"[bridge] 已禁用（{self.disabled_reason}），跳过发送")
+            return
         batch = self._buffer[: self.BATCH_SIZE]
         try:
-            ok = self._post_batch(batch)
-            if ok:
+            verdict = self._post_batch(batch)
+            if verdict == "ok":
                 self._buffer = self._buffer[len(batch) :]
                 self._persist()  # L2：发送成功即从磁盘队列移除
                 self._consecutive_failures = 0
                 print(f"[bridge] 发送成功 {len(batch)} 条")
+            elif verdict == "dead_letter":
+                # UR8（2026-09-13 审查）：云端 4xx（非 429）= 平台已校验并拒绝，
+                # 重试不会成功——转死信文件（人工重放载体；平台按 raw_ref/record_id
+                # 幂等，重放安全），队头继续推进，不再永久阻塞其后全部帧。
+                self._dead_letter(batch, "云端 4xx 拒绝（非 429/非可重试）")
+                self._buffer = self._buffer[len(batch) :]
+                self._persist()
+                self._consecutive_failures = 0
+                print(f"[bridge] {len(batch)} 条转死信（云端 4xx 拒绝，不阻塞队头）")
             else:
                 self._consecutive_failures += 1
                 self._backoff()
@@ -311,8 +357,25 @@ class SparkBridge:
             self._consecutive_failures += 1
             self._backoff()
 
-    def _post_batch(self, batch: list) -> bool:
-        """POST 批量帧到 /api/ingest/exoskeleton/batch。"""
+    def _dead_letter(self, batch: list, reason: str) -> None:
+        """UR8：被云端 4xx 拒绝的批次追加到死信文件（人工重放载体）。"""
+        self.dead_lettered += len(batch)
+        if not self._queue_path:
+            print(f"[bridge] ERROR: {len(batch)} 条转死信（无队列路径，仅计数）: {reason}")
+            return
+        try:
+            with open(f"{self._queue_path}.dead-letter.jsonl", "a", encoding="utf-8") as fh:
+                for frame in batch:
+                    fh.write(json.dumps(frame, ensure_ascii=False) + "\n")
+            print(f"[bridge] ERROR: {len(batch)} 条转死信（{reason}）: {self._queue_path}.dead-letter.jsonl")
+        except Exception as exc:
+            print(f"[bridge] ERROR: 死信写入失败（保留计数）: {exc}")
+
+    def _post_batch(self, batch: list) -> str:
+        """POST 批量帧到 /api/ingest/exoskeleton/batch。
+
+        返回 "ok" / "retry"（瞬态失败）/ "dead_letter"（云端 4xx 非 429 永久拒绝）。
+        """
         url = f"{self.spark_url}/api/ingest/exoskeleton/batch"
         body = json.dumps({"frames": batch}).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -324,12 +387,20 @@ class SparkBridge:
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 - configured internal HTTP client
                 if 200 <= resp.status < 300:
-                    return True
+                    return "ok"
                 print(f"[bridge] HTTP {resp.status}")
-                return False
+                return "retry"
+        except urllib.error.HTTPError as e:
+            # UR8：HTTPError 是 URLError 子类，必须先接——否则 4xx 被当连接失败
+            # 无限重试，单个坏帧永久阻塞整条上行队列。
+            if 400 <= e.code < 500 and e.code != 429:
+                print(f"[bridge] 云端 4xx 拒绝（{e.code}），批次转死信")
+                return "dead_letter"
+            print(f"[bridge] 上行 HTTP {e.code}（重试）")
+            return "retry"
         except urllib.error.URLError as e:
             print(f"[bridge] 连接失败: {e}")
-            return False
+            return "retry"
 
     def _backoff(self):
         """指数退避，最大 60s。"""

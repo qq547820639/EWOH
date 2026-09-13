@@ -171,7 +171,7 @@ export default function EventCenterPanel({
       }),
     onSuccess: (updated) => {
       toast.success(`事件已${updated.status === 'handled' ? '处理' : '更新'}`);
-      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events() });
     },
     onError: (err) => {
       toast.error('事件操作失败', {

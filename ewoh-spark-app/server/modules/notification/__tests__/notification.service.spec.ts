@@ -30,38 +30,94 @@ function rowOf(overrides: Record<string, unknown> = {}): Record<string, unknown>
   };
 }
 
-function collectValues(
-  node: unknown,
-  sets: { orgIds: Set<string>; roles: Set<string>; statuses: Set<string>; notificationIds: Set<string> },
-  seen: WeakSet<object>,
-): void {
-  if (node == null || typeof node !== 'object') return;
-  if (seen.has(node as object)) return;
-  seen.add(node as object);
-  if (Array.isArray(node)) {
-    for (const x of node) collectValues(x, sets, seen);
-    return;
-  }
-  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-    if (key === 'value' && typeof value === 'string') {
-      if (value.startsWith('org-')) sets.orgIds.add(value);
-      if (['workshop_lead', 'dispatcher', '__none__'].includes(value)) sets.roles.add(value);
-      if (value === 'pending' || value === 'read' || value === 'failed' || value === 'sent') sets.statuses.add(value);
-      if (value.startsWith('NTF-')) sets.notificationIds.add(value);
-    } else {
-      collectValues(value, sets, seen);
-    }
-  }
+/**
+ * 谓词求值（**按列名**，不使用"按值嗅探"）。
+ *
+ * 为什么改：早期实现把条件里出现的字符串收集成"值集合"，再判断行字段是否落在集合里。
+ * 这有两个致命问题（NO-44a 实测踩到第二个）：
+ *   1. **未知取值被静默当作"没有条件"**——`status='paused'` 不在白名单里，过滤条件
+ *      整个消失，假 DB 返回了全部行，于是"非法状态不静默按全部处理"这条契约
+ *      在单元层永远测不出来（真库会返回 0 行）；
+ *   2. `or(...)` 与 `and(...)` 被压成同一语义，测试通过的其实是巧合。
+ * 现在按 drizzle 的 `queryChunks` 递归求值：eq / inArray / isNull / and / or 都按列比较。
+ */
+const COL_TO_KEY: Record<string, string> = {
+  org_id: 'orgId',
+  recipient_type: 'recipientType',
+  recipient_id: 'recipientId',
+  status: 'status',
+  notification_id: 'notificationId',
+};
+
+function evalChunkText(o: unknown): string | null {
+  const v = (o as { value?: unknown } | undefined)?.value;
+  if (Array.isArray(v) && v.every((x) => typeof x === 'string')) return v.join('');
+  if (typeof v === 'string') return v;
+  return null;
 }
 
 function matches(cond: unknown, row: Record<string, unknown>): boolean {
-  const sets = { orgIds: new Set<string>(), roles: new Set<string>(), statuses: new Set<string>(), notificationIds: new Set<string>() };
-  collectValues(cond, sets, new WeakSet());
-  if (sets.orgIds.size > 0 && !sets.orgIds.has(String(row.orgId))) return false;
-  if (sets.roles.size > 0 && !sets.roles.has(String(row.recipientId))) return false;
-  if (sets.statuses.size > 0 && !sets.statuses.has(String(row.status))) return false;
-  if (sets.notificationIds.size > 0 && !sets.notificationIds.has(String(row.notificationId))) return false;
-  return true;
+  const chunks = (cond as { queryChunks?: unknown[] } | undefined)?.queryChunks;
+  if (!Array.isArray(chunks)) return true;
+  const groups: boolean[][] = [[]];
+  let pendingCol: string | null = null;
+  for (const raw of chunks) {
+    if (typeof raw === 'string') continue;
+    // `inArray` 的右值在 drizzle 里是一个**裸数组 chunk**（没有 encoder/queryChunks）：
+    // 早期实现只认对象 chunk，于是集合条件被静默丢掉（实测：角色过滤失效、越权行可见）。
+    if (Array.isArray(raw)) {
+      if (pendingCol) {
+        const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+        const actual = row[key];
+        // 数组元素是 Param 包装（drizzle 的 `inArray` 右值形如 [Param, Param]）：
+        // 不解包会得到 '[object Object]'，集合判定恒为 false（实测踩到：角色过滤全空）。
+        const candidates = raw.map((v) =>
+          v && typeof v === 'object' && 'value' in v ? String((v as { value: unknown }).value) : String(v),
+        );
+        groups[groups.length - 1].push(candidates.includes(String(actual)));
+        pendingCol = null;
+      }
+      continue;
+    }
+    const c = raw as { name?: string; value?: unknown; encoder?: unknown; queryChunks?: unknown[] } | undefined;
+    if (!c || typeof c !== 'object') continue;
+    // 列引用：drizzle 的 Column 有 name 且没有 encoder
+    if (typeof c.name === 'string' && !('encoder' in c)) {
+      pendingCol = c.name;
+      continue;
+    }
+    if (!('encoder' in c)) {
+      const text = evalChunkText(c);
+      if (text !== null) {
+        if (/\bor\b/.test(text)) groups.push([]);
+        else if (/is\s+null/i.test(text) && pendingCol) {
+          const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+          groups[groups.length - 1].push(row[key] == null);
+          pendingCol = null;
+        }
+        continue;
+      }
+      if (Array.isArray(c.queryChunks)) {
+        groups[groups.length - 1].push(matches(raw, row));
+        continue;
+      }
+    }
+    if ('encoder' in c && 'value' in c && pendingCol) {
+      const key = COL_TO_KEY[pendingCol] ?? pendingCol;
+      const expected = (c as { value: unknown }).value;
+      const actual = row[key];
+      if (Array.isArray(expected)) {
+        // inArray：值为数组（集合成员判定）
+        groups[groups.length - 1].push(expected.map((v) => String(v)).includes(String(actual)));
+      } else {
+        groups[groups.length - 1].push(actual != null && String(actual) === String(expected));
+      }
+      pendingCol = null;
+      continue;
+    }
+  }
+  if (groups.every((g) => g.length === 0)) return true;
+  return groups.some((g) => g.every(Boolean));
 }
 
 function createNotificationDb(rows: Array<Record<string, unknown>> = []) {
@@ -143,6 +199,69 @@ describe('NotificationService（NO-12f 通知读写闭环）', () => {
     // 他租户通知不存在（org 作用域）
     await expect(service.markRead(ORG_A, 'NTF-2')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  /* ── 写侧归属校验（对抗审查 2026-09-13）──────────────────────────────
+   * 修复前 markRead/retryPush 只按 org 过滤：同租户任意已认证用户可以把
+   * **别人的**待办（点名给同事的、发给别的角色的安灯/SLA/审批提醒）标记
+   * 已读——等于能静默压制别人的操作提醒（列表按作用域收紧了，写侧没收紧）。
+   * 契约：能"看到"（列表作用域）才有资格"动"；不可见 → 与不存在同语义 404。 */
+  it('markRead 写侧归属：非本人、非本角色的通知不可标记已读（404，不落写）', async () => {
+    const { rows, service } = createNotificationDb([
+      rowOf({ notificationId: 'NTF-ROLE-DISP', recipientType: 'role', recipientId: 'dispatcher' }),
+      rowOf({ notificationId: 'NTF-USER-OTHER', recipientType: 'user', recipientId: 'user-b' }),
+    ]);
+    // workshop_lead 既不是 dispatcher 角色、也不是 user-b：两条都不该动
+    await expect(
+      service.markRead(ORG_A, 'NTF-ROLE-DISP', { roles: ['workshop_lead'], userId: 'user-a' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.markRead(ORG_A, 'NTF-USER-OTHER', { roles: ['workshop_lead'], userId: 'user-a' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(rows.map((r) => r.status)).toEqual(['pending', 'pending']);
+  });
+
+  it('markRead 写侧归属：本角色/点名本人/global_admin 可标记', async () => {
+    const { rows, service } = createNotificationDb([
+      rowOf({ notificationId: 'NTF-ROLE-MINE', recipientType: 'role', recipientId: 'workshop_lead' }),
+      rowOf({ notificationId: 'NTF-USER-ME', recipientType: 'user', recipientId: 'user-a' }),
+      rowOf({ notificationId: 'NTF-OTHERS', recipientType: 'role', recipientId: 'dispatcher' }),
+    ]);
+    // 本角色通知：可标记
+    await expect(
+      service.markRead(ORG_A, 'NTF-ROLE-MINE', { roles: ['workshop_lead'], userId: 'user-a' }),
+    ).resolves.toBeDefined();
+    // 点名本人的通知：可标记
+    await expect(
+      service.markRead(ORG_A, 'NTF-USER-ME', { roles: [], userId: 'user-a' }),
+    ).resolves.toBeDefined();
+    // global_admin：全量可标记（与其列表全量一致）
+    await expect(
+      service.markRead(ORG_A, 'NTF-OTHERS', { roles: [], userId: 'admin', isGlobalAdmin: true }),
+    ).resolves.toBeDefined();
+    expect(rows.map((r) => r.status)).toEqual(['read', 'read', 'read']);
+  });
+
+  it('retryPush 写侧归属：非本角色的 failed 通知不可重试（404）', async () => {
+    const { rows, service } = createNotificationDb([
+      rowOf({
+        notificationId: 'NTF-P1',
+        channel: 'lark',
+        status: 'failed',
+        errorMessage: 'lark_webhook_http_500',
+        recipientType: 'role',
+        recipientId: 'workshop_lead',
+      }),
+    ]);
+    await expect(
+      service.retryPush(ORG_A, 'NTF-P1', { roles: ['dispatcher'], userId: 'user-a' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(rows[0]?.status).toBe('failed');
+    // 本角色可重试
+    await expect(
+      service.retryPush(ORG_A, 'NTF-P1', { roles: ['workshop_lead'], userId: 'user-a' }),
+    ).resolves.toBeDefined();
+    expect(rows[0]?.status).toBe('pending');
+  });
 });
 
 describe('NotificationService.retryPush（R-58 / ADR-037 推送重试）', () => {
@@ -192,6 +311,66 @@ describe('NotificationService.retryPush（R-58 / ADR-037 推送重试）', () =>
     expect(lark?.sentAt).toBe('2026-08-16T09:00:00.000Z');
     expect(app?.sentAt).toBeNull();
     expect(app?.errorMessage).toBeNull();
+  });
+
+  /* ── NO-44a：处置结果（提醒的第二个终态维度）────────────────────────── */
+  it('status=resolved 可单独查询；未处置行不带处置信息（缺失 ≠ 已处置）', async () => {
+    const { service } = createNotificationDb([
+      rowOf({
+        notificationId: 'NTF-RESOLVED',
+        status: 'resolved',
+        resolution: 'session_ended',
+        resolvedAt: new Date('2026-08-16T11:00:00Z'),
+        resolvedBy: 'lead.chen',
+        resolutionRef: 'exo-session:S1',
+        externalRef: 'exo-session:S1',
+      }),
+      rowOf({ notificationId: 'NTF-PENDING' }),
+    ]);
+    const resolved = (await service.listNotifications(ORG_A, { status: 'resolved', isGlobalAdmin: true })) as Array<
+      Record<string, unknown>
+    >;
+    expect(resolved.map((n) => n.notificationId)).toEqual(['NTF-RESOLVED']);
+    expect(resolved[0]?.resolution).toBe('session_ended');
+    expect(resolved[0]?.resolvedBy).toBe('lead.chen');
+    expect(resolved[0]?.resolvedAt).toBe('2026-08-16T11:00:00.000Z');
+    expect(resolved[0]?.resolutionRef).toBe('exo-session:S1');
+
+    const pending = (await service.listNotifications(ORG_A, { status: 'pending', isGlobalAdmin: true })) as Array<
+      Record<string, unknown>
+    >;
+    expect(pending.map((n) => n.notificationId)).toEqual(['NTF-PENDING']);
+    expect(pending[0]?.resolution).toBeNull();
+    expect(pending[0]?.resolvedBy).toBeNull();
+  });
+
+  it('markRead 不能把"已处置"降级成"已读"（处置依据不能被覆盖）', async () => {
+    const { service, rows } = createNotificationDb([
+      rowOf({
+        notificationId: 'NTF-RESOLVED',
+        status: 'resolved',
+        resolution: 'session_corrected',
+        resolvedAt: new Date('2026-08-16T11:00:00Z'),
+        resolvedBy: 'lead.chen',
+        resolutionRef: 'exo-session:NEW',
+      }),
+    ]);
+    const out = (await service.markRead(ORG_A, 'NTF-RESOLVED')) as Record<string, unknown>;
+    expect(out.status).toBe('resolved');
+    expect(out.resolution).toBe('session_corrected');
+    expect(rows[0]?.status).toBe('resolved');
+    expect(rows[0]?.readAt).toBeNull();
+  });
+
+  it('未登记的状态过滤值不会静默按"全部"处理（不把未知当已知）', async () => {
+    const { service } = createNotificationDb([
+      rowOf({ notificationId: 'NTF-1', status: 'pending' }),
+      rowOf({ notificationId: 'NTF-2', status: 'read' }),
+    ]);
+    const out = (await service.listNotifications(ORG_A, { status: 'paused', isGlobalAdmin: true })) as Array<
+      Record<string, unknown>
+    >;
+    expect(out).toHaveLength(0);
   });
 });
 

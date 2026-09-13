@@ -50,6 +50,8 @@ describe('智能调度执行闭环 - 集成链路', () => {
     };
     const worldState = {
       assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+      // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+      assertFreshForWave: jest.fn().mockResolvedValue(undefined),
       buildSnapshot: jest.fn().mockResolvedValue(snapshot),
       getCurrentWorldState: jest.fn().mockResolvedValue({
         safetyBlockedPersonIds: [],
@@ -215,6 +217,8 @@ describe('智能调度执行闭环 - 集成链路', () => {
     };
     const worldState = {
       assertFreshForApprove: jest.fn().mockRejectedValue(new Error('PLAN_STALE')),
+      // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+      assertFreshForWave: jest.fn().mockRejectedValue(new Error('PLAN_STALE')),
       buildSnapshot: jest.fn(),
     };
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
@@ -242,7 +246,7 @@ describe('智能调度执行闭环 - 集成链路', () => {
     expect(state.plans.get('PLAN-STALE')?.status).toBe('shadow');
   });
 
-  it('T04/P1-6: stale approve → outbox stale_plan 事件 + scoped replan（cause=PLAN_STALE）', async () => {
+  it('NO-62c: stale approve → outbox stale_plan 事件在**独立事务**里提交（不再假称自动重排）', async () => {
     const { db, state } = makeFakeDb({
       plans: [
         {
@@ -257,13 +261,23 @@ describe('智能调度执行闭环 - 集成链路', () => {
       assignments: [],
       tasks: [],
     });
+    // NO-62c：审批拒绝路径会在**独立事务**里写留痕（请求事务会因 409 回滚），
+    // 替身必须同形实现——否则"写入被回滚"这个真实缺陷在单测里永远看不见。
+    const detachedDb = { __tag: 'detached-tx' };
     const requestDatabaseContext = {
       runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
         await cb();
       }),
+      runDetachedTransaction: jest.fn(
+        async (_guc: unknown, cb: (db: unknown) => Promise<void>) => {
+          await cb(detachedDb);
+        },
+      ),
     };
     const worldState = {
       assertFreshForApprove: jest.fn().mockRejectedValue(new Error('PLAN_STALE')),
+      // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+      assertFreshForWave: jest.fn().mockRejectedValue(new Error('PLAN_STALE')),
       buildSnapshot: jest.fn(),
     };
     const auditService = { appendAuditLog: jest.fn().mockResolvedValue(undefined) };
@@ -298,15 +312,105 @@ describe('智能调度执行闭环 - 集成链路', () => {
       ),
     ).rejects.toThrow('PLAN_STALE');
 
-    // outbox stale_plan 事件 + scoped replan（cause=PLAN_STALE）均被触发。
+    // 1) 事件真的入了队，且**带独立事务句柄**（否则会被 409 的请求事务回滚带走）。
     const eventTypes = outboxService.enqueue.mock.calls.map((c) => c[0]);
     expect(eventTypes).toContain('stale_plan');
-    expect(replanCoordinator.handleTrigger).toHaveBeenCalledWith(
-      'PLAN_STALE',
-      'PLAN-STALE-2',
-      testOrgContext(),
-    );
-    // 方案状态不被改变（审批仍拒绝）。
+    expect(requestDatabaseContext.runDetachedTransaction).toHaveBeenCalled();
+    const staleCall = outboxService.enqueue.mock.calls.find((c) => c[0] === 'stale_plan');
+    expect((staleCall?.[5] as { executor?: unknown })?.executor).toBe(detachedDb);
+    // 2) 不再假装"自动 scoped replan"：旧实现在**被中止的请求事务**里跑完整求解
+    //    （实测：求解白跑 + 写入丢失 + 长时间占用连接）。补偿入口改为显式重排
+    //    （POST /plans/:id/replan 或页面一键重排），由调用方在 409 之后发起。
+    expect(replanCoordinator.handleTrigger).not.toHaveBeenCalled();
+    // 3) 方案状态不被改变（审批仍拒绝）。
     expect(state.plans.get('PLAN-STALE-2')?.status).toBe('shadow');
+  });
+});
+
+/* ── NO-36a：派工是执行边界的提交时刻（会话事实必须在事务内复查）────────────── */
+describe('派工 · 外骨骼会话执行边界（NO-36a）', () => {
+  const DEV_UUID = '11111111-1111-4111-8111-111111111111';
+  const WEARER = '33333333-3333-4333-8333-333333333333';
+  const OTHER = '44444444-4444-4444-8444-444444444444';
+
+  function makeCoordinator(
+    worldDevicesSeq: Array<Array<Record<string, unknown>>>,
+    assignedPersonId: string = OTHER,
+  ) {
+    const { db, state } = makeFakeDb({
+      plans: [
+        { planId: 'PLAN-EXO', status: 'approved', snapshotVersion: 'WS-TEST', orgId: 'org1', version: 1 },
+      ],
+      assignments: [
+        {
+          assignmentId: 'ASG-EXO',
+          planId: 'PLAN-EXO',
+          taskId: 'TASK-EXO',
+          personId: assignedPersonId,
+          deviceId: DEV_UUID,
+          stationId: null,
+          status: 'approved',
+        },
+      ],
+      tasks: [{ id: 'TASK-EXO', status: 'pending_dispatch', version: 1, orgId: 'org1' }],
+    });
+    let call = 0;
+    const worldState = {
+      assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+      assertFreshForWave: jest.fn().mockResolvedValue(undefined),
+      getCurrentWorldState: jest.fn(async () => {
+        const devices = worldDevicesSeq[Math.min(call, worldDevicesSeq.length - 1)] ?? [];
+        call += 1;
+        return { safetyBlockedPersonIds: [], safetyBlockedDeviceIds: [], devices };
+      }),
+    };
+    const svc = new DispatchCoordinatorService(
+      db,
+      { runInTransaction: jest.fn(async (_g: unknown, cb: () => Promise<void>) => { await cb(); }) } as unknown as RequestDatabaseContext,
+      worldState as unknown as WorldStateSnapshotService,
+      { reserve: jest.fn().mockResolvedValue([]), assertStationCapacityAvailable: jest.fn().mockResolvedValue(undefined) } as unknown as ResourceReservationService,
+      { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'assignment.dispatched', entityId: 'ASG-EXO', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as unknown as OutboxService,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
+      { transitionTaskState: jest.fn().mockResolvedValue(undefined) } as unknown as TaskService,
+      { recordBaseline: jest.fn().mockResolvedValue(undefined) } as never,
+      { getConfig: jest.fn().mockResolvedValue({ defaultTaskDurationMs: 1_800_000 }) } as never,
+      { estimate: jest.fn().mockResolvedValue({ routeId: 'R', distanceMeters: 10, etaSeconds: 10, riskLevel: null, feasible: true, source: 'route_graph', riskCost: 0, congestionCost: 0, graphVersion: null, calculatedAt: new Date().toISOString(), fallbackReason: null, dataQuality: 'FRESH' }) } as never,
+    );
+    return { svc, state };
+  }
+
+  const sessionDevice = {
+    id: DEV_UUID,
+    deviceId: 'EXO-001',
+    activeExoSession: { sessionId: 'exo-session:live', personId: `person:${WEARER}`, startedAt: '2026-09-12T08:00:00.000Z' },
+  };
+
+  it('事务前预检：方案把佩戴中的设备指派给别人 → 409 EXO_SESSION_DISPATCH_CONFLICT（不落任何预占）', async () => {
+    const { svc, state } = makeCoordinator([[sessionDevice]]);
+    const error = await svc.dispatch('PLAN-EXO', testOrgContext()).catch((caught) => caught);
+    expect(error?.getStatus?.()).toBe(409);
+    expect(String(error.message)).toContain('EXO_SESSION_DISPATCH_CONFLICT');
+    expect(String(error.message)).toContain('EXO-001');
+    // fail-fast：方案状态、assignment 状态、预占都不动（可修正后重试）。
+    expect(state.plans.get('PLAN-EXO')?.status).toBe('approved');
+    expect(state.assignments[0]?.status).toBe('approved');
+    expect(state.reservations).toHaveLength(0);
+  });
+
+  it('TOCTOU：预检时无会话、提交时有人戴上 → 事务内复查 409 EXO_SESSION_DISPATCH_CONFLICT_TX（无半成品）', async () => {
+    // 第 1 次 getCurrentWorldState（事务前预检）无会话；第 2 次（事务内）有会话。
+    const { svc, state } = makeCoordinator([[], [sessionDevice]]);
+    const error = await svc.dispatch('PLAN-EXO', testOrgContext()).catch((caught) => caught);
+    expect(error?.getStatus?.()).toBe(409);
+    expect(String(error.message)).toContain('EXO_SESSION_DISPATCH_CONFLICT_TX');
+    expect(state.plans.get('PLAN-EXO')?.status).toBe('approved');
+    expect(state.assignments[0]?.status).toBe('approved');
+    expect(state.reservations).toHaveLength(0);
+  });
+
+  it('佩戴者本人 + 该设备 → 不做会话阻断（人机同体可下发）', async () => {
+    const { svc } = makeCoordinator([[sessionDevice]], WEARER);
+    const result = await svc.dispatch('PLAN-EXO', testOrgContext());
+    expect(result).toBeTruthy();
   });
 });

@@ -94,6 +94,67 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     return new ResourceProjectionService(db as never, reservationService as never);
   }
 
+  it.each([null, undefined, NaN, Infinity, -Infinity, -1, 101, '80'])(
+    'projects invalid device battery %p as unknown in both read models',
+    async (batteryPct) => {
+      const svc = makeSvc([], [deviceRow({ batteryPct })], [], []);
+      const resources = await svc.project();
+      const snapshot = await svc.projectForSnapshot();
+      expect(resources[0].telemetry.batteryPct).toBeNull();
+      expect(snapshot.devices[0].batteryPct).toBeNull();
+    },
+  );
+
+  it.each([0, 15, 99.5, 100])('preserves measured battery %p', async (batteryPct) => {
+    const svc = makeSvc([], [deviceRow({ batteryPct })], [], []);
+    expect((await svc.project())[0].telemetry.batteryPct).toBe(batteryPct);
+    expect((await svc.projectForSnapshot()).devices[0].batteryPct).toBe(batteryPct);
+  });
+
+  it.each([NaN, Infinity, -Infinity, Date.now() + HOUR])(
+    'rejects invalid or future resource source timestamp %p',
+    async (timestamp) => {
+      const updatedAt = new Date(timestamp);
+      const svc = makeSvc(
+        [personRow({ updatedAt })],
+        [deviceRow({ lastTelemetryAt: updatedAt })],
+        [stationRow({ updatedAt })],
+        [],
+      );
+      const resources = await svc.project();
+      expect(resources.map((resource) => resource.dataQuality)).toEqual([
+        'UNKNOWN', 'UNKNOWN', 'UNKNOWN',
+      ]);
+      expect(resources.map((resource) => resource.status)).toEqual([
+        'UNKNOWN', 'OFFLINE', 'UNKNOWN',
+      ]);
+      const snapshot = await svc.projectForSnapshot();
+      expect(snapshot.persons[0]).toMatchObject({ dataQuality: 'UNKNOWN', status: 'UNKNOWN' });
+      expect(snapshot.devices[0]).toMatchObject({ dataQuality: 'UNKNOWN', online: false });
+    },
+  );
+
+  it('preserves the device freshness boundary', async () => {
+    const now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const svc = makeSvc([], [
+        deviceRow({ id: 'fresh', lastTelemetryAt: new Date(now - 60_000) }),
+        deviceRow({ id: 'stale', lastTelemetryAt: new Date(now - 60_001) }),
+        deviceRow({ id: 'now', lastTelemetryAt: new Date(now) }),
+        deviceRow({ id: 'future', lastTelemetryAt: new Date(now + 1) }),
+      ], [], []);
+      expect((await svc.project()).map((resource) => resource.dataQuality)).toEqual([
+        'FRESH', 'STALE', 'FRESH', 'UNKNOWN',
+      ]);
+      expect((await svc.projectForSnapshot()).devices.map((device) => device.dataQuality)).toEqual([
+        'FRESH', 'STALE', 'FRESH', 'UNKNOWN',
+      ]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('reservations 被水合到各资源的 reservations 字段', async () => {
     const now = Date.now();
     const reservations: ReservationResult[] = [

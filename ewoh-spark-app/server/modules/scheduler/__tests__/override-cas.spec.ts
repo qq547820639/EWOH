@@ -70,6 +70,8 @@ function makeScheduler(
     buildSnapshot: jest.fn().mockResolvedValue(snapshot),
     getCurrentWorldState: jest.fn().mockResolvedValue(snapshot),
     assertFreshForApprove: jest.fn().mockResolvedValue(undefined),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn().mockResolvedValue(undefined),
   };
 
   const { solver, routing, policy, routeCostProvider } = makeSolver();

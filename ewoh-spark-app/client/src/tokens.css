@@ -72,10 +72,21 @@
      作文字色叠在 /20 软底上时对比度不足（亮色 ≈2.9:1、暗色 ≈3.2:1）。
      新增软底专配前景色：亮色用深红、暗色用提亮红，双主题 ≥ 4.5:1。 */
   --destructive-on-soft: hsl(2 84% 34%);
+
+  /* A11Y（同一策略，2026-09 补全）：warning/info/primary 主色直接作文字色叠在
+     /10–/20 软底上同样不达标——深色表面实测 warning/20 = 4.16:1（axe serious）、
+     primary/20 ≈ 3.4:1。软底文字色一律走 *-on-soft：亮底取深色、深色表面
+     （data-inverse-surface）取提亮色，双场景 ≥ 4.5:1。 */
+  --warning-on-soft: hsl(26 90% 30%);
+  --info-on-soft: hsl(221 83% 34%);
+  --primary-on-soft: hsl(221 83% 38%);
 }
 
 [data-theme="dark"] {
   --destructive-on-soft: hsl(2 84% 78%);
+  --warning-on-soft: hsl(26 90% 76%);
+  --info-on-soft: hsl(221 83% 76%);
+  --primary-on-soft: hsl(221 83% 76%);
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,6 +104,9 @@
   --risk-conflict-foreground: hsl(262 83% 80%);
   --risk-unknown-foreground: hsl(220 9% 74%);
   --destructive-on-soft: hsl(2 84% 78%);
+  --warning-on-soft: hsl(26 90% 78%);
+  --info-on-soft: hsl(221 83% 78%);
+  --primary-on-soft: hsl(221 83% 78%);
 }
 
 /* ------------------------------------------------------------------ */
@@ -164,6 +178,9 @@
   --color-risk-unknown-border: var(--risk-unknown-border);
 
   --color-destructive-on-soft: var(--destructive-on-soft);
+  --color-warning-on-soft: var(--warning-on-soft);
+  --color-info-on-soft: var(--info-on-soft);
+  --color-primary-on-soft: var(--primary-on-soft);
 
   --z-base: var(--z-base);
   --z-sticky: var(--z-sticky);

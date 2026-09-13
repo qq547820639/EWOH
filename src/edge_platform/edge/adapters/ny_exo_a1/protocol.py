@@ -135,6 +135,11 @@ def decode_stream(raw, drop_bad_crc=True):
 
     drop_bad_crc=True 时丢弃 CRC 校验失败的帧（spec：坏帧不得进入上层）。
     无法重同步或数据耗尽时结束。
+
+    UR8（2026-09-13 审查）：CRC 失败帧的 LEN 声明同样不可信——按整帧消费会把
+    后续健康帧一并吞掉（LEN 字节被线上破坏时 consumed 越过真实帧边界）。故
+    CRC 失败只前进 1 字节重新扫描，最大限度恢复后续帧；代价是坏帧体内若恰有
+    0xAA55 会多出少数 bad-CRC 尝试（仍被 CRC 拒绝，不进上层）。
     """
     frames = []
     buf = memoryview(bytes(raw))
@@ -142,9 +147,16 @@ def decode_stream(raw, drop_bad_crc=True):
         frame, consumed = decode_frame(buf)
         if consumed == 0:
             break  # 数据不足一帧，等待更多数据
-        if frame is not None and not (drop_bad_crc and not frame["crc_ok"]):
+        if frame is not None and not frame["crc_ok"]:
+            if drop_bad_crc:
+                buf = buf[1:]  # 帧长不可信：只跳过帧头重新同步
+                continue
+            frames.append(frame)  # 调试模式要坏帧对象本身
+            buf = buf[consumed:]
+            continue
+        if frame is not None:
             frames.append(frame)
-        buf = buf[consumed:]
+        buf = buf[consumed:]  # 帧头失配（frame=None）时 consumed==1，跳字节重同步
     return frames
 
 

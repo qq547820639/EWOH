@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, count, desc, eq, inArray, or, isNull } from 'drizzle-orm';
-import { ewohSchedulingExecution } from '@server/database/schema';
+import { ewohSchedulingExecution, ewohProductionTask, ewohPersonnel } from '@server/database/schema';
 import type {
   ExecutionListResponse,
   ExecutionUpdateRequest,
@@ -16,6 +16,7 @@ import type {
 import { OutboxService } from './outbox.service';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { executionReceiptPatch } from './execution-receipt-state';
 
 /**
  * 正式执行领域（Phase 4 / P4-EXEC）。
@@ -48,6 +49,30 @@ export class ExecutionService {
     private readonly outboxService: OutboxService,
     private readonly metricsService: SchedulerMetricsService,
   ) {}
+
+  /**
+   * DR-5 方案取消/回滚：把未开始的 Execution 行标记 CANCELLED（幂等 CAS——
+   * 仅非终态行迁移；已 STARTED/COMPLETED 的执行保持原状，物理执行不可撤销）。
+   */
+  async cancelForAssignments(assignmentIds: string[], actor?: OrgContext): Promise<number> {
+    if (assignmentIds.length === 0) return 0;
+    const rows = await this.db
+      .update(ewohSchedulingExecution)
+      .set({ status: 'CANCELLED' })
+      .where(
+        and(
+          inArray(ewohSchedulingExecution.assignmentId, assignmentIds),
+          inArray(ewohSchedulingExecution.status, ['PLANNED', 'DISPATCHED']),
+        ),
+      )
+      .returning({ executionId: ewohSchedulingExecution.executionId });
+    if (rows.length > 0) {
+      this.logger.log(
+        `plan cancel: ${rows.length} execution(s) marked CANCELLED by ${actor?.userId ?? 'system'}`,
+      );
+    }
+    return rows.length;
+  }
 
   /**
    * 由 Plan Assignment 批量创建 Execution（dispatch 时调用；幂等：assignment 已存在则跳过）。
@@ -144,76 +169,30 @@ export class ExecutionService {
     body: ExecutionUpdateRequest,
     orgId: string | null,
   ): Promise<SchedulingExecution> {
-    // NEST-011 修复（2026-08-17）：读/写均加 org 条件——orgId 提供时仅匹配
-    // 本 org 行（org 匹配或 NULL 存量，与 RLS 等价），任意 assignmentId 不可
-    // 跨租户改执行状态/偏差；缺省 = 系统路径（GUC/RLS 兜底）。
-    const ownership = orgId
-      ? or(
-          isNull(ewohSchedulingExecution.orgId),
-          eq(ewohSchedulingExecution.orgId, orgId),
-        )
-      : undefined;
-    const [row] = await this.db
-      .select()
-      .from(ewohSchedulingExecution)
-      .where(
-        and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership),
-      )
-      .limit(1);
+    const ownership = orgId ? eq(ewohSchedulingExecution.orgId, orgId) : isNull(ewohSchedulingExecution.orgId);
+    const [row] = await this.db.select().from(ewohSchedulingExecution)
+      .where(and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership)).limit(1);
     if (!row) throw new NotFoundException(`Execution for assignment ${assignmentId} not found`);
-
     const current = this.toExecution(row);
-    const target = (body.status ?? current.status) as SchedulingExecutionStatus;
-    const terminal = new Set<SchedulingExecutionStatus>(['COMPLETED', 'FAILED', 'CANCELLED']);
-    if (terminal.has(current.status) && current.status !== target) {
-      throw new NotFoundException(
-        `Execution ${row.executionId} already terminal (${current.status}); refusing transition to ${target}`,
-      );
+    const values = executionReceiptPatch(current, body);
+    // An exact retry is a read: no duplicate outbox entry, timestamp or metrics.
+    if (Object.keys(values).length === 0) return current;
+    const projected = { ...current, ...values,
+      actualStartAt: values.actualStartAt instanceof Date ? values.actualStartAt.toISOString() : current.actualStartAt,
+      actualEndAt: values.actualEndAt instanceof Date ? values.actualEndAt.toISOString() : current.actualEndAt,
+    } as SchedulingExecution;
+    if (!projected.deviationType) {
+      const derived = this.deriveDeviation(projected);
+      if (derived) { values.deviationType = derived.type; values.deviationReason = derived.reason; }
     }
-
-    const deviationType = (body.deviationType ?? current.deviationType) as SchedulingDeviationType;
-    const values: Record<string, unknown> = {};
-    if (body.status) values.status = target;
-    if (body.actualStartAt != null) values.actualStartAt = new Date(body.actualStartAt);
-    if (body.actualEndAt != null) values.actualEndAt = new Date(body.actualEndAt);
-    if (body.actualTravelMs != null) values.actualTravelMs = body.actualTravelMs;
-    if (body.actualDistanceM != null) values.actualDistanceM = body.actualDistanceM;
-    if (body.actualWaitingMs != null) values.actualWaitingMs = body.actualWaitingMs;
-    if (body.deviationType) values.deviationType = deviationType;
-    if (body.deviationReason != null) values.deviationReason = body.deviationReason;
-
-    const [updated] = await this.db
-      .update(ewohSchedulingExecution)
-      .set(values)
-      .where(
-        and(eq(ewohSchedulingExecution.assignmentId, assignmentId), ownership),
-      )
-      .returning();
-    // P2（2026-08-19 审计）：update().returning() 解构未判空——前置 SELECT 与
-    // UPDATE 之间存在 TOCTOU 窗口（行被并发删除/改归属），影响 0 行时
-    // returning 为空数组、updated 为 undefined → toExecution 崩溃 500。
-    if (!updated) {
-      throw new NotFoundException(`Execution for assignment ${assignmentId} not found`);
-    }
+    const [updated] = await this.db.update(ewohSchedulingExecution).set(values).where(and(
+      eq(ewohSchedulingExecution.id, row.id), ownership,
+      eq(ewohSchedulingExecution.status, row.status),
+      row.actualStartAt ? eq(ewohSchedulingExecution.actualStartAt, row.actualStartAt) : isNull(ewohSchedulingExecution.actualStartAt),
+      row.actualEndAt ? eq(ewohSchedulingExecution.actualEndAt, row.actualEndAt) : isNull(ewohSchedulingExecution.actualEndAt),
+    )).returning();
+    if (!updated) throw new ConflictException('EXECUTION_STATE_CONFLICT');
     const execution = this.toExecution(updated);
-
-    // 派生偏差：actual 与 planned 对比（仅在提供 actual 时判定；不猜测）。
-    if (deviationType == null) {
-      const derived = this.deriveDeviation(execution);
-      if (derived) {
-        await this.db
-          .update(ewohSchedulingExecution)
-          .set({ deviationType: derived.type, deviationReason: derived.reason })
-          .where(
-            and(
-              eq(ewohSchedulingExecution.assignmentId, assignmentId),
-              ownership,
-            ),
-          );
-        execution.deviationType = derived.type;
-        execution.deviationReason = derived.reason;
-      }
-    }
 
     // 观测 + 事件
     if (body.status && body.status !== current.status) {
@@ -228,11 +207,19 @@ export class ExecutionService {
     return execution;
   }
 
-  /** 查询：按 plan / task / status 过滤。 */
+  /**
+   * 查询：按 plan / task / status / person 过滤。
+   *
+   * `personId`（2026-09-10 现场作业台）：现场视角必须只看到"分配给我的"执行
+   * 记录。此前只有 plan/task/status 三个过滤条件，现场页只能拉全量再在前端
+   * 过滤——既浪费带宽，也让"我的任务"依赖客户端正确性。归属筛选放在服务端
+   * 并保持租户作用域（orgId 条件不受影响）。
+   */
   async list(opts: {
     planId?: string;
     taskId?: string;
     status?: string;
+    personId?: string;
     orgId?: string | null;
     limit?: number;
     offset?: number;
@@ -241,6 +228,7 @@ export class ExecutionService {
     if (opts.planId) conditions.push(eq(ewohSchedulingExecution.planId, opts.planId));
     if (opts.taskId) conditions.push(eq(ewohSchedulingExecution.taskId, opts.taskId));
     if (opts.status) conditions.push(eq(ewohSchedulingExecution.status, opts.status));
+    if (opts.personId) conditions.push(eq(ewohSchedulingExecution.personId, opts.personId));
     // ADR-073：execution 读面 org 条件（org 匹配或 NULL 存量）。
     if (opts.orgId) {
       conditions.push(
@@ -267,10 +255,46 @@ export class ExecutionService {
         .from(ewohSchedulingExecution)
         .where(where),
     ]);
+    const executions = rows.map((r) => this.toExecution(r));
+    await this.attachDisplayNames(executions);
     return {
-      executions: rows.map((r) => this.toExecution(r)),
+      executions,
       total: totalRow[0]?.value ?? rows.length,
     };
+  }
+
+  /**
+   * 批量回填展示字段（taskTitle / personName，2026-09-11）。
+   *
+   * 执行记录本体只存 ID；但 raw UUID 直接呈现给班组长/调度员不可读。
+   * 这里按当前页的 distinct ID 批量解析（两次 in-list 查询，不逐行 N+1）。
+   * RLS 生效下目标不在本租户时解析不到——留 null 由 UI 显示"未知"，
+   * 绝不回退显示 ID 或伪造名称。
+   */
+  private async attachDisplayNames(executions: SchedulingExecution[]): Promise<void> {
+    const taskIds = [...new Set(executions.map((e) => e.taskId).filter(Boolean))];
+    const personIds = [...new Set(executions.map((e) => e.personId).filter((id): id is string => Boolean(id)))];
+    if (taskIds.length === 0 && personIds.length === 0) return;
+    const [taskRows, personRows] = await Promise.all([
+      taskIds.length > 0
+        ? this.db
+          .select({ id: ewohProductionTask.id, title: ewohProductionTask.title })
+          .from(ewohProductionTask)
+          .where(inArray(ewohProductionTask.id, taskIds))
+        : Promise.resolve([] as Array<{ id: string; title: string }>),
+      personIds.length > 0
+        ? this.db
+          .select({ id: ewohPersonnel.id, name: ewohPersonnel.name })
+          .from(ewohPersonnel)
+          .where(inArray(ewohPersonnel.id, personIds))
+        : Promise.resolve([] as Array<{ id: string; name: string }>),
+    ]);
+    const taskTitles = new Map(taskRows.map((row) => [row.id, row.title]));
+    const personNames = new Map(personRows.map((row) => [row.id, row.name]));
+    for (const execution of executions) {
+      execution.taskTitle = taskTitles.get(execution.taskId) ?? null;
+      execution.personName = execution.personId ? (personNames.get(execution.personId) ?? null) : null;
+    }
   }
 
   /** 按 assignmentId 查。NEST-012（2026-08-17）：orgId 提供时按 org 过滤。 */
@@ -341,8 +365,7 @@ export class ExecutionService {
     const isDeviation = e.deviationType != null;
     const shouldReplan =
       isDeviation && triggerReplan && ExecutionService.REPLANNABLE_DEVIATIONS.has(e.deviationType ?? '');
-    try {
-      await this.outboxService.enqueue(
+    await this.outboxService.enqueue(
         isDeviation ? 'execution.deviation' : 'execution.updated',
         e.assignmentId,
         {
@@ -367,9 +390,6 @@ export class ExecutionService {
           occurredAt: new Date().toISOString(),
         },
       );
-    } catch (err) {
-      this.logger.warn(`execution event publish failed: ${(err as Error)?.message ?? err}`);
-    }
   }
 
   private toExecution(r: typeof ewohSchedulingExecution.$inferSelect): SchedulingExecution {

@@ -41,6 +41,9 @@ const EXPLICIT_ACTION_MAP: Record<string, string> = {
   'pending_approval|draft': 'reject',
   'pending_dispatch|dispatched': 'dispatch',
   'dispatched|received': 'receive',
+  // DR-5 方案取消/回滚：派发后/接收后、开始执行前 → 退回待派发池。
+  'dispatched|pending_dispatch': 'rollback_dispatch',
+  'received|pending_dispatch': 'rollback_dispatch',
   'received|executing': 'start',
   'executing|paused': 'pause',
   'paused|executing': 'resume',
@@ -94,9 +97,9 @@ function diffActions(actions: Array<{ action: string; from: string; to: string }
 }
 
 describe('Canonical Execution Model：TS 状态机 ↔ task.yaml 锁步（ADR-049）', () => {
-  it('契约形状：11 状态 / 14 转换 / terminal=[completed, cancelled]', () => {
+  it('契约形状：11 状态 / 16 转换 / terminal=[completed, cancelled]', () => {
     expect(contract.states).toHaveLength(11);
-    expect(contract.transitions).toHaveLength(14);
+    expect(contract.transitions).toHaveLength(16);
     expect(contract.terminal).toEqual(['completed', 'cancelled']);
   });
 

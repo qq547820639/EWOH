@@ -3,6 +3,8 @@ import { ExoSessionService } from './exo-session.service';
 import { ExoSessionController } from './exo-session.controller';
 import { ExoConfigService } from './exo-config.service';
 import { ExoConfigController } from './exo-config.controller';
+import { ExoSessionReminderService } from './exo-session-reminder.service';
+import { ExoSessionReminderWorkerService } from './exo-session-reminder.worker';
 
 /**
  * Exo 模块（ADR-032/ADR-051/ADR-052 / §7）：
@@ -13,7 +15,13 @@ import { ExoConfigController } from './exo-config.controller';
  */
 @Module({
   controllers: [ExoSessionController, ExoConfigController],
-  providers: [ExoSessionService, ExoConfigService],
-  exports: [ExoSessionService, ExoConfigService],
+  providers: [
+    ExoSessionService,
+    ExoConfigService,
+    // NO-37a：平台侧主动提醒（扫描只读；worker 默认 10 分钟，可 env 关闭）
+    ExoSessionReminderService,
+    ExoSessionReminderWorkerService,
+  ],
+  exports: [ExoSessionService, ExoConfigService, ExoSessionReminderService],
 })
 export class ExoSessionModule {}

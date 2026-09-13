@@ -59,7 +59,7 @@ BEGIN
   SELECT count(*) INTO at_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_exo_config'
       AND policyname = 'exo_config_org_isolation'
-      AND pg_get_expr(polqual, polrelid) LIKE '%app.current_org_id%';
+      AND qual LIKE '%app.current_org_id%';
   IF at_policy <> 1 THEN
     missing := missing || format('policy at=%s ', at_policy);
   END IF;
@@ -226,7 +226,7 @@ BEGIN
      OR NOT bad_mode_rejected OR NOT bad_vendor_rejected OR NOT bad_profile_rejected
      OR NOT bad_superseded_rejected OR NOT bad_fit_rejected OR NOT bad_cal_rejected
      OR NOT bad_time_rejected OR NOT dup_rejected OR NOT control_ok THEN
-    RAISE EXCEPTION 'standalone_051 verify incomplete: % rejected=[%,%,%,%,%,%,%,%,%,%] dup=% control=%',
+    RAISE EXCEPTION 'standalone_051 verify incomplete: % rejected=[%,%,%,%,%,%,%,%,%] dup=% control=%',
       missing, bad_kind_rejected, bad_status_rejected, bad_mode_rejected,
       bad_vendor_rejected, bad_profile_rejected, bad_superseded_rejected,
       bad_fit_rejected, bad_cal_rejected, bad_time_rejected, dup_rejected, control_ok;

@@ -200,6 +200,22 @@ describe('reuseBaseline fast-path', () => {
     }
   });
 
+  it.each([null, undefined, NaN, Infinity, -Infinity, -1, 101, 0])(
+    'neither selects nor reuses a device with unavailable/low battery %p', async (batteryPct) => {
+      const { solver } = makeSolver();
+      const snap = baseSnapshot();
+      snap.tasks = [{ ...snap.tasks[0], requiredDeviceCapabilities: ['lift'] }];
+      snap.devices = [Object.assign({}, snap.devices[0], { batteryPct, capabilities: ['lift'] })];
+      const reuseBaseline = new Map([
+        ['t1', { personId: 'p1', deviceId: 'd1', stationId: 'S1' }],
+      ]);
+      for (const extra of [{}, { reuseBaseline }]) {
+        const plan = await solver.solve(snap, [], baseOpts(snap, extra));
+        expect(plan.assignments).toEqual([]);
+      }
+    },
+  );
+
   it('无效复用条目（人员预订冲突）回退完整枚举，改派他人', async () => {
     const { solver } = makeSolver();
     const now = Date.now();

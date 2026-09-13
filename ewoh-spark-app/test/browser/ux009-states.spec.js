@@ -84,6 +84,9 @@ test.describe('UX-009/States', () => {
   test('Permission：worker 访问无权页面时显示 403 无权限', async ({ page }) => {
     await mockApi(page, {});
     await openSession(page, baseUrl, ROLES.worker, '/system');
-    await expect(page.locator('text=403 无权限')).toBeVisible();
+    // 2026-09-11 实测：全量 UX-009（500 用例、单 worker、5 分钟）在负载高峰时首屏渲染
+    // 可能超过默认 5s（该用例单跑恒绿、全量偶发红）。这是**环境负载**而非产品缺陷，
+    // 因此把这一条首屏断言的上限放宽到 15s，而不是把偶发红当成通过。
+    await expect(page.locator('text=403 无权限')).toBeVisible({ timeout: 15000 });
   });
 });

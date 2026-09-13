@@ -41,6 +41,7 @@ import { ObservabilityModule } from './modules/observability/observability.modul
 import { TimelineModule } from './modules/timeline/timeline.module';
 import { SimulationModule } from './modules/simulation/simulation.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { DeviceResponsibilityModule } from './modules/responsibility/device-responsibility.module';
 import { ExoSessionModule } from './modules/exo/exo-session.module';
 // NEST-507/515（2026-08-17，spec 已裁决：legacy 保留但补齐 guard/interceptor
 // 至可用最小集）：legacy 入口补 RateLimitGuard 与 MetricsInterceptor。
@@ -88,6 +89,8 @@ import { MetricsInterceptor } from './modules/metrics/metrics.interceptor';
     SimulationModule,
     NotificationModule,
     ExoSessionModule,
+    // NO-49a：设备责任人（被多个提醒源消费：安灯开灯/升级、后续数据质量与维护提醒）。
+    DeviceResponsibilityModule,
     // NEST-507/515：MetricsModule 提供 MetricsInterceptor 依赖（最小集补齐）。
     MetricsModule,
     // UX 埋点（J2 Gate G-1）：复用 ewoh_event 表，无新增表与迁移。

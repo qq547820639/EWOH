@@ -10,6 +10,7 @@
 type RouteLoader = () => Promise<unknown>;
 
 const PREFETCHABLE_ROUTES: Record<string, RouteLoader> = {
+  '/factory-operations': () => import('../pages/FactoryOperations/FactoryOperations'),
   '/command-center': () => import('../pages/CommandCenter/CommandCenter'),
   '/work-orchestration': () => import('../pages/WorkOrchestration/WorkOrchestration'),
   '/command-map': () => import('../pages/CommandMap/CommandMap'),

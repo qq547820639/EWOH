@@ -17,6 +17,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { currentRequestContext } from '../../common/request-context';
+import { normalizeBatteryPct } from '@shared/scheduler';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -52,7 +53,6 @@ import type {
   ExecutionListResponse,
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
-import { conflictSeedHash } from './conflict.service';
 import { assertTenantVisible } from './plan-tenant-guard';
 import { WorldStateSnapshotService } from './world-state.service';
 import { PlanService } from './plan.service';
@@ -65,7 +65,6 @@ import { ConflictService } from './conflict.service';
 import { PolicyReplayService } from './policy-replay.service';
 import { ExecutionService } from './execution.service';
 import { CandidateEngineService } from './candidate-engine.service';
-import { OutboxService } from './outbox.service';
 import { TaskLifecycle } from './task-lifecycle';
 import { toOrgContext, mapPlan, mapAudit } from './scheduler-run-context';
 
@@ -103,8 +102,6 @@ export class SchedulerQueryService {
     private readonly policyReplayService?: PolicyReplayService,
     // Phase 4 / P4-EXEC：执行领域查询（可选注入；未注入时抛错）。
     private readonly executionService?: ExecutionService,
-    // v0.7 B3：SSE 实时事件推送（conflict.detected）。可选注入；缺失时静默跳过。
-    private readonly outboxService?: OutboxService,
   ) {}
 
   /**
@@ -459,6 +456,9 @@ export class SchedulerQueryService {
           body.taskId,
           personPoint,
           taskPointCoords,
+          // R-6（2026-09-13）：批量路由成本同样透传 actor 租户——同一请求内
+          // N 个候选的 loadGraph 由图缓存复用，不再逐候选全图 SELECT。
+          { orgId: actor?.primaryOrgId ?? null },
         );
         const routeBlocked =
           cost.source === 'euclidean_fallback' &&
@@ -585,6 +585,8 @@ export class SchedulerQueryService {
         task.id,
         personPoint,
         taskPoint,
+        // R-6（2026-09-13）：回退路径同样透传 actor 租户（路由图按租户分桶缓存）。
+        { orgId: actor?.primaryOrgId ?? null },
       );
       const routeInfeasible = routeCost.feasible === false;
 
@@ -614,7 +616,7 @@ export class SchedulerQueryService {
           device
             ? {
                 id: device.id,
-                batteryPct: device.batteryPct,
+                batteryPct: normalizeBatteryPct(device.batteryPct),
                 online: device.online,
                 status: device.status,
                 capabilities: device.capabilities ?? [],
@@ -658,7 +660,7 @@ export class SchedulerQueryService {
           distanceMeters: routeCost.distanceMeters,
           skillMatch,
           workload: person.loadLevel,
-          batteryPct: device ? device.batteryPct : null,
+          batteryPct: device ? normalizeBatteryPct(device.batteryPct) : null,
           reservationConflict,
           score,
           reasons,
@@ -691,10 +693,14 @@ export class SchedulerQueryService {
   // ===== Conflict aggregation (V2) =====
 
   /**
-   * 从真实世界状态 / 预占 / 活跃方案聚合统一调度冲突列表。
-   * 仅返回真实/可推导冲突；无冲突时返回空列表，不虚构。
-   * Phase 3 / P3-T1：生产路径委托 ConflictService（推导+落库+生命周期）；
-   * 未注入 ConflictService（旧单测）时回退本服务内存推导。
+   * 统一调度冲突列表（**单一实现**：`ConflictService`）。
+   *
+   * 2026-09-12（第 59 轮）：本服务曾内置一份"世界状态 → 冲突"的内存推导作为
+   * `ConflictService` 未注入时的回退（约 470 行孪生实现）。它已经漂移：缺
+   * 预占过期/感知门控（`perception_inconsistent`）等类型、SSE 推送与生命周期
+   * （ACK/RESOLVE/SUPPRESS）也各写一套。保留"两个冲突真相"违反原则 9，
+   * 因此删除孪生实现，改为**未装配即显式失败**（不静默返回一份不同的冲突列表——
+   * 那正是原则 7 禁止的"看起来有数据、其实不是同一份事实"）。
    */
   async listConflicts(
     params: ConflictsListRequest = {},
@@ -702,510 +708,43 @@ export class SchedulerQueryService {
   ): Promise<ConflictsListResponse> {
     // R2-SSV-07：HTTP 读面统一 assertActorForHttp。
     this.assertActorForHttp(actor);
-    if (this.conflictService) {
-      return this.conflictService.listConflicts(params, actor);
-    }
-    let conflicts = await this.buildConflicts(actor);
-    if (params.type) conflicts = conflicts.filter((c) => c.type === params.type);
-    if (params.severity) conflicts = conflicts.filter((c) => c.severity === params.severity);
-    if (params.scope) conflicts = conflicts.filter((c) => c.scope === params.scope);
-    if (params.resourceId) conflicts = conflicts.filter((c) => c.resourceId === params.resourceId);
-    conflicts.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    return { conflicts, total: conflicts.length };
+    return this.requireConflictService('listConflicts').listConflicts(params, actor);
   }
 
   /** 返回单个冲突详情；冲突在当前真实数据中不再存在时抛 NotFoundException。R2-SSV-07：HTTP 守卫。 */
   async getConflictDetail(conflictId: string, actor?: OrgContext): Promise<SchedulingConflict> {
     this.assertActorForHttp(actor);
-    if (this.conflictService) {
-      return this.conflictService.getConflictDetail(conflictId, actor);
-    }
-    const { conflicts } = await this.listConflicts({}, actor);
-    const found = conflicts.find((c) => c.conflictId === conflictId);
-    if (!found) throw new NotFoundException(`Conflict ${conflictId} not found`);
+    const service = this.requireConflictService('getConflictDetail');
+    const found = await service.getConflictDetail(conflictId, actor);
     return found;
+  }
+
+  /**
+   * 冲突读面必须装配 `ConflictService`（单一实现）。缺失 = 装配错误，
+   * **显式抛错而不是回退另一份推导**（否则同一次查询在不同部署下给出不同冲突集）。
+   */
+  private requireConflictService(caller: string): ConflictService {
+    if (!this.conflictService) {
+      throw new Error(
+        `${caller} 需要 ConflictService（冲突的唯一实现）：未装配时不提供内存回退——`
+        + '两个"冲突真相"会让生命周期/SSE/门控类型漂移（2026-09-12 第 59 轮删除孪生实现）',
+      );
+    }
+    return this.conflictService;
   }
 
   /** 执行领域：查询。R2-SSV-07：HTTP 守卫。 */
   async executionList(
-    query: { planId?: string; taskId?: string; status?: string; limit?: number; offset?: number },
+    query: {
+      planId?: string; taskId?: string; status?: string; personId?: string;
+      limit?: number; offset?: number;
+    },
     actor?: OrgContext,
   ): Promise<ExecutionListResponse> {
     this.assertActorForHttp(actor);
     if (!this.executionService) throw new Error('executionService not injected');
     // ADR-073：execution 读面 org 接线（org 匹配或 NULL 存量）。
     return this.executionService.list({ ...query, orgId: actor?.primaryOrgId ?? null });
-  }
-
-  /** 从当前世界状态 / 预占 / 活跃方案推导全部真实冲突。NEST-107：ctx 透传。 */
-  private async buildConflicts(actor?: OrgContext): Promise<SchedulingConflict[]> {
-    // NEST-107（2026-08-17）：冲突推导的世界状态按 ctx org 过滤（此前无 ctx
-    // 全表收集，冲突列表跨租户聚合 + emitNewConflicts 推 null orgId 事件）。
-    const state = await this.worldStateSnapshotService.getCurrentWorldState(actor);
-    const config = (await this.policyService
-      .getConfig(actor?.primaryOrgId || null)
-      .catch(() => null)) as SchedulingPolicyConfig | null;
-    const minBatteryPct = config?.minBatteryPct ?? 15;
-    const now = Date.now();
-    const conflicts: SchedulingConflict[] = [];
-
-    const terminalStatuses = new Set(['done', 'completed', 'cancelled', 'failed']);
-    const affectedTasks = state.tasks.filter((t) => !terminalStatuses.has(t.status));
-
-    const taskIdsFor = (kind: 'person' | 'device', id: string): string[] =>
-      affectedTasks
-        .filter((t) => (kind === 'person' ? t.assigneeId === id : t.deviceId === id))
-        .map((t) => t.id);
-
-    // 1. double booking：同一资源时间窗重叠的预占。
-    const resByKey = new Map<string, typeof state.reservations>();
-    for (const r of state.reservations ?? []) {
-      const key = `${r.resourceType}:${r.resourceId}`;
-      const list = resByKey.get(key) ?? [];
-      list.push(r);
-      resByKey.set(key, list);
-    }
-    for (const [key, list] of resByKey) {
-      const sorted = [...list].sort((a, b) => a.startMs - b.startMs);
-      for (let i = 0; i < sorted.length; i++) {
-        for (let j = i + 1; j < sorted.length; j++) {
-          const a = sorted[i];
-          const b = sorted[j];
-          // NEST-159（2026-08-17）：按 startMs 升序后，一旦 b.startMs >= a.endMs，
-          // 后续 j 不可能与 a 重叠——提前跳出内层循环（O(n²) → O(n log n + k)）。
-          if (b.startMs >= a.endMs) break;
-          if (a.startMs < b.endMs && b.startMs < a.endMs) {
-            const [resourceType, resourceId] = key.split(':');
-            conflicts.push(
-              this.mkConflict(
-                `double_booking:${key}:${a.reservationId}:${b.reservationId}`,
-                {
-                  type: 'double_booking',
-                  severity: 'critical',
-                  scope: 'resource',
-                  resourceType,
-                  resourceId,
-                  taskIds: [],
-                  message: `资源 ${resourceId}（${resourceType}）存在重叠预占：${a.reservationId} 与 ${b.reservationId}`,
-                  resolution: '释放其中一条预占或调整时间窗',
-                  snapshotVersion: 'CURRENT',
-                  data: {
-                    reservationIds: [a.reservationId, b.reservationId],
-                    overlapStartMs: Math.max(a.startMs, b.startMs),
-                    overlapEndMs: Math.min(a.endMs, b.endMs),
-                  },
-                },
-              ),
-            );
-          }
-        }
-      }
-    }
-
-    // 2. resource stale：STALE / UNKNOWN 数据不被视为可信。
-    for (const p of state.persons) {
-      if (p.dataQuality === 'STALE' || p.dataQuality === 'UNKNOWN') {
-        conflicts.push(
-          this.mkConflict(`resource_stale:person:${p.id}`, {
-            type: 'resource_stale',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'person',
-            resourceId: p.id,
-            taskIds: taskIdsFor('person', p.id),
-            message: `人员 ${p.name ?? p.id} 数据陈旧（${p.dataQuality}）`,
-            resolution: '等待遥测更新或人工确认状态',
-            snapshotVersion: 'CURRENT',
-            data: { dataQuality: p.dataQuality },
-          }),
-        );
-      }
-    }
-    for (const d of state.devices) {
-      if (d.dataQuality === 'STALE' || d.dataQuality === 'UNKNOWN') {
-        conflicts.push(
-          this.mkConflict(`resource_stale:device:${d.id}`, {
-            type: 'resource_stale',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 数据陈旧（${d.dataQuality}）`,
-            resolution: '等待遥测更新确认状态',
-            snapshotVersion: 'CURRENT',
-            data: { dataQuality: d.dataQuality },
-          }),
-        );
-      }
-    }
-
-    // 3. person unavailable：数据新鲜但状态不可用。
-    for (const p of state.persons) {
-      if (p.dataQuality === 'FRESH' && p.status === 'unavailable') {
-        conflicts.push(
-          this.mkConflict(`person_unavailable:${p.id}`, {
-            type: 'person_unavailable',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: 'person',
-            resourceId: p.id,
-            taskIds: taskIdsFor('person', p.id),
-            message: `人员 ${p.name ?? p.id} 当前不可用`,
-            resolution: '改派其他人员或等待其恢复',
-            snapshotVersion: 'CURRENT',
-            data: { status: p.status },
-          }),
-        );
-      }
-    }
-
-    // 4. device offline。
-    for (const d of state.devices) {
-      if (d.online === false || d.status === 'offline') {
-        conflicts.push(
-          this.mkConflict(`device_offline:${d.id}`, {
-            type: 'device_offline',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 离线`,
-            resolution: '检查设备连接或改派其他设备',
-            snapshotVersion: 'CURRENT',
-            data: { status: d.status },
-          }),
-        );
-      }
-    }
-
-    // 5. low battery。
-    for (const d of state.devices) {
-      if (d.batteryPct < minBatteryPct) {
-        conflicts.push(
-          this.mkConflict(`low_battery:${d.id}`, {
-            type: 'low_battery',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'device',
-            resourceId: d.id,
-            taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 电量 ${d.batteryPct}% 低于阈值 ${minBatteryPct}%`,
-            resolution: '安排设备充电或换电',
-            snapshotVersion: 'CURRENT',
-            data: { batteryPct: d.batteryPct, minBatteryPct },
-          }),
-        );
-      }
-    }
-
-    // 6. blocked route：路段状态非健康（open/normal 均为健康；'normal' 曾被
-    //    误判为 blocked → 每条 normal 通道都生成 high 冲突误报）。
-    for (const r of state.routeStatus ?? []) {
-      if (r.status !== 'open' && r.status !== 'normal') {
-        conflicts.push(
-          this.mkConflict(`blocked_route:${r.edgeId}`, {
-            type: 'blocked_route',
-            severity: 'high',
-            scope: 'route',
-            resourceType: 'route',
-            resourceId: r.edgeId,
-            taskIds: [],
-            message: `路段 ${r.edgeId} 不可通行（${r.status}）`,
-            resolution: '求解时排除该路段并绕行',
-            snapshotVersion: 'CURRENT',
-            data: { status: r.status, riskLevel: r.riskLevel },
-          }),
-        );
-      }
-    }
-
-    // 7. forbidden zone：受限制区域 + 安全事件派生区域。
-    for (const z of state.forbiddenZones ?? []) {
-      const zoneTaskIds = affectedTasks
-        .filter((t) => t.zoneId === z.zoneId)
-        .map((t) => t.id);
-      conflicts.push(
-        this.mkConflict(`forbidden_zone:${z.zoneId}`, {
-          type: 'forbidden_zone',
-          severity: 'critical',
-          scope: 'route',
-          resourceType: 'zone',
-          resourceId: z.zoneId,
-          taskIds: zoneTaskIds,
-          message: `区域 ${z.zoneId} 被禁止进入（${z.reason}）`,
-          resolution: '取消该区域任务或人工介入',
-          snapshotVersion: 'CURRENT',
-          data: { reason: z.reason },
-        }),
-      );
-    }
-
-    // 8. safety block：安全事件触发的禁用人员/设备。
-    for (const pid of state.safetyBlockedPersonIds ?? []) {
-      conflicts.push(
-        this.mkConflict(`safety_block:person:${pid}`, {
-          type: 'safety_block',
-          severity: 'critical',
-          scope: 'resource',
-          resourceType: 'person',
-          resourceId: pid,
-          taskIds: taskIdsFor('person', pid),
-          message: `人员 ${pid} 因安全事件被禁止作业`,
-          resolution: '确认安全事件消除后人工恢复',
-          snapshotVersion: 'CURRENT',
-          data: {},
-        }),
-      );
-    }
-    for (const did of state.safetyBlockedDeviceIds ?? []) {
-      conflicts.push(
-        this.mkConflict(`safety_block:device:${did}`, {
-          type: 'safety_block',
-          severity: 'critical',
-          scope: 'resource',
-          resourceType: 'device',
-          resourceId: did,
-          taskIds: taskIdsFor('device', did),
-          message: `设备 ${did} 因安全事件被禁止启用`,
-          resolution: '确认安全事件消除后人工恢复',
-          snapshotVersion: 'CURRENT',
-          data: {},
-        }),
-      );
-    }
-
-    // 9. predecessor violation：前置任务未完成仍被调度。
-    const statusById = new Map(state.tasks.map((t) => [t.id, t.status]));
-    for (const t of affectedTasks) {
-      const pendingPreds = (t.predecessorIds ?? []).filter(
-        (pid) => !terminalStatuses.has(statusById.get(pid) ?? ''),
-      );
-      if (pendingPreds.length > 0) {
-        conflicts.push(
-          this.mkConflict(`predecessor_violation:${t.id}`, {
-            type: 'predecessor_violation',
-            severity: 'high',
-            scope: 'task',
-            resourceType: null,
-            resourceId: null,
-            taskIds: [t.id],
-            message: `任务 ${t.id} 的前置任务（${pendingPreds.join(', ')}）尚未完成`,
-            resolution: '等待前置任务完成或调整依赖',
-            snapshotVersion: 'CURRENT',
-            data: { predecessorIds: pendingPreds },
-          }),
-        );
-      }
-    }
-
-    // 10. station capacity：工位任务数量超过容量。
-    const backlogCountById = new Map<string, number>();
-    for (const b of state.backlog ?? []) backlogCountById.set(b.taskId, b.count);
-    for (const s of state.stations ?? []) {
-      if (s.capacity == null) continue;
-      const count = backlogCountById.get(s.id) ?? 0;
-      if (count > s.capacity) {
-        conflicts.push(
-          this.mkConflict(`station_capacity:${s.id}`, {
-            type: 'station_capacity',
-            severity: 'medium',
-            scope: 'resource',
-            resourceType: 'station',
-            resourceId: s.id,
-            taskIds: [],
-            message: `工位 ${s.name ?? s.id} 任务数 ${count} 超过容量 ${s.capacity}`,
-            resolution: '向其他空闲工位分流任务',
-            snapshotVersion: 'CURRENT',
-            data: { capacity: s.capacity, count },
-          }),
-        );
-      }
-    }
-
-    // 11. stale plan：活跃方案基于已过期的快照。
-    //    NEST-159（2026-08-17）：N+1 修复——当前世界状态只收集一次，逐方案
-    //    与同一 current 比较（原逐方案 isPlanStale 各自全量 collectState）；
-    //    活跃方案查询同口径 org 过滤（NEST-106）。
-    const activePlans = await this.db
-      .select()
-      .from(ewohSchedulePlan)
-      .where(
-        and(
-          inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
-          actor
-            ? or(
-                isNull(ewohSchedulePlan.orgId),
-                eq(ewohSchedulePlan.orgId, actor.primaryOrgId),
-              )
-            : undefined,
-        ),
-      );
-    for (const p of activePlans) {
-      if (!p.snapshotVersion) continue;
-      const stale = await this.worldStateSnapshotService.isPlanStale(
-        p.snapshotVersion,
-        actor,
-        state,
-      );
-      if (stale) {
-        conflicts.push(
-          this.mkConflict(`stale_plan:${p.planId}`, {
-            type: 'stale_plan',
-            severity: 'medium',
-            scope: 'plan',
-            resourceType: null,
-            resourceId: null,
-            taskIds: [],
-            message: `方案 ${p.planId} 基于的快照 ${p.snapshotVersion} 已过期`,
-            resolution: '基于最新快照重新运行调度生成新方案',
-            snapshotVersion: p.snapshotVersion,
-            data: { snapshotVersion: p.snapshotVersion, status: p.status },
-          }),
-        );
-      }
-    }
-
-    // 12. reservation conflict：预占的资源当前离线/数据陈旧（预占不可用资源）。
-    for (const r of state.reservations ?? []) {
-      const offline =
-        r.resourceType === 'device' &&
-        state.devices.find((d) => d.id === r.resourceId)?.online === false;
-      const stale =
-        r.resourceType === 'person'
-          ? state.persons.find((p) => p.id === r.resourceId)?.dataQuality !== 'FRESH'
-          : r.resourceType === 'device'
-            ? state.devices.find((d) => d.id === r.resourceId)?.dataQuality !== 'FRESH'
-            : false;
-      if (offline || stale) {
-        conflicts.push(
-          this.mkConflict(`reservation_conflict:${r.resourceType}:${r.resourceId}:${r.reservationId}`, {
-            type: 'reservation_conflict',
-            severity: 'high',
-            scope: 'resource',
-            resourceType: r.resourceType,
-            resourceId: r.resourceId,
-            taskIds: [],
-            message: `资源 ${r.resourceId}（${r.resourceType}）存在预占但当前不可用`,
-            resolution: '释放该预占并改派可用资源',
-            snapshotVersion: 'CURRENT',
-            data: {
-              reservationId: r.reservationId,
-              startMs: r.startMs,
-              endMs: r.endMs,
-              offline,
-              stale,
-            },
-          }),
-        );
-      }
-    }
-
-    // 13. reservation expiring：预占即将过期（剩余时长 < 阈值）。
-    // 预警而非阻断：提示值班员提前续约/重排，避免派工执行中途资源失效。
-    const expiringThresholdMs = this.reservationExpiringThresholdMs;
-    for (const r of state.reservations ?? []) {
-      if (r.endMs == null) continue;
-      const remainingMs = r.endMs - now;
-      if (remainingMs >= 0 && remainingMs < expiringThresholdMs) {
-        conflicts.push(
-          this.mkConflict(
-            `reservation_expiring:${r.resourceType}:${r.resourceId}:${r.reservationId}`,
-            {
-              type: 'reservation_expiring',
-              severity: 'medium',
-              scope: 'resource',
-              resourceType: r.resourceType,
-              resourceId: r.resourceId,
-              taskIds: [],
-              message: `资源 ${r.resourceId}（${r.resourceType}）预占即将过期（剩余 ${Math.ceil(remainingMs / 60000)} 分钟）`,
-              resolution: '续约预占或在过期前完成派工/重排',
-              snapshotVersion: 'CURRENT',
-              data: {
-                reservationId: r.reservationId,
-                startMs: r.startMs,
-                endMs: r.endMs,
-                remainingMs,
-                thresholdMs: expiringThresholdMs,
-              },
-            },
-          ),
-        );
-      }
-    }
-
-    // v0.7 B3：新冲突实时推送（SSE conflict.detected）。
-    // 仅推送首次出现的 conflictId（内存去重），避免前端轮询触发的重复推送；
-    // 冲突消失不推送（由前端轮询/快照兜底）。缺失 outboxService（测试）时静默跳过。
-    // NEST-107：事件携带推导上下文 orgId（SSE 订阅者按 org 过滤）。
-    this.emitNewConflicts(conflicts, actor?.primaryOrgId ?? null);
-
-    return conflicts;
-  }
-
-  /** v0.7 B3：已推送过的冲突 id 缓存（防重复推送，有界）。 */
-  private readonly emittedConflictIds = new Set<string>();
-  private static readonly EMITTED_CONFLICT_CAP = 500;
-
-  /**
-   * v0.7 B3：将新出现的冲突通过 outbox 推送到 SSE 流（conflict.detected）。
-   * 内存去重：同 conflictId（内容哈希稳定）只推送一次；缓存超上限时清空最老一半。
-   * 幂等性由 sequence 机制 + 前端去重双保险。
-   */
-  private emitNewConflicts(conflicts: SchedulingConflict[], orgId: string | null): void {
-    if (!this.outboxService) return;
-    for (const c of conflicts) {
-      if (this.emittedConflictIds.has(c.conflictId)) continue;
-      this.emittedConflictIds.add(c.conflictId);
-      if (this.emittedConflictIds.size > SchedulerQueryService.EMITTED_CONFLICT_CAP) {
-        // 防无界增长：清空最老一半（近似）
-        const drop = Math.floor(this.emittedConflictIds.size / 2);
-        let i = 0;
-        for (const id of this.emittedConflictIds) {
-          if (i++ >= drop) break;
-          this.emittedConflictIds.delete(id);
-        }
-      }
-      Promise.resolve(
-        this.outboxService.enqueue(
-          'conflict.detected',
-          c.conflictId,
-          {
-            conflictId: c.conflictId,
-            type: c.type,
-            severity: c.severity,
-            scope: c.scope,
-            resourceId: c.resourceId,
-            resourceType: c.resourceType,
-            taskIds: c.taskIds,
-            message: c.message,
-            resolution: c.resolution,
-          },
-          // NEST-107（2026-08-17）：携带推导上下文 orgId（此前恒 null——
-          // SSE filter 将其当全局事件放行给全部订阅者）。
-          orgId,
-        ),
-      ).catch((e) => {
-        this.logger.warn(`conflict.detected enqueue failed: ${(e as Error).message}`);
-      });
-    }
-  }
-
-  /**
-   * 构造统一冲突，conflictId 由内容种子哈希生成（跨查询稳定）。
-   * R2-SSV-06（2026-08-17）：哈希收敛为 conflict.service 导出的
-   * conflictSeedHash 单一实现（消除与 ConflictService 落库路径的 identity 分裂）。
-   */
-  private mkConflict(
-    seed: string,
-    input: Omit<SchedulingConflict, 'conflictId' | 'createdAt'>,
-  ): SchedulingConflict {
-    return {
-      conflictId: `CFL-${conflictSeedHash(seed)}`,
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
   }
 
   private mapRun(

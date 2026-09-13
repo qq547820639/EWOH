@@ -1,10 +1,4 @@
-import {
-  ENV_OPTIONS,
-  FACTORY_OPTIONS,
-  LINE_OPTIONS,
-  ORG_OPTIONS,
-  type AppContext,
-} from '@/lib/appContext';
+import { ENV_OPTIONS, FACTORY_OPTIONS, LINE_OPTIONS, type AppContext } from '@/lib/appContext';
 import {
   Select,
   SelectContent,
@@ -15,6 +9,7 @@ import {
 
 interface OrgEnvSwitcherProps {
   context: AppContext;
+  orgLabel: string;
   onChange: (partial: Partial<AppContext>) => void;
 }
 
@@ -49,19 +44,16 @@ function Selector({
  * 组织/工厂/产线/环境切换器。选择结果持久化到 localStorage，
  * 由父级（ContextBar）负责写入并回传最新上下文。
  */
-const OrgEnvSwitcher = ({ context, onChange }: OrgEnvSwitcherProps) => {
+const OrgEnvSwitcher = ({ context, orgLabel, onChange }: OrgEnvSwitcherProps) => {
   return (
     <div
       className="flex flex-wrap items-center gap-1.5"
       role="group"
       aria-label="组织与运行环境切换"
     >
-      <Selector
-        label="组织"
-        value={context.orgId}
-        options={ORG_OPTIONS}
-        onValueChange={(v) => onChange({ orgId: v })}
-      />
+      <span aria-label="已认证组织" title="组织由服务端认证会话决定" className="inline-flex h-7 items-center rounded-md border border-border bg-muted px-2 text-xs text-muted-foreground">
+        组织：{orgLabel}
+      </span>
       <Selector
         label="工厂"
         value={context.factoryId}

@@ -2,7 +2,9 @@
 
 > 维护规范：本文件是"领域 → 权威实现 → 契约 → 边界"的索引级地图。
 > 权威实现以代码为证，契约以 contracts/openapi/db 为证；发现新领域或实现迁移时更新。
-> 最后更新：2026-08-14。
+> 最后更新：2026-09-12（新增领域：外骨骼会话 `exo` / 通知与提醒 `notification` / 责任人与班次核对
+> `responsibility` / 安灯升级 `oee.andon-sla` / 数据质量待核实提醒 `data-quality`（NO-53a）；
+> 逐层现状与缺口见 `capability-alignment.md`）。
 
 ## 1. 领域总览
 

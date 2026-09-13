@@ -58,6 +58,21 @@ interface MapViewportProps {
   planOverlay: { plan: SchedulingPlanV2 | null; routeGraph: RouteGraph | null };
   candidates: TaskCandidatesResponse | null;
   selectedTaskId: string | null;
+  /** NO-16a：任务能力要求保存（透传到智能调度驾驶舱；缺省只读）。 */
+  onSaveRequirements?: (
+    taskId: string,
+    deviceNames: string[],
+    stationNames: string[],
+    approvalId?: string,
+  ) => void;
+  savingRequirements?: boolean;
+  requirementWarnings?: string[];
+  approvalRequired?: { message: string; relaxedHighRisk: string[] } | null;
+  onRequestApproval?: (taskId: string, deviceNames: string[], stationNames: string[]) => void;
+  pendingApprovalId?: string | null;
+  /** NO-22a：任务侧审批时效文案（"还有多久能用"）。 */
+  pendingApprovalFreshness?: string | null;
+  onRefreshApproval?: () => void;
   /** 视口 culling 可见范围（世界坐标）；null = 不启用 culling。 */
   visibleBounds: VisibleBounds | null;
   /**
@@ -154,6 +169,14 @@ const MapViewport = ({
   onCloseIntelligence,
   setMode,
   onLevelSelect,
+  onSaveRequirements,
+  savingRequirements,
+  requirementWarnings,
+  approvalRequired,
+  onRequestApproval,
+  pendingApprovalId,
+  pendingApprovalFreshness,
+  onRefreshApproval,
 }: MapViewportProps): ReactElement => {
   // ---- 坐标源统一（审计 A2，2026-08-19）----
   // 叠加层坐标一律以空间实体为准（与底图 /api/spatial/entities 同源）：
@@ -257,6 +280,14 @@ const MapViewport = ({
       onToggleWorkspace={onToggleWorkspace}
       onSelectTask={onSelectTask}
       onCloseIntelligence={onCloseIntelligence}
+      onSaveRequirements={onSaveRequirements}
+      savingRequirements={savingRequirements}
+      requirementWarnings={requirementWarnings}
+      approvalRequired={approvalRequired}
+      onRequestApproval={onRequestApproval}
+      pendingApprovalId={pendingApprovalId}
+      pendingApprovalFreshness={pendingApprovalFreshness}
+      onRefreshApproval={onRefreshApproval}
     />
 
     {/* Phase 4 / P4-COMPARE：Plan Compare（开关 + 面板 + Diff Drawer） */}

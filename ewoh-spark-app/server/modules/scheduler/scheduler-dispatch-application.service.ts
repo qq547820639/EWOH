@@ -12,11 +12,14 @@ import type {
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { ExecutionService } from './execution.service';
-import { toOrgContext } from './scheduler-run-context';
+import { ExecutionReceiptApplicationService } from './execution-receipt-application.service';
 
 @Injectable()
 export class SchedulerDispatchApplicationService {
-  constructor(private readonly executionService?: ExecutionService) {}
+  constructor(
+    private readonly executionService?: ExecutionService,
+    private readonly receiptService?: ExecutionReceiptApplicationService,
+  ) {}
 
   /** 执行领域：更新 Execution（含 deviation 派生 + 事件）。 */
   async executionUpdate(
@@ -24,7 +27,7 @@ export class SchedulerDispatchApplicationService {
     body: ExecutionUpdateRequest,
     actor?: OrgContext,
   ): Promise<SchedulingExecution> {
-    if (!this.executionService) throw new Error('executionService not injected');
-    return this.executionService.update(assignmentId, body, toOrgContext(actor).primaryOrgId ?? null);
+    if (this.receiptService) return this.receiptService.applyFromExecutionUpdate(assignmentId, body, actor);
+    throw new Error('Canonical receipt service not available');
   }
 }

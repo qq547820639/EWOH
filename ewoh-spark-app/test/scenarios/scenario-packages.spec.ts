@@ -183,14 +183,21 @@ describe('EWOH scenario packages (unit smoke)', () => {
       { cwd: repoRoot, encoding: 'utf8', timeout: 30000 },
     );
     expect(standaloneRollback).toContain('DESTRUCTIVE');
-    // W1（SQL-038）：rollback 非破坏化——A 类 001 全新表仍 DROP TABLE CASCADE；
-    // B 类既有物理表（如 ewoh_ai_suggestion）改为 DROP POLICY → DISABLE RLS →
-    // 仅 DROP 001 增量列（org_id / _created_by / _updated_by），不再整表删除。
+    // Standalone 001 owns the schema in an independent empty database, so its
+    // rollback removes every table created by standalone_001_schema.sql.
     expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_audit_log CASCADE');
-    expect(standaloneRollback).not.toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion');
-    expect(standaloneRollback).toContain("'ewoh_ai_suggestion'");
-    expect(standaloneRollback).toContain('DROP POLICY IF EXISTS ewoh_org_select ON public.%I');
-    expect(standaloneRollback).toContain("ALTER TABLE public.%I DROP COLUMN IF EXISTS org_id");
+    expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion CASCADE');
+
+    // The managed legacy package has the separate existing-table protection.
+    const managedRollback = execFileSync(
+      'node',
+      ['db/runner/run_migrations.js', '--plan', 'rollback'],
+      { cwd: repoRoot, encoding: 'utf8', timeout: 30000 },
+    );
+    expect(managedRollback).not.toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion');
+    expect(managedRollback).toContain("'ewoh_ai_suggestion'");
+    expect(managedRollback).toContain("EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I'");
+    expect(managedRollback).toMatch(/ALTER TABLE [a-z0-9_]+\.ewoh_ai_suggestion ALTER COLUMN org_id DROP NOT NULL/);
     const standaloneRuntimeRole = execFileSync(
       'node',
       ['db/runner/run_migrations.js', '--plan', 'standalone_runtime_role'],

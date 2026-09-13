@@ -106,6 +106,8 @@ export class AgentController {
       body.approved,
       {
         userId: request?.userContext?.userId ?? 'system',
+        // FR5：透传角色供服务层做"资格角色 ∩ 台账 rolesJson"强制（fail-closed）。
+        roles: request?.userContext?.roles ?? [],
       },
     );
   }

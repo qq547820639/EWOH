@@ -33,15 +33,22 @@ import type { OrgContext } from '../shared/org-context.interceptor';
  * - 对比 objective 与 KPI（assignments/lateness/travel/wait/workload/risk 等）；
  * - 结果仅用于 shadow 评估，绝不修改生产策略。
  *
- * 评估记录（内存）供 activate 守卫判断「已完成评估」；生产环境由
- * comparePolicyVersion / 影子评估自动化持续调用。重启后需重新评估（务实的
- * 阶段实现：不引入新持久化字段）。
+ * 评估记录供 activate 守卫判断「已完成评估」；生产环境由 comparePolicyVersion /
+ * 影子评估自动化持续调用。
+ *
+ * R2-WP-B（2026-09-13，跨租户守卫修复）：守卫键必须是 (orgId, configVersion)
+ * 复合键——configVersion 按 org 作用域递增（scheduling-policy.service.ts NEST-165
+ * computeNextVersion），ewoh_scheduling_policy 上无 config_version 唯一约束，不同
+ * 租户可各自存在 version=5 的行。此前 evaluations 仅以 configVersion 为键，
+ * A 租户评估 v5 后 B 租户 isEvaluated(5) 会命中同一键为真，B 即可跳过 shadow
+ * replay 直接 activate 自己的 v5（守卫被跨租户共享绕过）。内存态之外叠加
+ * ewoh_policy_replay 持久化回查，使重启后不再需要重跑昂贵的 replay。
  */
 @Injectable()
 export class PolicyReplayService {
   private readonly logger = new Logger(PolicyReplayService.name);
-  /** configVersion → 最近一次 replay 评估结果（内存记录，供 activate 守卫）。 */
-  private readonly evaluations = new Map<number, PolicyReplayEvaluation>();
+  /** `${orgId}::${configVersion}` → 最近一次 replay 评估结果（内存记录，供 activate 守卫）。 */
+  private readonly evaluations = new Map<string, PolicyReplayEvaluation>();
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -51,9 +58,52 @@ export class PolicyReplayService {
     private readonly metricsService?: SchedulerMetricsService,
   ) {}
 
-  /** 是否已完成 replay 评估（activate 守卫）。 */
-  isEvaluated(configVersion: number): boolean {
-    return this.evaluations.has(configVersion);
+  /**
+   * 守卫键：org 作用域 + 版本。orgId 缺省 = 系统后台流（`__global__`，与
+   * scheduling-policy 的 org 可见性口径一致）。
+   */
+  private evaluatedKey(configVersion: number, orgId?: string | null): string {
+    return `${orgId?.trim() || '__global__'}::${configVersion}`;
+  }
+
+  /**
+   * 是否已完成 replay 评估（activate 守卫）。
+   *
+   * R2-WP-B：按 (orgId, configVersion) 判定（跨租户守卫隔离）；内存态未命中时
+   * 回查 ewoh_policy_replay 的 COMPLETED 记录，覆盖「重启后内存丢失」——
+   * 否则同一候选版本在重启后会被判为未评估，唯一的补救路径是重跑一次昂贵的
+   * 双策略 replay。
+   *
+   * 查询失败降级为内存态（返回 false）而非抛出：守卫是激活前的门禁，DB 抖动
+   * 不能让「未评估」的候选被放行（fail-closed），也不该把 409 放大成 500。
+   */
+  async isEvaluated(
+    configVersion: number,
+    orgId?: string | null,
+  ): Promise<boolean> {
+    const org = orgId?.trim() || null;
+    if (this.evaluations.has(this.evaluatedKey(configVersion, org))) return true;
+    // 无 org：无持久化行可归属（org_id NOT NULL），只能依赖内存态。
+    if (!org) return false;
+    try {
+      const rows = await this.db
+        .select({ id: ewohPolicyReplay.id })
+        .from(ewohPolicyReplay)
+        .where(
+          and(
+            eq(ewohPolicyReplay.orgId, org),
+            eq(ewohPolicyReplay.candidatePolicyVersion, configVersion),
+            eq(ewohPolicyReplay.status, 'COMPLETED'),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
+    } catch (err) {
+      this.logger.warn(
+        `policy replay evaluated-check failed (v${configVersion}): ${(err as Error)?.message ?? err}`,
+      );
+      return false;
+    }
   }
 
   /**
@@ -108,7 +158,11 @@ export class PolicyReplayService {
       objectiveDelta,
       verdict,
     };
-    this.evaluations.set(candidateVersion, evaluation);
+    // R2-WP-B：按 (orgId, configVersion) 落键——仅凭版本号会让他租户同版本号命中。
+    this.evaluations.set(
+      this.evaluatedKey(candidateVersion, ctx?.primaryOrgId),
+      evaluation,
+    );
     this.logger.log(
       `policy replay v${candidateVersion} vs active v${active.version}: ` +
         `objectiveDelta=${objectiveDelta.toFixed(3)} verdict=${verdict} snapshot=${snapshotRow.snapshotVersion}`,

@@ -64,6 +64,9 @@ BEGIN
   END IF;
 
   -- 5) 派生不变量（空库恒 0）：非空 org_id 与归属 plan_assignment/plan 的 org_id 一致。
+  --    注意类型：assignment_event / scheduling_plan_assignment 的 org_id 是 varchar(255)（业务域），
+  --    schedule_plan 的 org_id 是 uuid（身份域）→ COALESCE 必须显式 ::text，否则
+  --    "COALESCE types character varying and uuid cannot be matched"（全新库跑 verify 实测）。
   --    联表在 assignment_id 上解析归属；无法解析归属的行（如纯 task/person 级事件）
   --    不在此不变量范围内（其 org_id 应保持 NULL，由 028 触发器防御语义保证）。
   SELECT count(*) INTO derived_mismatches
@@ -71,7 +74,7 @@ BEGIN
     JOIN __EWOH_SCHEMA__.ewoh_scheduling_plan_assignment pa ON pa.assignment_id = evt.assignment_id
     LEFT JOIN __EWOH_SCHEMA__.ewoh_schedule_plan p ON p.plan_id = pa.plan_id
     WHERE evt.org_id IS NOT NULL
-      AND evt.org_id <> COALESCE(pa.org_id, p.org_id);
+      AND evt.org_id <> COALESCE(pa.org_id, p.org_id::text);
   IF derived_mismatches <> 0 THEN
     missing := missing || format('derived_mismatches=%s ', derived_mismatches);
   END IF;
@@ -110,5 +113,5 @@ SELECT
      JOIN __EWOH_SCHEMA__.ewoh_scheduling_plan_assignment pa ON pa.assignment_id = evt.assignment_id
      LEFT JOIN __EWOH_SCHEMA__.ewoh_schedule_plan p ON p.plan_id = pa.plan_id
      WHERE evt.org_id IS NOT NULL
-       AND evt.org_id <> COALESCE(pa.org_id, p.org_id)
+       AND evt.org_id <> COALESCE(pa.org_id, p.org_id::text)
   ) AS derived_org_mismatches;

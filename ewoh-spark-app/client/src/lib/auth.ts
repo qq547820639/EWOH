@@ -47,6 +47,34 @@ export function decodeJwtPayload(token: string): DecodedAuthPayload | null {
 let accessTokenInMemory: string | null = null;
 let authUserInMemory: AuthUser | null = null;
 
+export interface AuthChange {
+  previous: { userId: string; orgId: string } | null;
+  current: { userId: string; orgId: string } | null;
+  reason: 'session' | 'logout';
+}
+
+const authChangeListeners = new Set<(change: AuthChange) => void>();
+
+function identityOf(user: AuthUser | null): { userId: string; orgId: string } | null {
+  return user ? { userId: user.userId, orgId: user.orgId } : null;
+}
+
+function sameIdentity(a: { userId: string; orgId: string } | null, b: { userId: string; orgId: string } | null): boolean {
+  return a?.userId === b?.userId && a?.orgId === b?.orgId;
+}
+
+/** Subscribe to real authentication principal changes (login, cross-login, logout). */
+export function onAuthChange(listener: (change: AuthChange) => void): () => void {
+  authChangeListeners.add(listener);
+  return () => authChangeListeners.delete(listener);
+}
+
+function emitAuthChange(change: AuthChange): void {
+  for (const listener of authChangeListeners) {
+    try { listener(change); } catch { /* observers cannot break auth */ }
+  }
+}
+
 function sessionStorageSafe(): Storage | null {
   try {
     return typeof window !== 'undefined' ? window.sessionStorage : null;
@@ -121,8 +149,11 @@ export function setAuthUser(user: AuthUser): void {
 }
 
 export function setSession(tokens: AuthTokens): void {
+  const previous = identityOf(authUserInMemory ?? getAuthUser());
   setTokens(tokens.accessToken);
   setAuthUser(tokens.user);
+  const current = identityOf(tokens.user);
+  if (!sameIdentity(previous, current)) emitAuthChange({ previous, current, reason: 'session' });
 }
 
 export function getAuthUser(): AuthUser | null {
@@ -174,6 +205,8 @@ export function hasSessionTrace(): boolean {
 }
 
 export function clearTokens(): void {
+  const previous = identityOf(authUserInMemory ?? getAuthUser());
+  const hadAccessToken = accessTokenInMemory !== null || getAccessToken() !== null;
   accessTokenInMemory = null;
   authUserInMemory = null;
   const session = sessionStorageSafe();
@@ -183,6 +216,7 @@ export function clearTokens(): void {
   } catch {
     // 忽略：无持久化可清。
   }
+  if (previous || hadAccessToken) emitAuthChange({ previous, current: null, reason: 'logout' });
 }
 
 export async function revokeSession(): Promise<void> {

@@ -276,6 +276,11 @@ class NyExoA1Adapter(BaseAdapter):
 
         内部维护粘包缓冲：不完整的尾部字节保留到下次 feed。
         推模式（构造时给了 frame_sink）下帧直接回调，不入 `_inbox`。
+
+        UR8（2026-09-13 审查）：CRC 失败帧按声明的 LEN 整帧消费会把后续健康帧
+        一并吞掉（LEN 字节被线上破坏时 consumed 越过真实帧边界，实测一次单比特
+        破坏即丢一帧）。故坏帧先按原帧记一次 bad_crc 统计/留痕，再只前进 1 字节
+        重新扫描——坏帧体内偶现的 0xAA55 只会多出被 CRC 拒绝的尝试，不会进上层。
         """
         self._buffer.extend(raw_bytes)
         produced = 0
@@ -283,6 +288,11 @@ class NyExoA1Adapter(BaseAdapter):
             frame, consumed = protocol.decode_frame(self._buffer)
             if consumed == 0:
                 break  # 数据不足一帧，等待后续字节
+            if frame is not None and not frame["crc_ok"]:
+                raw = bytes(self._buffer[:consumed])
+                self._handle_frame(frame, raw)  # 计 bad_crc + 原始帧留痕（不产帧）
+                del self._buffer[:1]  # 帧长不可信：只跳过帧头重新同步
+                continue
             raw = bytes(self._buffer[:consumed])
             del self._buffer[:consumed]
             if frame is None:

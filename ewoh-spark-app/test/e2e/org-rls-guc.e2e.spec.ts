@@ -8,15 +8,8 @@ import {
   type E2EFixture,
   type OwnerSql,
 } from '../helpers/e2e-db';
-import {
-  startE2EApp,
-  type E2EAppHandle,
-} from '../helpers/e2e-app';
-import {
-  apiRequest,
-  jsonHeaders,
-  login,
-} from '../helpers/e2e-http';
+import { startE2EApp, type E2EAppHandle } from '../helpers/e2e-app';
+import { apiRequest, jsonHeaders, login } from '../helpers/e2e-http';
 
 const e2eConfig = resolveE2EConfig();
 
@@ -48,7 +41,6 @@ if (!e2eConfig) {
     const planId = `PLAN-RLS-${runId}`;
     const constraintA = `CON-A-${runId}`;
     const constraintB = `CON-B-${runId}`;
-    const constraintGlobal = `CON-G-${runId}`;
 
     beforeAll(async () => {
       owner = await connectOwner(e2eConfig.ownerDatabaseUrl);
@@ -67,13 +59,6 @@ if (!e2eConfig) {
             [id, planId, orgId],
           );
         }
-        // 全局行（org_id NULL）：RLS 策略放行给所有 org —— 用于区分"RLS 生效"与"过滤掉一切"。
-        await tx.unsafe(
-          `insert into public.ewoh_scheduling_constraint
-             (constraint_id, plan_id, type, org_id, active, source)
-           values ($1, $2, 'forbidden_zone', null, true, 'manual')`,
-          [constraintGlobal, planId],
-        );
       });
 
       handle = await startE2EApp(e2eConfig, fixture.orgA.id);
@@ -131,28 +116,23 @@ if (!e2eConfig) {
       const idsA = (resA.body ?? []).map((c) => c.id);
       const idsB = (resB.body ?? []).map((c) => c.id);
 
-      // 各自看到自己的行 + 全局行；绝不看到对方 org 的行。
+      // 各自看到自己的行；绝不看到对方 org 的行。
       expect(idsA).toContain(constraintA);
-      expect(idsA).toContain(constraintGlobal);
       expect(idsA).not.toContain(constraintB);
       expect(idsB).toContain(constraintB);
-      expect(idsB).toContain(constraintGlobal);
       expect(idsB).not.toContain(constraintA);
 
-      const onlyOwnOrGlobal = (ids: string[], own: string) =>
-        ids.every((id) => id === own || id === constraintGlobal);
-      expect(onlyOwnOrGlobal(idsA, constraintA)).toBe(true);
-      expect(onlyOwnOrGlobal(idsB, constraintB)).toBe(true);
+      expect(idsA.every((id) => id === constraintA)).toBe(true);
+      expect(idsB.every((id) => id === constraintB)).toBe(true);
     });
 
     it('原始 SQL：set_config(app.current_org_id) 下 RLS 策略真实过滤行', async () => {
-      const allIds = [constraintA, constraintB, constraintGlobal];
+      const allIds = [constraintA, constraintB];
       await runtimeClient!.begin(async (tx) => {
-        // org A GUC → 只返回 org A 行 + 全局行
-        await tx.unsafe(
-          `select set_config('app.current_org_id', $1, true)`,
-          [fixture!.orgA.id],
-        );
+        // org A GUC → 只返回 org A 行
+        await tx.unsafe(`select set_config('app.current_org_id', $1, true)`, [
+          fixture!.orgA.id,
+        ]);
         const gucA = await tx.unsafe<Array<{ current_setting: string | null }>>(
           `select current_setting('app.current_org_id', true) as current_setting`,
         );
@@ -166,14 +146,13 @@ if (!e2eConfig) {
           [allIds],
         );
         expect(rowsA.map((r) => r.constraint_id).sort()).toEqual(
-          [constraintA, constraintGlobal].sort(),
+          [constraintA].sort(),
         );
 
-        // org B GUC → 只返回 org B 行 + 全局行
-        await tx.unsafe(
-          `select set_config('app.current_org_id', $1, true)`,
-          [fixture!.orgB.id],
-        );
+        // org B GUC → 只返回 org B 行
+        await tx.unsafe(`select set_config('app.current_org_id', $1, true)`, [
+          fixture!.orgB.id,
+        ]);
         const rowsB = await tx.unsafe<Array<{ constraint_id: string }>>(
           `select constraint_id
            from public.ewoh_scheduling_constraint
@@ -182,14 +161,13 @@ if (!e2eConfig) {
           [allIds],
         );
         expect(rowsB.map((r) => r.constraint_id).sort()).toEqual(
-          [constraintB, constraintGlobal].sort(),
+          [constraintB].sort(),
         );
 
-        // 未知 org GUC → 只剩全局行：证明 RLS 确实在过滤（未被绕过）。
-        await tx.unsafe(
-          `select set_config('app.current_org_id', $1, true)`,
-          ['00000000-0000-0000-0000-000000000000'],
-        );
+        // 未知 org GUC → 不返回 either tenant row：证明 RLS 确实在过滤。
+        await tx.unsafe(`select set_config('app.current_org_id', $1, true)`, [
+          '00000000-0000-0000-0000-000000000000',
+        ]);
         const rowsNone = await tx.unsafe<Array<{ constraint_id: string }>>(
           `select constraint_id
            from public.ewoh_scheduling_constraint
@@ -197,7 +175,7 @@ if (!e2eConfig) {
            order by constraint_id`,
           [allIds],
         );
-        expect(rowsNone.map((r) => r.constraint_id)).toEqual([constraintGlobal]);
+        expect(rowsNone.map((r) => r.constraint_id)).toEqual([]);
       });
     });
   });

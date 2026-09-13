@@ -62,6 +62,20 @@ export function alertStateTransitionAllowed(
   return match.roles.every((role) => roleSatisfies(role, actorRole));
 }
 
+/**
+ * 转移边存在性（只看拓扑，不看角色条件）。
+ *
+ * 为什么单独暴露：global_admin 的超管语义是"满足一切角色条件"（纯 global_admin
+ * 账号不含 handler/safety_admin 也要能处置），而不是"跳出状态机"——alert.yaml
+ * 的 from→to 边是机器强制的事实边界，open→closed 这类**不存在的边**一旦放行，
+ * 确认/处置两步就被整段跳过，"非法转移被拒"的契约失效。超管放行逻辑必须
+ * 用本函数先验拓扑、再免角色。
+ */
+export function alertTransitionEdgeExists(from: string, to: string): boolean {
+  const candidates = (ALERT_TRANSITIONS as Record<string, ReadonlyArray<{ to: string }>>)[from];
+  return (candidates ?? []).some((t) => t.to === to);
+}
+
 /** 按 action 语义映射（alert.service / oee.service 统一复用，消除双份 switch）。 */
 export function alertActionToState(action: string): { to: AlertState } | null {
   switch (action) {

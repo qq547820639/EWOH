@@ -50,6 +50,8 @@ export default function IntelligenceWorkspace() {
   // CLI-023：激活理由改为收集用户输入（必填），不再硬编码审计文案。
   const [activationReason, setActivationReason] = useState('');
   const [gateResult, setGateResult] = useState<PolicyGateEvaluation | null>(null);
+  /** 证据不足时激活需要的人工风险确认（对齐服务端 acknowledgeInsufficientEvidence）。 */
+  const [acknowledgeInsufficient, setAcknowledgeInsufficient] = useState(false);
 
   const kpi = useQuery({ queryKey: ['scheduler-kpi'], queryFn: () => getKpi(true) });
   const replays = useQuery({ queryKey: ['policy-replays'], queryFn: listPolicyReplays });
@@ -97,14 +99,24 @@ export default function IntelligenceWorkspace() {
 
   const activateMut = useMutation({
     mutationFn: (version: number) =>
-      activatePolicy(version, { operator, reason: activationReason.trim() }),
+      activatePolicy(version, {
+        operator,
+        reason: activationReason.trim(),
+        // 证据不足时由用户在界面上显式确认后随请求提交（服务端记入审计）。
+        acknowledgeInsufficientEvidence: acknowledgeInsufficient || undefined,
+      }),
     onSuccess: (r) => {
       toast.success(`策略 v${r.policyVersion} 已激活（rollback target v${r.rollbackTarget}）`);
       setGateResult(null);
       setActivationReason('');
+      setAcknowledgeInsufficient(false);
       qc.invalidateQueries({ queryKey: ['policy-activations'] });
     },
-    onError: (e: Error) => toast.error(`激活被拒: ${e.message}`),
+    onError: (e: Error) => {
+      // 服务端要求显式确认时，勾选框默认打开，避免用户只能看到一条无法处理的报错。
+      if (/INSUFFICIENT_EVIDENCE/i.test(e.message)) setAcknowledgeInsufficient(true);
+      toast.error(`激活被拒: ${e.message}`);
+    },
   });
 
   return (
@@ -190,6 +202,8 @@ export default function IntelligenceWorkspace() {
                   !policyVersion ||
                   activateMut.isPending ||
                   !gateResult?.passed ||
+                  // 证据不足时，未勾选风险确认不得激活（与服务端门禁一致）。
+                  ((gateResult?.insufficientEvidence ?? false) && !acknowledgeInsufficient) ||
                   !operatorLoggedIn ||
                   !activationReason.trim()
                 }
@@ -206,6 +220,18 @@ export default function IntelligenceWorkspace() {
               placeholder="激活理由（必填，写入审计）"
               className="w-full rounded border border-white/15 bg-card/5 px-1.5 py-1 text-[10px]"
             />
+
+            {gateResult?.insufficientEvidence && (
+              <label className="mt-1 flex items-start gap-1 text-[9px] text-amber-200">
+                <input
+                  type="checkbox"
+                  checked={acknowledgeInsufficient}
+                  onChange={(e) => setAcknowledgeInsufficient(e.target.checked)}
+                  className="mt-[1px]"
+                />
+                <span>我确认在证据不足（部分检查无数据）的情况下激活该策略，并接受未经校验的风险。此确认写入审计。</span>
+              </label>
+            )}
 
             {gateResult && <GateResultView gate={gateResult} />}
 
@@ -304,6 +330,11 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function GateResultView({ gate }: { gate: PolicyGateEvaluation }) {
+  // 证据不足 ≠ 通过：`passed` 只表示没有检查失败。缺数据的检查必须显示为
+  // "未验证（跳过）"，否则用户会把空库上的空 Gate 读成"已通过安全校验"。
+  const skipped = gate.evidence?.skippedChecks
+    ?? gate.checks.filter((c) => c.skipped).map((c) => c.name);
+  const insufficient = gate.insufficientEvidence ?? skipped.length > 0;
   return (
     <div className="rounded border border-white/10 bg-card/5 p-1.5 text-[10px]">
       <div className="flex items-center gap-1">
@@ -313,16 +344,24 @@ function GateResultView({ gate }: { gate: PolicyGateEvaluation }) {
           <XCircle className="h-3 w-3 text-red-400" />
         )}
         <span className={gate.passed ? 'text-emerald-300' : 'text-red-300'}>
-          {gate.passed ? 'Gate 通过' : 'Gate 未通过'}
+          {gate.passed ? (insufficient ? 'Gate 未判失败（证据不足）' : 'Gate 通过') : 'Gate 未通过'}
         </span>
       </div>
+      {insufficient && (
+        <div className="mt-1 rounded border border-amber-400/30 bg-amber-400/10 p-1 text-[9px] text-amber-200">
+          {skipped.length} / {gate.checks.length} 项无证据跳过（{skipped.join('、')}），
+          此结论不是"已验证通过"；激活需显式确认承担该风险。
+        </div>
+      )}
       <div className="mt-1 space-y-0.5">
         {gate.checks.map((c) => (
           <div key={c.name} className="flex items-center gap-1 text-[9px]">
-            <span className={c.ok ? 'text-emerald-400' : 'text-red-400'}>{c.ok ? '✓' : '✗'}</span>
+            <span className={c.skipped ? 'text-amber-400' : c.ok ? 'text-emerald-400' : 'text-red-400'}>
+              {c.skipped ? '–' : c.ok ? '✓' : '✗'}
+            </span>
             <span className="text-white/60">{c.name}</span>
             <span className="ml-auto text-white/40">
-              {c.actual == null ? '—' : typeof c.actual === 'number' ? c.actual.toFixed(2) : c.actual}
+              {c.actual == null ? (c.skipped ? '无数据' : '—') : typeof c.actual === 'number' ? c.actual.toFixed(2) : c.actual}
               {c.threshold != null ? ` / ${c.threshold}` : ''}
             </span>
           </div>

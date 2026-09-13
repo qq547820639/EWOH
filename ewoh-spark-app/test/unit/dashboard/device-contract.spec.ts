@@ -26,6 +26,7 @@ describe('DeviceContractController', () => {
       undefined,
       undefined,
       'simulated',
+      'environment_sensor', // 设备类别过滤（感知层入台账）
       'A1',
       'battery',
       undefined,
@@ -36,6 +37,7 @@ describe('DeviceContractController', () => {
       {
         keyword: 'EXO',
         sourceType: 'simulated',
+        category: 'environment_sensor',
         model: 'A1',
         orderby: 'battery',
       },
@@ -58,6 +60,33 @@ describe('DeviceContractController', () => {
         startedAt: '2026-08-03T00:00:00.000Z',
       },
       undefined,
+    );
+  });
+
+  /* 人工能力生命周期是**能力台账的唯一人工写入口**（此前只有自动声明），
+   * 必须走契约路由且透传 org 上下文（跨租户 404 由 Service 保证）。 */
+  it('delegates capability status change to DashboardService（含 org 透传）', async () => {
+    const service = {
+      setDeviceCapabilityStatus: jest.fn().mockResolvedValue({
+        deviceId: 'ENV-1',
+        capabilityId: 'cap:device:ENV-1:observe.temperature',
+        capabilityName: 'observe.temperature',
+        status: 'disabled',
+        previousStatus: 'active',
+        changed: true,
+      }),
+    };
+    const controller = new DeviceContractController(service as never);
+    const userContext = { userId: 'user-1', primaryOrgId: 'org-1' };
+    const body = { status: 'disabled' as const, reason: '该设备实际无温度传感器' };
+
+    await controller.setCapabilityStatus('ENV-1', 'observe.temperature', body, { userContext });
+
+    expect(service.setDeviceCapabilityStatus).toHaveBeenCalledWith(
+      'ENV-1',
+      'observe.temperature',
+      body,
+      userContext,
     );
   });
 });

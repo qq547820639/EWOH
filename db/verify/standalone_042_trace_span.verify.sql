@@ -40,7 +40,7 @@ BEGIN
   SELECT count(*) INTO at_policy FROM pg_policies
     WHERE schemaname = current_schema() AND tablename = 'ewoh_trace_span'
       AND policyname = 'trace_span_org_or_global'
-      AND pg_get_expr(polqual, polrelid) LIKE '%is_global_admin%';
+      AND qual LIKE '%is_global_admin%';
   IF at_policy <> 1 THEN
     missing := missing || format('policy at=%s ', at_policy);
   END IF;

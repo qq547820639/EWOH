@@ -15,6 +15,7 @@ import {
   ewohEvent,
   ewohResourceReservation,
   ewohDeviceBinding,
+  ewohSchedulingPlanAssignment,
 } from '@server/database/schema';
 
 /* ===== 测试数据构造辅助 ===== */
@@ -949,5 +950,353 @@ describe('WorldStateSnapshotService.isPlanStale / 资源新鲜度（Task C/D）'
     const state = (await (svc as unknown as { collectState(): Promise<WorldStateSnapshot> }).collectState()) as WorldStateSnapshot;
     expect(state.persons[0].dataQuality).toBe('UNKNOWN');
     expect(state.persons[0].status).toBe('UNKNOWN');
+  });
+});
+
+/* ===== NO-62c：方案过期可解释（describeStaleness / explainPlanStaleness 共用内核） ===== */
+
+describe('WorldStateSnapshotService.describeStaleness（NO-62c）', () => {
+  const baseSnapshot: WorldStateSnapshot = {
+    snapshotVersion: 'WS-1',
+    ts: new Date().toISOString(),
+    worldVersion: 1,
+    entityVersions: { 'task:T-1': 111, 'device:AGV-1': 222, 'reservation:person:P-1': 333 },
+    reservations: [
+      { reservationId: 'RS-1', resourceType: 'person', resourceId: 'P-1', startMs: 0, endMs: 1000 },
+    ],
+    persons: [],
+    tasks: [],
+    devices: [],
+    stations: [],
+    backlog: [],
+    events: [],
+    routeStatus: [],
+    forbiddenZones: [],
+    lockedAssignments: [],
+  };
+
+  function makeDb(options: {
+    snapshot?: WorldStateSnapshot | null;
+    dispatchedTaskIds?: string[];
+    ownReservations?: Array<{ resourceType: string; resourceId: string }>;
+  }) {
+    const from = jest.fn((table: unknown) => {
+      if (table === ewohWorldStateSnapshot) {
+        return {
+          where: () => ({
+            limit: () =>
+              Promise.resolve(
+                options.snapshot
+                  ? [{ snapshotVersion: 'WS-1', snapshotJson: options.snapshot, orgId: 'ORG-1' }]
+                  : [],
+              ),
+          }),
+        };
+      }
+      if (table === ewohSchedulingPlanAssignment) {
+        const chain: any = Promise.resolve(
+          (options.dispatchedTaskIds ?? []).map((taskId) => ({ taskId })),
+        );
+        chain.where = () => chain;
+        return { where: () => chain };
+      }
+      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
+        const chain: any = Promise.resolve(options.ownReservations ?? []);
+        chain.where = () => chain;
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
+        return { where: () => chain };
+      }
+      const chain: any = Promise.resolve([]);
+      chain.where = () => chain;
+      chain.orderBy = () => chain;
+      chain.limit = () => chain;
+      return { where: () => chain };
+    });
+    return { db: { select: jest.fn(() => ({ from })) } };
+  }
+
+  function makeService(db: unknown, currentOverride?: unknown) {
+    const service = new WorldStateSnapshotService(
+      db as never,
+      { runInTransaction: jest.fn() } as never,
+      {
+        projectForSnapshot: jest.fn().mockResolvedValue({ persons: [], devices: [], stations: [] }),
+      } as never,
+    );
+    // NO-64a：审批闸门内部会 `collectState` 取当前世界；测试里用显式"当前状态"替换它，
+    // 这样"证据老化/内容变化"的场景是**确定性**的（不依赖真实时钟与库内容）。
+    if (currentOverride) {
+      jest
+        .spyOn(service as never, 'collectState' as never)
+        .mockResolvedValue(currentOverride as never);
+    }
+    return service;
+  }
+
+  it('快照存在差异 → stale + 逐项差异（实体类型/id 拆解 + 人话标签）', async () => {
+    // 当前世界状态：task 版本变了、device 消失、预占释放
+    const current = {
+      ...baseSnapshot,
+      entityVersions: { 'task:T-1': 999, 'reservation:person:P-1': 333 },
+      reservations: [
+        { reservationId: 'RS-1', resourceType: 'person', resourceId: 'P-1', startMs: 0, endMs: 1000 },
+      ],
+    };
+    const svc = makeService(makeDb({ snapshot: baseSnapshot }).db);
+    const report = await svc.describeStaleness('WS-1', undefined, current as never);
+
+    expect(report.stale).toBe(true);
+    expect(report.snapshotFound).toBe(true);
+    const task = report.changes.find((c) => c.entityKey === 'task:T-1');
+    expect(task).toMatchObject({ entityType: 'task', entityId: 'T-1', change: 'changed', before: 111, after: 999 });
+    expect(task?.label).toContain('版本 111 → 999');
+    const device = report.changes.find((c) => c.entityKey === 'device:AGV-1');
+    expect(device).toMatchObject({ entityType: 'device', entityId: 'AGV-1', change: 'removed', after: null });
+    expect(report.summary).toContain('外部变化');
+  });
+
+  it('无差异 → 不 stale（不制造"过期"焦虑）', async () => {
+    const svc = makeService(makeDb({ snapshot: baseSnapshot }).db);
+    const report = await svc.describeStaleness('WS-1', undefined, baseSnapshot as never);
+    expect(report.stale).toBe(false);
+    expect(report.changes).toEqual([]);
+    expect(report.summary).toBe('世界状态与方案生成时一致');
+  });
+
+  it('本方案自身已派工/已建预占的变化标 selfInflicted（不把"我刚派的第一波"当成外部干扰）', async () => {
+    const snapshotWithSelf: WorldStateSnapshot = {
+      ...baseSnapshot,
+      entityVersions: { 'task:T-1': 111, 'reservation:person:P-1': 333 },
+      reservations: [],
+    };
+    const current = {
+      ...snapshotWithSelf,
+      entityVersions: { 'task:T-1': 500, 'reservation:person:P-1': 333 },
+      reservations: [
+        { reservationId: 'RS-2', resourceType: 'person', resourceId: 'P-1', startMs: 0, endMs: 50 },
+      ],
+    };
+    const svc = makeService(
+      makeDb({
+        snapshot: snapshotWithSelf,
+        dispatchedTaskIds: ['T-1'],
+        ownReservations: [{ resourceType: 'person', resourceId: 'P-1' }],
+      }).db,
+    );
+    const report = await svc.describeStaleness('WS-1', undefined, current as never, 'PLAN-1');
+
+    expect(report.stale).toBe(true);
+    expect(report.selfInflictedCount).toBe(report.changes.length);
+    expect(report.externalChangeCount).toBe(0);
+    expect(report.summary).toContain('仅本方案自身的执行效果变化');
+  });
+
+  /* ── NO-64a：事实变化 vs 证据老化（审批/派工共用同一判定） ── */
+
+  function makeApprovalDb(options: {
+    snapshot: WorldStateSnapshot | null;
+    assignments?: Array<Record<string, unknown>>;
+    reservations?: Array<Record<string, unknown>>;
+  }) {
+    const from = jest.fn((table: unknown) => {
+      if (table === ewohWorldStateSnapshot) {
+        return {
+          where: () => ({
+            limit: () =>
+              Promise.resolve(
+                options.snapshot
+                  ? [{ snapshotVersion: 'WS-1', snapshotJson: options.snapshot, orgId: 'ORG-1' }]
+                  : [],
+              ),
+          }),
+        };
+      }
+      if (table === ewohSchedulingPlanAssignment) {
+        const chain: any = Promise.resolve(options.assignments ?? []);
+        chain.where = () => chain;
+        return { where: () => chain };
+      }
+      if (table === ewohResourceReservation || table === ewohDeviceBinding) {
+        const chain: any = Promise.resolve(options.reservations ?? []);
+        chain.where = () => chain;
+        chain.orderBy = () => chain;
+        chain.limit = () => chain;
+        return { where: () => chain };
+      }
+      const chain: any = Promise.resolve([]);
+      chain.where = () => chain;
+      chain.orderBy = () => chain;
+      chain.limit = () => chain;
+      return { where: () => chain };
+    });
+    return { db: { select: jest.fn(() => ({ from })) } };
+  }
+
+  /** 构造一份"设备 DA-1（版本 A，内容 A）+ 任务 T-9"的快照与当前状态。 */
+  function ageScenario(options: {
+    deviceStatusBefore: string;
+    deviceStatusAfter: string;
+    dataQualityAfter: 'FRESH' | 'STALE' | 'UNKNOWN';
+    evidenceChanged: boolean;
+    contentChanged?: boolean;
+  }) {
+    const before: WorldStateSnapshot = {
+      ...baseSnapshot,
+      entityVersions: { 'device:DA-1': 100, 'task:T-9': 200 },
+      entityContentVersions: { 'device:DA-1': 1000, 'task:T-9': 2000 },
+      entityEvidence: {
+        'device:DA-1': { sourceTs: 1_000, dataQuality: 'FRESH', status: options.deviceStatusBefore },
+      },
+      devices: [],
+      tasks: [],
+      reservations: [],
+    };
+    const after = {
+      ...before,
+      entityVersions: {
+        'device:DA-1': options.evidenceChanged ? 101 : 100,
+        'task:T-9': 200,
+      },
+      entityContentVersions: {
+        'device:DA-1': options.contentChanged ? 9999 : 1000,
+        'task:T-9': 2000,
+      },
+      entityEvidence: {
+        'device:DA-1': {
+          sourceTs: 2_000,
+          dataQuality: options.dataQualityAfter,
+          status: options.deviceStatusAfter,
+        },
+      },
+    };
+    return { before, after };
+  }
+
+  it('NO-64a 心跳/沉默：内容未变 → 不判过期（只是证据时钟推进）', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'AVAILABLE',
+      dataQualityAfter: 'FRESH',
+      evidenceChanged: true,
+      contentChanged: false,
+    });
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: before,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-1', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    await expect(svc.assertFreshForApprove('WS-1', undefined, 'PLAN-1')).resolves.toBeUndefined();
+  });
+
+  it('NO-64a 设备沉默且方案**依赖**它 → 拒绝，原因 EVIDENCE_STALE（不拿过期证据背书）', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'OFFLINE',
+      dataQualityAfter: 'STALE',
+      evidenceChanged: true,
+      contentChanged: false,
+    });
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: before,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-1', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    await expect(svc.assertFreshForApprove('WS-1', undefined, 'PLAN-1'))
+      .rejects.toThrow('PLAN_STALE:EVIDENCE_STALE');
+  });
+
+  it('NO-64a 设备沉默但方案**不依赖**它 → 不阻断审批（与本方案无关的沉默不是世界变化）', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'OFFLINE',
+      dataQualityAfter: 'STALE',
+      evidenceChanged: true,
+      contentChanged: false,
+    });
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: before,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-999', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    await expect(svc.assertFreshForApprove('WS-1', undefined, 'PLAN-1')).resolves.toBeUndefined();
+  });
+
+  it('NO-64a 内容真的变了（哪怕设备仍然新鲜）→ 拒绝，原因 CONTENT_CHANGED', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'AVAILABLE',
+      dataQualityAfter: 'FRESH',
+      evidenceChanged: true,
+      contentChanged: true,
+    });
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: before,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-1', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    await expect(svc.assertFreshForApprove('WS-1', undefined, 'PLAN-1'))
+      .rejects.toThrow('PLAN_STALE:CONTENT_CHANGED');
+  });
+
+  it('NO-64a 老快照没有内容版本 → 一律严格判定（fail-closed，不静默放宽）', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'OFFLINE',
+      dataQualityAfter: 'STALE',
+      evidenceChanged: true,
+      contentChanged: false,
+    });
+    const legacy = { ...before, entityContentVersions: undefined };
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: legacy,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-1', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    await expect(svc.assertFreshForApprove('WS-1', undefined, 'PLAN-1'))
+      .rejects.toThrow('PLAN_STALE');
+  });
+
+  it('NO-64a 诊断分档：事实变化 / 依赖资源证据过期 / 仅证据老化 三档可区分', async () => {
+    const { before, after } = ageScenario({
+      deviceStatusBefore: 'AVAILABLE',
+      deviceStatusAfter: 'OFFLINE',
+      dataQualityAfter: 'STALE',
+      evidenceChanged: true,
+      contentChanged: false,
+    });
+    const svc = makeService(
+      makeApprovalDb({
+        snapshot: before,
+        assignments: [{ taskId: 'T-9', personId: 'P-1', deviceId: 'DA-1', stationId: 'S-1' }],
+      }).db,
+      after,
+    );
+    const report = await svc.describeStaleness('WS-1', undefined, after as never, 'PLAN-1');
+    const device = report.changes.find((c) => c.entityKey === 'device:DA-1');
+    expect(device?.severity).toBe('blocked_evidence');
+    expect(device?.usedByPlan).toBe(true);
+    expect(report.stale).toBe(true);
+    expect(report.reason).toBe('EVIDENCE_STALE');
+    expect(report.blockedEvidenceCount).toBe(1);
+    expect(report.summary).toContain('方案依赖的资源证据已过期');
+  });
+
+  it('快照行已不存在 → 显式说明"无法判断差异"（不假装新鲜）', async () => {
+    const svc = makeService(makeDb({ snapshot: null }).db);
+    const report = await svc.describeStaleness('WS-GONE');
+    expect(report.snapshotFound).toBe(false);
+    expect(report.stale).toBe(true);
+    expect(report.summary).toContain('找不到方案绑定的世界快照');
   });
 });

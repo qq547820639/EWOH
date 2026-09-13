@@ -49,6 +49,7 @@ import {
   QUERY_STALE_TIME_MS,
 } from '../../hooks/queryConfig';
 import QueryState from '../../components/QueryState';
+import { OrderChainCard } from './OrderChainCard';
 
 const TABS = ['总览', '维保资产', '维保任务', '工装校验', '工作中心', '标准工时', '人员效率'] as const;
 type Tab = (typeof TABS)[number];
@@ -504,7 +505,9 @@ const Operations = (): React.ReactElement => {
       </div>
 
       {tab === '总览' && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-4">
+          <OrderChainCard />
+          <div className="grid gap-4 lg:grid-cols-2">
           <QueryState
             isLoading={summaryQuery.isLoading}
             isFetching={summaryQuery.isFetching}
@@ -550,6 +553,7 @@ const Operations = (): React.ReactElement => {
               )}
             </div>
           </div>
+        </div>
         </div>
       )}
 

@@ -14,7 +14,8 @@
   expiresAt 为合法 ISO 日期且未过期；违反即 exit 3（配置错误）。
 - 豁免路径匹配为精确匹配（SCR-017）：豁免 path 必须等于 finding 的仓库相对路径。
 
-退出码：0=通过；1=存在未豁免 CRITICAL/HIGH（阻断）；2=报告缺失/无法解析；3=豁免配置非法。
+退出码：0=通过；1=存在未豁免 CRITICAL/HIGH（阻断）；2=报告缺失/无法解析；
+        3=豁免配置非法；4=bandit 未能扫描文件（结果不构成安全结论）。
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ def _load_bandit_report(path: Path) -> dict:
             data = json.load(fh)
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"::error::bandit JSON 报告无法解析 {path}: {exc}")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
     if not isinstance(data, dict):
         print("::error::bandit 报告顶层必须是 JSON 对象。")
         raise SystemExit(2)
@@ -69,7 +70,7 @@ def load_suppressions(path: Path) -> list:
             data = json.load(fh)
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"::error::豁免清单无法解析 {path}: {exc}")
-        raise SystemExit(3)
+        raise SystemExit(3) from exc
     if not isinstance(data, dict):
         print("::error::豁免清单顶层必须是 JSON 对象（含 schemaVersion 与 suppressions 数组）。")
         raise SystemExit(3)
@@ -93,9 +94,9 @@ def load_suppressions(path: Path) -> list:
                 raise SystemExit(3)
         try:
             date.fromisoformat(str(entry["expiresAt"]))
-        except ValueError:
+        except ValueError as exc:
             print(f"::error::suppressions[{idx}].expiresAt 不是合法 ISO 日期：{entry['expiresAt']}")
-            raise SystemExit(3)
+            raise SystemExit(3) from exc
         if str(entry["expiresAt"]) < today:
             print(f"::error::suppressions[{idx}].expiresAt 已过期：{entry['expiresAt']}")
             raise SystemExit(3)
@@ -134,6 +135,28 @@ def main(argv=None) -> int:
 
     data = _load_bandit_report(Path(args.report))
     entries = load_suppressions(Path(args.suppressions))
+
+    # 2026-09-10（虚假绿灯修复）：bandit 在部分环境下会对**每一个文件**抛
+    # "exception while scanning file"（例如 bandit 1.8.6 + Python 3.14 的
+    # _parse_file 把 bytes 当文件对象调用 .read()）。此时 results 为空、
+    # 退出码为 0，门禁会打印 "PASS —— 未发现未豁免的 CRITICAL/HIGH 级安全问题"，
+    # 而实际上**一个文件都没扫**。空结果与"扫过且干净"是两件事，绝不能等价。
+    # 因此：报告里出现扫描错误即视为门禁失败（退出码 4），并给出可执行的处置。
+    scan_errors = data.get("errors") or []
+    if scan_errors:
+        sample = ", ".join(
+            str(e.get("filename", "?")) for e in scan_errors[:5] if isinstance(e, dict)
+        )
+        print(
+            f"::error::bandit 未能扫描 {len(scan_errors)} 个文件（报告 errors 非空）——"
+            f"本次结果**不构成**安全结论，门禁失败。示例：{sample}"
+        )
+        print(
+            "::error::处置：确认 bandit 与当前 Python 版本兼容"
+            "（`python3 -m bandit --version`；已知 bandit 1.8.6 + Python 3.14 无法解析任何文件），"
+            "或改用受支持的 Python 版本运行该门禁。"
+        )
+        return 4
 
     results = data.get("results", [])
     blocking_findings = [

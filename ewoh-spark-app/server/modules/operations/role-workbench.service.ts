@@ -703,7 +703,14 @@ export class RoleWorkbenchService {
     };
   }
 
-  /** Builds the keyset row-comparison predicate: (sortCol, uniqueCol) beyond cursor. */
+  /**
+   * Builds the keyset row-comparison predicate: (sortCol, uniqueCol) beyond cursor.
+   * R2-SOP-010：整个析取式必须自包一层括号——drizzle 的 and() 只给合取包一层
+   * 外括号、不会给单个条件加括号，裸 OR 会以 `base and (sort > cv) OR (...)`
+   * 的形态序列化；SQL 中 AND 优先级高于 OR，第二个析取支随即脱离 org/状态/
+   * 人员等全部基础过滤（游标第二页起返回越权行，应用以表 owner 连接时即
+   * 跨租户泄漏）。
+   */
   private cursorPredicate(
     sortCol: WorkbenchColumnRef,
     uniqueCol: WorkbenchColumnRef,
@@ -713,9 +720,9 @@ export class RoleWorkbenchService {
     const cv = cursor.sortValue;
     const id = cursor.id;
     if (dir === 'asc') {
-      return sql`(${sortCol} > ${cv}) OR (${sortCol} = ${cv} AND ${uniqueCol} > ${id})`;
+      return sql`((${sortCol} > ${cv}) OR (${sortCol} = ${cv} AND ${uniqueCol} > ${id}))`;
     }
-    return sql`(${sortCol} < ${cv}) OR (${sortCol} = ${cv} AND ${uniqueCol} > ${id})`;
+    return sql`((${sortCol} < ${cv}) OR (${sortCol} = ${cv} AND ${uniqueCol} > ${id}))`;
   }
 
   private emptyResult<T>(

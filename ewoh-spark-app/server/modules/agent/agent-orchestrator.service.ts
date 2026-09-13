@@ -252,9 +252,25 @@ export class AgentOrchestratorService {
       actor,
     );
     if (outcome.outcomeJson) {
+      // taskJson 是任务的**完整契约记录**（createTask 写入；NEST-362 终态事件
+      // 与 listTasks 读面都依赖它）。原先用 {taskId,status,outcomeJson} 整体覆盖，
+      // 完成即丢失 name/kind/assignedRole/dependencies/budget 等全部契约字段。
+      // 这里在既有 taskJson 上合并 outcome：原记录保留 + status 同步 + 结果附加。
+      const [current] = await this.db
+        .select({ taskJson: ewohAgentTask.taskJson })
+        .from(ewohAgentTask)
+        .where(and(eq(ewohAgentTask.orgId, orgId), eq(ewohAgentTask.taskId, taskId)))
+        .limit(1);
+      const baseTaskJson = ((current?.taskJson ?? null) as Record<string, unknown> | null) ?? {};
       await this.db
         .update(ewohAgentTask)
-        .set({ taskJson: this.withOutcome(result, outcome.outcomeJson) })
+        .set({
+          taskJson: {
+            ...baseTaskJson,
+            status: result.status,
+            outcomeJson: outcome.outcomeJson,
+          },
+        })
         .where(and(eq(ewohAgentTask.orgId, orgId), eq(ewohAgentTask.taskId, taskId)));
     }
     return result;
@@ -299,13 +315,6 @@ export class AgentOrchestratorService {
       dueTime: r.dueTime ? r.dueTime.toISOString() : null,
       task: r.taskJson,
     }));
-  }
-
-  private withOutcome(
-    result: Record<string, unknown>,
-    outcomeJson: Record<string, unknown>,
-  ): Record<string, unknown> {
-    return { ...(result as object), outcomeJson } as Record<string, unknown>;
   }
 
   // ── 事件 + 审计 ───────────────────────────────────────────────────────────

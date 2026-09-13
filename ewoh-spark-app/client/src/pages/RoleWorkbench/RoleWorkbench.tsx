@@ -279,8 +279,8 @@ export default function RoleWorkbench(): React.ReactElement {
     if (!isDownloadUrl(url)) return;
     const anchor = document.createElement('a');
     anchor.href = url;
+    anchor.download = '';
     anchor.rel = 'noopener';
-    anchor.target = '_blank';
     anchor.style.display = 'none';
     document.body.appendChild(anchor);
     anchor.click();

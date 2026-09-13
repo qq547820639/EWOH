@@ -287,6 +287,45 @@ export function backoffDelay(attempt: number): number {
 }
 
 /**
+ * 冲突项「采用本地」前的**载荷重建**：把排队时落库的附件重新上传，并把引用
+ * 并入重放 payload。
+ *
+ * 为什么必须重建：离线异常提交时，附件引用只在 flush 投递瞬间由
+ * `buildSyncOne` 临时合并进请求体，队列里的 `item.body` 从不包含它。若冲突
+ * 解析直接拿 `item.body` 重放，重放的本地值会**静默丢掉现场照片**（且服务端
+ * 侧留下孤儿上传文件）。附件缺失（已被清理）时如实按无附件重放，不编造。
+ * upload 作为注入参数（不直接 import api/files）：本模块必须保持纯离线依赖，
+ * 不沾 http/Vite 专属语法，否则 jest node 环境无法加载。
+ */
+export async function buildLocalResolvePayload(
+  item: StoredPendingAction,
+  attachmentStore: SimpleStore<OfflineAttachment> | null,
+  upload: (
+    file: File,
+    note?: string,
+  ) => Promise<{ id: string; filename: string; contentType: string }>,
+): Promise<Record<string, unknown>> {
+  const base = { ...(item.body ?? {}) };
+  if (!item.attachmentId) return base;
+  const attachment = attachmentStore ? await attachmentStore.get(item.attachmentId) : undefined;
+  if (!attachment) return base;
+  const file = new File([attachment.blob], attachment.name, {
+    type: attachment.contentType,
+  });
+  const record = await upload(file, `exception-${item.stepId}`);
+  return {
+    ...base,
+    attachments: [
+      {
+        id: record.id,
+        filename: record.filename,
+        contentType: record.contentType,
+      },
+    ],
+  };
+}
+
+/**
  * Adds bounded random jitter to a base delay: `base + rnd(0, jitterMs)`. Jitter
  * de-synchronizes retries across many clients so they do not all retry at the
  * same instant (thundering herd). Pure and deterministic in its bounds so tests
@@ -535,13 +574,29 @@ export async function flushOfflineQueue(
     (item) =>
       (onlyIds ? onlyIds.includes(item.id) : true) &&
       (includeManual ||
+        // 401 失败项（AUTH_REQUIRED）：仅因会话失效而失败，重新登录后的自动
+        // flush 必须重新投递——幂等键已持久化、重放安全，服务端状态机仍是权威。
+        // 否则 UI 承诺的"重新登录后继续同步"永远不发生，用户只能逐条手动重试。
+        // 业务失败（SYNC_ERROR / conflict）不受影响，仍需人工介入。
+        item.error?.code === 'AUTH_REQUIRED' ||
         (item.status !== 'failed' && item.status !== 'conflict')),
   );
+
+  // 回放顺序必须等于操作发生顺序（queuedAt 升序），而不是存储返回顺序：
+  // IndexedDB 的 getAll 按主键（随机 UUID 字符串）排序，页面刷新/崩溃恢复后
+  // 同一工单的 start→report 可能被乱序投递，后置动作会撞服务端状态机 409
+  // （STATE_CONFLICT），把本来有效的操作序列变成假冲突。时间戳缺失/损坏时按
+  // epoch 0 处理（排在最前，先投递早先入队的项）。
+  const queuedAtMs = (iso: string): number => {
+    const parsed = Date.parse(iso);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const ordered = eligible.slice().sort((a, b) => queuedAtMs(a.queuedAt) - queuedAtMs(b.queuedAt));
 
   // Group by entity so same-entity items stay serial; distinct entities can run
   // concurrently (bounded by `concurrency`).
   const groups = new Map<string, StoredPendingAction[]>();
-  for (const item of eligible) {
+  for (const item of ordered) {
     const entity = item.orderId || item.id;
     const list = groups.get(entity) ?? [];
     list.push(item);

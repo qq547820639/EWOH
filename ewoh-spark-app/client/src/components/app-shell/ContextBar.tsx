@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { readAppContext, writeAppContext, formatDataFreshness, type AppContext } from '@/lib/appContext';
-import { sessionLifecycle } from '@/lib/runtimeLifecycle';
+import { getAuthUser, onAuthChange } from '@/lib/auth';
+import { listOrganizations } from '@/api/organization';
 import OrgEnvSwitcher from './OrgEnvSwitcher';
 import VersionFreshnessBadge from './VersionFreshnessBadge';
 
@@ -12,21 +14,38 @@ import VersionFreshnessBadge from './VersionFreshnessBadge';
  * 不再永久硬编码展示）。
  */
 const ContextBar = () => {
-  const [context, setContext] = useState<AppContext>(() => readAppContext());
+  const [authenticatedOrg, setAuthenticatedOrg] = useState(() => getAuthUser()?.orgId ?? '');
+  const [context, setContext] = useState<AppContext>(() => ({
+    ...readAppContext(),
+    orgId: authenticatedOrg,
+  }));
+
+  useEffect(() => onAuthChange(({ current }) => {
+    const orgId = current?.orgId ?? '';
+    setAuthenticatedOrg(orgId);
+    setContext((previous) => ({ ...previous, orgId }));
+  }), []);
+
+  // 组织名解析（2026-09-11）：raw UUID 对用户不可读。解析失败时退回 UUID
+  // 并保留"未识别名称"提示——不伪造、不阻塞渲染。
+  const orgsQuery = useQuery({
+    queryKey: ['context-bar', 'organizations'],
+    queryFn: listOrganizations,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const orgName = orgsQuery.data?.find((org) => org.id === authenticatedOrg)?.name ?? null;
+  const orgLabel = orgName ?? (authenticatedOrg || '未认证');
 
   const update = (partial: Partial<AppContext>) => {
-    const next = { ...context, ...partial };
+    const next = { ...context, ...partial, orgId: authenticatedOrg };
     setContext(next);
     writeAppContext(next);
-    // 组织（租户）切换：释放旧租户会话资源，新会话在全新的生命周期 scope 上重建。
-    if (partial.orgId !== undefined && partial.orgId !== context.orgId) {
-      sessionLifecycle.disposeForReason('tenant-switch');
-    }
   };
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-1.5 text-xs">
-      <OrgEnvSwitcher context={context} onChange={update} />
+      <OrgEnvSwitcher context={context} orgLabel={orgLabel} onChange={update} />
       <span className="mx-1 hidden h-4 w-px bg-border md:block" aria-hidden />
       <VersionFreshnessBadge context={context} />
       <span className="ml-auto text-[11px] text-muted-foreground">

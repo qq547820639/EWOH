@@ -7,9 +7,11 @@
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -110,6 +112,120 @@ class SchedulingRepositoryTest(unittest.TestCase):
         self.assertEqual(updated["status"], "released")
         with self.assertRaises(VersionConflictError):
             self.repo.update_reservation("RSV-1", expected_version=1, status="active")
+
+    def test_plan_assignment_ids_are_stable_and_plan_scoped(self):
+        plans = [
+            SchedulePlan(plan_id=plan_id, assignments=[{"task_id": "shared-task", "person_id": plan_id}])
+            for plan_id in ("plan-a", "plan-b")
+        ]
+        for plan in plans:
+            self.repo.save_plan(plan)
+        original_ids = []
+        for plan in plans:
+            assignments = self.repo.get_plan(plan.plan_id)["assignments"]
+            self.assertEqual(len(assignments), 1)
+            self.assertEqual(assignments[0]["person_id"], plan.plan_id)
+            original_ids.append(assignments[0]["assignment_id"])
+        self.assertEqual(len(set(original_ids)), 2)
+        self.storage.close()
+        self.storage = Storage(self.db_path)
+        self.repo = SchedulingRepository(self.storage)
+        for plan, assignment_id in zip(plans, original_ids):
+            self.repo.save_plan(plan)
+            self.assertEqual(self.repo.get_plan(plan.plan_id)["assignments"][0]["assignment_id"], assignment_id)
+            self.assertNotIn("assignment_id", plan.assignments[0])
+
+    def test_plan_save_replaces_removed_children_and_preserves_other_plans(self):
+        plan = SchedulePlan(plan_id="replace", assignments=[{"task_id": "first"}, {"task_id": "second"}])
+        other = SchedulePlan(plan_id="other", assignments=[{"task_id": "unrelated"}])
+        self.repo.save_plan(plan)
+        self.repo.save_plan(other)
+        other_before = self.repo.get_plan(other.plan_id)
+        plan.assignments = [{"task_id": "second", "person_id": "updated"}]
+        plan.version = 2
+        self.repo.save_plan(plan)
+        stored = self.repo.get_plan(plan.plan_id)
+        self.assertEqual(stored["version"], 2)
+        self.assertEqual([assignment["task_id"] for assignment in stored["assignments"]], ["second"])
+        self.assertEqual(stored["assignments"][0]["person_id"], "updated")
+        plan.assignments = []
+        self.repo.save_plan(plan)
+        self.assertEqual(self.repo.get_plan(plan.plan_id)["assignments"], [])
+        self.assertEqual(self.storage.get_schedule_plan(plan.plan_id)["assignments"], [])
+        self.assertEqual(self.repo.get_plan(other.plan_id), other_before)
+
+    def test_plan_child_write_failure_rolls_back_parent_and_children(self):
+        plan = SchedulePlan(plan_id="atomic", assignments=[{"task_id": "original"}])
+        self.repo.save_plan(plan)
+        before = self.repo.get_plan(plan.plan_id)
+        parent_before = self.storage.get_schedule_plan(plan.plan_id)
+        with self.storage._lock, self.storage._db:
+            self.storage._db.execute(
+                "CREATE TRIGGER reject_plan_child BEFORE INSERT ON scheduling_plan_assignment "
+                "WHEN NEW.task_id = 'fail' BEGIN SELECT RAISE(ABORT, 'injected child failure'); END"
+            )
+        plan.version = 2
+        plan.assignments = [{"task_id": "new"}, {"task_id": "fail"}]
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "injected child failure"):
+            self.repo.save_plan(plan)
+        self.assertEqual(self.repo.get_plan(plan.plan_id), before)
+        self.assertEqual(self.storage.get_schedule_plan(plan.plan_id), parent_before)
+        plan.plan_id = "new-plan"
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "injected child failure"):
+            self.repo.save_plan(plan)
+        self.assertIsNone(self.repo.get_plan(plan.plan_id))
+        self.assertEqual(self.storage.list_plan_assignments(plan.plan_id), [])
+
+    def test_explicit_assignment_collision_cannot_steal_another_plan_child(self):
+        original = SchedulePlan(plan_id="original", assignments=[{"assignment_id": "explicit", "task_id": "first"}])
+        conflicting = SchedulePlan(plan_id="conflicting", assignments=[{"assignment_id": "explicit", "task_id": "second"}])
+        self.repo.save_plan(original)
+        before = self.repo.get_plan(original.plan_id)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.repo.save_plan(conflicting)
+        self.assertEqual(self.repo.get_plan(original.plan_id), before)
+        self.assertEqual(before["assignments"][0]["assignment_id"], "explicit")
+        self.assertIsNone(self.repo.get_plan(conflicting.plan_id))
+
+    def test_get_plan_reads_parent_and_children_from_one_snapshot(self):
+        plan = SchedulePlan(plan_id="read-consistency", assignments=[{"task_id": "old"}])
+        self.repo.save_plan(plan)
+        writer_storage = Storage(self.db_path)
+        writer = SchedulingRepository(writer_storage)
+        decode_parent = self.storage._schedule_plan_row
+
+        def update_after_parent_read(row):
+            parent = decode_parent(row)
+            plan.version = 2
+            plan.assignments = [{"task_id": "new"}]
+            writer.save_plan(plan)
+            return parent
+
+        try:
+            with patch.object(self.storage, "_schedule_plan_row", side_effect=update_after_parent_read):
+                previous = self.repo.get_plan(plan.plan_id)
+            self.assertEqual(previous["version"], 1)
+            self.assertEqual([assignment["task_id"] for assignment in previous["assignments"]], ["old"])
+            current = self.repo.get_plan(plan.plan_id)
+            self.assertEqual(current["version"], 2)
+            self.assertEqual([assignment["task_id"] for assignment in current["assignments"]], ["new"])
+        finally:
+            writer_storage.close()
+
+    def test_duplicate_assignment_ids_roll_back_the_plan(self):
+        plan = SchedulePlan(plan_id="duplicate", assignments=[{"task_id": "original"}])
+        self.repo.save_plan(plan)
+        before = self.repo.get_plan(plan.plan_id)
+        for assignments in (
+            [{"task_id": "same-task"}, {"task_id": "same-task"}],
+            [{"assignment_id": "same-id", "task_id": task_id} for task_id in ("first", "second")],
+        ):
+            with self.subTest(assignments=assignments):
+                plan.version = 2
+                plan.assignments = assignments
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.repo.save_plan(plan)
+                self.assertEqual(self.repo.get_plan(plan.plan_id), before)
 
     def test_record_decision_and_feedback_and_snapshot(self):
         decision_id = self.repo.record_decision(

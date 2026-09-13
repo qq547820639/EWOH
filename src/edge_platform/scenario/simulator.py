@@ -25,7 +25,7 @@ from enum import Enum
 
 from edge_platform.spatial import new_id
 
-from .metrics import compute_metrics
+from .metrics import compute_metrics, predicted_battery
 
 _LOGGER = logging.getLogger("ewoh.scenario.simulator")
 
@@ -80,13 +80,8 @@ def _get(obj, key, default=None):
 
 def _predicted_battery(dstate, remaining_hours):
     """设备班次末预测电量（0..1）；故障设备返回 −1。"""
-    if not dstate:
-        return -1.0
-    if dstate.get("faulty"):
-        return -1.0
-    battery = float(dstate.get("battery_pct", 1.0) or 1.0)
-    drain = float(dstate.get("drain_per_hour", 0.0) or 0.0)
-    return battery - drain * remaining_hours
+    prediction = predicted_battery(dstate, remaining_hours)
+    return prediction if prediction is not None else -1.0
 
 
 class ScenarioSimulator:

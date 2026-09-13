@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorDescription } from '../../lib/errorContract';
 import { toast } from 'sonner';
 import {
+  buildLocalResolvePayload,
   flushOfflineQueue,
   getLastSyncAt,
   migratePendingActionsFromLocalStorage,
@@ -568,6 +569,12 @@ export function useOfflineWorkbench(
           return;
         } else if (item?.orderId && item?.stepId) {
           try {
+            // 「采用本地」必须重建附件引用（buildLocalResolvePayload）：
+            // item.body 从不包含附件，直接重放会静默丢掉现场照片。上传失败
+            // 走下方 catch——保留冲突项可重试，绝不带着缺照片的本地值落库。
+            const payload = choice === 'local'
+              ? await buildLocalResolvePayload(item, db.attachments, uploadFile)
+              : undefined;
             const result = await forceResolveMobileStep(
               item.orderId,
               item.stepId,
@@ -575,7 +582,7 @@ export function useOfflineWorkbench(
                 resolution: choice,
                 idempotencyKey: item.idempotencyKey,
                 action: choice === 'local' ? item.action : undefined,
-                payload: choice === 'local' ? item.body : undefined,
+                payload: choice === 'local' ? payload : undefined,
               },
             );
             if (choice === 'local' && !result.applied) {

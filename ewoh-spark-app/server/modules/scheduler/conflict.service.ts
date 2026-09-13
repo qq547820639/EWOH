@@ -10,6 +10,7 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { createHash } from 'node:crypto';
+import { normalizeBatteryPct } from '@shared/scheduler';
 import { eq, inArray, asc, desc, or, isNull, and, type SQL } from 'drizzle-orm';
 import { ewohSchedulingConflict, ewohSchedulePlan } from '@server/database/schema';
 import type {
@@ -26,6 +27,7 @@ import { AuditService } from '../shared/audit.service';
 import { WorldStateSnapshotService } from './world-state.service';
 import { SchedulingPolicyService } from './scheduling-policy.service';
 import { OutboxService } from './outbox.service';
+import { PerceptionFusionService } from '../perception/perception-fusion.service';
 
 /** 视为"活跃"（非终态）的方案状态（与 SchedulerService 保持一致）。 */
 const ACTIVE_PLAN_STATUSES = [
@@ -91,6 +93,11 @@ export class ConflictService {
     private readonly policyService: SchedulingPolicyService,
     private readonly auditService: AuditService,
     private readonly outboxService?: OutboxService,
+    /**
+     * NO-58b：感知融合门控（可选注入——缺失时冲突面不追加感知冲突，兼容旧单测）。
+     * 只读感知快照，不写回、不阻断调度。
+     */
+    private readonly perceptionFusionService?: PerceptionFusionService,
   ) {}
 
   // ===== 公开查询 =====
@@ -519,25 +526,27 @@ export class ConflictService {
       }
     }
 
-    // 5. low battery：设备电量低于阈值（数据新鲜且在线）。
+    // 5. Missing/invalid battery is unavailable; measured low battery stays distinct.
     for (const d of state.devices) {
+      const batteryPct = normalizeBatteryPct(d.batteryPct);
+      const batteryUnknown = batteryPct == null;
       if (
-        d.dataQuality === 'FRESH' &&
-        d.status !== 'OFFLINE' &&
-        (d.batteryPct ?? 100) < minBatteryPct
+        batteryUnknown || (d.dataQuality === 'FRESH' &&
+        d.status !== 'OFFLINE' && batteryPct < minBatteryPct)
       ) {
+        const type = batteryUnknown ? 'battery_unknown' : 'low_battery';
         conflicts.push(
-          this.mkConflict(`low_battery:${d.id}`, {
-            type: 'low_battery',
+          this.mkConflict(`${type}:${d.id}`, {
+            type,
             severity: 'medium',
             scope: 'resource',
             resourceType: 'device',
             resourceId: d.id,
             taskIds: taskIdsFor('device', d.id),
-            message: `设备 ${d.id} 电量偏低（${d.batteryPct ?? 100}%）`,
-            resolution: '安排充电或更换设备',
+            message: batteryUnknown ? `设备 ${d.id} 电量数据不可用` : `设备 ${d.id} 电量偏低（${batteryPct}%）`,
+            resolution: batteryUnknown ? '更新设备电量遥测或改派其他设备' : '安排充电或更换设备',
             snapshotVersion: 'CURRENT',
-            data: { batteryPct: d.batteryPct ?? 100, minBatteryPct },
+            data: { batteryPct, minBatteryPct },
           }),
         );
       }
@@ -784,6 +793,90 @@ export class ConflictService {
       }
     }
 
+    // 14. perception_inconsistent（NO-58b 调度侧接入）：见 derivePerceptionConflicts 注释。
+    conflicts.push(...(await this.derivePerceptionConflicts(state, affectedTasks, ctx)));
+
+    return conflicts;
+  }
+
+  /**
+   * NO-58b（调度侧接入）：主体（人/设备/工位）的感知融合明确"不许强建议"
+   * （多源冲突/过期/不可信/置信度不足）时，只要该主体牵涉**在飞任务**，就在冲突面显式可见——
+   * 调度员据此人工核对来源，而不是把融合结论当成已确认事实。
+   *
+   * 边界：**不阻断**任何调度（感知是提示层，不是硬约束）；无租户上下文不查（避免跨租户
+   * 混入）；查询失败只记日志并跳过（如实降级，不伪造冲突）；与在飞任务无关的主体不进冲突面。
+   */
+  private async derivePerceptionConflicts(
+    state: { persons: Array<{ id: string }> },
+    affectedTasks: Array<{ id: string; assigneeId: string | null; deviceId: string | null; stationId: string | null }>,
+    ctx?: OrgContext,
+  ): Promise<SchedulingConflict[]> {
+    if (!this.perceptionFusionService || !ctx?.primaryOrgId) return [];
+    const subjectIds = new Set<string>();
+    for (const task of affectedTasks) {
+      if (task.assigneeId) subjectIds.add(String(task.assigneeId));
+      if (task.deviceId) subjectIds.add(String(task.deviceId));
+      if (task.stationId) subjectIds.add(`station:${task.stationId}`);
+    }
+    if (subjectIds.size === 0) return [];
+    let gates: Map<string, { strongAdviceAllowed: boolean; level: string; agreement: string; reason: string | null; fusedAt: string; basis: string }>;
+    try {
+      gates = await this.perceptionFusionService.latestGates(ctx, [...subjectIds]);
+    } catch (error) {
+      this.logger.warn(
+        `感知门控读取失败（冲突面不追加感知冲突，其余冲突照旧）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+    const conflicts: SchedulingConflict[] = [];
+    for (const [subjectId, gate] of gates) {
+      if (gate.strongAdviceAllowed) continue;
+      const taskIds = affectedTasks
+        .filter((t) =>
+          (t.assigneeId && String(t.assigneeId) === subjectId)
+          || (t.deviceId && String(t.deviceId) === subjectId)
+          || (t.stationId && `station:${t.stationId}` === subjectId),
+        )
+        .map((t) => String(t.id));
+      // 与在飞任务无关的主体不进冲突面（否则闲置信设备的感知噪声会淹没真冲突）。
+      if (taskIds.length === 0) continue;
+      // 主体类型判定必须**先认规范前缀**再查实体表：人员的空间实体 id 常写成 `person:<id>`，
+      // 而 `ewoh_personnel.id` 是裸 id——只查实体表会把人员冲突误判成设备冲突（e2e 7f 实测）。
+      const resourceType = subjectId.startsWith('station:') || subjectId.startsWith('workstation:')
+        ? 'station'
+        : subjectId.startsWith('person:')
+          || subjectId.startsWith('worker:')
+          || state.persons.some((p) => String(p.id) === subjectId)
+          ? 'person'
+          : 'device';
+      conflicts.push(
+        // 冲突号按"主体 + 不可信类型"稳定（不把 fusedAt 放进种子）：只要不可信状态持续，
+        // 同一条冲突保持 OPEN 而不是每次融合快照生成新行；快照时间在 data.fusedAt 里可查。
+        this.mkConflict(`perception_inconsistent:${subjectId}:${gate.agreement}:${gate.level}`, {
+          type: 'perception_inconsistent',
+          severity: gate.agreement === 'conflict' || gate.level === 'low' ? 'high' : 'medium',
+          scope: 'resource',
+          resourceType,
+          // 工位主体的融合号带 `station:` 前缀（与感知契约一致），资源 id 去掉前缀。
+          resourceId: resourceType === 'station' ? subjectId.slice('station:'.length) : subjectId,
+          taskIds,
+          message: `资源 ${subjectId} 的感知融合当前不可信（${gate.reason ?? '门控不允许强建议'}）→ 不要当成已确认事实`,
+          resolution: '人工核对感知来源（相机/定位/可穿戴/工位语义）后确认或抑制；感知结论不阻断调度',
+          snapshotVersion: 'CURRENT',
+          data: {
+            factor: 'perception_fusion',
+            agreement: gate.agreement,
+            confidenceLevel: gate.level,
+            fusedAt: gate.fusedAt,
+            basis: gate.basis,
+            gateReason: gate.reason,
+          },
+        }),
+      );
+    }
     return conflicts;
   }
 

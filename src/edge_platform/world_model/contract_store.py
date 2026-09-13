@@ -140,12 +140,28 @@ class ContractWorldStore:
                     "state_precedes_declaration",
                     f"状态生效时间 {ts} 早于声明生效时间 {decl['timeSemantics']['validFrom']}",
                 )
+        valid_from_ts = ts or now_iso()
+        # UR8（2026-09-13 审查）：时间回退拒绝——新状态生效时间早于当前状态生效
+        # 时间（补传/乱序帧、设备时钟倒退）时，若照常写入会使旧状态 valid_to 早于
+        # 其 valid_from（区间倒置），snapshot() 的契约自检（bad_interval /
+        # version_not_monotonic）从此永久失败，且回退前的新事实被旧读数覆盖。
+        # 故 fail-closed 拒绝（投影层计数 + 日志，见 TelemetryWorldProjector），
+        # 绝不把时间回退伪造成确定事实。
+        cur = self._store.current(entity_id, entity_type)
+        if cur is not None:
+            cur_from_ms = entity_model.parse_iso(cur.valid_from)
+            new_from_ms = entity_model.parse_iso(valid_from_ts)
+            if cur_from_ms is not None and new_from_ms is not None and new_from_ms < cur_from_ms:
+                raise WorldStoreContractError(
+                    "state_time_regression",
+                    f"状态生效时间 {valid_from_ts} 早于当前状态生效时间 {cur.valid_from}（时间回退拒绝）",
+                )
         record = {
             "stateId": new_id("STS"),
             "entityId": entity_id,
             "entityType": entity_type,
             "stateJson": state_json or {},
-            "validFrom": ts or now_iso(),
+            "validFrom": valid_from_ts,
             "validTo": None,
             "sourceType": source_type,
             "confidence": confidence,

@@ -17,6 +17,7 @@ import {
 import { filter, interval, map, merge, Observable } from 'rxjs';
 import { Optional } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
+import { Roles } from '../shared/roles.decorator';
 import { SchedulerStreamService } from './scheduler-stream.service';
 import { DurationModelTrainingService } from './prediction/duration-model-training.service';
 import { DecisionHistoryService } from './decision-history.service';
@@ -88,6 +89,24 @@ export class SchedulerController {
    * ewoh_model_registry 落版 + 内存刷新）。样本不足 → 显式 not_enough_data
    * （不落版不伪造，§33）。预测面 shadow-only（预测只是优化器输入）。
    */
+  /**
+   * 训练样本资格摘要（学习控制台只读）。
+   *
+   * 让用户能回答"为什么不能重训"：区分没有真实回执、有真实回执但缺独立
+   * 设备证据、以及设备证据与执行事实不一致。模拟/人工回执不计入可训练样本。
+   */
+  @Get('predictions/task-duration/samples')
+  async taskDurationSamples(@Req() request: { userContext?: OrgContext }) {
+    if (!this.durationModelTrainingService) {
+      throw new BadRequestException('duration model training not available（模块未装配）');
+    }
+    const orgId = request.userContext?.primaryOrgId;
+    if (!orgId?.trim()) {
+      throw new BadRequestException('orgId 缺失：训练样本统计必须租户作用域（§15/§16）');
+    }
+    return this.durationModelTrainingService.summarizeTrainingSamples(orgId.trim());
+  }
+
   @Post('predictions/task-duration/retrain')
   async retrainTaskDurationModel(@Req() request: { userContext?: OrgContext }) {
     if (!this.durationModelTrainingService) {
@@ -101,6 +120,11 @@ export class SchedulerController {
     if (!summary.ok) {
       throw new BadRequestException(`retrain_not_enough_data: ${summary.notEnoughDataReason ?? 'unknown'}`);
     }
+    // 谱系（lineage）：新版本由哪些样本、按什么资格策略产生。
+    // 只回版本号会让"这个模型是怎么来的"无法追溯，而时长模型会影响排程预测。
+    const lineage = await this.durationModelTrainingService
+      .summarizeTrainingSamples(orgId.trim())
+      .catch(() => null);
     return {
       ok: true,
       modelId: 'task-duration-empirical',
@@ -108,6 +132,14 @@ export class SchedulerController {
       n: summary.model?.count,
       medianMs: summary.model?.medianMs,
       p90Ms: summary.model?.p90Ms,
+      lineage: {
+        trainedFrom: 'ewoh_scheduling_feedback',
+        eligibilityPolicy: lineage?.eligibilityPolicy ?? 'independent-device-receipt-required',
+        trainableSamples: lineage?.trainable ?? null,
+        flaggedEligible: lineage?.flaggedEligible ?? null,
+        minSamplesRequired: lineage?.minSamplesRequired ?? null,
+        perTaskType: summary.perTaskType ?? [],
+      },
     };
   }
 
@@ -209,6 +241,24 @@ export class SchedulerController {
       'POST /plans/:planId/confirm',
       'POST /api/scheduler/plans/:planId/approve',
     );
+  }
+
+  /**
+   * DR-5 方案取消/回滚（standalone_077）：approved/dispatched/executing 方案的
+   * 受控部分回退——未开始 assignment 取消并释放预占、任务退回待派发池、
+   * 未开始 Execution 标记 CANCELLED；已开始的不可回退项如实回报。
+   */
+  @Post('plans/:planId/cancel')
+  @HttpCode(200)
+  async cancelPlan(
+    @Param('planId') planId: string,
+    @Body() body: { reason?: string },
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    if (!body?.reason?.trim()) {
+      throw new BadRequestException('reason 必填：取消/回滚必须可解释、可审计');
+    }
+    return this.schedulerService.cancelPlanV2(planId, body, request.userContext);
   }
 
   @Post('plans/:planId/reject')
@@ -345,6 +395,19 @@ export class SchedulerController {
     return this.schedulerService.getPlanDetail(planId, request?.userContext);
   }
 
+  /**
+   * NO-62c：方案过期诊断（只读）——"这个方案还能批吗？如果不能，变了什么？"
+   *
+   * 与审批 409 使用同一诊断实现，页面不再需要靠"点一下审批看会不会报错"来探测新鲜度。
+   */
+  @Get('plans/:planId/staleness')
+  async getPlanStaleness(
+    @Param('planId') planId: string,
+    @Req() request: { userContext?: OrgContext },
+  ) {
+    return this.schedulerService.explainPlanStaleness(planId, request?.userContext);
+  }
+
   /** P0-2：查询方案仍生效的持久化人工约束。 */
   @Get('plans/:planId/constraints')
   async getPlanConstraints(
@@ -378,13 +441,30 @@ export class SchedulerController {
     return this.schedulerService.approvePlanV2(planId, body, request.userContext);
   }
 
+  /**
+   * 派工（支持分波次 / 部分执行）。
+   *
+   * body 省略或 `assignmentIds` 为空 → 派发全部待派工 assignment（原有行为）。
+   * 提供 `assignmentIds` → 只派发这一波；波内全有或全无。
+   * 响应携带 `dispatch.remainingAssignmentIds`：非空即"部分执行"，
+   * 此时计划刻意保持 `approved`（`dispatched` 在契约中是终态，语义为"全部转任务"）。
+   */
   @Post('plans/:planId/dispatch')
   @HttpCode(200)
   async dispatchPlan(
     @Param('planId') planId: string,
+    @Body() body: { assignmentIds?: string[] } | undefined,
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.schedulerService.dispatchPlanV2(planId, request.userContext);
+    const assignmentIds = Array.isArray(body?.assignmentIds) ? body.assignmentIds : undefined;
+    if (assignmentIds && assignmentIds.some((id) => typeof id !== 'string' || !id.trim())) {
+      throw new BadRequestException('assignmentIds 必须是非空字符串数组');
+    }
+    return this.schedulerService.dispatchPlanV2(
+      planId,
+      request.userContext,
+      assignmentIds?.length ? { assignmentIds } : undefined,
+    );
   }
 
   @Post('plans/:planId/replan')
@@ -745,7 +825,17 @@ export class SchedulerController {
   // Phase 4 / P4-EXEC：Execution Feedback
   // ==========================================================================
 
+  /**
+   * 执行回执（含现场人员）。
+   *
+   * 允许 `worker` 调用是**有意**的：没有它，现场人员无法报告自己的开工/完工，
+   * "感知—执行—反馈"闭环对真正的执行者就是断的。放宽的只是"能否到达该处理器"，
+   * 归属仍由 ExecutionReceiptApplicationService 强制：非特权角色必须满足
+   * `assignment.personId === ctx.personId`（账号↔人员绑定），未绑定或他人任务
+   * 一律 403。因此这里不构成越权面。
+   */
   @Post('executions/:assignmentId/update')
+  @Roles('worker', 'dispatcher', 'workshop_lead', 'device_ops', 'global_admin')
   async updateExecution(
     @Param('assignmentId') assignmentId: string,
     @Body() body: import('@shared/api.interface').ExecutionUpdateRequest,
@@ -754,11 +844,30 @@ export class SchedulerController {
     return this.schedulerService.executionUpdate(assignmentId, body, request.userContext);
   }
 
+  /**
+   * 现场作业台只读投影：**只返回调用者本人的工作**。
+   *
+   * 为什么需要单独端点（2026-09-10 现场闭环审计）：SchedulerController 通过
+   * FALLBACK_CONTROLLER_ROLES 整体限定为 global_admin/dispatcher/workshop_lead，
+   * 因此 `worker` 访问任何 `/api/scheduler/*` 都是 403——现场作业台对真正的现场
+   * 人员不可用。而放开工人读 `GET /executions` 又会暴露全厂执行台账。
+   *
+   * 本端点把范围**由服务端从 ctx.personId 推导**（不接受客户端传 personId）：
+   * 工人只能看到分配给自己的记录；未绑定人员则 fail-closed 403。
+   */
+  @Get('field/my-work')
+  @Roles('worker', 'dispatcher', 'workshop_lead', 'device_ops', 'global_admin')
+  async myFieldWork(@Req() request: { userContext?: OrgContext }) {
+    return this.schedulerService.myFieldWork(request.userContext);
+  }
+
   @Get('executions')
   async listExecutions(
     @Query('planId') planId?: string,
     @Query('taskId') taskId?: string,
     @Query('status') status?: string,
+    // 现场作业台按"分配给我的人"筛选（服务端过滤，保持 org 作用域）。
+    @Query('personId') personId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Req() request?: { userContext?: OrgContext },
@@ -768,6 +877,7 @@ export class SchedulerController {
         planId,
         taskId,
         status,
+        personId,
         limit: limit ? Number(limit) : undefined,
         offset: offset ? Number(offset) : undefined,
       },
@@ -924,7 +1034,13 @@ export class SchedulerController {
       operator: string;
       reason?: string;
       replayId?: string;
-      gateResult?: import('@shared/api.interface').PolicyGateEvaluation | null;
+      /**
+       * 证据不足时的显式人工确认（见 PolicyActivationService.activate）。
+       * 注意：HTTP 面**不接受**调用方自带的 gateResult——Gate 结论必须由服务端
+       * 现场评估产生。此前 controller 直接透传 body.gateResult，任何具备激活
+       * 权限的调用方都能伪造 `{passed:true}` 绕过 Gate 与全部安全检查。
+       */
+      acknowledgeInsufficientEvidence?: boolean;
     },
     @Req() request: { userContext?: OrgContext },
   ) {
@@ -932,7 +1048,9 @@ export class SchedulerController {
       operator: body.operator ?? request.userContext?.userId ?? 'system',
       reason: body.reason,
       replayId: body.replayId,
-      gateResult: body.gateResult ?? null,
+      // 服务端权威评估：不读取任何调用方提供的 Gate 结果。
+      gateResult: null,
+      acknowledgeInsufficientEvidence: body.acknowledgeInsufficientEvidence === true,
       orgId: request.userContext?.primaryOrgId ?? null,
     }, request.userContext);
   }

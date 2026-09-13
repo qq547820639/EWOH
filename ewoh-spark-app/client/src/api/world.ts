@@ -62,3 +62,64 @@ export async function createReplayItem(body: {
   });
   return res.data;
 }
+
+/* ── NO-57a：订单链（订单 → 任务/工序 → 物料）消费面 ───────────────────── */
+
+export interface OrderChainTaskDto {
+  taskId: string;
+  title: string;
+  status: string;
+  source: string;
+  planStart: string | null;
+  planEnd: string | null;
+  stepCount: number;
+  openStepCount: number;
+  stepIds: string[];
+}
+
+export interface OrderChainMaterialDto {
+  materialId: string;
+  name: string | null;
+  unit: string | null;
+  requiredTotal: number;
+  onHand: number;
+  shortage: number;
+  belowThreshold: boolean;
+  orderNos: string[];
+}
+
+export interface OrderChainDto {
+  orderNo: string;
+  status: string;
+  priority: string | null;
+  dueAt: string | null;
+  overdue: boolean | null;
+  tasks: OrderChainTaskDto[];
+  materials: OrderChainMaterialDto[];
+  gaps: string[];
+  assignedTaskCount: number;
+  notes: string[];
+}
+
+export interface OrderChainResultDto {
+  orgId: string;
+  generatedAt: string;
+  chains: OrderChainDto[];
+  summary: {
+    orders: number;
+    overdue: number;
+    withGaps: number;
+    gapCounts: Record<string, number>;
+    materialsInShortage: number;
+    openSteps: number;
+  };
+  notes: string[];
+}
+
+/** 订单链（只读消费面；断链以 gaps 显式返回）。 */
+export async function listOrderChains(
+  filters: { limit?: number; orderNo?: string } = {},
+): Promise<OrderChainResultDto> {
+  const res = await axiosForBackend({ url: '/api/world/order-chains', method: 'GET', params: filters });
+  return res.data as OrderChainResultDto;
+}

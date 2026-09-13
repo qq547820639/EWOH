@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
   ewohDevice,
+  ewohDeviceCapability,
   ewohTelemetry,
   ewohEvent,
   ewohSpatialEntity,
@@ -10,6 +11,7 @@ import {
 } from '@server/database/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import type {
+  ActuatorFrameDto,
   ExoskeletonFrameDto,
   EnvironmentFrameDto,
   CameraFrameDto,
@@ -28,15 +30,19 @@ import { SensorIngestService } from './sensor-ingest.service';
 import { ReplanCoordinatorService } from '../scheduler/replan-coordinator.service';
 import { IdentityService } from '../identity/identity.service';
 import { normalizeSeverity, normalizeEventSeverity } from '@shared/risk';
+import { DEVICE_CAPABILITY_SPECS, capabilitiesForCategory, toCapabilityRecord } from '@shared/device-capability';
+import { validateCapability } from '@shared/capability';
 import {
   buildEventEnvelope,
   envelopeForEvidence,
   envelopeSemantics,
   validateEventEnvelope,
+  ENVELOPE_CLOCK_DRIFT_TOLERANCE_MS,
 } from '@shared/event-envelope';
 import { DeadLetterService } from '../reliability/dead-letter.service';
 import { ExoSessionService } from '../exo/exo-session.service';
 import { insertAndonNotifications } from '../notification/andon-notifications';
+import { DeviceResponsibilityService } from '../responsibility/device-responsibility.service';
 import { isCatalogEventType, EVENT_CATALOG_TYPES } from '@shared/event-catalog';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
@@ -89,6 +95,8 @@ export class IngestService {
     @Optional() private readonly deadLetterService?: DeadLetterService,
     // ADR-033 / §7：边缘绑定事件 → 云 ExoSession 台账投影（幂等）
     @Optional() private readonly exoSessionService?: ExoSessionService,
+    // NO-49a：边缘安灯 → 设备责任人（点名到人）；缺省时退回纯角色提醒（不阻塞摄入）。
+    @Optional() private readonly responsibilities?: DeviceResponsibilityService,
   ) {}
 
   // ===== 外骨骼数据接入 =====
@@ -203,6 +211,9 @@ export class IngestService {
     const acceptedIdx: Array<{ parsedIdx: number; telemetryRow: (typeof ewohTelemetry.$inferInsert) }> = [];
     // NO-04a：Late/ClockDrift 时间语义（ADR-009）+ 同批次数据质量事件语义去重。
     const firedDataQualityEvents = new Set<string>();
+    // UR4 审查（2026-09-13）：批内 raw_ref 幂等——预检只查库，同批两帧同 raw_ref
+    // （断网缓冲补传拼接出的重放批次）会双双落库，传输级幂等在批内失效。
+    const batchSeenRawRefs = new Set<string>();
     let lateCount = 0;
     let driftCount = 0;
 
@@ -239,7 +250,7 @@ export class IngestService {
         });
         continue;
       }
-      if (p.rawRef && existingRawRefs.has(p.rawRef)) {
+      if (p.rawRef && (existingRawRefs.has(p.rawRef) || batchSeenRawRefs.has(p.rawRef))) {
         results.push({
           accepted: false,
           skipped: true,
@@ -252,11 +263,13 @@ export class IngestService {
 
       const dataQuality = this.assessQuality(p.frame);
       const row = this.mapExoskeletonRow(p.frame, p.deviceId, p.sourceType, p.recordId, p.rawRef, dataQuality, now);
-      // ADR-006/NO-02b：规范身份落点（未映射 → null，legacy 行为不变）。
-      row.entityId = resolvedEntities.get(p.deviceId) ?? null;
+      // ADR-006/NO-02b：规范身份**仅作兜底**（帧里的 entity_id 是主体归属的第一事实源）。
+      row.entityId = row.entityId ?? resolvedEntities.get(p.deviceId) ?? null;
       // ADR-075：telemetry 行归属注入（001 ewoh_org_visible RLS 对齐）。
       row.orgId = batchOrgId || null;
       telemetryRows.push(row);
+      // 该帧确定落库 → 其 raw_ref 对本批后续帧视为"已处理"（批内幂等）。
+      if (p.rawRef) batchSeenRawRefs.add(p.rawRef);
       acceptedIdx.push({ parsedIdx: i, telemetryRow: row });
 
       // upsert device（批量收集后统一落库；v0.7 B1：首次出现故障码的设备触发离线重排）
@@ -302,19 +315,25 @@ export class IngestService {
             // NEST-205（standalone_057 配套）：唯一约束已改 (org_id, device_id)，
             // 冲突目标同步为复合键（防跨租户同 deviceId 互相覆盖）。
             target: [ewohDevice.orgId, ewohDevice.deviceId],
-            // R2-SOP-020：批量路径 set 字段与单帧 upsertDevice 对齐（取该设备
-            // 本批首帧的 excluded.* 值）——批量接入下设备台账的电量/故障码/
-            // 固件等元数据不再停滞在首次插入值。
+            // R2-SOP-020：批量路径 set 字段与单帧 upsertDevice 对齐。对齐的完整
+            // 语义是：帧**携带**的元数据取本批首帧 excluded.* 值（不再停滞在首次
+            // 插入值），帧**缺失**的元数据保留台账现值（等价单帧的 `?? undefined`
+            // 不更新语义）。UR4 审查（2026-09-13）修正：原实现直接写 excluded.*，
+            // 一批不带 battery_pct/fault_code 的帧会把已知电量/故障码擦成 NULL——
+            // 调度 candidate-engine 对"电量未知"给无穷能耗罚 → 设备凭空失去派工
+            // 资格；fault_code 被清则故障态凭空消失。
             set: {
-              batteryPct: sql`excluded.battery_pct`,
+              batteryPct: sql`coalesce(excluded.battery_pct, ${ewohDevice.batteryPct})`,
               online: true,
               lastTelemetryAt: now,
               sourceType: sql`excluded.source_type`,
-              firmwareVersion: sql`excluded.firmware_version`,
-              hardwareVersion: sql`excluded.hardware_version`,
-              protocolVersion: sql`excluded.protocol_version`,
-              temperatureC: sql`excluded.temperature_c`,
-              faultCode: sql`excluded.fault_code`,
+              // 类别不被自动路径覆盖（人工登记是权威；空则补 exoskeleton）
+              deviceCategory: sql`COALESCE(${ewohDevice.deviceCategory}, 'exoskeleton')`,
+              firmwareVersion: sql`coalesce(excluded.firmware_version, ${ewohDevice.firmwareVersion})`,
+              hardwareVersion: sql`coalesce(excluded.hardware_version, ${ewohDevice.hardwareVersion})`,
+              protocolVersion: sql`coalesce(excluded.protocol_version, ${ewohDevice.protocolVersion})`,
+              temperatureC: sql`coalesce(excluded.temperature_c, ${ewohDevice.temperatureC})`,
+              faultCode: sql`coalesce(excluded.fault_code, ${ewohDevice.faultCode})`,
               lastRawRef: sql`excluded.last_raw_ref`,
             },
           });
@@ -355,6 +374,9 @@ export class IngestService {
       try {
         const triggered = await this.ruleEngine.evaluate({
           deviceId: parsed[idx].deviceId,
+          // 规则引擎内部要按租户读遥测/事件（(org_id, device_id) 才是设备唯一键），
+          // 批次 org 从这里透传；缺省 null = 存量无 org 帧，保持原行为。
+          orgId: batchOrgId || null,
           pitchDeg: row.pitchDeg,
           loadScore: row.loadScore,
           batteryPct: row.batteryPct,
@@ -483,7 +505,47 @@ export class IngestService {
         });
         continue;
       }
-      const semantics = envelopeSemantics(envelope as unknown as Record<string, unknown>);
+      // ADR-009：receivedAt 的契约语义是「云端接收时刻」，但信封里带的 receivedAt
+      // 是边缘用**同一块可能漂移的时钟**自报的（缺省时更没有可比对象）——直接采信
+      // 它，坏时钟事件（occurredAt 超前）永远算不出 clockDrift，事件行还会以未来
+      // 时间落 createdAt/occurredAt，长期霸占事件流顶部（world recentEvents /
+      // timeline 按 createdAt desc），台账里 clock_drift=false 也摧毁"全链路可审计"。
+      // 这里锚定云侧接收时刻 now 计算时间语义：与外骨骼/执行机构等帧入口同一口径
+      // （坏时钟判定不信任上报方时钟）；缓冲补传的旧事件随之被如实标记 isLate
+      // （标记不丢弃，仍照常落账）。
+      const semantics = envelopeSemantics({
+        ...(envelope as unknown as Record<string, unknown>),
+        receivedAt: now.toISOString(),
+      });
+      // 坏时钟 fail-closed（与 actuator/environment/camera/location 同判据同措辞）：
+      // occurredAt 超前云端接收时刻超过 5min 容忍界 → 拒绝。必须发生在幂等认领
+      // **之前**——先认领再拒绝会让该 (org,source,eventId) 被永久占用，边缘重试
+      // 全部被判 duplicate（NEST-206 同款永久阻断态）。坏时钟不会自愈 → 落死信人审。
+      if (semantics.clockDrift) {
+        rejected += 1;
+        void this.deadLetterService
+          ?.record(
+            {
+              sourceId: 'cloud:ingest',
+              reason: 'clock_drift_future',
+              envelope: envelope as unknown as Record<string, unknown>,
+              correlationId: String(envelope.correlationId ?? '') || null,
+            },
+            orgId,
+          )
+          .catch((err) => {
+            this.logger.warn(`死信落账失败（坏时钟拒绝）: ${String(err)}`);
+          });
+        results.push({
+          ...base,
+          accepted: false,
+          duplicate: false,
+          error: `CLOCK_DRIFT_FUTURE_TS：occurredAt 超前云端接收时刻超过 ${ENVELOPE_CLOCK_DRIFT_TOLERANCE_MS / 60000} 分钟，拒绝写入`,
+          clock_drift: true,
+          is_late: false,
+        });
+        continue;
+      }
       const occurredAt = new Date(envelope.occurredAt);
       // 传输级幂等：ON CONFLICT (org_id, source, event_id) DO NOTHING，
       // returning 为空 = 已落账 → duplicate（绝不重复投递）。
@@ -545,6 +607,13 @@ export class IngestService {
         ? normalizeEventSeverity(andonPayload.level != null ? String(andonPayload.level) : 'high')
         : 'unknown'; // ADR-027：非安灯边缘上行事件无风险判定 → 显式 unknown（§33）
       const eventCode = isEdgeAndon ? 'ANDON' : `EDGE_${eventType}`;
+      // UR4 审查（2026-09-13）：载荷缺 deviceId 时落 NULL（未知）——原
+      // `String(x ?? null)` 会把 device_id 写成字面量字符串 'null'，凭空造出
+      // 一个名为 "null" 的设备引用（缺失数据不得伪造成确定事实）。
+      const andonDeviceId =
+        isEdgeAndon && andonPayload && andonPayload.deviceId != null && String(andonPayload.deviceId).trim() !== ''
+          ? String(andonPayload.deviceId)
+          : null;
       const slaSeconds = isEdgeAndon && andonPayload
         ? Number(andonPayload.slaSeconds ?? 900)
         : null;
@@ -573,7 +642,7 @@ export class IngestService {
       try {
         await this.db.insert(ewohEvent).values({
           eventId: envelope.eventId,
-          deviceId: isEdgeAndon && andonPayload ? String(andonPayload.deviceId ?? null) : null,
+          deviceId: andonDeviceId,
           eventCode,
           eventType,
           severity: eventSeverity,
@@ -637,8 +706,22 @@ export class IngestService {
       // 失败显式留痕不阻断事件主事实（通知是派生事实，投影缺口可补）。
       if (isEdgeAndon && andonPayload) {
         try {
+          // NO-49a：设备责任人优先（点名到人），角色兜底；责任人无绑定账号时只发角色
+          // （缺口在扫描/日志里可见，不阻塞开灯提醒）。责任人模块可选注入：缺失时退回纯角色。
+          const responsibilityPlan = this.responsibilities
+            ? await this.responsibilities.resolveAlertRecipients(
+                orgId ?? '',
+                String(andonPayload.deviceId ?? ''),
+              )
+            : { users: [] as Array<{ recipientId: string }> };
           await insertAndonNotifications(this.db, orgId, {
-            recipientId: String(andonPayload.assignee ?? 'dispatcher'),
+            recipients: [
+              ...responsibilityPlan.users.map((user) => ({
+                recipientType: 'user' as const,
+                recipientId: user.recipientId,
+              })),
+              { recipientType: 'role', recipientId: String(andonPayload.assignee ?? 'dispatcher') },
+            ],
             externalRef: envelope.eventId,
             title: `安灯 ${eventTitle}`,
             body: `设备 ${String(andonPayload.deviceId ?? '')} 安灯已开（${eventSeverity}，边缘上行）`,
@@ -664,6 +747,35 @@ export class IngestService {
   }
 
   /** 字段映射 → ewoh_telemetry 行（纯计算，供单帧/批量共用）。 */
+  /**
+   * NO-41a：遥测佩戴人规范化（单一实现，单帧与批量路径共用）。
+   *
+   * 空串/仅空白 → null：**"该帧没有上报佩戴人"是数据缺口，不是"没有人戴"**——
+   * 这个区别贯穿一致性判定与页面文案，不能在这里被抹平。
+   */
+  private normalizeWorkerId(frame: ExoskeletonFrameDto): string | null {
+    if (frame.worker_id == null) return null;
+    const trimmed = String(frame.worker_id).trim();
+    return trimmed === '' ? null : trimmed.slice(0, 255);
+  }
+
+  /**
+   * 规范身份解析（ADR-006/NO-02b）：登记过映射 → 规范身份；否则 null（legacy 行为不变）。
+   * 仅在帧没有携带 entity_id 时作为兜底使用（见 mapExoskeletonRow 的注释）。
+   */
+  private async resolveCanonicalEntityId(deviceId: string, orgId?: string | null): Promise<string | null> {
+    const scoped = orgId?.trim();
+    if (!scoped) return null;
+    try {
+      return await this.identityService.resolveMapping(IngestService.EDGE_DEVICE_SYSTEM, deviceId, scoped);
+    } catch (error) {
+      this.logger.warn(
+        `身份解析失败（fail-closed 回退 legacy 行为）：${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
   private mapExoskeletonRow(
     frame: ExoskeletonFrameDto,
     deviceId: string,
@@ -676,9 +788,27 @@ export class IngestService {
     const eventTime = new Date(frame.event_time);
     return {
       deviceId,
-      entityId: null,
+      /**
+       * 主体归属：**帧里的 entity_id 优先**（它回答"这条遥测说的是谁"），
+       * 设备身份映射（ADR-006）只在帧没带主体时兜底。
+       *
+       * 2026-09-12 实测缺陷：单帧/批量两条路径都把这一列**无条件覆盖**成身份映射结果，
+       * 未登记映射时写 NULL——于是"谁被佩戴"在遥测表里永久丢失，
+       * 感知融合/一致性校验只能报"缺外骨骼源"（多模态融合 e2e 因此先失败）。
+       * 同一类静默分叉此前在 workerId 上已经踩过一次（NO-41a 注释），这里一并钉死。
+       */
+      entityId: (frame.entity_id ?? frame.device_id ?? '').trim() || null,
+      // NO-41a：遥测佩戴人（第二证据源）。原样保存并去除首尾空白；
+      // 空串 → null（"该帧没上报佩戴人"是数据缺口，不是"没人戴"）。
+      workerId: this.normalizeWorkerId(frame),
       ts: eventTime,
-      pitchDeg: frame.pose?.trunk_pitch_deg ?? frame.pitch_deg ?? null,
+      // 姿态：**两种方言都要认，规范字段优先**——
+      //   `pose.trunk_pitch_deg`（边缘桥接器/真机适配器的规范名）
+      //   → `pose.pitch_deg`（模拟器/桩与部分直连设备的别名）
+      //   → 顶层 `pitch_deg`（更老的扁平帧）。
+      // 只认规范名时，模拟器/直连帧的俯仰角会静默落 NULL，下游疲劳/姿态规则与
+      // 感知融合全部"看不到姿态"（2026-09-12 实测缺陷）。
+      pitchDeg: frame.pose?.trunk_pitch_deg ?? frame.pose?.pitch_deg ?? frame.pitch_deg ?? null,
       loadScore: this.normalizeLoadScore(
         frame.load?.cumulative_load_score ?? frame.load_score ?? frame.load?.assist_level,
       ),
@@ -712,9 +842,16 @@ export class IngestService {
   ): typeof ewohDevice.$inferInsert {
     return {
       deviceId,
+      // 类别与单帧 upsertDevice 同源（外骨骼批量接入登记的设备不能是"无类别"行——
+      // 设备页分组/能力声明都按类别派生）。
+      deviceCategory: 'exoskeleton',
       workerName: frame.worker_name ?? null,
       deviceModel: frame.device_model ?? null,
-      batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? 100,
+      // 帧没带电量就写 NULL（未知），**绝不伪造成 100%**：100 会让"电量未知"看起来
+      // 像"满电可用"，而调度对未知电量的处理是显式的（候选评估给无穷能耗罚 →
+      // fail-closed 不派工，见 candidate-engine）。已登记设备不受影响：冲突更新用
+      // `?? undefined` 保留既有值，不会把已知电量擦成 NULL。
+      batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? null,
       online: true,
       lastTelemetryAt: now,
       sourceType,
@@ -745,8 +882,12 @@ export class IngestService {
     if (entityId) {
       const exists = await this.entityExists(entityId, ctx);
       if (!exists) {
-        // 写入告警事件并返回 400（R2-SOP-002：orgId 从 ctx 透传，
-        // 写入失败/缺 org 时 events_triggered 如实反映）
+        // 写入告警事件，并在**响应体**里如实反映（accepted=false /
+        // data_quality=invalid / events_triggered=0|1）。HTTP 仍是 201：单帧与批量
+        // 同一契约，边缘端不会把"帧非法"误判成传输失败而无限重试。
+        // （NO-53a 实测纠正了此处"返回 400"的错误注释：注释与实现对不上，
+        // 调用方会按错的语义去写重试逻辑。）
+        // R2-SOP-002：orgId 从 ctx 透传，写入失败/缺 org 时 events_triggered 如实反映
         const fired = await this.fireDataQualityEvent(
           deviceId,
           sourceType,
@@ -782,79 +923,28 @@ export class IngestService {
     // 3. 数据质量评估
     const dataQuality = this.assessQuality(frame);
 
-    // 3.5 身份解析（ADR-006/NO-02b）：登记过映射 → 规范身份；否则 null（legacy）。
-    let canonicalEntityId: string | null = null;
+    // 3.5 租户上下文（身份解析在需要兜底时按需执行，见 mapExoskeletonRow 注释）。
     const singleOrgId = ctx?.primaryOrgId?.trim();
-    if (singleOrgId) {
-      try {
-        canonicalEntityId = await this.identityService.resolveMapping(
-          IngestService.EDGE_DEVICE_SYSTEM,
-          deviceId,
-          singleOrgId,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `单帧身份解析失败（fail-closed 回退 legacy 行为）：${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
 
     // 4. 字段映射 → ewoh_telemetry
+    //
+    // 复用**批量路径同一个** mapper：字段映射只允许有一份实现。
+    // 实测教训：单帧与批量各写一套时，pitch_deg / entityId / workerId 会静默分叉
+    // （`pose.pitch_deg` 只有一套认、entity_id 被身份映射覆盖……），
+    // 修复一处而另一处继续错。
     const now = new Date();
-    const eventTime = new Date(frame.event_time);
-    const pitchDeg = frame.pose?.trunk_pitch_deg ?? frame.pitch_deg ?? null;
-    const loadScore = this.normalizeLoadScore(
-      frame.load?.cumulative_load_score ??
-        frame.load_score ??
-        frame.load?.assist_level,
-    );
-    const batteryPct = frame.device?.battery_pct ?? frame.battery_pct ?? null;
-    const qualityStatus = frame.quality?.status ?? frame.quality_status ?? null;
-    const jointAngles = frame.pose?.joint_angles_deg ?? frame.joint_angles ?? null;
-    const angularVelocityDps = this.numericValue(
-      frame.pose?.angular_velocity_dps ?? frame.angular_velocity_dps,
-    );
-    const assistLevel = this.numericValue(
-      frame.load?.assist_level ?? frame.assist_level,
-    );
-    const torqueNm = this.numericValue(frame.load?.torque_nm ?? frame.torque_nm);
-    const cumulativeLoadScore = this.numericValue(
-      frame.load?.cumulative_load_score ?? frame.cumulative_load_score,
-    );
-    const temperatureC =
-      frame.device?.temperature_c ?? frame.temperature_c ?? null;
-    const faultCode = frame.device?.fault_code ?? frame.fault_code ?? null;
-    const packetLossPct =
-      frame.quality?.packet_loss_pct ?? frame.packet_loss_pct ?? 0;
-    const dataConfidence =
-      frame.quality?.confidence ?? frame.data_confidence ?? 1.0;
-
-    const telemetryRow = {
+    const telemetryRow = this.mapExoskeletonRow(
+      frame,
       deviceId,
-      entityId: canonicalEntityId,
-      ts: eventTime,
-      pitchDeg: pitchDeg != null ? Number(pitchDeg.toFixed(2)) : null,
-      loadScore: loadScore != null ? Number(loadScore.toFixed(3)) : null,
-      fatigueTrend: frame.fatigue_trend ?? null,
-      batteryPct,
-      qualityStatus,
       sourceType,
       recordId,
-      ingestedAt: now,
       rawRef,
-      jointAngles: (jointAngles as Record<string, number> | null) ?? null,
-      angularVelocityDps,
-      assistLevel,
-      torqueNm,
-      cumulativeLoadScore,
-      temperatureC,
-      faultCode,
-      packetLossPct,
-      dataConfidence,
       dataQuality,
-      // ADR-075：telemetry 行归属注入（001 ewoh_org_visible RLS 对齐）。
-      orgId: singleOrgId || null,
-    };
+      now,
+    );
+    // ADR-006/NO-02b：规范身份仅作兜底；租户归属注入（ADR-075）。
+    telemetryRow.entityId = telemetryRow.entityId ?? (await this.resolveCanonicalEntityId(deviceId, singleOrgId));
+    telemetryRow.orgId = singleOrgId || null;
 
     // 5. upsert ewoh_device（v0.7 B1：传入 ctx 以支持设备离线重排）
     await this.upsertDevice(frame, deviceId, sourceType, now, rawRef, ctx);
@@ -866,6 +956,7 @@ export class IngestService {
       // 7. 规则引擎评估（大脑-感知层）
       eventsTriggered = await this.ruleEngine.evaluate({
         deviceId,
+        orgId: singleOrgId || null,
         pitchDeg: telemetryRow.pitchDeg,
         loadScore: telemetryRow.loadScore,
         batteryPct: telemetryRow.batteryPct,
@@ -931,6 +1022,14 @@ export class IngestService {
         await this.exoSessionService.endSession(orgId, sessionId, endedBy);
       }
     }
+  }
+
+  /**
+   * 执行机构（AGV/PLC）状态帧（NO-59b）：委托 SensorIngestService（世界状态实体行 +
+   * 设备/能力登记），facade 不重复实现幂等/词表/租户校验。
+   */
+  async ingestActuator(frame: ActuatorFrameDto, orgId?: string | null): Promise<IngestResponse> {
+    return this.sensorIngest.ingestActuator(frame, orgId ?? null);
   }
 
   async ingestEnvironment(
@@ -1003,6 +1102,18 @@ export class IngestService {
         events_triggered: 0,
       };
     } catch (error) {
+      // UR1（2026-09-13）：唯一约束冲突 = 同一单号已被（本请求或并发方）成功写入
+      // → 这不是失败，是**幂等重放**：如实返回 skipped，让边缘重试自然收敛
+      // （record_id 已计入响应供对账；写 502 反而会让边缘把"已成功"当"未成功"反复重投）。
+      if ((error as { code?: string })?.code === '23505') {
+        return {
+          accepted: false,
+          skipped: true,
+          record_id: recordId,
+          data_quality: 'good',
+          events_triggered: 0,
+        };
+      }
       this.logger.error(`创建 MES 工单失败 order=${order.order_id}`, error);
       // NEST-215：MES 工单写失败返回非 200（原 accepted=false + HTTP 200 需要
       // 客户端 inspect body 才能发现失败）。携带 record_id/order_id 供对账。
@@ -1109,6 +1220,80 @@ export class IngestService {
   }
 
   /** upsert ewoh_device */
+  /**
+   * 外骨骼能力声明（幂等）：外骨骼能观测负荷/电量/佩戴人员，并能做助力交互。
+   * 与设备登记同源（类别 exoskeleton），词表见 `shared/device-capability.ts`。
+   */
+  private async declareExoskeletonCapabilities(
+    deviceId: string,
+    sourceType: DataSourceType,
+    now: Date,
+    ctx?: OrgContext,
+  ): Promise<void> {
+    const orgId = ctx?.primaryOrgId?.trim();
+    if (!orgId) return; // 无租户上下文时不写（device 行同口径，避免 NULL 归属）
+    void sourceType;
+    const category = 'exoskeleton';
+    for (const key of capabilitiesForCategory(category)) {
+      const spec = DEVICE_CAPABILITY_SPECS[key];
+      if (!spec) continue;
+      const record = toCapabilityRecord({
+        deviceId,
+        category,
+        name: key,
+        mode: spec.mode,
+        label: spec.label,
+        fields: spec.fields,
+        grantedAt: now.toISOString(),
+      });
+      const errors = validateCapability(record);
+      if (errors.length > 0) {
+        this.logger.error(
+          `外骨骼能力记录违反 Canonical Capability Model（已跳过写入） ${deviceId} name=${key}: ${errors.join(', ')}`,
+        );
+        continue;
+      }
+      try {
+        await this.db
+          .insert(ewohDeviceCapability)
+          .values({
+            orgId,
+            capabilityId: record.capabilityId,
+            deviceId,
+            capabilityType: record.kind,
+            capabilityKey: record.name,
+            capabilityValue: {
+              mode: spec.mode,
+              label: spec.label,
+              fields: [...spec.fields],
+              subject: record.subject,
+              providerType: record.providerType,
+              evidence: record.evidence,
+            },
+            compatible: true,
+            version: 1,
+            status: 'active',
+            effectiveFrom: now,
+          })
+          .onConflictDoUpdate({
+            target: [
+              ewohDeviceCapability.orgId,
+              ewohDeviceCapability.deviceId,
+              ewohDeviceCapability.capabilityKey,
+            ],
+            set: {
+              // NO-14f：重新声明即纠正 kind/capabilityId（历史自造 kind 自愈）
+              capabilityType: record.kind,
+              capabilityId: record.capabilityId,
+              updatedAt: new Date(),
+            },
+          });
+      } catch (error) {
+        this.logger.error(`外骨骼能力声明失败 ${deviceId} key=${key}`, error);
+      }
+    }
+  }
+
   private async upsertDevice(
     frame: ExoskeletonFrameDto,
     deviceId: string,
@@ -1131,9 +1316,14 @@ export class IngestService {
         .insert(ewohDevice)
         .values({
           deviceId,
+          deviceCategory: 'exoskeleton',
           workerName: frame.worker_name ?? null,
           deviceModel: frame.device_model ?? null,
-          batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? 100,
+          // 帧没带电量就写 NULL（未知），**绝不伪造成 100%**：100 会让"电量未知"看起来
+      // 像"满电可用"，而调度对未知电量的处理是显式的（候选评估给无穷能耗罚 →
+      // fail-closed 不派工，见 candidate-engine）。已登记设备不受影响：冲突更新用
+      // `?? undefined` 保留既有值，不会把已知电量擦成 NULL。
+      batteryPct: frame.device?.battery_pct ?? frame.battery_pct ?? null,
           online: true,
           lastTelemetryAt: now,
           // ADR-075：device 行归属注入（001 ewoh_org_visible RLS 对齐）。
@@ -1154,6 +1344,8 @@ export class IngestService {
             online: true,
             lastTelemetryAt: now,
             sourceType,
+            // 类别不被自动路径覆盖（人工登记是权威；空则补 exoskeleton）
+            deviceCategory: sql`COALESCE(${ewohDevice.deviceCategory}, 'exoskeleton')`,
             firmwareVersion: frame.firmware_version ?? undefined,
             hardwareVersion: frame.hardware_version ?? undefined,
             protocolVersion: frame.protocol_version ?? undefined,
@@ -1162,6 +1354,8 @@ export class IngestService {
             lastRawRef: rawRef,
           },
         });
+      // 能力声明与设备登记同源：登记成功后声明（失败内部留痕，不阻断 ingest）
+      await this.declareExoskeletonCapabilities(deviceId, sourceType, now, ctx);
     } catch (error) {
       this.logger.error(`upsert 设备失败 ${deviceId}`, error);
     }

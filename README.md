@@ -6,6 +6,9 @@ EWOH（Exoskeleton Worker Operation & Harmony）是面向制造现场的外骨�
 
 本手册面向最终用户、部署运维人员与开发者，涵盖：产品概述、系统架构、安装部署、配置参数、API 接口、使用场景、FAQ、版本日志与贡献指南。
 
+无需现场设备或 PostgreSQL 即可运行故障重排集成场景：`make demo-closed-loop`。
+它通过实际 Edge HTTP/SQLite 服务验证异常到执行反馈的状态流，输出明确标记为模拟数据的证据包；详见[本地闭环运行说明](docs/operations/local-closed-loop.md)。
+
 ---
 
 ## 目录
@@ -86,6 +89,40 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | 飞书侧车（feishuSidecar） | 是 | 是 | 是 | 否 | 否 | 是 |
 | 运行时门禁（runtimeGates） | 是 | 是 | 是 | 否 | 是 | 是 |
 | 调度基准（benchmarkScheduler） | 是 | 是 | 否 | 否 | 否 | 否 |
+| 班次域与班次工作台（shiftDomain） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 数据质量人工确认（dataQualityConfirmation） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 数据质量待核实提醒（dataQualityVerification） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 运行记忆信号与学习回路（learningSignalLoop） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 改进行动项（improvementActions） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 多模态感知融合（perceptionFusion） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 订单链消费面（orderChainView） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 预计 vs 实际对账（plannedVsActual） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 经验回流知识（improvementKnowledgeBackflow） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 方案取消/回滚（planCancelRollback） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 复盘/运行记忆（retrospectiveRunMemory） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 世界模型扩展（worldModelExtension） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 外骨骼会话域（exoSessionDomain） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 提醒终态与处置闭环（notificationDisposition） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 安灯超时未接手升级（andonEscalation） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 设备责任人与交接核对（deviceResponsibility） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 行动项对象归属与复发度量（improvementActionRecurrence） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 感知门控接入推理/调度（perceptionUpstreamGate） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 视觉骨架姿态交叉验证（visionSkeletonPosture） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 执行机构适配与命令面（actuatorAdapter） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 平台授权→边缘执行闭环（controlActuatorLoop） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 搬运任务→执行机构调度（actuatorSchedulingLoop） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 投递前授权复核与授权范围指纹（controlDeliveryAuthorization） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 下行投递优先级（安全停机插队）与积压可见性（actuatorCommandPriority） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 方案过期诊断与一键重排（planStalenessDiagnosis） | 是 | 是 | 是 | 否 | 是 | 是 |
+| Modbus/TCP 执行机构传输与假从站（modbusActuatorTransport） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 事实变化 vs 证据老化的分档闸门（freshnessContentVersionGate） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 审批确认人身份边界与场景残留清理（approvalIdentityBoundary） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 签名授权范围指纹（signedAuthorizationFingerprint） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 一车一活投递闸门（deviceBusyDeliveryGuard） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 能力停用漂移巡检与恢复（capabilityDriftPatrol） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 设备执行边界人面读面（deviceExecutionBoundaryView） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 授权指纹密钥轮换窗口（fingerprintKeyRotation） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 单设备投递配额与排队（deviceDeliveryQuota） | 是 | 是 | 是 | 否 | 是 | 是 |
 
 ### 运行时构成
 
@@ -93,7 +130,7 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 
 ```text
 EWOH
-├── src/edge_platform/      Python 边缘运行时（采集/推理/边缘调度/本地 API）
+├── src/edge_platform/      Python 边缘运行时（采集/推理/边缘调度/本地 API；含执行机构 AGV/PLC 适配）
 ├── ewoh-spark-app/         NestJS 后端 + React 前端（主产品云侧）
 ├── ewoh-feishu-app/        飞书侧车应用（Express + SQLite + 验签 webhook）
 ├── contracts/ openapi/ db/ catalog/   跨运行时契约层
@@ -159,7 +196,18 @@ EWOH
 | PostgreSQL | ≥ 17（云侧业务事实源） |
 | Docker | 可选（Compose/K8s 部署方式） |
 
-### 3.2 Python 边缘平台（本地开发）
+### 3.2 一键本地启动（主产品闭环，推荐）
+
+```bash
+make local-up   # PG(docker:55432) + 迁移链 + 种子 + 三账号 + 构建 + 启动
+                # → http://127.0.0.1:3100（admin / DevAdmin#2026x）
+```
+
+脚本幂等，`REBUILD_DB=1` 重建数据库、`SKIP_BUILD=1` 跳过构建、`NO_SERVER=1`
+只初始化不启动。闭环验证与判读见
+[docs/operations/main-product-closed-loop.md](docs/operations/main-product-closed-loop.md)。
+
+### 3.3 Python 边缘平台（本地开发）
 
 ```bash
 python -m pip install -r requirements-dev.txt   # 可选：ruff/bandit/pytest
@@ -178,7 +226,7 @@ python run.py                                   # 最简启动 → http://127.0.
 EWOH_RUNTIME_MODE=production python run.py --db /data/ewoh/edge.db
 ```
 
-### 3.3 云侧 Standalone（NestJS + React + PostgreSQL）
+### 3.4 云侧 Standalone（NestJS + React + PostgreSQL）
 
 ```bash
 cd ewoh-spark-app
@@ -192,7 +240,7 @@ EWOH_DEPLOY_TARGET=standalone \
   node dist/server/main.js
 ```
 
-### 3.4 Docker 部署（试点）
+### 3.5 Docker 部署（试点）
 
 ```bash
 cd deploy/cloud
@@ -202,7 +250,7 @@ docker compose -f docker-compose.standalone.yml up -d
 
 `migrate` 服务自动执行数据库迁移（`db/runner/run_migrations.js`）并运行 schema 验证；**不使用 `delivery/` 或 `release/` 中的 SQL 初始化数据库**。
 
-### 3.5 数据库迁移
+### 3.6 数据库迁移
 
 ```bash
 node db/runner/run_migrations.js --apply-standalone

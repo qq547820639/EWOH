@@ -7,6 +7,7 @@
  */
 /// <reference types="jest" />
 import { SchedulerService } from '../scheduler.service';
+import { ConflictService } from '../conflict.service';
 import { WorldStateSnapshotService } from '../world-state.service';
 import { PlanService } from '../plan.service';
 import { SchedulingFeedbackService } from '../scheduling-feedback.service';
@@ -85,7 +86,20 @@ function makeSvc(state: Record<string, unknown>, plans: Array<Record<string, unk
     isSnapshotFresh: jest.fn(),
     isPlanStale: jest.fn().mockResolvedValue(false),
     assertFreshForApprove: jest.fn(),
+    // 分波次派工新增协作方法：替身必须同形实现，否则波次派工路径不可测。
+    assertFreshForWave: jest.fn(),
   };
+
+  // 冲突读面的**唯一实现**：ConflictService（2026-09-12 第 59 轮删除 SchedulerQueryService 的
+  // 内存孪生推导后，本 spec 改为把真实 ConflictService 注入 facade——场景断言不变，
+  // 但打的是生产同一条代码路径）。
+  const conflictService = new ConflictService(
+    db,
+    requestDatabaseContext as never,
+    worldStateSnapshotService as unknown as WorldStateSnapshotService,
+    policyService as never,
+    auditService as never,
+  );
 
   const svc = new SchedulerService(
     db,
@@ -101,9 +115,12 @@ function makeSvc(state: Record<string, unknown>, plans: Array<Record<string, unk
     policyService as never,
     { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
     { enqueue: jest.fn() } as never,
+    undefined,
+    undefined,
+    conflictService as never,
   );
 
-  return { svc, mocks: { worldStateSnapshotService, policyService } };
+  return { svc, conflictService, mocks: { worldStateSnapshotService, policyService } };
 }
 
 function planRow(overrides: Record<string, unknown> = {}) {
@@ -191,6 +208,24 @@ describe('Task 2: GET /api/scheduler/conflicts 统一冲突列表', () => {
     expect(low[0].resourceId).toBe('d1');
     expect(low[0].data?.batteryPct).toBe(20);
   });
+
+  it.each([null, undefined, NaN, Infinity, -Infinity, -1, 101])(
+    'reports unavailable battery %p separately from measured zero', async (batteryPct) => {
+      const { svc } = makeSvc({
+        devices: [
+          { id: 'unknown', batteryPct, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' },
+          { id: 'empty', batteryPct: 0, online: true, status: 'AVAILABLE', dataQuality: 'FRESH' },
+        ],
+      });
+      const { conflicts } = await svc.listConflicts({});
+      expect(conflicts.find((conflict) => conflict.resourceId === 'unknown')).toMatchObject({
+        type: 'battery_unknown', data: { batteryPct: null },
+      });
+      expect(conflicts.filter((conflict) => conflict.type === 'low_battery')).toEqual([
+        expect.objectContaining({ resourceId: 'empty', data: { batteryPct: 0, minBatteryPct: 40 } }),
+      ]);
+    },
+  );
 
   it('检测到基于过期快照的方案（stale plan）', async () => {
     const { svc, mocks } = makeSvc(

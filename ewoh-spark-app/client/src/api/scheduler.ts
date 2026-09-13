@@ -135,6 +135,47 @@ export async function getSchedulerContext(): Promise<SchedulingContextResponse> 
   return res.data;
 }
 
+/**
+ * NO-62c：方案过期诊断（GET /api/scheduler/plans/:planId/staleness）。
+ *
+ * 与审批 409 使用同一诊断实现：页面可以在**点审批之前**回答
+ * "这个方案还能批吗、如果不能是变了什么"，而不是靠"点一下看会不会报错"探测。
+ */
+export async function getPlanStaleness(planId: string) {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/staleness`,
+    method: 'GET',
+    timeout: 60_000,
+  });
+  return res.data as {
+    planId: string;
+    status: string;
+    version: number;
+    snapshotVersion: string;
+    stale: boolean;
+    staleness: {
+      snapshotVersion: string;
+      snapshotFound: boolean;
+      stale: boolean;
+      changes: Array<{
+        kind: 'entity_version' | 'reservation';
+        entityKey: string;
+        entityType: string;
+        entityId: string;
+        change: 'added' | 'removed' | 'changed';
+        selfInflicted: boolean;
+        label: string;
+      }>;
+      externalChangeCount?: number;
+      selfInflictedCount?: number;
+      summary: string;
+      checkedAt: string;
+    };
+    replanAvailable: boolean;
+    checkedAt: string;
+  };
+}
+
 /** 获取完整方案（含分配明细，decisionTrace 可达几十 KB/条）。 */
 export async function getPlan(planId: string): Promise<SchedulingPlanV2> {
   const res = await axiosForBackend({ url: `/api/scheduler/plans/${encodeURIComponent(planId)}`, method: 'GET', timeout: 120_000 });
@@ -158,6 +199,23 @@ export async function approvePlan(
 }
 
 /** 驳回方案（V2）。同审批，超时放大到 120s。 */
+/**
+ * DR-5 方案取消/回滚：受控部分回退（未开始 assignment 取消 + 预占释放 +
+ * 任务回退 pending_dispatch；已开始的不可回退项在响应 cancel 摘要中如实回报）。
+ */
+export async function cancelPlanV2(
+  planId: string,
+  reason: string,
+): Promise<SchedulingPlanV2> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/plans/${encodeURIComponent(planId)}/cancel`,
+    method: 'POST',
+    data: { reason },
+    timeout: 120_000,
+  });
+  return res.data;
+}
+
 export async function rejectPlanV2(
   planId: string,
   body: RejectPlanRequest,
@@ -171,15 +229,41 @@ export async function rejectPlanV2(
   return res.data;
 }
 
-/** 下发方案（V2）。 */
+/**
+ * 分波次派工的结果摘要（服务端 additve 字段）。
+ *
+ * `remainingAssignments > 0` 即"部分执行"：此时计划**刻意**保持 `approved`
+ * （`dispatched` 在契约中是终态，语义为"全部转任务"）。UI 必须显式呈现剩余，
+ * 不能只看 planId 就认为方案已全部下发。
+ */
+export interface DispatchWaveSummary {
+  planStatus: string;
+  dispatchedAssignmentIds: string[];
+  remainingAssignmentIds: string[];
+  remainingAssignments: number;
+  dispatchedAssignments: number;
+}
+
+export type DispatchPlanResult = SchedulingPlanV2 & { dispatch?: DispatchWaveSummary };
+
+/**
+ * 下发方案（V2），支持**分波次 / 部分执行**。
+ *
+ * `options.assignmentIds` 省略 → 下发全部待派工 assignment（原有行为）；
+ * 提供 → 只下发这一波（波内全有或全无，服务端强制）。
+ */
 export async function dispatchPlanV2(
   planId: string,
   operator?: string,
-): Promise<SchedulingPlanV2> {
+  options?: { assignmentIds?: string[] },
+): Promise<DispatchPlanResult> {
+  const data: Record<string, unknown> = {};
+  if (operator) data.operator = operator;
+  if (options?.assignmentIds?.length) data.assignmentIds = options.assignmentIds;
   const res = await axiosForBackend({
     url: `/api/scheduler/plans/${encodeURIComponent(planId)}/dispatch`,
     method: 'POST',
-    data: operator ? { operator } : {},
+    data,
   });
   return res.data;
 }
@@ -269,6 +353,88 @@ export async function getRoutes(): Promise<RouteGraph> {
  *
  * 说明：前端仅展示后端返回的候选/排除原因，不自行复算资格或优先级。
  */
+/**
+ * 更新任务能力要求（NO-16a：能力模型的唯一人工写入口）。
+ * 未登记/当前无法匹配的能力名允许写入，但返回 warnings 显式提示。
+ */
+/**
+ * 发起"放宽高风险能力要求"的审批（NO-20a）。
+ *
+ * 语义：放宽高风险能力（crane/exo-lift/interact.assist）属执行边界变更，调度员
+ * 不得单独决定；本函数只**发起**审批，获批后由调用方携带 approvalId 重新提交变更。
+ * 角色由服务端按 entityType 映射（不允许客户端指定审批图）。
+ */
+export async function requestCapabilityRelaxationApproval(params: {
+  taskId: string;
+  subject: {
+    objectType: string;
+    objectId: string;
+    title: string;
+    summary: string;
+    metrics: Record<string, string>;
+  };
+}): Promise<{
+  id: string;
+  status: string;
+  /** NO-22a：通过时间（新建时为 undefined；通过后才会有）。 */
+  approvedAt?: string;
+  steps?: Array<{ id: string; role: string; status: string }>;
+}> {
+  const res = await axiosForBackend({
+    url: '/api/approvals',
+    method: 'POST',
+    data: {
+      entityType: 'task_capability_change',
+      entityId: params.taskId,
+      roles: ['safety_admin'],
+      subject: params.subject,
+    },
+  });
+  return res.data;
+}
+
+/** 读取审批状态（用于"检查审批状态并重试"）。 */
+export async function getApprovalStatus(
+  approvalId: string,
+): Promise<{
+  id: string;
+  status: string;
+  /** NO-22a：通过时间（时效展示；未通过时为 undefined）。 */
+  approvedAt?: string;
+  /** 对象描述符快照（含指纹 metrics）——批量恢复据此核对"审批覆盖的设备名单"。 */
+  subject?: {
+    objectType?: string;
+    objectId?: string;
+    title?: string;
+    summary?: string;
+    metrics?: Record<string, string>;
+  };
+  steps?: Array<{ id: string; role: string; status: string }>;
+}> {
+  const res = await axiosForBackend({
+    url: `/api/approvals/${encodeURIComponent(approvalId)}`,
+    method: 'GET',
+  });
+  return res.data;
+}
+
+export async function updateTaskRequirements(
+  taskId: string,
+  body: { requiredDeviceCapabilities?: string[]; requiredStationCapabilities?: string[] },
+): Promise<{
+  taskId: string;
+  requiredDeviceCapabilities: string[];
+  requiredStationCapabilities: string[];
+  warnings: string[];
+}> {
+  const res = await axiosForBackend({
+    url: `/api/tasks/${encodeURIComponent(taskId)}/requirements`,
+    method: 'PATCH',
+    data: body,
+  });
+  return res.data;
+}
+
 export async function getTaskCandidates(
   taskId: string,
 ): Promise<TaskCandidatesResponse> {
@@ -463,12 +629,31 @@ export async function listExecutions(params?: {
   planId?: string;
   taskId?: string;
   status?: string;
+  /** 现场作业台：只看分配给某人的执行记录（服务端过滤，保持 org 作用域）。 */
+  personId?: string;
 }): Promise<ExecutionListResponse> {
   const res = await axiosForBackend({
     url: '/api/scheduler/executions',
     method: 'GET',
     params,
   });
+  return res.data;
+}
+
+/**
+ * 现场作业台只读投影：只返回**当前账号绑定的业务人员**的工作。
+ *
+ * 刻意不接受 personId 参数——范围由服务端从签名令牌推导。工人没有
+ * `GET /api/scheduler/executions`（全厂执行台账）的读权限。
+ */
+export async function getMyFieldWork(): Promise<{
+  personId: string;
+  /** 绑定人员姓名（服务端回填；查不到为 null，UI 显示"未知"）。 */
+  personName?: string | null;
+  executions: ExecutionListResponse['executions'];
+  total: number;
+}> {
+  const res = await axiosForBackend({ url: '/api/scheduler/field/my-work', method: 'GET' });
   return res.data;
 }
 
@@ -556,7 +741,16 @@ export async function evaluatePolicyGate(
 
 export async function activatePolicy(
   version: number,
-  body: { operator: string; reason?: string; replayId?: string },
+  body: {
+    operator: string;
+    reason?: string;
+    replayId?: string;
+    /**
+     * Gate 因缺数据跳过检查时的显式人工确认。服务端不接受调用方自带的
+     * gateResult —— Gate 结论始终由服务端现场评估。
+     */
+    acknowledgeInsufficientEvidence?: boolean;
+  },
 ): Promise<PolicyActivationRecord> {
   const res = await axiosForBackend({
     url: `/api/scheduler/policy/${encodeURIComponent(version)}/activate`,

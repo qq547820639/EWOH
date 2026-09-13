@@ -160,6 +160,21 @@ export function valueOf(identity: string): string {
   return parseIdentity(identity).value;
 }
 
+/**
+ * 人员引用归一化：`person:<uuid>` 与裸 `<uuid>` 指向同一人。
+ *
+ * 为什么需要：同一份"人"在不同写入路径上的形状不同——外骨骼会话/规范身份用
+ * `person:<uuid>`（ADR-006），任务 `assignee_id`、方案 assignment 用裸 uuid。
+ * 比较"候选人员是否就是佩戴者"这类硬约束时，必须先归一化；否则形状差异会被
+ * 误判成"不是同一个人"（NO-34a 实测踩过），或者反过来放过真正的冲突。
+ * 空/仅空白 → null（缺失不是"某人"）。
+ */
+export function normalizePersonRef(value: string | null | undefined): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  return raw.startsWith('person:') ? raw.slice('person:'.length).trim() || null : raw;
+}
+
 function parseIso(value: string | null | undefined): Date | null {
   if (value == null || value.trim() === '') return null;
   const normalized = value.trim().endsWith('Z') ? value.trim().slice(0, -1) + '+00:00' : value.trim();

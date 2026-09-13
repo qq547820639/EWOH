@@ -255,10 +255,22 @@ export class TravelCostService {
    * orgId=null 时回填 'system' 哨兵——DB 层 NOT NULL 硬约束）。
    */
   async persistMatrix(matrix: RouteCostMatrix, orgId?: string | null): Promise<void> {
+    // 2026-09-13（SHADOW 实测 500 根因）：缺 org 时**跳过**缓存写，绝不落 'system'
+    // 哨兵行——'system' 不在 ewoh_organization，INSERT 必然违反 FK（23503）；
+    // 被 catch 吃掉只挡住了报错，**挡不住事务被中止**（25P02）：同一请求事务里
+    // 后续 set_config/写入全部失败，createRun 直接 500（golden-path 3-9 实测）。
+    // 矩阵缓存是 advisory 写——缺 org 跳过的代价只是"这次不缓存"，缓存可省，
+    // 事务不可污染。
+    if (!orgId || orgId.trim() === '') {
+      this.logger.debug(
+        `route cost matrix cache write skipped (no org context; task=${matrix.taskId})`,
+      );
+      return;
+    }
     try {
       const values = {
         matrixId: matrix.matrixId,
-        orgId: orgId ?? 'system',
+        orgId,
         taskId: matrix.taskId,
         snapshotVersion: matrix.snapshotVersion,
         policyVersion: matrix.policyVersion,

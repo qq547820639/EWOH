@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { normalizeBatteryPct } from '@shared/scheduler';
+import { normalizePersonRef } from '@shared/identity';
+import type { CandidateRejectReason } from '@shared/reject-reason';
 import type { EligibilityResult } from '@shared/api.interface';
 import type { MaintenanceConditionProjection } from '@shared/maintenance';
 import {
@@ -50,11 +53,16 @@ export interface EligiblePerson {
 /** 参与资格判定的设备描述。 */
 export interface EligibleDevice {
   id: string;
-  batteryPct: number;
+  batteryPct: number | null;
   online: boolean;
   status: string | null;
   /** 设备能力（如 'exo-lift' / 'vacuum'），用于 requiredDeviceCapabilities 匹配。 */
   capabilities: string[];
+  /**
+   * NO-15b：**被人为停用**的能力名（不参与匹配，但用于解释）。
+   * 缺失 ≠ 停用：前者要换设备/加装，后者要复核停用决定或恢复。
+   */
+  disabledCapabilities?: string[];
   // --- Command Map 增量（Phase 1 / P1-A + P1-B） ---
   /** 可用时间窗（正空间；缺数据不限制，不伪造）。 */
   availableWindows?: Array<{ startMs: number; endMs: number }> | null;
@@ -77,6 +85,11 @@ export interface EligibleDevice {
   qualityFindings?: QualityFindingProjection[] | null;
   /** NO-12v / ADR-045：能力契约记录（快照投影）；匹配优先契约形态。 */
   capabilityRecords?: CapabilityRecord[];
+  /**
+   * NO-34a：活跃外骨骼会话（佩戴中的设备）——存在即拒绝普通派工。
+   * 无会话 → null/undefined（不伪造"没人用"）。
+   */
+  activeExoSession?: { sessionId: string; personId: string; startedAt: string } | null;
 }
 
 /** 参与资格判定的任务描述。 */
@@ -103,6 +116,13 @@ export interface EligibleTask {
   dueAtMs?: number | null;
   /** 安全关键任务（P1-B fail-close：STALE/UNKNOWN/关键 DERIVED 资源不可派）。 */
   safetyCritical?: boolean;
+  /**
+   * NO-35a：任务**已锁定的人员**（`task.assigneeId` 或方案级锁定；uuid 或规范身份）。
+   *
+   * 用途：佩戴中的外骨骼只对"锁定给该佩戴者"的任务可用——一把外骨骼不可能同时
+   * 被两个人穿，但"张伟戴着它干张伟的任务"是合法的。没有锁定时一律拒绝（不猜配对）。
+   */
+  lockedAssigneeId?: string | null;
 }
 
 /** 资格判定上下文（软/硬约束参数）。 */
@@ -158,6 +178,14 @@ export interface EligibilityContext {
  * 资格服务：对【人员 × 任务 × 设备】执行硬约束校验，
  * 每个未通过项返回一个原因 key（如 missing_skill / battery_low）。
  */
+/**
+ * NO-35a：人员引用归一（会话里是规范身份 `person:<id>`，任务锁定里通常是裸 uuid）。
+ *
+ * NO-36a 起实现移到 `@shared/identity.normalizePersonRef`（提交时刻的外骨骼会话
+ * 守卫也要用同一口径），此处保留同名再导出，避免既有调用点与测试大范围改动。
+ */
+export { normalizePersonRef };
+
 @Injectable()
 export class EligibilityService {
   private readonly logger = new Logger(EligibilityService.name);
@@ -231,7 +259,10 @@ export class EligibilityService {
     device: EligibleDevice | null,
     ctx: EligibilityContext,
   ): EligibilityResult {
-    const reasons: string[] = [];
+    // 词表类型（不是 string[]）：任何未登记进 `CANDIDATE_REJECT_REASONS` 的键
+    // 都在编译期失败，而不是靠调用方 `as` 断言蒙混（2026-09-11 审计：曾有 8 个键
+    // 在类型之外，前端无法穷尽文案 → 现场看到英文键）。
+    const reasons: CandidateRejectReason[] = [];
 
     // 1) 技能匹配（NO-12v / ADR-045：契约形态优先，无记录就地同源投影——语义不变）
     if (task.requiredSkills.length > 0) {
@@ -445,7 +476,9 @@ export class EligibilityService {
     // 6) 设备可用性 / 离线
     if (device) {
       if (!device.online) reasons.push('device_offline');
-      if (device.batteryPct < ctx.minBatteryPct) reasons.push('battery_low');
+      const batteryPct = normalizeBatteryPct(device.batteryPct);
+      if (batteryPct == null) reasons.push('battery_unknown');
+      else if (batteryPct < ctx.minBatteryPct) reasons.push('battery_low');
       if (device.status === 'fault' || device.status === 'maintenance')
         reasons.push('device_unavailable');
       // 6a) NO-05c（ADR-010）：活跃维护状态事实 → 拒绝派工（fail-closed，人审解除）。
@@ -457,6 +490,22 @@ export class EligibilityService {
       if (this.qualityBlocks(device.qualityFindings)) {
         reasons.push('device_quality_blocked');
       }
+      // 6c) NO-34a：设备正在外骨骼会话中（已绑定佩戴人员）→ 拒绝派工。
+      // 这不是"提示"而是**硬约束**：一台外骨骼物理上不可能同时被两个人穿戴，
+      // 会话是显式、可审计的绑定事实（ADR-032）。要解除要么结束会话，要么把任务
+      // 交给正在佩戴的人（当前候选模型不支持"指定佩戴者"配对，因此一律拒绝并说明）。
+      if (device.activeExoSession) {
+        // 佩戴中的设备只对**正在佩戴它的那个人**可用（NO-35a）：
+        //   · 候选人员就是佩戴者 → 合法（人机同体，物理上可行）；
+        //   · 其它人员 → 拒绝（一台外骨骼不可能同时被两个人穿戴）；
+        //   · 额外守卫：任务若锁定给别人，即使评估到佩戴者也不能用（锁定语义优先）。
+        const wearer = normalizePersonRef(device.activeExoSession.personId);
+        const candidatePerson = normalizePersonRef(person.id);
+        const lockedTo = normalizePersonRef(task.lockedAssigneeId ?? null);
+        if (candidatePerson !== wearer || (lockedTo !== null && lockedTo !== wearer)) {
+          reasons.push('device_in_active_session');
+        }
+      }
       // 6b) 设备能力匹配：任务要求的任一能力缺失 → 设备不可用（即使在线且电量充足）。
       const requiredCaps = task.requiredDeviceCapabilities ?? [];
       if (requiredCaps.length > 0) {
@@ -464,7 +513,19 @@ export class EligibilityService {
         const missing = requiredCaps.filter(
           (cap) => !capabilityNames.includes(cap),
         );
-        if (missing.length > 0) reasons.push('missing_device_capability');
+        if (missing.length > 0) {
+          // 缺失 ≠ 停用（NO-15b）：如果缺的能力恰好**被人为停用**，原因要如实说
+          // 是"被停用"（现场该去复核停用决定/恢复），而不是让现场以为是设备缺陷。
+          const disabled = new Set(device.disabledCapabilities ?? []);
+          const disabledMissing = missing.filter((cap) => disabled.has(cap));
+          // 分开写（而不是三元表达式里的字符串）：词表漂移守卫靠扫描
+          // `reasons.push('key')` 统计真实产出，写在表达式里会漏检。
+          if (disabledMissing.length === missing.length && disabledMissing.length > 0) {
+            reasons.push('capability_disabled');
+          } else {
+            reasons.push('missing_device_capability');
+          }
+        }
       }
     }
 

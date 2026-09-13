@@ -20,7 +20,7 @@ export interface SolverStatusChainProps {
 }
 
 const STEP_CLASSES: Record<SolverChainStep['kind'], string> = {
-  primary: 'bg-primary/20 text-primary border-primary/30',
+  primary: 'bg-primary/20 text-primary-on-soft border-primary/30',
   failed: toneBadge.blocked,
   fallback: toneBadge.degraded,
   result: toneBadge.normal,

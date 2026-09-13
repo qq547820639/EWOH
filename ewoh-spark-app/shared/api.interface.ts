@@ -22,7 +22,16 @@ export interface DeviceInfo {
   deviceId: string;
   workerName: string;
   deviceModel: string;
-  batteryPct: number;
+  /**
+   * 设备类别（`shared/device-category.ts` 词表；未知/历史行 → 'unknown'）。
+   * 台账必须能区分外骨骼与传感器，否则"感知层设备"在 UI 上不存在。
+   */
+  deviceCategory?: string | null;
+  /**
+   * 电量百分比。**没有电池的设备（环境传感器/摄像头/定位标签）为 null**——
+   * 此前服务端把 NULL 强转成 0，前端会显示"0% 低电量"（把"不适用"伪装成告警）。
+   */
+  batteryPct: number | null;
   online: boolean;
   lastTelemetryAt: string | null;
   /** 空间实体 ID（关联 ewoh_spatial_entity） */
@@ -41,16 +50,93 @@ export interface DeviceInfo {
   temperatureC?: number | null;
   faultCode?: string | null;
   lastRawRef?: string | null;
-  /** 绑定的人员实体 ID */
+  /**
+   * 已声明的设备能力（`shared/device-capability.ts` 词表；仅设备详情返回）。
+   * 世界模型据此知道"这台设备能观测/执行什么"；未登记键原样返回 key，不隐藏。
+   */
+  capabilities?: Array<{
+    /** 能力名（权威契约 `CapabilityRecord.name`；开放词表）。 */
+    name: string;
+    /** 兼容字段：= name（历史 UI 用 key；保留以免调用方破裂）。 */
+    key: string;
+    /** 权威 kind：device_capability / exo_capability。 */
+    kind: string;
+    /** 权威 providerType：device / exo。 */
+    providerType: string;
+    /** 观测 / 交互（权威契约无此维度，作为子属性显式保留）。 */
+    mode: string;
+    capabilityId: string;
+    label: string;
+    status: string;
+    fields: string[];
+    grantedAt: string | null;
+    /** 是否在能力词表内（false = 设备报了词表外的能力名，运维可见）。 */
+    registered: boolean;
+    /**
+     * 人工停用/恢复的最近一次留痕（来自台账行的 `capability_value`）。
+     * 没有人工操作过则为 null——**自动声明的能力不冒充"人工确认过"**。
+     */
+    lifecycle?: DeviceCapabilityLifecycleInfo | null;
+  }> | null;
+/** 绑定的人员实体 ID */
   boundPersonId?: string | null;
   /** 绑定的人员姓名 */
   boundPersonName?: string | null;
+}
+
+  /** 设备能力状态：只有"生效/人工停用"两态（人工可操作；自动路径只能声明 active）。 */
+export type DeviceCapabilityStatus = 'active' | 'disabled';
+
+/** 人工停用/恢复的留痕（审计同源，随能力清单返回给现场）。 */
+export interface DeviceCapabilityLifecycleInfo {
+  /** 最近一次人工操作的动作。 */
+  action: 'disable' | 'restore';
+  operator: string;
+  reason: string;
+  at: string;
+  previousStatus: DeviceCapabilityStatus | null;
+}
+
+/** 变更设备能力状态（人工纠正能力台账；影响派工资格，必须带理由）。 */
+export interface SetDeviceCapabilityStatusRequest {
+  status: DeviceCapabilityStatus;
+  /** 变更理由（必填，非空白）：现场与审计都需要知道为什么停用/恢复。 */
+  reason: string;
+  /**
+   * NO-21a：**恢复高风险能力**时必须携带已获批的审批实例 id
+   * （否则 409 `HIGH_RISK_CAPABILITY_RESTORE_REQUIRES_APPROVAL`）。
+   * 停用（收紧）与低/中风险恢复不需要。
+   */
+  approvalId?: string;
+}
+
+/** 变更结果（幂等：状态本就相同 → changed=false，不写库、不记审计）。 */
+export interface SetDeviceCapabilityStatusResponse {
+  deviceId: string;
+  capabilityId: string;
+  capabilityName: string;
+  status: DeviceCapabilityStatus;
+  previousStatus: DeviceCapabilityStatus | null;
+  /** false = 幂等 no-op（未产生新的状态变更与审计记录）。 */
+  changed: boolean;
+  /** 状态变更后的生效时间（停用时为停用时刻；恢复时为恢复时刻）。 */
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  updatedAt: string;
+  /** 恢复时按权威契约重新校验的结果（不合规的能力不会被恢复生效）。 */
+  contractValid: boolean;
+  /** 若恢复过程中按词表纠正了历史脏字段（kind/capabilityId），此处如实列出。 */
+  repairedFields: string[];
+  /** NO-21a：本次恢复所依据的审批实例 id（高风险恢复才有）。 */
+  approvalId?: string;
 }
 
 /** 设备搜索查询参数 */
 export interface DeviceSearchQuery {
   keyword?: string;
   online?: boolean;
+  /** 设备类别过滤（词表内取值；未识别类别不会匹配任何行）。 */
+  category?: string;
   batteryMin?: number;
   batteryMax?: number;
   sourceType?: string;
@@ -79,6 +165,8 @@ export interface CreateDeviceDto {
   deviceId: string;
   workerName?: string;
   deviceModel?: string;
+  /** 设备类别（词表内取值；未识别值由服务端 fail-closed 拒绝）。 */
+  deviceCategory?: string;
   batteryPct?: number;
   online?: boolean;
   sourceType?: string;
@@ -199,7 +287,7 @@ export interface WorkerLoad {
   avgLoad: number;
   maxLoad: number;
   fatigueTrend: number;
-  batteryPct: number;
+  batteryPct: number | null;
   online: boolean;
   telemetryCount: number;
 }
@@ -458,6 +546,14 @@ export interface ExoskeletonFrameDto {
   event_time: string;
   /** 工人姓名（可选，upsert 时更新） */
   worker_name?: string;
+  /**
+   * NO-41a：**遥测上报的佩戴人**（边缘统一帧 `worker_id`，能力台账 `observe.wearer` 的字段）。
+   *
+   * 它是会话（人工声明）之外的**第二证据源**：平台据此做"声明的佩戴人 vs 遥测的佩戴人"
+   * 交叉校验（不一致必须显式暴露，而不是静默采信任一方）。缺省 = 该帧未上报佩戴人
+   * （数据缺口，不等于"没人佩戴"）。
+   */
+  worker_id?: string;
   /** 设备型号（可选） */
   device_model?: string;
   /** 固件版本（可选） */
@@ -468,8 +564,18 @@ export interface ExoskeletonFrameDto {
   protocol_version?: string;
   /** 电池百分比 0-100 */
   battery_pct?: number;
-  /** 躯干俯仰角（度） */
+  /**
+   * 躯干俯仰角（度）。
+   *
+   * **两种方言都要支持**（2026-09-12 实测缺陷）：
+   *   · `trunk_pitch_deg` —— 边缘桥接器（`src/edge_platform/edge/bridge/edge_to_spark.py`）
+   *     与真机适配器使用的规范字段名；
+   *   · `pitch_deg` —— 边缘模拟器/桩（`stubs.py`）与部分直连设备使用的别名。
+   * 平台只认前者时，模拟器/直连帧的俯仰角会**静默落 NULL**，
+   * 下游疲劳与姿态规则、感知融合全部"看不到姿态"。
+   */
   pose?: {
+    pitch_deg?: number;
     trunk_pitch_deg?: number;
     trunk_roll_deg?: number;
     angular_velocity_dps?: number;
@@ -563,6 +669,31 @@ export interface CameraFrameDto {
   record_id?: string;
 }
 
+/** 执行机构（AGV/PLC）状态帧 DTO（边缘 actuator 适配器上行 → 写 ewoh_telemetry）
+ *
+ * NO-59b：执行层此前在平台侧**没有上行通道**——平台能下发控制命令、却看不到执行机构
+ * 自身的状态（位置/电量/故障/当前任务）。本 DTO 与边缘统一帧 `edge/adapters/actuator`
+ * 一一对应（三段：device/motion/business 压平为平台口径）。 */
+export interface ActuatorFrameDto {
+  device_id: string;
+  event_time: string;
+  /** idle/moving/arrived/paused/fault/offline（封闭词表；边缘 side 已归一）。 */
+  state: string;
+  x?: number;
+  y?: number;
+  battery_pct?: number;
+  fault_code?: string | null;
+  current_task_id?: string | null;
+  target_station_id?: string | null;
+  /** 最后一次被接受的平台授权号（control:/approval:/plan:/task:）——命令可追溯。 */
+  last_authorization_ref?: string | null;
+  station_id?: string | null;
+  sequence?: number;
+  source_type?: DataSourceType;
+  record_id?: string;
+  data_confidence?: number;
+}
+
 /** MES 工单事件 DTO */
 export interface MesOrderDto {
   order_id: string;
@@ -584,6 +715,13 @@ export interface IngestResponse {
   data_quality: DataQuality;
   events_triggered: number;
   error?: string;
+  /**
+   * 显式可重试标记（2026-09-10 边缘韧性收口）：`accepted=false` 有两种完全不同的
+   * 含义——「永远不该写入」（非法帧/坏时钟/租户上下文缺失）与「这次没写成功」
+   * （DB 瞬时故障）。边缘上行是 at-least-once，必须能区分：只有 `retryable=true`
+   * 才重试，否则转死信人工复核。缺省 undefined = 不可重试（保守）。
+   */
+  retryable?: boolean;
   /** NO-04a：ADR-009 时间语义（occurredAt→receivedAt > 10min 迟到，标记不丢弃） */
   is_late?: boolean;
   /** NO-04a：ADR-009 时间语义（越 5min 时钟漂移容忍界，标记不重写） */
@@ -675,6 +813,15 @@ export interface SpatialScanDto {
 /** 定位坐标流 DTO（UWB/Wi-Fi/视觉融合定位） */
 export interface LocationFrameDto {
   entity_id: string;
+  /**
+   * 物理定位设备 id（UWB 标签/信标）。
+   *
+   * 2026-09-10 补齐：此前 DTO 只有 entity_id（"谁在哪"），**丢失了"哪个标签报的"**，
+   * 平台因此无法把定位设备登记进设备台账（感知层设备在 UI 上不存在），
+   * 出问题时也无法定位到具体硬件。边缘侧统一帧一直有 tag_id，只是上行时被丢掉。
+   * 缺省时平台以 entity_id 兜底登记（并在设备台账中可见其类别为 location_tag）。
+   */
+  tag_id?: string;
   locator: 'uwb' | 'wifi' | 'visual' | 'fusion';
   confidence: number;
   x: number;
@@ -945,6 +1092,8 @@ export interface ApprovalStep {
   status: ApprovalStepStatus;
   reason?: string;
   delegateTo?: string;
+  /** NO-22a：该步骤最后一次状态变更时间（审计对账用；旧数据可能缺失）。 */
+  decidedAt?: string;
 }
 
 /**
@@ -984,6 +1133,11 @@ export interface ApprovalInstance {
   status: ApprovalInstanceStatus;
   steps: ApprovalStep[];
   createdAt: string;
+  /**
+   * NO-22a：审批**通过**时间（最后一个步骤放行时写入）。高风险执行边界授权的时效
+   * 依据：无此时间（无法判断时效）的审批一律不放行。
+   */
+  approvedAt?: string;
   /** 对象描述符快照（OD-1）；创建时未携带则为 undefined，消费方须回退渲染。 */
   subject?: ObjectDescriptor;
 }
@@ -1202,6 +1356,18 @@ export interface DispatchCoordinatorResult {
   reservedAssignments: number;
   taskIds: string[];
   outboxEventIds: string[];
+  /**
+   * 计划最终状态。分波次派工下：
+   *  - 本波覆盖全部待派工 assignment → 'dispatched'（契约终态）；
+   *  - 仍有剩余 → 保持 'approved'（**不得**声称已全部转任务）。
+   * 计划状态保持 approved 不代表"什么都没发生"：已派工的 assignment 是权威事实。
+   */
+  planStatus?: string;
+  /** 本次实际派工的 assignment ID（可追溯本波范围）。 */
+  dispatchedAssignmentIds?: string[];
+  /** 仍未派工的 assignment ID；非空即"部分执行"。 */
+  remainingAssignmentIds?: string[];
+  remainingAssignments?: number;
 }
 
 /** Outbox 领域事件（V2）。 */
@@ -1238,7 +1404,11 @@ export interface OutboxEvent {
 export interface EligibilityResult {
   personId: string;
   eligible: boolean;
-  reasons: string[];
+  /**
+   * 拒绝原因：必须是登记过的词表键（`shared/reject-reason.ts`）。
+   * 类型收口而非 `string[]`——未登记键在编译期暴露，前端文案才可能穷尽。
+   */
+  reasons: import('./reject-reason').CandidateRejectReason[];
 }
 
 /** 单个任务候选资源（人员×设备），由候选资源端点返回。 */

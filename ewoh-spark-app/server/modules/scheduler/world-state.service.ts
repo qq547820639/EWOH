@@ -1,5 +1,5 @@
 import { TASK_LOCKED_STATUSES } from './task-lifecycle';
-import { Injectable, Inject, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Inject, Logger, ConflictException, Optional } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -11,7 +11,9 @@ import {
   ewohRouteNode,
   ewohRouteEdge,
   ewohWorldStateSnapshot,
+  ewohShift,
   ewohResourceReservation,
+  ewohSchedulingPlanAssignment,
   ewohDeviceBinding,
 } from '@server/database/schema';
 import { eq, and, or, sql, isNull, gte, desc, type AnyColumn, type SQL } from 'drizzle-orm';
@@ -25,6 +27,7 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { ResourceProjectionService } from './resource-projection.service';
+import { MaterialsService } from '../materials/materials.service';
 import {
   projectDeviceCapabilities,
   projectPersonCapabilities,
@@ -67,6 +70,10 @@ export class WorldStateSnapshotService {
     // 统一消费 ResourceProjectionService.projectForSnapshot()（与 resources/state 同源），
     // 消除双轨直读（旧回退分支已删除）。
     private readonly resourceProjectionService: ResourceProjectionService,
+    // DR-6：世界快照扩展事实（物料/订单，advisory；Optional 兼容直接构造的
+    // 测试替身——缺装配时 materialsNote 显式声明不可用，不伪造）。
+    @Optional()
+    private readonly materialsService?: MaterialsService,
   ) {}
 
   /**
@@ -193,14 +200,48 @@ export class WorldStateSnapshotService {
   async getSnapshot(
     snapshotVersion: string,
   ): Promise<WorldStateSnapshot | null> {
+    return (await this.loadSnapshotRow(snapshotVersion))?.snapshot ?? null;
+  }
+
+  /**
+   * 读取快照行（含归属租户）。
+   *
+   * 为什么需要 org：新鲜度比较是"同一租户内、同一时刻的两次状态收集"是否相等。
+   * 若比较时缺租户上下文，`collectState` 会退化成**跨租户**收集（不按 org 过滤），
+   * 而能力台账等租户作用域的数据源又会因缺 org 返回空 → 同一真实状态算出不同
+   * 摘要 → 刚生成的方案在审批时被判 PLAN_STALE（2026-09-10 实测：审批路径
+   * `assertFreshForApprove` 未透传 ctx，导致所有新增能力口径的设备摘要不一致）。
+   * 因此比较一律以**快照自身的租户**为准。
+   */
+  private async loadSnapshotRow(
+    snapshotVersion: string,
+  ): Promise<{ snapshot: WorldStateSnapshot; orgId: string | null } | null> {
     const [row] = await this.db
-      .select()
+      .select({
+        snapshotJson: ewohWorldStateSnapshot.snapshotJson,
+        orgId: ewohWorldStateSnapshot.orgId,
+      })
       .from(ewohWorldStateSnapshot)
       .where(eq(ewohWorldStateSnapshot.snapshotVersion, snapshotVersion))
       .limit(1);
-    return row
-      ? (row.snapshotJson as unknown as WorldStateSnapshot)
-      : null;
+    if (!row) return null;
+    return {
+      snapshot: row.snapshotJson as unknown as WorldStateSnapshot,
+      orgId: (row.orgId as string | null) ?? null,
+    };
+  }
+
+  /**
+   * 比较用的租户上下文：调用方有 org 用它；没有则回落到**快照自身的 org**
+   * （绝不用"无 org"去收集本应租户作用域的状态）。
+   */
+  private comparisonContext(
+    ctx: OrgContext | undefined,
+    snapshotOrgId: string | null,
+  ): OrgContext | undefined {
+    if (ctx?.primaryOrgId) return ctx;
+    if (!snapshotOrgId) return ctx;
+    return { ...(ctx ?? { userId: 'system', primaryOrgId: snapshotOrgId }), primaryOrgId: snapshotOrgId } as OrgContext;
   }
 
   /**
@@ -214,13 +255,13 @@ export class WorldStateSnapshotService {
     ctx?: OrgContext,
     current?: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
   ): Promise<boolean> {
-    const snapshot = await this.getSnapshot(snapshotVersion);
-    if (!snapshot) return false;
-    const currentState = current ?? await this.collectState(ctx);
-    return (
-      this.mapsEqual(snapshot.entityVersions, currentState.entityVersions) &&
-      this.reservationsEqual(snapshot.reservations, currentState.reservations)
-    );
+    const row = await this.loadSnapshotRow(snapshotVersion);
+    if (!row) return false;
+    const snapshot = row.snapshot;
+    const currentState = current ?? await this.collectState(this.comparisonContext(ctx, row.orgId));
+    const mapsOk = this.mapsEqual(snapshot.entityVersions, currentState.entityVersions);
+    const resOk = this.reservationsEqual(snapshot.reservations, currentState.reservations);
+    return mapsOk && resOk;
   }
 
   /**
@@ -237,12 +278,437 @@ export class WorldStateSnapshotService {
   }
 
   /**
-   * 审批前的快照新鲜度强校验；过期时抛出 PLAN_STALE 冲突。
+   * NO-62c：**方案过期可解释**——把"PLAN_STALE"从一个裸状态码变成可处置的诊断。
+   *
+   * 为什么需要：审批被 409 PLAN_STALE 拒绝时，用户只看到"方案已过期"，
+   * 既不知道**变了什么**、也不知道是不是自己造成的（例如刚派了本方案的第一波）。
+   * 现场结果：审批人反复点"通过"、调度员盲目重排，问题被掩盖而不是被处置（原则 5/7）。
+   *
+   * 返回的是**差异事实**（不是结论）：哪些实体版本变了、哪些预占增删改了。
+   * `ownPlanId` 传入时，本方案自身已派工 assignment/已建预占的变化会被标注为
+   * `selfInflicted`（避免把"我自己刚派的第一波"误报成外部变化）。
    */
-  async assertFreshForApprove(snapshotVersion: string, ctx?: OrgContext): Promise<void> {
-    const fresh = await this.isSnapshotFresh(snapshotVersion, ctx);
-    if (!fresh) {
-      throw new ConflictException('PLAN_STALE');
+  async describeStaleness(
+    snapshotVersion: string,
+    ctx?: OrgContext,
+    current?: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
+    ownPlanId?: string,
+  ): Promise<PlanStalenessReport> {
+    const rowRow = await this.loadSnapshotRow(snapshotVersion);
+    if (!rowRow) {
+      return {
+        snapshotVersion,
+        snapshotFound: false,
+        stale: true,
+        changes: [],
+        summary: '找不到方案绑定的世界快照（可能已被清理）：无法判断差异，请重新排程',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    const snapshot = rowRow.snapshot;
+    const currentState =
+      current ?? (await this.collectState(this.comparisonContext(ctx, rowRow.orgId)));
+    // NO-62：本方案自身的实体键按**快照行归属的租户**查询（显式 org 谓词，不靠 RLS 兜底）。
+    const ownEntityKeys = ownPlanId
+      ? await this.ownEntityKeys(ownPlanId, rowRow.orgId)
+      : new Set<string>();
+
+    const changes: StalenessChange[] = [];
+    const before: Record<string, number> = snapshot.entityVersions ?? {};
+    const after: Record<string, number> = (currentState.entityVersions ?? {}) as Record<string, number>;
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      const prev = before[key];
+      const next = after[key];
+      if (prev === next) continue;
+      changes.push({
+        kind: 'entity_version',
+        entityKey: key,
+        entityType: entityTypeOfKey(key),
+        entityId: entityIdOfKey(key),
+        before: prev ?? null,
+        after: next ?? null,
+        change: prev === undefined ? 'added' : next === undefined ? 'removed' : 'changed',
+        selfInflicted: ownEntityKeys.has(key),
+        label:
+          prev === undefined
+            ? `${entityTypeOfKey(key)} 新增（快照后出现）`
+            : next === undefined
+              ? `${entityTypeOfKey(key)} 消失（快照后被移除）`
+              : `${entityTypeOfKey(key)} 版本 ${prev} → ${next}`,
+      });
+    }
+    const beforeRes = new Map((snapshot.reservations ?? []).map((r) => [r.reservationId, r]));
+    const afterRes = new Map(((currentState.reservations ?? []) as WorldStateSnapshot['reservations']).map((r) => [r.reservationId, r]));
+    for (const [id, res] of afterRes) {
+      const prev = beforeRes.get(id);
+      if (!prev) {
+        changes.push({
+          kind: 'reservation',
+          entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+          entityType: res.resourceType,
+          entityId: res.resourceId,
+          before: null,
+          after: id,
+          change: 'added',
+          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+          label: `新增资源预占 ${res.resourceType}:${res.resourceId}`,
+        });
+        continue;
+      }
+      if (
+        prev.resourceId !== res.resourceId ||
+        prev.resourceType !== res.resourceType ||
+        prev.startMs !== res.startMs ||
+        prev.endMs !== res.endMs
+      ) {
+        changes.push({
+          kind: 'reservation',
+          entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+          entityType: res.resourceType,
+          entityId: res.resourceId,
+          before: `${prev.startMs}-${prev.endMs}`,
+          after: `${res.startMs}-${res.endMs}`,
+          change: 'changed',
+          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+          label: `资源预占变更 ${res.resourceType}:${res.resourceId}`,
+        });
+      }
+    }
+    for (const [id, res] of beforeRes) {
+      if (afterRes.has(id)) continue;
+      changes.push({
+        kind: 'reservation',
+        entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+        entityType: res.resourceType,
+        entityId: res.resourceId,
+        before: id,
+        after: null,
+        change: 'removed',
+        selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+        label: `资源预占释放 ${res.resourceType}:${res.resourceId}`,
+      });
+    }
+    const external = changes.filter((c) => !c.selfInflicted);
+    const self = changes.filter((c) => c.selfInflicted);
+    // NO-64a：**分档**——"事实变化"（必须重新排程）与"仅证据老化"（不阻断，但要如实告知）。
+    // 分档必须与闸门**同一实现**（`stalenessVerdict`），否则会出现"页面说只是证据老化、
+    // 审批却被拒"的第二套口径。
+    const planKeys = ownPlanId ? await this.planDependencyKeys(ownPlanId, rowRow.orgId) : null;
+    const verdict = this.stalenessVerdict(snapshot, currentState, planKeys);
+    for (const change of changes) {
+      if (verdict.contentChanged.includes(change.entityKey)) {
+        change.severity = 'content';
+      } else if (verdict.blockedEvidence.some((k) => k.startsWith(`${change.entityKey}（`))) {
+        change.severity = 'blocked_evidence';
+      } else {
+        change.severity = 'evidence';
+      }
+      change.usedByPlan = planKeys ? planKeys.has(change.entityKey) : false;
+    }
+    const blocked = changes.filter((c) => c.severity === 'blocked_evidence');
+    const aged = changes.filter((c) => c.severity === 'evidence');
+    const content = changes.filter((c) => c.severity === 'content');
+    // 文案按"外部 vs 本方案自身"分组，再按严重度分档——现场要能一眼分清：
+    // 外部事实变化（必须重排）/ 依赖资源证据过期（必须重采）/ 仅证据老化（不阻断）。
+    const externalContent = content.filter((c) => !c.selfInflicted);
+    const externalBlocked = blocked.filter((c) => !c.selfInflicted);
+    const externalAged = aged.filter((c) => !c.selfInflicted);
+    const summaryParts: string[] = [];
+    if (externalContent.length > 0) summaryParts.push(`检测到 ${externalContent.length} 项外部变化`);
+    if (externalBlocked.length > 0) {
+      summaryParts.push(
+        `${externalBlocked.length} 项方案依赖的资源证据已过期（需重新采集后重排）`,
+      );
+    }
+    if (externalAged.length > 0) {
+      summaryParts.push(`${externalAged.length} 项仅证据老化（与方案无关，不阻断审批）`);
+    }
+    return {
+      snapshotVersion,
+      snapshotFound: true,
+      stale: verdict.stale,
+      changes,
+      externalChangeCount: external.length,
+      selfInflictedCount: self.length,
+      contentChangeCount: content.length,
+      evidenceAgedCount: aged.length,
+      blockedEvidenceCount: blocked.length,
+      reason: verdict.reason,
+      summary: summaryParts.length === 0
+        ? self.length > 0
+          ? `仅本方案自身的执行效果变化（${self.length} 项）；世界状态未发生外部变化`
+          : '世界状态与方案生成时一致'
+        : summaryParts.join('；') + (self.length > 0 ? `（另有 ${self.length} 项本方案自身效果）` : ''),
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * 本方案自身产生的实体键（已派工任务 + 已建预占）——用于区分"自己改的"与"外部改的"。
+   *
+   * `orgId` 为快照行归属租户：两张表都带 org 列，查询显式带上 org 谓词
+   * （`org_id` 匹配或 NULL legacy 行），与读面 `collectState(ctx)` 同一隔离口径——
+   * 不依赖"调用方已经校验过 planId"这条隐式假设（org 谓词静态审计要求显式谓词）。
+   */
+  private async ownEntityKeys(planId: string, orgId: string | null): Promise<Set<string>> {
+    const keys = new Set<string>();
+    const orgPredicate = orgId
+      ? or(
+          eq(ewohSchedulingPlanAssignment.orgId, orgId),
+          isNull(ewohSchedulingPlanAssignment.orgId),
+        )
+      : isNull(ewohSchedulingPlanAssignment.orgId);
+    const dispatched = await this.db
+      .select({ taskId: ewohSchedulingPlanAssignment.taskId })
+      .from(ewohSchedulingPlanAssignment)
+      .where(and(
+        eq(ewohSchedulingPlanAssignment.planId, planId),
+        eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
+        orgPredicate,
+      ));
+    for (const r of dispatched) {
+      if (r.taskId) keys.add(`task:${r.taskId}`);
+    }
+    const reservationOrgPredicate = orgId
+      ? or(
+          eq(ewohResourceReservation.orgId, orgId),
+          isNull(ewohResourceReservation.orgId),
+        )
+      : isNull(ewohResourceReservation.orgId);
+    const ownReservations = await this.db
+      .select({
+        resourceType: ewohResourceReservation.resourceType,
+        resourceId: ewohResourceReservation.resourceId,
+      })
+      .from(ewohResourceReservation)
+      .where(and(
+        eq(ewohResourceReservation.planId, planId),
+        reservationOrgPredicate,
+      ));
+    for (const r of ownReservations) {
+      keys.add(`reservation:${r.resourceType}:${r.resourceId}`);
+    }
+    return keys;
+  }
+
+  /**
+   * NO-64a：方案依赖的世界实体键（判定"证据老化是否与方案有关"）。
+   *
+   * 依赖 = 方案里每一条派工用到的任务/人员/设备/工位 + 本方案自己的预占。
+   * 只有这些实体"证据老化到不可信"才会阻断审批；与方案无关的设备沉默不再阻断
+   * （那不是"世界变了"，只是"某台设备没上报"）。
+   */
+  async planDependencyKeys(planId: string, orgId?: string | null): Promise<Set<string>> {
+    const keys = new Set<string>();
+    // 租户归属显式进谓词（org 匹配或 NULL 存量行）：静态审计要求 org 表查询链
+    // 必须有 org 谓词或已登记豁免，这里不申请豁免——读取依赖集合是业务查询。
+    const orgPredicate = orgId
+      ? or(
+          eq(ewohSchedulingPlanAssignment.orgId, orgId),
+          isNull(ewohSchedulingPlanAssignment.orgId),
+        )
+      : isNull(ewohSchedulingPlanAssignment.orgId);
+    const assignments = await this.db
+      .select({
+        taskId: ewohSchedulingPlanAssignment.taskId,
+        personId: ewohSchedulingPlanAssignment.personId,
+        deviceId: ewohSchedulingPlanAssignment.deviceId,
+        stationId: ewohSchedulingPlanAssignment.stationId,
+      })
+      .from(ewohSchedulingPlanAssignment)
+      .where(and(eq(ewohSchedulingPlanAssignment.planId, planId), orgPredicate));
+    for (const row of assignments) {
+      if (row.taskId) keys.add(`task:${row.taskId}`);
+      if (row.personId) keys.add(`person:${row.personId}`);
+      if (row.deviceId) keys.add(`device:${row.deviceId}`);
+      if (row.stationId) keys.add(`station:${row.stationId}`);
+    }
+    for (const key of await this.ownEntityKeys(planId, orgId ?? null)) keys.add(key);
+    return keys;
+  }
+
+  /**
+   * NO-64a：**事实变化 vs 证据老化**的分档判定（审批/派工共用的唯一实现）。
+   *
+   * 判定规则（与本文件顶部"新鲜度"注释同一口径）：
+   *   1. **内容版本不同** → 事实变了 → 硬过期（拒绝）。内容版本排除了"随时间自然变化"
+   *      的派生字段（设备 status/online、证据时钟 telemetryUpdatedAt、过期后的状态标签），
+   *      所以"心跳"与"只是过了 60 秒"不再被误判为世界变化；
+   *   2. **只有版本不同（内容相同）** → 证据老化。若该实体**被本方案依赖**且当前
+   *      `dataQuality !== FRESH` → 硬过期（拒绝，原因 `EVIDENCE_STALE`：方案依赖一个
+   *      我们已无法背书的资源）；否则**不阻断**，作为 `agedEvidence` 如实报告；
+   *   3. 快照缺 `entityContentVersions`（老快照）→ 全部按第 1 条处理（fail-closed，
+   *      绝不因为"新字段缺失"而静默放宽）。
+   */
+  private stalenessVerdict(
+    snapshot: WorldStateSnapshot,
+    currentState: Omit<WorldStateSnapshot, 'snapshotVersion' | 'ts'>,
+    planKeys: Set<string> | null,
+  ): {
+    stale: boolean;
+    reason: 'CONTENT_CHANGED' | 'EVIDENCE_STALE' | null;
+    contentChanged: string[];
+    evidenceAged: string[];
+    blockedEvidence: string[];
+  } {
+    const before = snapshot.entityVersions ?? {};
+    const after = (currentState.entityVersions ?? {}) as Record<string, number>;
+    const beforeContent = snapshot.entityContentVersions;
+    const afterContent = (currentState as { entityContentVersions?: Record<string, number> })
+      .entityContentVersions;
+    const evidence = (currentState as { entityEvidence?: WorldStateSnapshot['entityEvidence'] })
+      .entityEvidence ?? {};
+    // 老快照/老采集（缺内容版本）→ 严格口径。
+    const strict = !beforeContent || !afterContent;
+
+    const contentChanged: string[] = [];
+    const evidenceAged: string[] = [];
+    const blockedEvidence: string[] = [];
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (before[key] === after[key]) continue;
+      const contentDiffers =
+        strict ||
+        beforeContent?.[key] === undefined ||
+        afterContent?.[key] === undefined ||
+        beforeContent[key] !== afterContent[key];
+      if (contentDiffers) {
+        contentChanged.push(key);
+        continue;
+      }
+      // 只有证据变化：看方案是否依赖它、以及它现在还可不可信。
+      const quality = evidence[key]?.dataQuality ?? 'UNKNOWN';
+      const used = planKeys === null ? false : planKeys.has(key);
+      if (used && quality !== 'FRESH') {
+        blockedEvidence.push(`${key}（证据 ${quality}）`);
+      } else {
+        evidenceAged.push(key);
+      }
+    }
+    const stale = contentChanged.length > 0 || blockedEvidence.length > 0;
+    return {
+      stale,
+      reason: contentChanged.length > 0
+        ? 'CONTENT_CHANGED'
+        : blockedEvidence.length > 0
+          ? 'EVIDENCE_STALE'
+          : null,
+      contentChanged,
+      evidenceAged,
+      blockedEvidence,
+    };
+  }
+
+  /**
+   * 审批前的快照新鲜度强校验；过期时抛出 PLAN_STALE 冲突。
+   *
+   * NO-64a：`planId` 存在时按"事实变化 vs 证据老化"分档（见 `stalenessVerdict`）；
+   * 不传 `planId` 的调用方保持历史严格口径（不静默放宽未知调用方）。
+   */
+  async assertFreshForApprove(
+    snapshotVersion: string,
+    ctx?: OrgContext,
+    planId?: string,
+  ): Promise<void> {
+    const row = await this.loadSnapshotRow(snapshotVersion);
+    if (!row) throw new ConflictException('PLAN_STALE:CONTENT_CHANGED');
+    const currentState = await this.collectState(this.comparisonContext(ctx, row.orgId));
+    const planKeys = planId ? await this.planDependencyKeys(planId, row.orgId) : null;
+    const verdict = this.stalenessVerdict(row.snapshot, currentState, planKeys);
+    if (verdict.stale) {
+      // 保留 `PLAN_STALE` 前缀（既有判定/文案依赖它），后缀让日志与测试能区分原因。
+      throw new ConflictException(`PLAN_STALE:${verdict.reason ?? 'CONTENT_CHANGED'}`);
+    }
+  }
+
+  /**
+   * 派工用的快照新鲜度校验（**波次感知**，2026-09-10 分波次派工）。
+   *
+   * 为什么不能用 assertFreshForApprove：派工本身会把任务状态从
+   * `pending_dispatch` 改为 `dispatched`、并写入资源预占，于是**第一次派工之后
+   * 快照必然"过期"**。若第二波仍用严格相等判定，就永远得到 PLAN_STALE——
+   * 分波派工在设计上不可用（实测确认）。
+   *
+   * 正确语义：只检测**外部**变化，忽略本方案自身已提交的效果：
+   *  - 本方案已派工 assignment 对应任务的 `task:<id>` 版本条目；
+   *  - 本方案创建的资源预占。
+   * 外部改动（他方案/他人改任务、新增外部预占、安全事件）仍会导致不一致 → 拒绝。
+   * 这不是放宽安全门：安全阻断、工位容量、任务可派发性、预占冲突都在派工路径
+   * 事务内外各自实时复核（见 DispatchCoordinator），不依赖快照相等。
+   */
+  async assertFreshForWave(snapshotVersion: string, planId: string, ctx?: OrgContext): Promise<void> {
+    const row = await this.loadSnapshotRow(snapshotVersion);
+    if (!row) throw new ConflictException('PLAN_STALE');
+    const currentState = await this.collectState(this.comparisonContext(ctx, row.orgId));
+
+    const dispatched = await this.db
+      .select({ taskId: ewohSchedulingPlanAssignment.taskId })
+      .from(ewohSchedulingPlanAssignment)
+      .where(and(
+        eq(ewohSchedulingPlanAssignment.planId, planId),
+        eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
+      ));
+    const ownEntityKeys = new Set(
+      dispatched.map((r) => r.taskId).filter((id): id is string => Boolean(id)).map((id) => `task:${id}`),
+    );
+    const ownReservations = await this.db
+      .select({
+        reservationId: ewohResourceReservation.reservationId,
+        resourceType: ewohResourceReservation.resourceType,
+        resourceId: ewohResourceReservation.resourceId,
+      })
+      .from(ewohResourceReservation)
+      .where(eq(ewohResourceReservation.planId, planId));
+    const ownReservationIds = new Set(ownReservations.map((r) => r.reservationId));
+    // entityVersions 除了 `task:<id>` 还包含预占派生的 `reservation:<type>:<id>` 键
+    // （实测：只剔除 task 键时，本波新建的两条预占仍导致 diff → 第二波恒 PLAN_STALE）。
+    for (const r of ownReservations) {
+      ownEntityKeys.add(`reservation:${r.resourceType}:${r.resourceId}`);
+    }
+
+    const stripOwn = (versions: Record<string, number>) => {
+      const copy: Record<string, number> = {};
+      for (const [key, value] of Object.entries(versions)) {
+        if (!ownEntityKeys.has(key)) copy[key] = value;
+      }
+      return copy;
+    };
+    const withoutOwnReservations = (
+      list: WorldStateSnapshot['reservations'] | null | undefined,
+    ) => (list ?? []).filter((r) => !ownReservationIds.has(r.reservationId));
+
+    // NO-64a：派工与审批共用同一分档判定——只剔除**本方案自身已提交的效果**
+    // （已派工 assignment 对应任务 + 本方案预占），其余按"事实变化 vs 证据老化"判定。
+    const strippedSnapshot: WorldStateSnapshot = {
+      ...row.snapshot,
+      entityVersions: stripOwn(row.snapshot.entityVersions),
+      entityContentVersions: row.snapshot.entityContentVersions
+        ? stripOwn(row.snapshot.entityContentVersions)
+        : undefined,
+      reservations: withoutOwnReservations(row.snapshot.reservations),
+    };
+    const strippedCurrent = {
+      ...currentState,
+      entityVersions: stripOwn(currentState.entityVersions),
+      entityContentVersions: (currentState as { entityContentVersions?: Record<string, number> })
+        .entityContentVersions
+        ? stripOwn(
+            (currentState as { entityContentVersions: Record<string, number> })
+              .entityContentVersions,
+          )
+        : undefined,
+      reservations: withoutOwnReservations(currentState.reservations),
+    };
+    const planKeys = await this.planDependencyKeys(planId, row.orgId);
+    const verdict = this.stalenessVerdict(strippedSnapshot, strippedCurrent, planKeys);
+    // 预占列表的精确比较保留为**补充**检查（内容版本已覆盖窗口变化，这里是双保险）。
+    const reservationsDrift = !this.reservationsEqual(
+      strippedSnapshot.reservations,
+      strippedCurrent.reservations,
+    );
+    if (verdict.stale || reservationsDrift) {
+      throw new ConflictException(
+        `PLAN_STALE:${verdict.reason ?? (reservationsDrift ? 'CONTENT_CHANGED' : 'CONTENT_CHANGED')}`,
+      );
     }
   }
 
@@ -390,6 +856,18 @@ export class WorldStateSnapshotService {
       return { ...p, capabilityRecords: projection.records };
     });
     const deviceRows = deviceList.map((d) => {
+      // NO-14f：资源视图已按台账解析能力时，直接透传**台账记录**（含
+      // subject/evidence/providerType），不再从名称反推一遍记录。
+      // 无台账记录（历史/列兜底路径）才走原投影，行为不变。
+      const ledgerRecords = (d as { capabilityRecords?: import('@shared/capability').CapabilityRecord[] })
+        .capabilityRecords;
+      const ledgerIssues = (d as { capabilityLedgerIssues?: string[] }).capabilityLedgerIssues;
+      if (ledgerIssues && ledgerIssues.length > 0) {
+        capabilityProjectionIssues.push(...ledgerIssues);
+      }
+      if (ledgerRecords && ledgerRecords.length > 0) {
+        return { ...d, capabilityRecords: ledgerRecords };
+      }
       const projection = projectDeviceCapabilities(d);
       capabilityProjectionIssues.push(...projection.issues);
       return { ...d, capabilityRecords: projection.records };
@@ -716,8 +1194,65 @@ export class WorldStateSnapshotService {
       endMs: r.endMs,
     }));
 
+    // ---- DR-6：世界模型扩展事实（物料/订单/班次；advisory，不进 entityVersions
+    // 新鲜度比较——物料事实变化不使既有方案失效，供解释/展示/候选引擎参考）----
+    let materials: import('@shared/scheduler').WorldSnapshotMaterial[] = [];
+    let materialsNote: string | null = '物料事实不可用（MaterialsService 未装配）';
+    let orderFacts: import('@shared/scheduler').WorldSnapshotOrder[] = [];
+    let ordersNote: string | null = null;
+    if (this.materialsService && ctx?.primaryOrgId) {
+      try {
+        const facts = await this.materialsService.getSnapshotFacts(ctx);
+        materials = facts.materials;
+        materialsNote = facts.materialsNote;
+        orderFacts = facts.orders;
+        ordersNote = facts.ordersNote;
+      } catch (err) {
+        materialsNote = `物料事实聚合失败（快照不含物料，不伪造）：${
+          err instanceof Error ? err.message : String(err)
+        }`;
+        this.logger.warn(materialsNote);
+      }
+    } else if (this.materialsService) {
+      materialsNote = '物料事实不可用（缺租户上下文）';
+    }
+    let shiftFacts: import('@shared/scheduler').WorldSnapshotShift[] = [];
+    try {
+      const shiftsQuery = this.db.select().from(ewohShift);
+      const shiftRows = ctx?.primaryOrgId
+        ? await shiftsQuery.where(this.orgCondition(ewohShift.orgId, ctx) as SQL)
+        : await shiftsQuery;
+      shiftFacts = shiftRows.map((r) => ({
+        shiftId: r.shiftId,
+        name: r.name,
+        code: r.code,
+        // PG time 列可能带秒（"16:00:00"）；契约口径 HH:mm。
+        startTime: r.startTime.length > 5 ? r.startTime.slice(0, 5) : r.startTime,
+        endTime: r.endTime.length > 5 ? r.endTime.slice(0, 5) : r.endTime,
+        crossesMidnight: r.crossesMidnight,
+        active: r.active,
+      }));
+    } catch (err) {
+      this.logger.warn(`班次定义投影失败（ewoh_shift 可能未迁移）: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     // ---- 基于内容的实体版本摘要 ----
     const entityVersions: Record<string, number> = {};
+    // NO-64a：内容版本 + 证据（与 entityVersions 同源采集，保证三者口径一致）。
+    const entityContentVersions: Record<string, number> = {};
+    const entityEvidence: NonNullable<WorldStateSnapshot['entityEvidence']> = {};
+    /**
+     * 证据状态标签：**只有证据新鲜时**才把权威状态计入内容版本。
+     *
+     * 为什么：`status` 在投影里是"权威列 + 新鲜度派生"的合成结果——过期的实体一律
+     * 显示为 UNKNOWN/OFFLINE。若把派生结果计入内容版本，则"没人上报"会被当成"事实变了"。
+     * 反过来，证据新鲜时的 `status` **就是权威列**（人工改成 unavailable/maintenance 也在内），
+     * 必须计入内容版本，否则真实的停用/改派会被漏判（那才是安全事故）。
+     */
+    const freshnessAwareStatus = (
+      quality: 'FRESH' | 'STALE' | 'UNKNOWN' | undefined,
+      status: string | null | undefined,
+    ): string => (quality === 'FRESH' ? String(status ?? '') : '<derived-from-freshness>');
     for (const p of persons) {
       entityVersions[`person:${p.id}`] = this.entityVersion({
         status: p.status,
@@ -733,9 +1268,29 @@ export class WorldStateSnapshotService {
         currentTaskId: p.currentTaskId,
         certificationExpiry: p.certificationExpiry,
       });
+      entityContentVersions[`person:${p.id}`] = this.entityVersion({
+        status: freshnessAwareStatus(p.dataQuality, p.status),
+        healthStatus: p.healthStatus,
+        loadLevel: p.loadLevel,
+        fatigueLevel: p.fatigueLevel,
+        x: p.x,
+        y: p.y,
+        skills: p.skills,
+        certifications: p.certifications,
+        shift: p.shift,
+        workload: p.workload,
+        currentTaskId: p.currentTaskId,
+        certificationExpiry: p.certificationExpiry,
+      });
+      entityEvidence[`person:${p.id}`] = {
+        sourceTs: p.sourceTs ?? null,
+        dataQuality: p.dataQuality ?? 'UNKNOWN',
+        status: p.status ?? null,
+      };
     }
     for (const t of taskList) {
-      entityVersions[`task:${t.id}`] = this.entityVersion({
+      // 任务没有"证据新鲜度"概念：任何差异都是事实变化 → 内容版本与版本一致。
+      entityContentVersions[`task:${t.id}`] = entityVersions[`task:${t.id}`] = this.entityVersion({
         status: t.status,
         priority: t.priority,
         planStart: t.planStart,
@@ -759,6 +1314,25 @@ export class WorldStateSnapshotService {
       });
     }
     for (const d of deviceList) {
+      entityContentVersions[`device:${d.id}`] = this.entityVersion({
+        status: freshnessAwareStatus(d.dataQuality, d.status),
+        // online 同样是新鲜度派生（过期即 false）→ 只在新鲜时计入内容版本；
+        // telemetryUpdatedAt 是**证据时钟**本身（每帧心跳都会变），不进内容版本。
+        online: d.dataQuality === 'FRESH' ? (d.online ?? false) : '<derived-from-freshness>',
+        batteryPct: d.batteryPct,
+        capabilities: d.capabilities,
+        x: d.x,
+        y: d.y,
+        locationStationId: d.locationStationId,
+        locationConfidence: d.locationConfidence,
+        observedCapabilities: d.observedCapabilities ?? null,
+        disabledCapabilities: d.disabledCapabilities ?? null,
+      });
+      entityEvidence[`device:${d.id}`] = {
+        sourceTs: d.sourceTs ?? d.telemetryUpdatedAt ?? null,
+        dataQuality: d.dataQuality ?? 'UNKNOWN',
+        status: d.status ?? null,
+      };
       entityVersions[`device:${d.id}`] = this.entityVersion({
         batteryPct: d.batteryPct,
         online: d.online,
@@ -769,16 +1343,24 @@ export class WorldStateSnapshotService {
         locationStationId: d.locationStationId,
         locationConfidence: d.locationConfidence,
         telemetryUpdatedAt: d.telemetryUpdatedAt,
+        // NO-14g：观测能力是真实世界状态（设备新增/失去温度、称重等观测维度），
+        // 必须进摘要——否则"设备换了传感器"这类变更对调度不可见。
+        observedCapabilities: d.observedCapabilities ?? null,
+        // NO-15b：人工停用能力同样是世界模型变化（设备"能做什么"变了），
+        // 必须进摘要——否则停用后旧方案不会被判 stale，会带着失效能力继续派工。
+        disabledCapabilities: d.disabledCapabilities ?? null,
       });
     }
     for (const r of routeStatus) {
-      entityVersions[`route:${r.edgeId}`] = this.entityVersion({
-        status: r.status,
-        riskLevel: r.riskLevel,
-      });
+      entityContentVersions[`route:${r.edgeId}`] = entityVersions[`route:${r.edgeId}`] =
+        this.entityVersion({
+          status: r.status,
+          riskLevel: r.riskLevel,
+        });
     }
     for (const s of stations) {
-      entityVersions[`station:${s.id}`] = this.entityVersion({
+      entityContentVersions[`station:${s.id}`] = entityVersions[`station:${s.id}`] =
+        this.entityVersion({
         name: s.name,
         x: s.x,
         y: s.y,
@@ -788,16 +1370,18 @@ export class WorldStateSnapshotService {
       });
     }
     for (const fz of forbiddenZones) {
-      entityVersions[`zone:${fz.zoneId}`] = this.entityVersion({
-        zoneId: fz.zoneId,
-        reason: fz.reason,
-      });
+      entityContentVersions[`zone:${fz.zoneId}`] = entityVersions[`zone:${fz.zoneId}`] =
+        this.entityVersion({
+          zoneId: fz.zoneId,
+          reason: fz.reason,
+        });
     }
     for (const r of reservationList) {
-      entityVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
-        this.entityVersion({ startMs: r.startMs, endMs: r.endMs });
+      entityContentVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
+        entityVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
+          this.entityVersion({ startMs: r.startMs, endMs: r.endMs });
     }
-    entityVersions['safety'] = this.entityVersion({
+    entityContentVersions['safety'] = entityVersions['safety'] = this.entityVersion({
       safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
       safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
       forbiddenZones,
@@ -814,6 +1398,10 @@ export class WorldStateSnapshotService {
     const snapshot = {
       worldVersion,
       entityVersions,
+      // NO-64a：内容版本 + 证据（二者必须与 entityVersions 在同一时刻采集，
+      // 否则"事实变化/证据老化"的分档会基于不同的世界读快照）。
+      entityContentVersions,
+      entityEvidence,
       reservations: reservationList,
       safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
       safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
@@ -832,6 +1420,12 @@ export class WorldStateSnapshotService {
       lockedAssignments,
       // NO-12u / ADR-044：能力投影缺口显式计数（certification 缺 issuer/expiry 等）。
       capabilityProjectionIssues,
+      // DR-6：世界模型扩展事实（物料/订单/班次；advisory）。
+      materials,
+      materialsNote,
+      orders: orderFacts,
+      ordersNote,
+      shifts: shiftFacts,
     };
 
     // ADR-008 / NO-03b：快照构建时的契约自检（entityVersions 键 + 实体规范身份引用）。
@@ -1070,4 +1664,64 @@ export class WorldStateSnapshotService {
       );
     });
   }
+}
+
+/**
+ * NO-62c：方案过期诊断契约（服务端 → 页面/运维）。字段与 `describeStaleness` 一一对应。
+ */
+export interface StalenessChange {
+  kind: 'entity_version' | 'reservation';
+  entityKey: string;
+  entityType: string;
+  entityId: string;
+  before: number | string | null;
+  after: number | string | null;
+  change: 'added' | 'removed' | 'changed';
+  /** true = 本方案自身执行造成的变化（不是外部干扰）。 */
+  selfInflicted: boolean;
+  label: string;
+  /**
+   * NO-64a：变化性质。
+   * - `content`：事实变化（内容版本变了）→ 必须重新排程；
+   * - `blocked_evidence`：本方案依赖的资源证据已过期且不可信 → 必须重新采集/重排；
+   * - `evidence`：仅证据老化（与方案无关）→ **不阻断审批**，如实告知。
+   */
+  severity?: 'content' | 'blocked_evidence' | 'evidence';
+  /** 该实体是否被本方案依赖（判断"证据老化是否与方案有关"）。 */
+  usedByPlan?: boolean;
+}
+
+export interface PlanStalenessReport {
+  snapshotVersion: string;
+  /** false = 快照行已不存在（无法比较，只能重排）。 */
+  snapshotFound: boolean;
+  stale: boolean;
+  changes: StalenessChange[];
+  externalChangeCount?: number;
+  selfInflictedCount?: number;
+  /** NO-64a：事实变化数（阻断）。 */
+  contentChangeCount?: number;
+  /** NO-64a：仅证据老化数（不阻断）。 */
+  evidenceAgedCount?: number;
+  /** NO-64a：方案依赖但证据已过期的实体数（阻断）。 */
+  blockedEvidenceCount?: number;
+  /** NO-64a：阻断原因（null = 不阻断）。 */
+  reason?: 'CONTENT_CHANGED' | 'EVIDENCE_STALE' | null;
+  summary: string;
+  checkedAt: string;
+}
+
+/**
+ * 实体键 → 类型（`device:X` → device；`reservation:person:P-1` → reservation）。
+ * 键前缀来自 `collectState`：person/task/device/route/station/zone/reservation/safety。
+ */
+function entityTypeOfKey(key: string): string {
+  const index = key.indexOf(':');
+  return index > 0 ? key.slice(0, index) : key;
+}
+
+/** 实体键 → 实体 id（保留 id 里的冒号，只有第一个冒号是分隔符）。 */
+function entityIdOfKey(key: string): string {
+  const index = key.indexOf(':');
+  return index > 0 ? key.slice(index + 1) : key;
 }

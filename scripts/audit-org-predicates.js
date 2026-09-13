@@ -85,40 +85,33 @@ function walkServices(dir, out) {
 }
 
 const METHOD_DEF_RE = /^\s*(?:private|public|protected|readonly|static|async|override|\s)*[A-Za-z_$][\w$]*\s*\([^)]*\)\s*(:\s*[\w<>\[\]| .]+)?\s*\{/;
+/** 方法签名起始行（类体缩进 2，兼容跨行参数列表；METHOD_DEF_RE 要求签名与 `{` 同行）。 */
+const METHOD_START_RE = /^\s{2}(?:(?:private|public|protected|readonly|static|async|override|get|set)\s+)*[A-Za-z_$][\w$]*\s*(?:<[^>]{0,80}>)?\s*\(/;
 const CONTROL_FLOW_RE = /^\s*(if|for|while|switch|catch|return|else|try|do|throw)\b/;
 
 /** 从链起始行向前找所在方法区域（近似：最近的方法定义行 → 下一个方法定义/文件尾）。 */
+function isMethodStart(l) {
+  return (
+    METHOD_START_RE.test(l) &&
+    !CONTROL_FLOW_RE.test(l) &&
+    !l.trim().startsWith('//') &&
+    !l.trim().startsWith('*')
+  );
+}
+
 function methodRegion(lines, chainIdx) {
   let start = 0;
   for (let i = chainIdx; i >= 0; i--) {
-    const l = lines[i];
-    if (
-      METHOD_DEF_RE.test(l) &&
-      !CONTROL_FLOW_RE.test(l) &&
-      !l.trim().startsWith('//') &&
-      !l.trim().startsWith('*')
-    ) {
-      const indent = l.match(/^\s*/)[0].length;
-      if (indent <= 2) {
-        start = i;
-        break;
-      }
+    if (isMethodStart(lines[i])) {
+      start = i;
+      break;
     }
   }
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    const l = lines[i];
-    if (
-      METHOD_DEF_RE.test(l) &&
-      !CONTROL_FLOW_RE.test(l) &&
-      !l.trim().startsWith('//') &&
-      !l.trim().startsWith('*')
-    ) {
-      const indent = l.match(/^\s*/)[0].length;
-      if (indent <= 2) {
-        end = i;
-        break;
-      }
+    if (isMethodStart(lines[i])) {
+      end = i;
+      break;
     }
   }
   return [start, end];
@@ -175,11 +168,24 @@ for (const file of serviceFiles) {
     //    conditions 数组收集、globalAdmin 条件化等形态）。
     const [mStart, mEnd] = methodRegion(lines, i);
     const methodBody = lines.slice(mStart, mEnd).join('\n');
+    // 租户标识符大小写混用（orgId / OrgId / viewerOrgId / primaryOrgId / OrgContext），
+    // 原判定用大小写敏感的 /orgId/，于是 listSince(viewerOrgId) 这类**确实按租户
+    // 过滤**的方法被误报为违规（2026-09-10 实测 11 条误报中的多数源于此）。
+    // 唯一需要排除的是"读 org 列"：`orgId: t.orgId` 投影、`orgId: row.orgId` 返回
+    // ——它出现 org 字样但不构成谓词，会把只按键查的裸查询误判为已覆盖。
+    const predicateScope = methodBody
+      .replace(/orgId:\s*\(?\s*[A-Za-z_$][\w$]*\.orgId\b/gi, 'ORG_COLUMN_READ')
+      .replace(/orgId:\s*orgId\b/gi, 'ORG_COLUMN_READ')
+      // 类型/字段声明（`orgId: string | null`、`orgId?: string`、`orgId: PgColumn`）
+      .replace(
+        /orgId\??\s*:\s*(?:string|number|boolean|null|undefined|unknown|SQL|PgColumn|[A-Z][A-Za-z0-9_]*)(?:\s*\|\s*(?:string|number|boolean|null|undefined|unknown|SQL|PgColumn|[A-Z][A-Za-z0-9_]*))*/g,
+        'ORG_COLUMN_READ',
+      );
     const methodEscape =
       /\/\*\s*org-scoped\s*\*\//.test(methodBody) ||
-      /runInTransaction/.test(methodBody) ||
+      /runInTransaction|systemTransaction/.test(methodBody) ||
       /assert\w*Tenant\w*|TenantVisible|tenant-guard|planTenantGuard/i.test(methodBody) ||
-      /orgId/.test(methodBody) ||
+      /orgId/i.test(predicateScope) ||
       // 经辅助函数构建 org 谓词：this.orgCondition(actor) / buildXxxConditions(query, actor)
       /[A-Za-z]\w*[Cc]ond\w*\([^()]*actor/.test(methodBody);
 
@@ -227,10 +233,22 @@ const EXEMPTIONS = [
       '同上：后台派发工作器 sent 状态 CAS 更新（notificationId+status=pending 条件），无租户语义属系统任务设计。',
   },
   {
-    key: 'ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts::ewohNotification#3',
-    audit: 'NEST-643 簇裁决',
+    key: 'ewoh-spark-app/server/modules/scheduler/plan.service.ts::ewohSchedulingPlanAssignment#2',
+    audit: 'R-5 N+1 批量加载',
     reason:
-      '同上：后台派发工作器 failed 状态 CAS 更新（notificationId+status=pending 条件）。',
+      'loadAssignmentsBatched(planIds) 按 plan_id 批量取派工：ewoh_schedule_plan.plan_id 为**全局唯一**列（schema.ts:659 .unique() + 唯一索引），且 planIds 只来自上游已按 org 过滤的查询（listPlansBatched / scheduler-query），不存在跨租户命中面；方法内加 org 谓词会与"按主键批量取"语义重复。',
+  },
+  {
+    key: 'ewoh-spark-app/server/modules/scheduler/plan.service.ts::ewohSchedulePlan#3',
+    audit: 'R-5 N+1 批量加载',
+    reason:
+      'listPlansBatched(planIds) 同上：按全局唯一的 plan_id 批量读取，planIds 由调用方从租户作用域查询取得（scheduler-query.service.ts:260/299）。',
+  },
+  {
+    key: 'ewoh-spark-app/server/modules/work-orchestration/domain-persistence.service.ts::ewohFactoryReplicationSessions#1',
+    audit: '工厂复制（系统级）',
+    reason:
+      'updateReplicationSessionOn(db, sessionId, patch)：ewoh_factory_replication_sessions.session_id 为**全局唯一**列（schema.ts:1220 .unique()），且该方法只接受调用方在系统事务（systemTransaction）内传入的 db 句柄——工厂复制是跨工厂系统流程，sessionId 即全局会话键，不存在租户同号会话。',
   },
   {
     key: 'ewoh-spark-app/server/modules/organization/organization.service.ts::ewohOrganization#1',

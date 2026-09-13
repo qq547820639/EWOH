@@ -22,7 +22,16 @@ export class OutcomeAnnotationController {
     @Body() body: CreateOutcomeAnnotationInput,
     @Req() request: { userContext?: OrgContext },
   ) {
-    return this.annotations.create(body, this.currentOrgId(request));
+    // 判定人身份取服务端会话（B5 同族标准：learning-proposal.proposedBy 一致），
+    // 请求体中的 judgedBy 一律忽略——标注是学习回路的真值来源，
+    // 判定人不可由客户端声明，否则标注事实可被冒名伪造。
+    const judgedBy = request.userContext?.userId?.trim();
+    if (!judgedBy) {
+      throw new BadRequestException(
+        '结果标注必须带操作者身份（userContext.userId 缺失，判定人不可由请求体声明）',
+      );
+    }
+    return this.annotations.create({ ...body, judgedBy }, this.currentOrgId(request));
   }
 
   @Get('recent')

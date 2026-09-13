@@ -11,12 +11,12 @@ export const DATA_SOURCE_LABELS: Record<string, string> = {
 
 /** CLI-337：全部映射到语义设计令牌（6 个状态的视觉类保持互异）。 */
 const DATA_SOURCE_CLASSES: Record<string, string> = {
-  real: 'bg-info/10 text-info border-info/30',
-  controlled_test: 'bg-warning/10 text-warning border-warning/30',
+  real: 'bg-info/10 text-info-on-soft border-info/30',
+  controlled_test: 'bg-warning/10 text-warning-on-soft border-warning/30',
   simulated: 'bg-muted text-muted-foreground border-border',
   replayed: 'bg-risk-conflict/10 text-risk-conflict-foreground border-risk-conflict/30',
   stale: 'bg-risk-degraded/15 text-risk-degraded-foreground border-risk-degraded-border',
-  offline: 'bg-destructive/10 text-destructive border-destructive/30',
+  offline: 'bg-destructive/10 text-destructive-on-soft border-destructive/30',
 };
 
 export function dataSourceLabel(source?: string): string {
