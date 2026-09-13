@@ -3,6 +3,7 @@ import { ApprovalModule } from '../approval/approval.module';
 import { DashboardController } from './dashboard.controller';
 import { DeviceContractController } from './device-contract.controller';
 import { DashboardService } from './dashboard.service';
+import { WorkbenchNowService } from './workbench-now.service';
 
 @Module({
   // NO-21a：高风险能力恢复闸门要读审批实例（getApproval），必须装配 ApprovalModule。
@@ -10,6 +11,6 @@ import { DashboardService } from './dashboard.service';
   // 因此这里显式 import，并在 service 侧对"端口缺失"单独报错而非伪装成审批无效。
   imports: [ApprovalModule],
   controllers: [DashboardController, DeviceContractController],
-  providers: [DashboardService],
+  providers: [DashboardService, WorkbenchNowService],
 })
 export class DashboardModule {}

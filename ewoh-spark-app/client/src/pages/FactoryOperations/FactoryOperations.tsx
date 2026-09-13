@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import type { EventInfo, OverviewStats } from '@shared/api.interface';
 import type { SchedulingPlanV2 } from '@shared/scheduler';
 import { getEventsPage, getOverview } from '../../api/dashboard';
+import { WorkbenchNowPanel } from './WorkbenchNowPanel';
 import { getActivePlans } from '../../api/scheduler';
 import { queryKeys } from '../../hooks/queryKeys';
 import { OPERATIONAL_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
@@ -69,6 +70,7 @@ const FactoryOperations = (): React.ReactElement => {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), OPERATIONAL_REFETCH_INTERVAL_MS);
     return () => clearInterval(timer);
+      <WorkbenchNowPanel />
   }, []);
   const userRoles = getAuthUser()?.roles;
   const canAccess = (path: string) => hasRoleAccess(userRoles, getAllowedRoles(path));

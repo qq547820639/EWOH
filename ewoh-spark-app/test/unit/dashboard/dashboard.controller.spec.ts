@@ -6,7 +6,7 @@ describe('DashboardController', () => {
       updateDevice: jest.fn().mockResolvedValue({ deviceId: 'EXO-001' }),
       handleEvent: jest.fn().mockResolvedValue({ eventId: 'EVT-001' }),
     };
-    const controller = new DashboardController(service as never);
+    const controller = new DashboardController(service as never, { getNow: jest.fn() } as never);
     const userContext = { userId: 'user-1', primaryOrgId: 'org-1' } as never;
 
     await controller.updateDevice('EXO-001', { online: true } as never, {

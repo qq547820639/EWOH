@@ -60,12 +60,27 @@ if (!e2eConfig) {
       expect(live.status).toBe(200);
       expect(live.body.status).toBe('ok');
 
+      // NEST-437（匿名探活收敛，2026-08-17 已提交）：未带凭证的 /health/ready
+      // 只暴露 {status: 'ok'}，不暴露 checks 内部细节。TCK 首跑（2026-09-13）
+      // 发现本用例仍断言匿名响应含 checks——与收敛后的安全契约相悖，修正为
+      // 匿名断言 status-only + 带凭证断言完整 checks（database=ok）。
       const ready = await apiRequest<{
         status: string;
-        checks: { database: string };
+        checks?: { database: string };
       }>(baseUrl, '/health/ready');
       expect(ready.status).toBe(200);
-      expect(ready.body.checks?.database).toBe('ok');
+      expect(ready.body.status).toBe('ok');
+      expect(ready.body.checks).toBeUndefined();
+      // 带凭证的同一探针返回完整 checks（database=ok）——fixture 的 dispatcher 账号。
+      const auth = await login(baseUrl, fixture!.dispatcherA.username, fixture!.dispatcherA.password);
+      expect(auth.status).toBe(201);
+      const detailed = await apiRequest<{ checks?: { database: string } }>(
+        baseUrl,
+        '/health/ready',
+        { headers: { Authorization: `Bearer ${auth.body.accessToken}` } },
+      );
+      expect(detailed.status).toBe(200);
+      expect(detailed.body.checks?.database).toBe('ok');
     });
 
     it('exposes Prometheus metrics with factory resource attributes', async () => {

@@ -33,6 +33,7 @@
     "GET /api/dashboard/environment/summary",
     "GET /api/dashboard/events",
     "GET /api/dashboard/events/stats",
+    "GET /api/dashboard/now",
     "GET /api/dashboard/overview",
     "GET /api/dashboard/telemetry/{deviceId}",
     "GET /api/dashboard/workers",
@@ -500,6 +501,7 @@
     "GET /api/dashboard/environment/summary",
     "GET /api/dashboard/events",
     "GET /api/dashboard/events/stats",
+    "GET /api/dashboard/now",
     "GET /api/dashboard/overview",
     "GET /api/dashboard/telemetry/{deviceId}",
     "GET /api/dashboard/workers",
@@ -934,9 +936,9 @@
     "PUT /api/system/config/{key}",
     "PUT /api/system/feature-flags/{key}"
   ],
-  "controllerOperations": 465,
-  "specOperations": 689,
-  "documentedControllerOperations": 465,
+  "controllerOperations": 466,
+  "specOperations": 691,
+  "documentedControllerOperations": 466,
   "undocumented": [],
   "unimplemented": []
 }

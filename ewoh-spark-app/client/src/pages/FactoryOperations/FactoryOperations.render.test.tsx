@@ -14,6 +14,10 @@ jest.mock('../../api/scheduler', () => ({
   getActivePlans: jest.fn(),
 }));
 
+jest.mock('../../api/workbench', () => ({
+  getWorkbenchNow: jest.fn().mockResolvedValue({ items: [], generatedAt: new Date().toISOString() }),
+}));
+
 jest.mock('@tanstack/react-query', () => ({
   useQuery: jest.fn(),
 }));

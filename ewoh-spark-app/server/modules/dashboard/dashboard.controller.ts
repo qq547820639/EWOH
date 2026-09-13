@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Param, Query, Body, BadRequestException, Req } from '@nestjs/common';
+import { WorkbenchNowService } from './workbench-now.service';
 import {
   DashboardService,
   parseBatteryParam,
@@ -17,11 +18,24 @@ import { Roles } from '../shared/roles.decorator';
 @Controller('api/dashboard')
 @Roles('global_admin', 'dispatcher', 'safety_admin', 'device_ops')
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(
+    private readonly dashboardService: DashboardService,
+    private readonly workbenchNowService: WorkbenchNowService,
+  ) {}
 
   @Get('overview')
   async getOverview(@Req() request?: { userContext?: OrgContext }) {
     return this.dashboardService.getOverview(request?.userContext);
+  }
+
+  /**
+   * "现在需要我做什么"聚合（FR6 交互愿景）：班组长/调度员开机第一眼，
+   * 把散落在异常/通知等域的"需要人处理"事实聚合为统一优先级列表。
+   * 范围与裁决见 WorkbenchNowService 注释。
+   */
+  @Get('now')
+  async getNow(@Req() request?: { userContext?: OrgContext }): Promise<{ items: unknown[]; generatedAt: string }> {
+    return this.workbenchNowService.getNow(request?.userContext);
   }
 
   @Get('environment/summary')

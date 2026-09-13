@@ -994,6 +994,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 工作台聚合——现在需要我做什么
+         * @description 班组长/调度员开机第一眼：把散落在异常/通知等域的"需要人处理"事实聚合为 统一优先级列表。范围裁决：待审批/物料缺口/逾期行动项已有各自叫人机制， 本端点聚合的是目前没有独立叫人机制的域（开异常 + 严重级通知）。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 聚合结果（按优先级排序） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: {
+                                /** @enum {string} */
+                                kind?: "anomaly" | "notification";
+                                priority?: number;
+                                title?: string;
+                                ref?: string;
+                                route?: string;
+                                severity?: string | null;
+                                /** Format: date-time */
+                                createdAt?: string;
+                            }[];
+                            /** Format: date-time */
+                            generatedAt?: string;
+                        };
+                    };
+                };
+                BadRequest: components["responses"]["BadRequest"];
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/overview": {
         parameters: {
             query?: never;

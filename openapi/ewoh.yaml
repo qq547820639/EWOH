@@ -787,6 +787,42 @@ paths:
           $ref: '#/components/responses/Conflict'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/dashboard/now:
+    get:
+      tags:
+        - dashboard
+      summary: '工作台聚合——现在需要我做什么'
+      description: >
+        班组长/调度员开机第一眼：把散落在异常/通知等域的"需要人处理"事实聚合为
+        统一优先级列表。范围裁决：待审批/物料缺口/逾期行动项已有各自叫人机制，
+        本端点聚合的是目前没有独立叫人机制的域（开异常 + 严重级通知）。
+      responses:
+        '200':
+          description: 聚合结果（按优先级排序）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: { type: string, enum: [anomaly, notification] }
+                        priority: { type: integer }
+                        title: { type: string }
+                        ref: { type: string }
+                        route: { type: string }
+                        severity: { type: string, nullable: true }
+                        createdAt: { type: string, format: date-time }
+                  generatedAt: { type: string, format: date-time }
+        BadRequest:
+          $ref: '#/components/responses/BadRequest'
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/dashboard/overview:
     get:
       tags:
