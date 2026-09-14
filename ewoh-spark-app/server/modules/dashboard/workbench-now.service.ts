@@ -100,12 +100,18 @@ export class WorkbenchNowService {
     createdAt: string;
   }>> {
     const rows = (await this.db.execute(sql`
-      SELECT event_id, title, evidence_json->>'deviceId' AS device_id,
-             evidence_json->>'severity' AS severity,
-             created_at
+      SELECT event_id, title, device_id, severity, created_at
         FROM ewoh_event
        WHERE org_id = ${orgId}
-         AND event_type IN ('AndonRaised', 'DeviceOffline', 'QualityFindingCreated')
+         AND event_type IN (
+           'AndonRaised',
+           'DeviceOffline',
+           'QualityFindingDetected',
+           'DeviceLowBattery',
+           'WorkerHighLoad',
+           'WorkerPostureRisk',
+           'DataDegraded'
+         )
          AND status = 'open'
        ORDER BY created_at DESC
        LIMIT 20
