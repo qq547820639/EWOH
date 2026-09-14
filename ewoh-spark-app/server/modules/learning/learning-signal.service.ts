@@ -490,18 +490,25 @@ export class LearningSignalService {
       recordJson: signal as unknown as Record<string, unknown>,
     };
     if (!existing) {
-      await this.db.insert(ewohLearningSignal).values({
-        orgId,
-        signalId: signal.signalId,
-        kind: signal.kind,
-        status: 'open',
-        subjectKey: signal.subjectKey,
-        windowDays: signal.windowDays,
-        firstSeenAt: now,
-        createdBy: actorId,
-        ...snapshot,
-      });
-      return 'created';
+      try {
+        await this.db.insert(ewohLearningSignal).values({
+          orgId,
+          signalId: signal.signalId,
+          kind: signal.kind,
+          status: 'open',
+          subjectKey: signal.subjectKey,
+          windowDays: signal.windowDays,
+          firstSeenAt: now,
+          createdBy: actorId,
+          ...snapshot,
+        });
+        return 'created';
+      } catch (err) {
+        // NEST-332 同族收口（2026-09-14）：select 幂等预检与 insert 之间存在
+        // TOCTOU——并发同 (orgId, signalId) 的落败方撞 uq_ewoh_learning_signal
+        // 唯一键，此处捕获后走 update 分支刷新（幂等语义，不再裸抛 500）。
+        if ((err as { code?: string })?.code !== '23505') throw err;
+      }
     }
     // 已有行：只刷新"实测快照"；人已经做过的决定（promoted/dismissed）原样保留。
     await this.db
