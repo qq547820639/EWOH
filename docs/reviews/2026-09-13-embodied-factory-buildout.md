@@ -967,3 +967,41 @@ DevOps 工作，属于"部署管道搭建"而非"代码修复遗漏"。
 
 对 ECS 上**原有版本**的验证已通过：浏览器 `auth-real-login.spec.ts` **19/19 全过**
 （真实登录 → 仪表盘 → 8 页导航 → 响应式 → 真实登出）。系统在云端部署上功能完整。
+
+---
+
+## 附录 L：交付周期收尾——迁移缺口门禁 + 契约 golden 修复 + 全域归零
+
+### L1. 新增 `scripts/migration-gap-check.js`（发布前强制门禁）
+
+将 ECS 部署发现的"31 个迁移 / 183 列缺失"教训固化为可执行门禁：
+从迁移 SQL 解析预期表/列集合 → 对比生产库 → 有缺失即退出码 1（阻断发布）。
+使用 ewoh-spark-app/node_modules/postgres 驱动直连（零额外安装）。
+本地 PG 实测：预期 72 表 / 生产 114 表 / 0 缺失 → PASS。
+
+### L2. CP-SAT 契约 golden fixture 修复
+
+`SolverTask` 新增 `status` 字段后，golden fixture（`scheduler-contract.golden.json`）
+需同步补 `status` key——否则 `_assert_flat` 的 `data[f.name]` 抛 KeyError。
+修复后 parity 9/9 + 十二条主线门禁全绿。
+
+### L3. 最终全域验证（零失败终态）
+
+| 层 | 命令 | 结果 |
+|---|---|---|
+| 服务端 Jest | `npx jest --silent` | **380 suites / 3428 tests** |
+| 前端 Jest | `npx jest --config client/jest.config.cjs` | **173 suites / 1706 tests** |
+| 双端 tsc | `npx tsc --noEmit` × 2 | 0 错误 |
+| 边缘 unittest | `python -m unittest discover` | **1210 OK** |
+| ruff | `ruff check src/edge_platform` | All checks passed |
+| OpenAPI | `audit-openapi-routes --strict` | **466/466** 零漂移 |
+| repo-facts | `audit-repo-facts --strict` | 39/39 |
+| truth | `truth-manifest --check` | no drift |
+| demo-residue | `audit-demo-residue` | PASS |
+| unrls | `audit-unrls-tenant-tables` | PASS |
+| **十二条主线门禁** | `make audit-regression-gates` | **全通过** |
+| **truth-check** | `make truth-check` | **全通过** |
+| **16 场景链** | `bash scripts/e2e-chain.sh` | **exit 0 · 425 PASS · 0 FAIL** |
+| **浏览器 mock** | `npm run test:browser:mock` | **107 passed** |
+| **浏览器真实（本地 PG）** | `auth-real-login` + 3 场景 | **22 + 19 passed** |
+| **迁移缺口检测** | `node scripts/migration-gap-check.js` | **PASS（0 缺失）** |

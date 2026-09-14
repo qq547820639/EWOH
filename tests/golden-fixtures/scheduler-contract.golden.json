@@ -23,10 +23,20 @@
         "earliestStartMs": 1700000100000,
         "dueMs": 1700001000000,
         "durationMs": 1800000,
-        "requiredSkills": ["assembly", "weld"],
-        "requiredCertifications": ["c-weld-basic"],
-        "requiredDeviceCapabilities": ["exo-lift"],
-        "candidateStationIds": ["S-1", "S-2"],
+        "requiredSkills": [
+          "assembly",
+          "weld"
+        ],
+        "requiredCertifications": [
+          "c-weld-basic"
+        ],
+        "requiredDeviceCapabilities": [
+          "exo-lift"
+        ],
+        "candidateStationIds": [
+          "S-1",
+          "S-2"
+        ],
         "zoneId": "Z-1",
         "predecessorIds": [],
         "safetyCritical": true,
@@ -34,8 +44,14 @@
         "skillMatchMode": "ALL",
         "effectivePriorityScore": 12.5,
         "mustFinishByMs": 1700001600000,
-        "eligiblePersonIds": ["P-1", "P-2"],
-        "eligibleDeviceIds": ["D-1"]
+        "eligiblePersonIds": [
+          "P-1",
+          "P-2"
+        ],
+        "eligibleDeviceIds": [
+          "D-1"
+        ],
+        "status": "pending_dispatch"
       },
       {
         "taskId": "T-102",
@@ -43,19 +59,28 @@
         "earliestStartMs": 1700000200000,
         "dueMs": null,
         "durationMs": 1200000,
-        "requiredSkills": ["inspect"],
+        "requiredSkills": [
+          "inspect"
+        ],
         "requiredCertifications": [],
         "requiredDeviceCapabilities": [],
-        "candidateStationIds": ["S-3"],
+        "candidateStationIds": [
+          "S-3"
+        ],
         "zoneId": null,
-        "predecessorIds": ["T-101"],
+        "predecessorIds": [
+          "T-101"
+        ],
         "safetyCritical": false,
         "preemptible": true,
         "skillMatchMode": "ANY",
         "effectivePriorityScore": 40,
         "mustFinishByMs": null,
-        "eligiblePersonIds": ["P-2"],
-        "eligibleDeviceIds": []
+        "eligiblePersonIds": [
+          "P-2"
+        ],
+        "eligibleDeviceIds": [],
+        "status": "pending_dispatch"
       }
     ],
     "persons": [
@@ -65,8 +90,14 @@
         "locationStationId": "S-1",
         "x": 12.5,
         "y": 8.25,
-        "skills": ["assembly", "weld", "inspect"],
-        "certifications": ["c-weld-basic"],
+        "skills": [
+          "assembly",
+          "weld",
+          "inspect"
+        ],
+        "certifications": [
+          "c-weld-basic"
+        ],
         "workload": 0.3,
         "fatigue": 0.2,
         "availableFromMs": 1700000100000,
@@ -78,12 +109,16 @@
         "locationStationId": null,
         "x": null,
         "y": null,
-        "skills": ["inspect"],
+        "skills": [
+          "inspect"
+        ],
         "certifications": [],
         "workload": 0.1,
         "fatigue": 0.05,
         "availableFromMs": null,
-        "executingTaskIds": ["T-103"]
+        "executingTaskIds": [
+          "T-103"
+        ]
       }
     ],
     "devices": [
@@ -91,7 +126,9 @@
         "id": "D-1",
         "status": "AVAILABLE",
         "online": true,
-        "capabilities": ["exo-lift"],
+        "capabilities": [
+          "exo-lift"
+        ],
         "batteryPct": 92,
         "x": 11.0,
         "y": 9.0,
@@ -102,7 +139,9 @@
         "id": "D-2",
         "status": "OFFLINE",
         "online": false,
-        "capabilities": ["vacuum"],
+        "capabilities": [
+          "vacuum"
+        ],
         "batteryPct": 10,
         "x": null,
         "y": null,
@@ -141,7 +180,9 @@
         "endMs": 1700002800000
       }
     ],
-    "forbiddenZones": ["Z-2"],
+    "forbiddenZones": [
+      "Z-2"
+    ],
     "constraints": [
       {
         "id": "C-1",
@@ -202,8 +243,12 @@
         "endMs": 1700000400000
       }
     ],
-    "safetyBlockedPersonIds": ["P-9"],
-    "safetyBlockedDeviceIds": ["D-9"],
+    "safetyBlockedPersonIds": [
+      "P-9"
+    ],
+    "safetyBlockedDeviceIds": [
+      "D-9"
+    ],
     "baselineAssignee": {
       "T-101": "P-1",
       "T-102": null
@@ -227,7 +272,9 @@
     },
     "hardViolations": [],
     "optimalityGap": 0,
-    "unassignedTaskIds": ["T-104"],
+    "unassignedTaskIds": [
+      "T-104"
+    ],
     "assignments": [
       {
         "taskId": "T-101",
@@ -236,12 +283,17 @@
         "stationId": "S-1",
         "startMs": 1700000100000,
         "endMs": 1700001900000,
-        "reasons": ["cpsat-selected", "skill_match"],
+        "reasons": [
+          "cpsat-selected",
+          "skill_match"
+        ],
         "rejectedAlternatives": [
           {
             "personId": "P-2",
             "stationId": "S-2",
-            "reason": ["missing_skill"]
+            "reason": [
+              "missing_skill"
+            ]
           }
         ]
       },
@@ -252,10 +304,20 @@
         "stationId": "S-3",
         "startMs": 1700002000000,
         "endMs": 1700003200000,
-        "reasons": ["cpsat-selected"],
+        "reasons": [
+          "cpsat-selected"
+        ],
         "rejectedAlternatives": []
       }
     ]
   },
-  "solverStatusValues": ["OPTIMAL", "FEASIBLE", "HEURISTIC", "FALLBACK", "INFEASIBLE", "TIMEOUT", "UNAVAILABLE"]
+  "solverStatusValues": [
+    "OPTIMAL",
+    "FEASIBLE",
+    "HEURISTIC",
+    "FALLBACK",
+    "INFEASIBLE",
+    "TIMEOUT",
+    "UNAVAILABLE"
+  ]
 }
