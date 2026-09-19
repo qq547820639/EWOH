@@ -51,7 +51,19 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
 - [x] E2E：device-physics 18/18；golden（全新库）24/24/0（含 v2 自建回滚）；
       receipt 19/19/0
 
-## 阶段三：契约自检升级为阻断门禁 —— 状态：未开始
+## 阶段三：契约自检升级为阻断门禁 —— 状态：已完成（2026-09-19）
+
+### 已完成
+- [x] buildSnapshot（调度 run 持久化路径）契约违约 fail-closed：
+      WORLD_SNAPSHOT_CONTRACT_VIOLATION 拒绝持久化/生成方案；只读路径保持告警
+- [x] scripts/audit-world-snapshot-contract.js 门禁（最近 5 快照独立复核键规范
+      与值域；无库环境显式跳过）；纳入 Makefile audit-regression-gates 主线13
+
+### 已验证
+- [x] 红绿实证：注入违约快照 → 门禁 exit 1（列明 3 类违约）；移除 → exit 0
+- [x] 单测：非法路由边 → buildSnapshot rejects WORLD_SNAPSHOT_CONTRACT_VIOLATION
+- [x] jest 全量 387 套件 / 3487 测试通过；audit-regression-gates 十三条全过
+- [x] 正常链路不误伤：重建基线后 golden/receipt/device-physics 全绿
 
 ## 阶段四：死旅程产品化 —— 状态：未开始
 
