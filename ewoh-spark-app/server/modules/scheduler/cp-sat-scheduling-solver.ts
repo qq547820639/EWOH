@@ -29,6 +29,14 @@ import {
 
 /** CP-SAT 求解器版本标识。 */
 const CPSAT_VERSION = 'cpsat-v1';
+
+/**
+ * 阶段四-优化：CP-SAT 每任务建模的人员候选上限（top-K by 候选成本）。
+ * 依据（2026-09-19 实测）：50 任务 × 200 人 × 80 设备的全笛卡尔积模型
+ * （~640 万 presence 布尔）构建+求解 >> 超时；K=10 时模型规模缩小 ~20 倍
+ * 且近邻候选覆盖最优解的绝大多数场景。设备候选不剪枝（数量级小得多）。
+ */
+const CP_SAT_TOP_K_PERSONS = 10;
 /** 默认缺省时长（无 planStart/planEnd 时），与策略默认一致（30 分钟）。 */
 const DEFAULT_DURATION_MS = 1_800_000;
 
@@ -521,7 +529,32 @@ export class CpSatSchedulingSolver {
     const tasks = snapshot.tasks
       .filter((t) => TaskLifecycle.isSchedulable(t.status))
       .map((t) => {
-      const eligible = eligibleByTask?.get(t.id);
+      let eligible = eligibleByTask?.get(t.id);
+      // 阶段四-优化（top-K 人员剪枝）：候选全笛卡尔积会让 CP-SAT 模型规模
+      // 随「人数 × 设备数」爆炸（实测 50 任务 × 200 人 × 80 设备 → 640 万
+      // presence 布尔，构建+求解 >> 8s 超时）。按候选成本取**距离最近的前
+      // K 名人员**建模，行业通行做法（近邻候选剪枝）；设备维度不剪
+      // （通常 |设备| 远小于 |人员|）。超过 K 时在 reasons 打标供审计。
+      let candidatePruned = false;
+      if (eligible && eligible.personIds.length > CP_SAT_TOP_K_PERSONS
+          && candidateCostsByTask?.has(t.id)) {
+        const bestDistanceByPerson = new Map<string, number>();
+        for (const c of candidateCostsByTask.get(t.id) ?? []) {
+          if (c.personId == null) continue;
+          const prev = bestDistanceByPerson.get(c.personId);
+          const dist = Number(c.distanceMeters);
+          if (!Number.isFinite(dist)) continue;
+          if (prev == null || dist < prev) bestDistanceByPerson.set(c.personId, dist);
+        }
+        if (bestDistanceByPerson.size > CP_SAT_TOP_K_PERSONS) {
+          const kept = [...bestDistanceByPerson.entries()]
+            .sort((a, b) => a[1] - b[1])
+            .slice(0, CP_SAT_TOP_K_PERSONS)
+            .map(([id]) => id);
+          eligible = { ...eligible, personIds: kept };
+          candidatePruned = true;
+        }
+      }
       const planStart = t.planStart ? Date.parse(t.planStart) : NaN;
       const planEnd = t.planEnd ? Date.parse(t.planEnd) : NaN;
       const earliestStartMs = Number.isFinite(planStart) ? planStart : nowMs;
@@ -557,6 +590,7 @@ export class CpSatSchedulingSolver {
         // P2-T1：矩阵判定 feasible 的候选才允许进入求解请求（缺坐标候选已被矩阵层排除）。
         eligiblePersonIds: eligible?.personIds,
         eligibleDeviceIds: eligible?.deviceIds,
+        candidatePruned,
         // R2-SCH-004：任务状态透传（worker/审计可见；可选字段，旧 worker 安全忽略）。
         status: t.status ?? null,
       };
