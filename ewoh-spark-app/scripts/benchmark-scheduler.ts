@@ -383,12 +383,16 @@ function buildSolvers(cpSatUrl: string | null): {
       for (const t of snapshot.tasks) {
         if (t.status && !['draft', 'pending_confirm', 'pending_approval', 'pending_dispatch', 'pending', 'queued'].includes(t.status)) continue;
         const req = new Set(t.requiredSkills ?? []);
+        // 语义修正（2026-09-19）：资格 = 所需技能 ⊆ 人员技能。
+        // 旧实现写反了包含方向（人员技能 ⊆ 所需），任何带额外技能的人员都会被
+        // 误排除 → CP-SAT 腿候选全空 → OPTIMAL 却 0 派工（对比完全失真）。
         const personIds = snapshot.persons
-          .filter((p) => (p.skills ?? []).every((sk) => req.has(sk)))
+          .filter((p) => [...req].every((sk) => (p.skills ?? []).includes(sk)))
           .map((p) => p.id);
         const reqDev = new Set(t.requiredDeviceCapabilities ?? []);
+        // 同上：设备能力 ⊇ 所需能力才算匹配（旧实现方向反了 → 设备候选被清空）。
         const deviceIds = snapshot.devices
-          .filter((d) => (d.capabilities ?? []).every((c) => reqDev.has(c)))
+          .filter((d) => [...reqDev].every((c) => (d.capabilities ?? []).includes(c)))
           .map((d) => d.id);
         out.set(t.id, { personIds, deviceIds });
       }

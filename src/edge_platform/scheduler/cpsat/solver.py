@@ -291,7 +291,12 @@ def _solve_cpsat(request: SolverRequest) -> SolverResponse:
                 continue
             if allowed_person_ids is not None and p.id not in allowed_person_ids:
                 continue
-            if p.status != "available":
+            # 跨语言 parity（2026-09-19 实测）：TS 侧快照状态为规范大写
+            # AVAILABLE/ACTIVE/BUSY（ADR-007），此处原为小写敏感比较
+            # （'AVAILABLE' != 'available' → 全部 person_unavailable →
+            # OPTIMAL 却 0 派工）。归一为大小写不敏感，与 TS eligibility 对齐。
+            person_status = (p.status or "").strip().upper()
+            if person_status not in ("AVAILABLE", "ACTIVE"):
                 rejected.append({"personId": p.id, "reason": ["person_unavailable"]})
                 continue
             if not person_has_required_skills(
