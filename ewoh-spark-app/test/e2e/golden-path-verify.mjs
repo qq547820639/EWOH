@@ -85,14 +85,32 @@ async function assertRollback(activation, token, operator, gateVersion) {
   const hasTarget = activation.rollbackTarget != null || activation.beforeVersion != null;
   if (!hasTarget) {
     // 首次激活无回退目标（服务端 NO_ROLLBACK_TARGET 属正确行为）。为不依赖
-    // 遗留状态，自建回退前置：再次激活同一版本（产生新激活，其回退目标即
-    // 本次激活），随后回滚新激活——真实验证"恢复上一 ACTIVE"路径。
-    const second = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
-      operator: ADMIN_USER, reason: 'golden path re-activation to enable rollback verification',
+    // 遗留状态，自建回退前置：注册新候选版本 v2（快照当前配置）→ ack 激活 v2
+    // （其回退目标 = v1 的激活）→ 回滚 v2 → 恢复 v1 为 ACTIVE。
+    // 注意：对已 ACTIVE 的同一版本重复激活会被 409 already ACTIVE 正确拒绝，
+    // 不能用"再激活一次"来造回退目标（实测）。
+    const current = await request('GET', '/api/scheduler/policy', null, token);
+    const config = current.body?.config;
+    if (!config) {
+      skip('49-50. Rollback 恢复上一 ACTIVE', '首次激活无回退目标；且无法取得策略配置以注册 v2（HTTP ' + current.status + '）');
+      return;
+    }
+    const reg = await request('POST', '/api/scheduler/policy/versions', {
+      config, operator: ADMIN_USER,
+    }, token);
+    const v2 = reg.body?.configVersion;
+    if (!(reg.status === 201 || reg.status === 200) || !v2) {
+      skip('49-50. Rollback 恢复上一 ACTIVE', `首次激活无回退目标；注册 v2 失败 status=${reg.status}`);
+      return;
+    }
+    const second = await request('POST', `/api/scheduler/policy/${v2}/activate`, {
+      operator: ADMIN_USER,
+      reason: 'golden path v2 activation to enable rollback verification',
+      acknowledgeInsufficientEvidence: true,
     }, token);
     if (second.status !== 201 && second.status !== 200) {
       skip('49-50. Rollback 恢复上一 ACTIVE',
-        `首次激活无回退目标（服务端行为正确）；自建二次激活失败 status=${second.status} ${errText(second)}`);
+        `首次激活无回退目标；v2 激活失败 status=${second.status} ${errText(second)}`);
       return;
     }
     const secondActivation = second.body;

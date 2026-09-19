@@ -301,6 +301,15 @@ async function main() {
     `planId=${plan.planId} assignmentId=${target.assignmentId} execStatus=${pick.execStatus}`);
   step('4. 审批 + 派工链路成功', true, `planId=${plan.planId}`);
 
+  // 5a. 目标行复位为洁净 DISPATCHED（受控测试语义）：跨轮重跑时目标行可能已带
+  // 上一轮的开始/结束事实（IMMUTABLE_EXECUTION_FACT 会拒绝新回执，实测连续
+  // 两轮红）。链内每场景前有全量重建基线，不存在该问题；此处复位使独立复跑
+  // 亦确定。复位的列即回执会写的列，不伪造任何未发生的事实。
+  const sql = await openDb();
+  if (sql) await sql`update ewoh_scheduling_execution
+     set status = 'DISPATCHED', actual_start_at = null, actual_end_at = null
+     where assignment_id = ${target.assignmentId}`;
+
   // 6. 开始回执
   // 注意：不携带 deviationReason（note 是其别名）。偏差原因是服务端按计划/实际
   // 时间推导的事实，一经记录不可改写；在开始回执里塞一个理由会让后续完成回执
@@ -364,8 +373,8 @@ async function main() {
 
   const execsAll = await request('GET', `/api/scheduler/executions?planId=${encodeURIComponent(plan.planId)}`, null, adminToken);
 
-  // 14-16. 数据库事实断言（可选但推荐）
-  const sql = await openDb();
+  // 14-16. 数据库事实断言（可选但推荐）——连接已在 5a 前打开。
+
   if (!sql) {
     skip('14-16. 数据库事实断言', '未设置 EWOH_E2E_PG_URL');
     return finish();
@@ -473,8 +482,22 @@ async function main() {
             `status=${own.status} action=${ownBody.status} assignment=${target2.assignmentId} msg=${errText(own)}`);
 
           // 越权：同租户内换一条不属于自己的记录，必须被拒。
-          const others = (execsAll.body?.executions ?? [])
-            .filter((e) => e.personId && e.personId !== boundPerson);
+          // 归属口径：**plan_assignment.person_id**（服务端授权的权威依据），
+          // 不得用执行行 person_id——直改派生事实/种子遗留会使两表 person_id
+          // 不一致，用执行行筛选会误把"自己被改派的任务"当成"他人任务"
+          // （实测：服务器正确放行 201，测试误报 FAIL）。
+          const planAssignments = (await request(
+            'GET', `/api/scheduler/plans/${encodeURIComponent(plan.planId)}`, null, adminToken,
+          )).body?.assignments ?? [];
+          const executionByAssignment = new Map(
+            (execsAll.body?.executions ?? []).map((e) => [e.assignmentId, e]),
+          );
+          const others = planAssignments
+            .filter((a) => a.personId && a.personId !== boundPerson
+              && executionByAssignment.has(a.assignmentId)
+              && !['COMPLETED', 'FAILED', 'CANCELLED']
+                .includes(executionByAssignment.get(a.assignmentId).status))
+            .map((a) => executionByAssignment.get(a.assignmentId));
           if (!others.length) {
             skip('21. 他人任务被拒', '库中没有他人未终结记录可供越权验证');
           } else {

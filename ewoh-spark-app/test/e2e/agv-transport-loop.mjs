@@ -363,6 +363,17 @@ async function main() {
         // 序列可以走通。心跳的职责是**让快照生成时设备是新鲜的**（每轮 run 之前），
         // 不是"让断言变绿"。
         dispatched = await post(`/api/scheduler/plans/${planId}/dispatch`, {}, approverToken);
+        if (dispatched.status === 409 && /PLAN_STALE|PLAN_NOT_APPROVED/.test(errText(dispatched))) {
+          // 环境竞态（与 golden 18a 同族）：审批通过后世界版本被后台写入推进
+          // （PLAN_STALE），或刚推进的任务就绪写触发自动重排桥把方案翻回
+          // shadow（PLAN_NOT_APPROVED）。有界处置：等冷却窗口后放弃本方案，
+          // 下一轮重新选择/审批/派工（rounds 上限 3）。
+          attempts.push(`r${round}:dispatch ${errText(dispatched).slice(0, 48)} → 等冷却后重选`);
+          plan = null;
+          approved = { status: 0, body: null };
+          await new Promise((resolve) => setTimeout(resolve, COOLDOWN_WAIT_MS));
+          continue;
+        }
         const executions = await get(`/api/scheduler/executions?planId=${encodeURIComponent(planId)}`, adminToken);
         executionRows = executions.body?.executions ?? [];
         break;
