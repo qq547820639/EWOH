@@ -325,10 +325,16 @@ async function main() {
 
     // 人员位置 60s 新鲜度在 A4a/A4b 之后可能已过期（候选 person_unavailable）——
     // 与 A6 同款前置纪律：候选读取前刷新位置帧 + 档案时间戳。
-    if (availablePerson?.id) {
+    // 2026-09-19 扩展：只刷 availablePerson 一人不够——候选行覆盖全部候选人员，
+    // 任何一人在 60s 窗外（pick loop 帧距 A5 已超 60s）都会以 person_unavailable
+    // 出现在本 AGV 的行里，干扰"至少一条 eligible"的断言读取。这里把 pick loop
+    // 触达过的全部人员统一补帧（tag 内 record_id 唯一，不触发重放闸门）。
+    const refreshPersonIds = new Set(pickPool.slice(0, 5).map((p) => p?.id).filter(Boolean));
+    if (availablePerson?.id) refreshPersonIds.add(availablePerson.id);
+    for (const pid of refreshPersonIds) {
       await post('/api/ingest/location', {
-        entity_id: availablePerson.id,
-        tag_id: `TAG-${availablePerson.id}`,
+        entity_id: pid,
+        tag_id: `TAG-${pid}`,
         locator: 'uwb',
         confidence: 0.9,
         x: stationPick?.x ?? 12,
@@ -336,10 +342,10 @@ async function main() {
         z: 0,
         ts: new Date().toISOString(),
         source_type: 'controlled_test',
-        record_id: `dp-person-high-${tag}`,
+        record_id: `dp-person-high-${tag}-${pid}`,
       }, null, { 'X-Ingest-Key': INGEST_KEY, 'X-Org-Id': ORG_ID });
-      await sql`update ewoh_personnel set _updated_at = now() where org_id = ${ORG_ID}::uuid`;
     }
+    await sql`update ewoh_personnel set _updated_at = now() where org_id = ${ORG_ID}::uuid`;
     const candidatesHigh = await get(`/api/scheduler/tasks/${taskId}/candidates`, adminToken);
     // 候选的 deviceId 是**台账 uuid**（ewoh_device.id），不是业务设备号
     const agvRowsHigh = (candidatesHigh.body?.candidates ?? []).filter((c) => c.deviceId === device1.id);
