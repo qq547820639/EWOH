@@ -22,6 +22,7 @@
  */
 import postgres from 'postgres';
 import { approveWithReplan, stalenessSummary } from './helpers/plan-freshness.mjs';
+import { advanceTasksToPendingDispatch, isTaskNotDispatchable } from './helpers/task-readiness.mjs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -78,7 +79,9 @@ async function request(method, url, body, token, extraHeaders = {}) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...extraHeaders,
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    // GET 携带 null body 会被 fetch 拒绝（task-readiness helper 以 null 调 GET）——
+    // null 与 undefined 一律不发送 body，与仓库其他场景的 http 适配器语义对齐。
+    ...(body == null ? {} : { body: JSON.stringify(body) }),
   }).catch(() => null);
   if (!response) return { status: 0, body: null };
   return { status: response.status, body: await response.json().catch(() => null) };
@@ -389,12 +392,40 @@ async function main() {
     // 由执行域创建的，派工接口返回时通常还没有该行（本轮实测：派工 200、assignment 已
     // dispatched，但执行记录里还没有我们这条）——把"暂时没有执行行"当失败是**过度断言**，
     // 真正的执行腿由 `e2e:control-actuator`（命令闭环）与 `e2e:receipt`（回执闭环）覆盖。
-    const dispatchedDetail = (dispatched.status === 200 || dispatched.status === 201)
+    let dispatchedDetail = (dispatched.status === 200 || dispatched.status === 201)
       ? (await get(`/api/scheduler/plans/${encodeURIComponent(planId)}`, adminToken)).body
       : null;
-    const dispatchedAssignment = (dispatchedDetail?.assignments ?? []).find(
+    let dispatchedAssignment = (dispatchedDetail?.assignments ?? []).find(
       (a) => String(a.assignmentId) === String(assignment.assignmentId),
     );
+
+    // ── 5a. 任务未就绪 → 真实调度员工作流：按状态机推进到待派工后重派 ────
+    // 产品行为是**正确的 fail-closed**（契约 task.yaml：draft 不得被派工默认跳过，
+    // 整波不下发）。方案混入种子/看板上未就绪任务（schedulable 但不可派发）时，
+    // 现场处置 = 把它们推进到 pending_dispatch 再重派——与 e2e:wave 同一模式。
+    if (
+      approvalOk
+      && dispatched.status === 409
+      && isTaskNotDispatchable(dispatched.status, errText(dispatched))
+    ) {
+      const planAssignments = dispatchedDetail?.assignments
+        ?? (await get(`/api/scheduler/plans/${encodeURIComponent(planId)}`, adminToken)).body?.assignments
+        ?? [];
+      const readied = await advanceTasksToPendingDispatch(request, planAssignments, {
+        operatorToken: adminToken,
+        approverToken,
+      });
+      attempts.push(`任务就绪推进:${readied.length}项`);
+      if (readied.length > 0) {
+        dispatched = await post(`/api/scheduler/plans/${planId}/dispatch`, {}, approverToken);
+        dispatchedDetail = (dispatched.status === 200 || dispatched.status === 201)
+          ? (await get(`/api/scheduler/plans/${encodeURIComponent(planId)}`, adminToken)).body
+          : dispatchedDetail;
+        dispatchedAssignment = (dispatchedDetail?.assignments ?? []).find(
+          (a) => String(a.assignmentId) === String(assignment.assignmentId),
+        );
+      }
+    }
     const executionForDevice = executionRows.find(
       (e) => String(e.deviceId) === String(device.deviceId) || String(e.deviceId) === String(device.id),
     );

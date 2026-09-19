@@ -343,10 +343,18 @@ async function main() {
     const candidatesHigh = await get(`/api/scheduler/tasks/${taskId}/candidates`, adminToken);
     // 候选的 deviceId 是**台账 uuid**（ewoh_device.id），不是业务设备号
     const agvRowsHigh = (candidatesHigh.body?.candidates ?? []).filter((c) => c.deviceId === device1.id);
+    // A5 诊断（2026-09-19 实测：fresh 库上全员 person_unavailable）：把候选读取同一时刻的
+    // 人员投影事实（状态/新鲜度/可用窗）一并留痕，区分"场景数据就绪问题"与"产品闸门误伤"。
+    const diagSnap = await get('/api/scheduler/snapshot', adminToken);
+    const diagPersons = (diagSnap.body?.persons ?? [])
+      .filter((p) => agvRowsHigh.some((c) => c.personId === p.id))
+      .slice(0, 20)
+      .map((p) => ({ p: p.id, s: p.status, q: p.dataQuality, w: p.availableWindows ?? null, af: p.availableFromMs ?? null }));
     step('A5. SOC 95% → 候选出现且至少一条 eligible（电量已知、能力匹配、人员可用）',
       candidatesHigh.status === 200 && agvRowsHigh.length > 0 && agvRowsHigh.some((c) => c.eligible === true),
       `rows=${agvRowsHigh.length} eligible=${agvRowsHigh.filter((c) => c.eligible).length}`
         + ` person=${availablePerson?.id ?? 'none'}/${availablePerson?.status ?? '-'}`
+        + ` 投影=${JSON.stringify(diagPersons)}`
         + ` 逐行=${JSON.stringify(agvRowsHigh.map((c) => ({ p: c.personId, r: c.reasons })))}`);
 
     // A5. SOC 跌破门槛 → 候选显式 battery_low（不静默丢弃）
