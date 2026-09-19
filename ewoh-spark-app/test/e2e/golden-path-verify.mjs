@@ -204,6 +204,10 @@ async function main() {
           }
         }
         approveResult = { status: approval.status, body: approval.body };
+        // NO-62c：重排会产生**新 planId**——后续派工/审计断言必须跟随最终被
+        // 批准的方案（实测：沿用重排前的旧 planId 派工 → 409 PLAN_NOT_APPROVED，
+        // 那是脚本在断言一个不属于该次审批的方案，不是产品问题）。
+        plan = { ...candidate, planId: approval.planId };
       }
       plan = candidate;
       planDetail = detail;
