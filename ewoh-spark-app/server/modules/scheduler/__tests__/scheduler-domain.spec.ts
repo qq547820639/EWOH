@@ -484,7 +484,11 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
         h1 ^= c; h1 = Math.imul(h1, 0x01000193);
         h2 ^= c; h2 = Math.imul(h2, 0x01000193);
       }
-      return ((h1 >>> 0) * 0x100000000 + (h2 >>> 0)) & 0xFFFFFFFFFFFF;
+      // 必须与 world-state.service fnv1a48 保持一致（48-bit = h1 低 16 位作
+      // 高位 + h2 全 32 位作低位；旧实现的 2^53 精度丢失/ToInt32 负数截断已修复）。
+      const high = (h1 >>> 0) % 0x10000;
+      const low = h2 >>> 0;
+      return high * 0x100000000 + low;
     }
     const safetyObject = {
       safetyBlockedPersonIds: [],
@@ -496,7 +500,7 @@ describe('WorldStateSnapshotService.assertFreshForApprove', () => {
       snapshotVersion: 'WS-OLD',
       snapshotJson: {
         ...snapshotObj,
-        entityVersions: { safety: safetyFingerprint },
+        entityVersions: { 'risk:safety_block': safetyFingerprint },
       },
       createdAt: new Date(),
     };
