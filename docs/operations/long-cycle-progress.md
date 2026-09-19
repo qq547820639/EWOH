@@ -65,6 +65,22 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
 - [x] jest 全量 387 套件 / 3487 测试通过；audit-regression-gates 十三条全过
 - [x] 正常链路不误伤：重建基线后 golden/receipt/device-physics 全绿
 
-## 阶段四：死旅程产品化 —— 状态：未开始
+## 阶段四：死旅程产品化 —— 状态：已完成（2026-09-19）
+
+### 已完成
+- [x] task-lifecycle：TASK_STATE_RECOVERY_ACTIONS / nextRecoveryAction（恢复动作权威数据源）
+- [x] dispatch-coordinator：PLAN_TASK_NOT_DISPATCHABLE 409 内嵌 error.recovery.actions
+      （taskId/currentStatus/action/actorRole/endpoint/method），message 前缀不变
+- [x] golden 18b / wave wave1 消费内嵌恢复动作（golden 实测连环恢复：
+      draft→submit→PLAN_STALE→重选→pending_confirm→skip_approval→重派成功）
+- [x] 单测：nextRecoveryAction 映射（task-lifecycle.spec）
+
+### 范围说明
+- receipt 保留「就绪推进在审批前」的既有顺序（推进写事实会使刚拿到的批准失效，
+  见脚本注释与 2109396d）；阶段四能力由 golden/wave 验证。
+
+### 已验证
+- [x] jest 全量 387 套件 / 3489 测试通过
+- [x] E2E 全链 0 失败 / 0 跳过；golden 26/26/0；wave 全绿
 
 ## 阶段五：CI 矩阵落地 —— 状态：未开始
