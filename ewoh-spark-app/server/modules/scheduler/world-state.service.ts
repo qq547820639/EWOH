@@ -344,13 +344,13 @@ export class WorldStateSnapshotService {
       if (!prev) {
         changes.push({
           kind: 'reservation',
-          entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+          entityKey: `reservation:${res.resourceType}~${res.resourceId}`,
           entityType: res.resourceType,
           entityId: res.resourceId,
           before: null,
           after: id,
           change: 'added',
-          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}~${res.resourceId}`),
           label: `新增资源预占 ${res.resourceType}:${res.resourceId}`,
         });
         continue;
@@ -363,13 +363,13 @@ export class WorldStateSnapshotService {
       ) {
         changes.push({
           kind: 'reservation',
-          entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+          entityKey: `reservation:${res.resourceType}~${res.resourceId}`,
           entityType: res.resourceType,
           entityId: res.resourceId,
           before: `${prev.startMs}-${prev.endMs}`,
           after: `${res.startMs}-${res.endMs}`,
           change: 'changed',
-          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+          selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}~${res.resourceId}`),
           label: `资源预占变更 ${res.resourceType}:${res.resourceId}`,
         });
       }
@@ -378,13 +378,13 @@ export class WorldStateSnapshotService {
       if (afterRes.has(id)) continue;
       changes.push({
         kind: 'reservation',
-        entityKey: `reservation:${res.resourceType}:${res.resourceId}`,
+        entityKey: `reservation:${res.resourceType}~${res.resourceId}`,
         entityType: res.resourceType,
         entityId: res.resourceId,
         before: id,
         after: null,
         change: 'removed',
-        selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}:${res.resourceId}`),
+        selfInflicted: ownEntityKeys.has(`reservation:${res.resourceType}~${res.resourceId}`),
         label: `资源预占释放 ${res.resourceType}:${res.resourceId}`,
       });
     }
@@ -486,7 +486,7 @@ export class WorldStateSnapshotService {
         reservationOrgPredicate,
       ));
     for (const r of ownReservations) {
-      keys.add(`reservation:${r.resourceType}:${r.resourceId}`);
+      keys.add(`reservation:${r.resourceType}~${r.resourceId}`);
     }
     return keys;
   }
@@ -659,10 +659,10 @@ export class WorldStateSnapshotService {
       .from(ewohResourceReservation)
       .where(eq(ewohResourceReservation.planId, planId));
     const ownReservationIds = new Set(ownReservations.map((r) => r.reservationId));
-    // entityVersions 除了 `task:<id>` 还包含预占派生的 `reservation:<type>:<id>` 键
+    // entityVersions 除了 `task:<id>` 还包含预占派生的 `reservation:<type>~<id>` 键
     // （实测：只剔除 task 键时，本波新建的两条预占仍导致 diff → 第二波恒 PLAN_STALE）。
     for (const r of ownReservations) {
-      ownEntityKeys.add(`reservation:${r.resourceType}:${r.resourceId}`);
+      ownEntityKeys.add(`reservation:${r.resourceType}~${r.resourceId}`);
     }
 
     const stripOwn = (versions: Record<string, number>) => {
@@ -1377,11 +1377,13 @@ export class WorldStateSnapshotService {
         });
     }
     for (const r of reservationList) {
-      entityContentVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
-        entityVersions[`reservation:${r.resourceType}:${r.resourceId}`] =
+      entityContentVersions[`reservation:${r.resourceType}~${r.resourceId}`] =
+        entityVersions[`reservation:${r.resourceType}~${r.resourceId}`] =
           this.entityVersion({ startMs: r.startMs, endMs: r.endMs });
     }
-    entityContentVersions['safety'] = entityVersions['safety'] = this.entityVersion({
+    // 键必须是规范身份（identity kind:value）：旧裸键 'safety' 触发
+    // bad_entity_version_key 契约告警（NO-03b 自检留痕）。
+    entityContentVersions['risk:safety_block'] = entityVersions['risk:safety_block'] = this.entityVersion({
       safetyBlockedPersonIds: Array.from(safetyBlockedPersonIds),
       safetyBlockedDeviceIds: Array.from(safetyBlockedDeviceIds),
       forbiddenZones,
@@ -1615,8 +1617,16 @@ export class WorldStateSnapshotService {
       h2 ^= c;
       h2 = Math.imul(h2, 0x01000193);
     }
-    // 48-bit = h1[31:16] 拼 h2[31:0]（确保无符号右移）
-    return ((h1 >>> 0) * 0x100000000 + (h2 >>> 0)) & 0xFFFFFFFFFFFF;
+    // 48-bit = h1 低 16 位（高位）拼 h2 全 32 位（低位）。
+    // 不能写成 (h1>>>0) * 0x100000000 + ... 再 & 0xFFFFFFFFFFFF：
+    //   - 乘积可达 ~2^64 > Number.MAX_SAFE_INTEGER，先发生精度丢失；
+    //   - & 0xFFFFFFFFFFFF 经 ToInt32 截断成**有符号 32 位**，约 50% 概率
+    //     产出负数 —— 违反世界快照契约（entityVersions 值须为 ≥0 整数，
+    //     实测 bad_entity_version_value 契约告警 69/158 条目为负）。
+    // 现实现最大值 2^48-1 ≈ 2.8e14 < 2^53，恒为非负安全整数。
+    const high = (h1 >>> 0) % 0x10000;
+    const low = h2 >>> 0;
+    return high * 0x100000000 + low;
   }
 
   /** 基于对象 JSON 序列化内容的实体版本。 */
@@ -1712,8 +1722,8 @@ export interface PlanStalenessReport {
 }
 
 /**
- * 实体键 → 类型（`device:X` → device；`reservation:person:P-1` → reservation）。
- * 键前缀来自 `collectState`：person/task/device/route/station/zone/reservation/safety。
+ * 实体键 → 类型（`device:X` → device；`reservation:person~P-1` → reservation）。
+ * 键前缀来自 `collectState`：person/task/device/route/station/zone/reservation/risk（safety_block 聚合）。
  */
 function entityTypeOfKey(key: string): string {
   const index = key.indexOf(':');

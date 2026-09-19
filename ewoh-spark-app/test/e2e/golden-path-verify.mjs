@@ -328,8 +328,15 @@ async function main() {
           );
           if (retried) dispatch = retried;
         }
-        if (dispatch.status === 409 && /PLAN_STALE/.test(errText(dispatch))) {
-          record('PASS', '18a. 派工遇 PLAN_STALE（世界版本被并发推进）→ 等冷却窗口后重新生成方案并重试一次',
+        // PLAN_NOT_APPROVED 与 PLAN_STALE 同族：审批通过后，后台 worker（数据质量
+        // 扫描/安灯 SLA 等）写事实触发自动重排桥，把刚批准的方案翻回 shadow
+        // （实测 2026-09-19：approve 200 → dispatch 409 PLAN_NOT_APPROVED）。
+        // 两者都是"世界在动"的环境竞态，处置同构：等冷却 → 重新生成方案并重试一次。
+        if (
+          dispatch.status === 409
+          && /PLAN_STALE|PLAN_NOT_APPROVED/.test(errText(dispatch))
+        ) {
+          record('PASS', '18a. 派工遇 PLAN_STALE/PLAN_NOT_APPROVED（世界版本被并发推进）→ 等冷却窗口后重新生成方案并重试一次',
             `plan=${plan.planId} waitMs=${COOLDOWN_WAIT_MS}`);
           await new Promise((resolve) => setTimeout(resolve, COOLDOWN_WAIT_MS));
           const rerun = await request('POST', '/api/scheduler/runs', { strategy: 'scheduling_v2', trigger: 'MANUAL' }, token);

@@ -97,6 +97,29 @@ const ctx: OrgContext = {
   isGlobalAdmin: false,
 };
 
+describe('WorldStateSnapshotService: 实体版本哈希（fnv1a48）契约', () => {
+  it('哈希必须恒为非负安全整数（世界快照契约 entityVersions 值 ≥ 0）', () => {
+    // 2026-09-19 实测：旧实现 (h1>>>0) * 2^32 超出 2^53 精度丢失，
+    // 且 & 0xFFFFFFFFFFFF 经 ToInt32 截断为有符号 32 位——约 50% 概率产出
+    // 负数（持久化快照 158 个 entityVersions 中 69 个为负，契约自检
+    // bad_entity_version_value 告警）。本用例以大量输入钉死该契约。
+    const fnv1a48 = (WorldStateSnapshotService as unknown as {
+      fnv1a48: (str: string) => number;
+    }).fnv1a48;
+    expect(typeof fnv1a48).toBe('function');
+    const kinds = ['person', 'device', 'station', 'route', 'task', 'event', 'reservation'];
+    for (let i = 0; i < 2000; i++) {
+      const key = `${kinds[i % kinds.length]}:ENTITY-${i}`;
+      const v = fnv1a48(key);
+      expect(Number.isInteger(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+    }
+    // 确定性：同输入同输出（plan-staleness 比较依赖该性质）。
+    expect(fnv1a48('station:NODE-LA-02')).toBe(fnv1a48('station:NODE-LA-02'));
+  });
+});
+
 describe('WorldStateSnapshotService: 快照版本原子分配（ewoh_snapshot_version_counter）', () => {
   afterEach(() => {
     jest.useRealTimers();
