@@ -75,7 +75,15 @@ async function login(username, password) {
   return token;
 }
 
+// NO-67d：本场景创建的所有会话（收尾自证"全部终结"的清单）——模块级，call 可写。
+const createdSessionIds = [];
+const trackSession = (id) => { if (id) createdSessionIds.push(id); };
+
 async function call(method, path, body, token) {
+  // NO-67d：单点跟踪本场景创建的会话（收尾自证的清单来源）
+  if (method === 'POST' && path === '/api/exo/sessions' && body && typeof body.sessionId === 'string') {
+    trackSession(body.sessionId);
+  }
   const response = await fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -1038,6 +1046,44 @@ async function main() {
         skip('15. 按实际佩戴人更正', '前置：遥测双源校验未执行（更正以真实遥测证据为前提）');
       }
     }
+  }
+
+  // ---- 16. NO-67d 清理自证：本场景创建的会话**全部终结**（活跃会话=残留）----
+  // 一台设备只允许一个活跃会话——中断的运行留下 active 会话会让下次运行被拒，
+  // 现场表现为"设备明明空着却被告知已有会话"。这里在收尾处自查：本场景
+  // 创建的会话（sessionId 含本次 tag）没有仍处于 active 的。
+  try {
+    if (!OWNER_DB) {
+      record('SKIP', '16. 清理自证', '未提供 EWOH_E2E_OWNER_DATABASE_URL（无法直查会话表）');
+      finish();
+      return;
+    }
+    if (createdSessionIds.length === 0) {
+      record('PASS', '16. 清理自证（本场景未创建需终结的会话）', true);
+    } else {
+      const sql = postgres(OWNER_DB, { max: 1, onnotice: () => {} });
+      try {
+        // postgres.js 原生支持数组参数（= any($1)）
+        const leftoverActive = await sql`
+          select session_id from ewoh_exo_session
+           where session_id = any(${createdSessionIds})
+             and status = 'active' limit 5`;
+        if (leftoverActive.length === 0) {
+          record('PASS', '16. 清理自证（本场景会话无活跃残留）', `${createdSessionIds.length} 个会话全部终结`);
+        } else {
+          record(
+            'FAIL',
+            '16. 清理自证',
+            `活跃会话残留 ${leftoverActive.length} 条（${leftoverActive.map((r) => r.session_id).join(',')}）`,
+          );
+        }
+      } finally {
+        await sql.end({ timeout: 5 }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    // 无法自查（如 DB 不可达）也必须可见，不能只 warn（NO-64 教训）
+    record('FAIL', '16. 清理自证', `自查失败：${error?.message ?? error}`);
   }
 
   finish();

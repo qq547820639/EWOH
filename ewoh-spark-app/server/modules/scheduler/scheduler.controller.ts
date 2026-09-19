@@ -196,9 +196,12 @@ export class SchedulerController {
    * @deprecated 请改用 V2 接口 POST /api/scheduler/runs
    */
   @Post('plans')
-  async generatePlans(@Body() body?: GeneratePlansRequest) {
+  async generatePlans(
+    @Body() body?: GeneratePlansRequest,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
     return this.legacyCompatibility(
-      this.schedulerService.generatePlans(body),
+      this.schedulerService.generatePlans(body, request?.userContext),
       'POST /plans',
       'POST /api/scheduler/runs',
     );
@@ -888,6 +891,18 @@ export class SchedulerController {
   // ==========================================================================
   // Phase 4 / P4-KPI：生产指标
   // ==========================================================================
+
+  @Get('kpi/history')
+  async getKpiHistory(
+    @Query('limit') limit?: string,
+    @Req() request?: { userContext?: OrgContext },
+  ) {
+    // NO-89a：门禁指标历史序列（趋势可见，漂移早发现）。org 作用域与 GET kpi 一致。
+    return this.kpiService.listHistory(
+      request?.userContext?.primaryOrgId ?? null,
+      limit ? Number(limit) : undefined,
+    );
+  }
 
   @Get('kpi')
   async getKpi(

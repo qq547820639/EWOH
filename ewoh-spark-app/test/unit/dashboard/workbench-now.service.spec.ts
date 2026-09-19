@@ -12,16 +12,19 @@ import { WorkbenchNowService } from '../../../server/modules/dashboard/workbench
 describe('WorkbenchNowService', () => {
   function makeDb(anomalyRows: unknown[], notificationRows: unknown[]) {
     const calls: string[] = [];
-    const execute = jest
-      .fn()
-      .mockImplementationOnce(async (query) => {
-        calls.push(JSON.stringify(query));
-        return anomalyRows;
-      })
-      .mockImplementationOnce(async (query) => {
-        calls.push(JSON.stringify(query));
-        return notificationRows;
-      });
+    let callIndex = 0;
+    const execute = jest.fn(async (query: unknown) => {
+      calls.push(JSON.stringify(query));
+      const text = JSON.stringify(query);
+      // 按查询内容路由
+      if (text.includes('ewoh_learning_proposal')) return [];
+      if (text.includes('ewoh_material_stock')) return [];
+      if (text.includes('ewoh_material_requirement')) return [];
+      if (text.includes('ewoh_material')) return [];
+      // 按调用顺序：第 1 次是异常，第 2 次是通知
+      callIndex++;
+      return callIndex === 1 ? anomalyRows : notificationRows;
+    });
     return { db: { execute }, calls };
   }
 

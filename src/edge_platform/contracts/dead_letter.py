@@ -21,6 +21,10 @@ from typing import Any
 REASONS: tuple[str, ...] = (
     "contract_violation", "unknown_event_type", "permanent_failure",
     "ttl_expired", "max_attempts_exceeded",
+    # 2026-09-15 仿真对抗审计补注册（与 shared/dead-letter.ts 同步锁步）：
+    # cloud:ingest 的坏时钟拒绝与事件写库失败死信此前不合法（unknown_reason），
+    # "落死信人审"承诺静默失效。
+    "clock_drift_future", "event_write_failed",
 )
 STATUSES: tuple[str, ...] = ("pending", "requeued", "discarded")
 

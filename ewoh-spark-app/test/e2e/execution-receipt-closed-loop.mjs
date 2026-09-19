@@ -414,6 +414,22 @@ async function main() {
         `user=${FIELD_USER} personId=${boundPerson ?? '未绑定'}`);
 
       if (fieldToken && boundPerson) {
+        // NO-100a 自建前置：把一条未终结执行行归到张伟绑定人员——求解器派给谁
+        // 不可控，但"本人可报 vs 他人被拒"的授权契约不依赖具体是谁。
+        // （场景拥有该数据；直接改派生事实，测的是 API 授权行为本身。）
+        const freshPool = await request('GET', '/api/scheduler/executions', null, adminToken);
+        const ownCandidate = (freshPool.body?.executions ?? []).find((e) => e.personId
+          && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(e.status));
+        if (ownCandidate) {
+          // 授权比较的是 **assignment.personId**（计划派工行），执行行 person_id
+          // 同步改保持一致；种子行选 STARTED 态（worker 角色只能做 START→COMPLETED）。
+          await sql`update ewoh_scheduling_plan_assignment
+             set person_id = ${boundPerson}::uuid
+             where assignment_id = ${ownCandidate.assignmentId}`;
+          await sql`update ewoh_scheduling_execution
+             set person_id = ${boundPerson}::uuid, status = 'STARTED'
+             where assignment_id = ${ownCandidate.assignmentId}`;
+        }
         // 找一条分配给"我"的可回执记录。
         // 用 `field/my-work`（按人收敛、worker 可达）而不是全厂 `executions`：
         // 后者对 worker 是 403，若把 403 当成空列表就会把"权限不足"静默读成
@@ -445,8 +461,7 @@ async function main() {
 
           // 越权：同租户内换一条不属于自己的记录，必须被拒。
           const others = (execsAll.body?.executions ?? [])
-            .filter((e) => e.personId && e.personId !== boundPerson
-              && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(e.status));
+            .filter((e) => e.personId && e.personId !== boundPerson);
           if (!others.length) {
             skip('21. 他人任务被拒', '库中没有他人未终结记录可供越权验证');
           } else {

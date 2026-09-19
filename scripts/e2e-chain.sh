@@ -6,9 +6,21 @@
 #
 # 用法：
 #   EWOH_E2E_OWNER_DATABASE_URL=postgres://… EWOH_E2E_ADMIN_PASS=… \
-#   EWOH_E2E_APPROVER_PASS=… EWOH_E2E_FIELD_PASS=… EWOH_E2E_INGEST_KEY=… \
+#   EWOH_E2E_APPROVER_PASS=… EWOH_E2E_OPERATOR_PASS=… EWOH_E2E_FIELD_PASS=… \
+#   EWOH_E2E_INGEST_KEY=… EWOH_CONTROL_FINGERPRINT_SECRET=… \
 #     bash scripts/e2e-chain.sh
 #   （可先用 `set -a && . /tmp/ewoh-e2e-env.sh && set +a` 载入本地凭据）
+#
+# 凭据纪律（实测教训 2026-09-19）：
+#   - EWOH_E2E_OPERATOR_PASS 与 EWOH_E2E_APPROVER_PASS 都要给：preflight 校验
+#     OPERATOR（审批派工角色），部分场景读 APPROVER——缺一会被误判 LOGIN_FAILED；
+#   - EWOH_CONTROL_FINGERPRINT_SECRET 必须与被测后端一致：edge_control_agent
+#     用它本地验签授权范围指纹——不一致时产品按 fail-closed 拒绝投递
+#     （control-actuator 步骤 8/9 全红，产品行为正确，是运行环境配错）；
+#   - 可选增强：EWOH_E2E_PG_URL（receipt 步骤 14-16 DB 事实断言）、
+#     EWOH_E2E_PERSON_ID（edge 5f/5j 与 exo-session 佩戴者点名）——
+#     **必须是已绑定登录账号的人员**（本地默认 …0001 ↔ worker.zhangwei；
+#     无账号人员会导致"点名到本人"类断言失败，产品行为正确：叫不到人要显式报缺口）。
 #
 # 语义（三条纪律）：
 #   1. `set -o pipefail`：管道会吃掉失败场景的退出码（实测出现过 21 PASS/1 FAIL 仍 exit=0）；
@@ -59,6 +71,53 @@ scenario() {
   fi
 }
 
+# ── 链前预检 2（NO-73b）：E2E 凭证**角色矩阵**自检 ─────────────────────────────
+# 教训（第 73 轮）：把 OPERATOR 误配成 worker 角色 → 方案审批 403 → 回执闭环整条 SKIP，
+# 排障花了很久才发现是凭证配错而不是产品缺陷。三个凭证不能混用：
+#   admin=生成/代批；OPERATOR=审批派工（workshop_lead/dispatcher）；FIELD=现场回执（worker）。
+# 这里在跑任何场景前先登录核对角色，配错就**立即失败**（带修正指引），不再浪费一整条链。
+preflight_credentials() {
+  local base="${EWOH_E2E_BACKEND_URL:-http://127.0.0.1:3100}"
+  local admin_user="${EWOH_E2E_ADMIN_USER:-admin}"
+  local admin_pass="${EWOH_E2E_ADMIN_PASS:-}"
+  local op_user="${EWOH_E2E_OPERATOR_USER:-approver.li}"
+  local op_pass="${EWOH_E2E_OPERATOR_PASS:-}"
+  local field_user="${EWOH_E2E_FIELD_USER:-worker.zhangwei}"
+  local field_pass="${EWOH_E2E_FIELD_PASS:-}"
+  local ok=1
+
+  role_of() {
+    local token
+    token=$(curl -s -X POST "$base/api/auth/login" -H 'Content-Type: application/json' \
+      -d "{\"username\":\"$1\",\"password\":\"$2\"}" | node -e "
+let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).accessToken||'')}catch{console.log('')}})")
+    [ -z "$token" ] && { echo "LOGIN_FAILED"; return; }
+    curl -s "$base/api/auth/me" -H "Authorization: Bearer $token" | node -e "
+let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const r=JSON.parse(d);console.log((r.roles||r.user&&r.user.roles||[]).join(','))}catch{console.log('')}})"
+  }
+
+  local admin_roles op_roles field_roles
+  admin_roles=$(role_of "$admin_user" "$admin_pass")
+  op_roles=$(role_of "$op_user" "$op_pass")
+  field_roles=$(role_of "$field_user" "$field_pass")
+
+  echo "=== preflight: E2E credential roles ==="
+  echo "  $admin_user: $admin_roles"
+  echo "  $op_user: $op_roles"
+  echo "  $field_user: $field_roles"
+
+  case ",$admin_roles," in *,global_admin,*) ;; *) echo "  [preflight] FAIL: $admin_user 缺 global_admin（admin 凭证配错？）"; ok=0;; esac
+  case ",$op_roles," in *,workshop_lead,*|*,dispatcher,*) ;; *) echo "  [preflight] FAIL: $op_user 无审批角色（workshop_lead/dispatcher）——方案审批会 403。OPERATOR 凭证应为 approver.li，现场工人走 FIELD_*"; ok=0;; esac
+  case ",$field_roles," in *,worker,*) ;; *) echo "  [preflight] FAIL: $field_user 缺 worker 角色（FIELD 凭证配错？）"; ok=0;; esac
+
+  if [ $ok -ne 1 ]; then
+    echo "  [preflight] 凭证角色矩阵不满足——修正 /tmp/ewoh-e2e-env.sh 后重跑（模板见 runbook『E2E 凭证的角色分工』）"
+    exit 1
+  fi
+  echo "  [preflight] OK"
+}
+preflight_credentials
+
 # 顺序敏感：golden 需要干净库；后续场景多数可复用当前数据（0=不重置，1=重置）
 scenario e2e:golden 1
 scenario e2e:receipt 1
@@ -76,6 +135,9 @@ scenario e2e:improvement-action 0
 # AGV 搬运：审批腿需要相对干净的世界（60s 设备新鲜度 vs 数分钟求解），故 reset=1
 scenario e2e:agv-transport 1
 scenario e2e:control-actuator 0
+# 仿真对抗链（虚拟外骨骼机群 + 设备物理孪生）：自建设备/实体/会话，reset=1 保干净世界
+scenario e2e:exo-simfarm 1
+scenario e2e:device-physics 1
 scenario e2e:plan-staleness 0
 scenario e2e:perception-fusion 0
 scenario e2e:edge 0

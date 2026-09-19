@@ -241,6 +241,26 @@ test.describe('执行边界面板（NO-67a）', () => {
     await expect(page.getByText(/超过 SLA 5 分钟/)).toBeVisible();
   });
 
+  test('NO-70a：配额用尽时配额徽章显示排队语义（不是失败）', async ({ page }) => {
+    await openBoundary(
+      page,
+      server.baseUrl,
+      baseMock({
+        'GET /api/control/requests': {
+          ...BOUNDARY,
+          summary: {
+            ...BOUNDARY.summary,
+            quota: { perMinute: 3, usedInWindow: 3, remaining: 0, motionPerMinute: 3, motionUsedInWindow: 3, motionRemaining: 0 },
+          },
+        },
+      }),
+    );
+    await expectBoundaryPanel(page);
+
+    await expect(page.getByText(/窗口内已投 3 \/ 上限 3 每分钟/)).toBeVisible();
+    await expect(page.getByText(/命令排队到下一分钟，不是失败/)).toBeVisible();
+  });
+
   test('空列表显式说明"无命令 ≠ 设备正常"（不显示假状态）', async ({ page }) => {
     await openBoundary(
       page,

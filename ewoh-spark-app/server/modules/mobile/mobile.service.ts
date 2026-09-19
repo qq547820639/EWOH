@@ -1,9 +1,11 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { ewohScheduleTaskStep } from '@server/database/schema';
 import { MesService } from '../mes/mes.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { ControlService } from '../control/control.service';
+import { ewohSchedulingPlanAssignment } from '@server/database/schema';
 
 export const SCAN_PREFIXES = [
   ['WO:', 'work_order'],
@@ -55,6 +57,7 @@ export class MobileService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly mesService: MesService,
+    private readonly controlService?: ControlService,
   ) {}
 
   async listWorkbench(personId: string, actor?: OrgContext) {
@@ -129,7 +132,86 @@ export class MobileService {
   }
 
   async getOrder(orderId: string, actor?: OrgContext) {
-    return this.mesService.getWorkOrder(orderId, actor);
+    const detail = await this.mesService.getWorkOrder(orderId, actor);
+    // NO-79a：现场问题"我的工单为什么没动"——若工单已派给设备，附上该设备的
+    // **执行边界摘要**（在飞/排队/未交付/最久等待），判定与执行边界面板同一实现。
+    // 查不到派工设备或查询失败 → 如实 null（不伪造"设备正常"）。
+    const deviceExecution = await this.readAssignedDeviceExecution(
+      String(detail.workOrder?.scheduleTaskId ?? orderId),
+      actor,
+    );
+    return { ...detail, deviceExecution };
+  }
+
+  private async readAssignedDeviceExecution(taskId: string, actor?: OrgContext) {
+    return this.readAssignedDeviceExecutions(taskId, actor);
+  }
+
+  /**
+   * NO-85a：多设备协同的**合并执行摘要**——对全部派工设备各取执行边界，
+   * 主设备（最新派工）给完整摘要，其余设备聚合成"延误计数"。
+   * 现场语义：首台设备空闲 ≠ 万事大吉——协同设备卡住时工单照样推不动，
+   * 必须让工人在工单卡上看到"另一台还没就绪"。
+   */
+  private async readAssignedDeviceExecutions(taskId: string, actor?: OrgContext) {
+    if (!this.controlService) return null;
+    try {
+      // 多设备协同工单：取**全部**派工设备；执行摘要展示主设备（最新派工），
+      // 其余设备数由客户端显示"+N 台"（NO-79a 后续：不静默丢弃协同设备事实）。
+      const assignments = await this.db
+        .select({ deviceId: ewohSchedulingPlanAssignment.deviceId })
+        .from(ewohSchedulingPlanAssignment)
+        .where(
+          actor?.primaryOrgId
+            ? and(
+                eq(ewohSchedulingPlanAssignment.taskId, taskId),
+                or(
+                  eq(ewohSchedulingPlanAssignment.orgId, actor.primaryOrgId),
+                  isNull(ewohSchedulingPlanAssignment.orgId),
+                ),
+              )
+            : eq(ewohSchedulingPlanAssignment.taskId, taskId),
+        )
+        .orderBy(desc(ewohSchedulingPlanAssignment.createdAt));
+      const deviceIds = [...new Set(assignments.map((a) => String(a.deviceId ?? '').trim()))].filter(Boolean);
+      const deviceId = deviceIds[0] ?? '';
+      if (deviceId === '') return null;
+      const boundary = await this.controlService.listDeviceCommands(deviceId, { limit: 10 }, actor);
+      // 其余协同设备的延误聚合（NO-85a）：不逐台展开（移动端空间有限），
+      // 只回答"还有几台没就绪、最久的在等什么"。
+      const otherStuck: Array<{ deviceId: string; queued: number; awaitingDelivery: number; overdue: number }> = [];
+      for (const otherId of deviceIds.slice(1)) {
+        try {
+          const other = await this.controlService.listDeviceCommands(otherId, { limit: 5 }, actor);
+          const stuck =
+            other.summary.inFlight + other.summary.queued + other.summary.awaitingDelivery + (other.summary.overdue ?? 0);
+          if (stuck > 0) {
+            otherStuck.push({
+              deviceId: otherId,
+              queued: other.summary.queued,
+              awaitingDelivery: other.summary.awaitingDelivery,
+              overdue: other.summary.overdue ?? 0,
+            });
+          }
+        } catch {
+          // 单台设备查询失败不影响主摘要（其余台数里已含它）
+        }
+      }
+      return {
+        otherStuckCount: otherStuck.length,
+        otherStuck,
+        deviceId,
+        inFlight: boundary.summary.inFlight,
+        queued: boundary.summary.queued,
+        awaitingDelivery: boundary.summary.awaitingDelivery,
+        overdue: boundary.summary.overdue ?? 0,
+        oldestWaitingMs: boundary.summary.oldestWaitingMs ?? null,
+        busyBlocker: boundary.summary.busyBlocker,
+        queuedReasons: boundary.summary.queuedReasons ?? null,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async transitionStep(

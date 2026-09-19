@@ -14,6 +14,12 @@ jest.mock('../../api/scheduler', () => ({
   getActivePlans: jest.fn(),
 }));
 
+jest.mock('../../api/control', () => ({
+  getDeviceExecutionBoundary: jest.fn().mockResolvedValue(null),
+  getDeliveryBacklogStatus: jest.fn().mockResolvedValue(null),
+}));
+jest.mock('./DeliveryBacklogTable', () => ({ __esModule: true, default: () => null }));
+jest.mock('./PolicyGatePanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../api/workbench', () => ({
   getWorkbenchNow: jest.fn().mockResolvedValue({ items: [], generatedAt: new Date().toISOString() }),
 }));

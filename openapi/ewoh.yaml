@@ -809,13 +809,14 @@ paths:
                     items:
                       type: object
                       properties:
-                        kind: { type: string, enum: [anomaly, notification] }
+                        kind: { type: string, enum: [anomaly, notification, material_gap, approval] }
                         priority: { type: integer }
                         title: { type: string }
                         ref: { type: string }
                         route: { type: string }
                         severity: { type: string, nullable: true }
                         createdAt: { type: string, format: date-time }
+                        detail: { type: string, description: '附加量化信息' }
                   generatedAt: { type: string, format: date-time }
         BadRequest:
           $ref: '#/components/responses/BadRequest'
@@ -5173,6 +5174,95 @@ paths:
           $ref: '#/components/responses/NotFound'
         InternalError:
           $ref: '#/components/responses/InternalError'
+  /api/scheduler/kpi/history:
+    get:
+      tags:
+        - scheduler
+      summary: KPI snapshot history (NO-89a)
+      description: >
+        门禁指标**历史序列**（最近快照，按周期倒序，缺数据的旧快照也如实返回）。
+        看板画趋势：on_time_rate / lateness_p95 随时间变化一眼可见——漂移早发现。
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 48, default: 12 }
+      responses:
+        '200':
+          description: KPI snapshot history (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [periodStart, periodEnd, createdAt, kpi]
+                  properties:
+                    periodStart: { type: string }
+                    periodEnd: { type: string }
+                    createdAt: { type: string }
+                    kpi:
+                      type: object
+                      properties:
+                        onTimeRate: { type: number, nullable: true }
+                        latenessP95Ms: { type: number, nullable: true }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/delivery-backlog/status:
+    get:
+      tags:
+        - control
+      summary: Delivery backlog live snapshot (plant-level, NO-77a)
+      description: >
+        投递积压**实时快照**（只读，工厂级聚合）。判定与巡检（sweep）同一实现：
+        `sent`（未交付）与 `gateway_received`（已投未回执）且 `sent_at < now-SLA`。
+        看板/工作台按它展示聚合数字——不依赖"恰好有人跑过巡检"。
+      responses:
+        '200':
+          description: Backlog snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slaMs, escalationMultiplier, totals, devices, checkedAt]
+                properties:
+                  slaMs: { type: integer }
+                  escalationMultiplier: { type: integer }
+                  totals:
+                    type: object
+                    properties:
+                      devices: { type: integer }
+                      commands: { type: integer }
+                      undelivered: { type: integer }
+                      receivedNotExecuted: { type: integer }
+                      escalatedDevices: { type: integer }
+                      oldestWaitingMs: { type: integer, nullable: true }
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        deviceId: { type: string }
+                        commands: { type: integer }
+                        undelivered: { type: integer }
+                        receivedNotExecuted: { type: integer }
+                        oldestWaitingMs: { type: integer }
+                        escalated: { type: boolean }
+                        queuedReasons:
+                          type: object
+                          description: NO-81a 排队原因计数（现场要知道在等什么）
+                          properties:
+                            device_busy: { type: integer }
+                            quota: { type: integer }
+                  checkedAt: { type: string }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
+        Forbidden:
+          $ref: '#/components/responses/Forbidden'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
   /api/control/requests:
     get:
       tags:
@@ -5248,6 +5338,14 @@ paths:
                         responseAt: { type: string, nullable: true }
                         revokedReason: { type: string, nullable: true }
                         revokedReasonLabel: { type: string, nullable: true }
+                        queuedReason:
+                          type: string
+                          nullable: true
+                          enum: [device_busy, quota]
+                          description: >
+                            NO-81a 排队原因：device_busy = 一车一活（等设备空下来）；
+                            quota = 配额用尽（等下一分钟窗口）。null = 未排队。
+                            两者都不是失败，但**解除条件不同**——现场据此决定等着还是去催。
                         fingerprintScheme: { type: string, enum: [hmac-sha256:v2, fnv1a64:v1, none] }
                         fingerprintVerified: { type: boolean }
                         executable: { type: boolean }
@@ -5428,6 +5526,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         NotFound:
           $ref: '#/components/responses/NotFound'
+        InternalError:
+          $ref: '#/components/responses/InternalError'
+  /api/control/delivery-backlog/history:
+    get:
+      tags:
+        - control
+      summary: Delivery backlog history snapshots (newest first, NO-91a)
+      description: >
+        投递积压**历史序列**（最近在前）。每次巡检顺带落一条历史快照，趋势可见、漂移早发现。
+        `limit` 上限 48（超出按 48 截断）；无快照如实返回空数组（不伪造趋势，原则 7）。
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 48, default: 24 }
+          description: 最多返回的快照条数（最近 N 条）。
+      responses:
+        '200':
+          description: Backlog history (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slaMs, escalationMultiplier, snapshots]
+                properties:
+                  slaMs: { type: integer }
+                  escalationMultiplier: { type: integer }
+                  snapshots:
+                    type: array
+                    description: 最近在前；空数组=尚无历史快照（巡检从未运行）。
+                    items:
+                      type: object
+                      required: [checkedAt, commands, undelivered, receivedNotExecuted, escalatedDevices]
+                      properties:
+                        checkedAt: { type: string }
+                        commands: { type: integer }
+                        undelivered: { type: integer }
+                        receivedNotExecuted: { type: integer }
+                        escalatedDevices: { type: integer }
+        Unauthorized:
+          $ref: '#/components/responses/Unauthorized'
         InternalError:
           $ref: '#/components/responses/InternalError'
   /api/control/delivery-backlog/sweep:
@@ -8941,7 +9080,7 @@ paths:
                         reason:
                           type: string
                           enum: [device_busy, quota]
-                          description: device_busy = 一车一活；quota = 本分钟投递配额用尽（均非失败）
+                          description: 'device_busy = 一车一活；quota = 配额用尽（blockedBy 以 quota-motion 前缀区分运动类更严配额；均非失败）'
                         blockedBy: { type: string, description: 占用设备的在飞命令 `<commandKey>:<commandId>` }
                   quota:
                     type: object
@@ -8953,6 +9092,11 @@ paths:
                       perMinute: { type: integer }
                       usedInWindow: { type: integer }
                       remaining: { type: integer, nullable: true }
+                      motionPerMinute:
+                        type: integer
+                        description: NO-74c 运动类命令（dispatch_task/resume）的更严配额；默认为通用配额一半
+                      motionUsedInWindow: { type: integer }
+                      motionRemaining: { type: integer, nullable: true }
                   oldestSentAt: { type: string, nullable: true }
                   truncated: { type: boolean }
                   checkedAt: { type: string }
@@ -18639,6 +18783,9 @@ components:
         retryable:
           type: boolean
           description: "True only for transient write failures (DB/connection); edge uplink retries these. Absent/false = permanent rejection (dead-letter)."
+        soc_reanchored:
+          type: boolean
+          description: "NO-92a SOC plausibility gate: set true when this frame re-anchors the device battery after `reanchorStreak` consecutive implausible-jump rejections (sustained real change, not a one-frame glitch)."
       required:
         - accepted
         - skipped

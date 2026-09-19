@@ -123,6 +123,22 @@ EWOH 定位为**只读监督、风险分析与受控工作流系统**：平台�
 | 设备执行边界人面读面（deviceExecutionBoundaryView） | 是 | 是 | 是 | 否 | 是 | 是 |
 | 授权指纹密钥轮换窗口（fingerprintKeyRotation） | 是 | 是 | 是 | 否 | 否 | 是 |
 | 单设备投递配额与排队（deviceDeliveryQuota） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 投递积压巡检与提醒（deliveryBacklogPatrol） | 是 | 是 | 是 | 否 | 是 | 是 |
+| Modbus 加固（批量写事务/重连退避）（modbusHardening） | 是 | 是 | 是 | 否 | 是 | 是 |
+| OPC-UA 真实栈（可选依赖 asyncua）（opcuaRealStack） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 积压快照 TTL 缓存与工厂级下钻表（backlogSnapshotCacheAndDrilldown） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 测试 CI 工作流（ciTestWorkflow） | 是 | 是 | 是 | 否 | 否 | 是 |
+| exo 场景清理自证（exoCleanupSelfProof） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 移动工单设备执行状态行（mobileOrderDeviceExecution） | 是 | 是 | 是 | 否 | 是 | 是 |
+| perception 场景清理自证（perceptionCleanupSelfProof） | 是 | 是 | 是 | 否 | 是 | 是 |
+| data-quality 场景清理自证（dataQualityCleanupSelfProof） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 积压趋势历史化（backlogTrendHistory） | 是 | 是 | 是 | 否 | 是 | 是 |
+| receipt 授权边界自建前置（receiptAuthBoundarySelfEstablish） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 移动工单多设备协同显示（mobileMultiDeviceDisplay） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 契约触达面审计（contractTouchpointAudit） | 是 | 是 | 是 | 否 | 是 | 是 |
+| golden 全路径复验工具链（goldenFreshToolchain） | 是 | 是 | 是 | 否 | 是 | 是 |
+| 策略门禁指标看板（policyGatePanel） | 是 | 是 | 是 | 否 | 否 | 是 |
+| 执行机构电量合理性闸门（socPlausibilityGate） | 是 | 是 | 是 | 否 | 是 | 是 |
 
 ### 运行时构成
 

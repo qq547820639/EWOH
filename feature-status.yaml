@@ -590,7 +590,7 @@ features:
     docsUpdated: true
     evidence:
       - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts（projectActuatorDeviceState）
-      - ewoh-spark-app/test/e2e/agv-transport-loop.mjs（11 项；含人员档案/位置前置条件自建 + NO-62c 审批处置）
+      - ewoh-spark-app/test/e2e/agv-transport-loop.mjs（11 项；人员档案/位置前置自建 + 遍历多候选挑 AVAILABLE + NO-62c 审批处置）
       - ewoh-spark-app/test/unit/ingest/sensor-ingest.service.spec.ts（NO-61a 2 例）
       - ewoh-spark-app/test/e2e/helpers/plan-freshness.mjs（approveWithReplan 共享助手，NO-62c）
       - docs/architecture/capability-alignment.md（§3 第 61 轮销账）
@@ -857,3 +857,269 @@ features:
       - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（步骤 19）
       - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.tsx（配额徽章）
       - docs/operations/production-runbook.md（配额与轮换说明）
+
+  deliveryBacklogPatrol:
+    # 投递积压巡检（NO-68a）：命令下发后超过 SLA（默认 5 分钟，`EWOH_CONTROL_DELIVERY_SLA_MS` 可调）
+    # 仍未交付网关（`status='sent'` 且 `delivered_at IS NULL`）→ 按设备发**确定性提醒**
+    # （`NTF-CTRL-<deviceId>-delivery_backlog-*`，收件人 dispatcher/workshop_lead/device_ops，
+    # 内容含积压条数/最久等待/常见原因清单），审计 `control.delivery_backlog_sweep`。
+    # 触发：定时 worker（10 分钟；`CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）+ 值班角色手动
+    # `POST /api/control/delivery-backlog/sweep`。租户清单走 SECURITY DEFINER 函数
+    # （standalone_096：只返回 org_id + PUBLIC 不可执行），明细在逐租户 GUC 事务里读。
+    # 闭环缺口审计：`pending`/人面读面都只在"有人看"时显示积压；网关掉线/密钥不配对/
+    # 配额用尽/设备一直忙时命令会静静躺在 `sent`——没人被叫到。
+    implemented: true
+    tested: true                       # 服务 6 例（双状态积压/幂等/无积压不发/读面老化/升级链 2 态/未达阈值不升级）+ E2E 1 项（20）
+    deployable: true                   # standalone_096（pending_orgs 函数）
+    productionEnabled: false
+    runtimeVerified: true              # e2e:control-actuator 30/30（真实 PG：回拨 sent_at → sweep=201/devices=1/created=3/audit）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（sweepDeliveryBacklog / listOrgsWithPendingCommands / SLA 老化读面）
+      - ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.ts（10 分钟周期；逐租户 GUC 事务）
+      - ewoh-spark-app/server/modules/control/control.controller.ts（POST delivery-backlog/sweep，RBAC 值班角色）
+      - db/migrations/standalone_096_control_pending_orgs.sql（SECURITY DEFINER 只返回 org_id）
+      - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.tsx（投递积压徽章：条数/最久等待/SLA）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（步骤 20）
+      - ewoh-spark-app/server/modules/dashboard/workbench-now.service.ts（工作台聚合项，NO-77a）
+      - ewoh-spark-app/server/modules/dashboard/__tests__/workbench-now-backlog.spec.ts（4 例）
+      - GET /api/control/delivery-backlog/status（实时快照端点 + OpenAPI 契约）
+
+  modbusHardening:
+    # Modbus 执行机构传输加固（NO-75a）：① 命令块（command/command_target/command_seq）
+    # 合并为**单次 FC16 批量写事务**——撕裂写从"命令码最后写"的顺序纪律升级为
+    # 协议级原子（从站 PDU 内原子生效），且 2~3 次往返 → 1 次；
+    # ② 重连指数退避（0.5s 起、30s 封顶、full jitter 防同步惊群；env 可调）——
+    # 失败后窗口内**快速失败**（不发起真实握手，不 hammer 设备），成功后窗口重置。
+    # 参照生态：pymodbus 的 reconnect_delay 演进（issue #1243）证明重连参数是现场真实痛点。
+    implemented: true
+    tested: true                       # 新增 5 例（FC16 单事务 ×2/命令真实生效/退避快速失败/成功重置）+ 既有 13 例全绿
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true              # 全部走 FakeModbusSlave 真帧（MBAP/PDU 级），18/18
+    docsUpdated: true
+    evidence:
+      - src/edge_platform/edge/adapters/actuator/modbus.py（_write_registers/FC16、backoff 状态机、事务统计）
+      - src/edge_platform/tests/test_actuator_modbus.py（TestBatchWriteTransaction + TestReconnectBackoff）
+
+  opcuaRealStack:
+    # OPC-UA **真实协议栈**接入（NO-75b）：AsyncuaOpcUaClient 实现 OpcUaClient ABC
+    # （read/write/close），经 asyncua sync 包装对真实 UA-TCP 服务器执行真会话。
+    # 选型（六维对比，详见 capability-alignment）：asyncua（纯 Python、LGPLv3+、活跃、
+    # 内置 sync+Server）胜 node-opcua（跨语言 sidecar）/open62541（原生编译）/Milo（JVM）。
+    # 纪律：**可选依赖**——未安装时构造抛 opcua_sdk_unavailable（绝不静默降级到 Twin）；
+    # 真栈用例要求 asyncua ≥ 2.0（1.1.x 有 sync 线程收线缺陷，实测挂进程），不满足显式 SKIP。
+    implemented: true
+    tested: true                       # 真线 2 例（dispatch 全链 + 连接失败显式化）on 3.12+asyncua 2.0.1；1.1.8 环境如实 SKIP
+    deployable: true                   # 可选依赖：pip install asyncua（≥2.0）
+    productionEnabled: false
+    runtimeVerified: true              # in-process asyncua Server 真线 3/3 连续全绿（connect/读写/状态迁移）
+    docsUpdated: true
+    evidence:
+      - src/edge_platform/edge/adapters/actuator/opcua_real.py（AsyncuaOpcUaClient）
+      - src/edge_platform/tests/test_actuator_opcua_real.py（真线 dispatch + 连接失败语义）
+      - docs/architecture/capability-alignment.md（六维选型对比）
+
+  backlogSnapshotCacheAndDrilldown:
+    # 积压快照 **短 TTL 缓存**（NO-78a）：`EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS`（默认 5s；
+    # 0=显式关闭）——工作台/看板高频轮询与"不 hammer 数据库"兼得；巡检（sweep）不走缓存
+    # （写提醒必须每次真实执行）。缓存按租户分桶 + 容量收敛（64）。
+    # **工厂级下钻表**：FactoryOperations 页新增逐设备明细（设备/命令/未交付/已投未回执/
+    # 最久等待/升级徽章），零积压不渲染表格、读失败显式报错；前端 30s 轮询兜底。
+    implemented: true
+    tested: true                       # TTL 2 例（命中同对象/过期重算/0=关闭）+ 下钻表渲染 5 例
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: false             # 渲染测试覆盖；真实浏览器/活体端点下轮并入链验证
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/control/control.service.ts（snapshotCache + TTL）
+      - ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.tsx（下钻表）
+      - ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.test.tsx（5 例）
+
+  ciTestWorkflow:
+    # 测试 CI 工作流（NO-78b）：`.github/workflows/tests.yml`——Python 矩阵（3.11/3.12；
+    # 3.12 装 asyncua 2.x 跑真栈用例，<2.0 按版本守卫显式 SKIP）跑标准链
+    # `pytest -q src/edge_platform tests tools` + ruff；Node job 跑双 tsconfig 类型检查 +
+    # lint + jest server/client（零 DB/零浏览器，与本地口径一致）。actions 按 SHA pin
+    # （与 package.yml 同风格）。
+    implemented: true
+    tested: true                       # YAML 解析验证 + 命令清单与本地等价（本地全部跑过）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: false             # runner 实际执行属外部条件（未触发远端 CI）
+    docsUpdated: true
+    evidence:
+      - .github/workflows/tests.yml
+      - scripts/python-test-matrix.sh（本地等价的矩阵脚本，3.9 SKIP/3.12 PASS 实测）
+
+  exoCleanupSelfProof:
+    # exo 场景清理自证（NO-67d 推广）：单点跟踪本场景创建的所有会话（call 包装），
+    # 收尾直查会话表断言"无活跃残留"；无 OWNER_DB 显式 SKIP；残留/自查失败记 FAIL。
+    implemented: true
+    tested: true                       # e2e:exo-session 53/53（步骤 16 清理自证 PASS）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/test/e2e/exo-session-loop.mjs（createdSessionIds 单点跟踪 + 步骤 16）
+
+  mobileOrderDeviceExecution:
+    # 移动工单"我的工单为什么没动"（NO-79a）：工单详情附带派工设备的执行边界摘要
+    # （经 ewoh_scheduling_plan_assignment 找设备 → listDeviceCommands 摘要，同一判定实现）。
+    # 工单卡状态行区分：设备执行中 / 设备排队中（不是工单失败）/ 命令投递积压（已通知值班）/
+    # 设备空闲；查不到派工设备如实 null（不伪造"设备正常"）。
+    implemented: true
+    tested: true                       # mobile 域 5 例 + 浏览器 5 用例×6 画像（四态+缺项）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true              # 真浏览器验收全绿（排队/执行中/积压/空闲/缺项）；并修分支顺序缺陷
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/mobile/mobile.service.ts（readAssignedDeviceExecution）
+      - ewoh-spark-app/server/modules/mobile/mobile.module.ts（+ControlModule）
+      - ewoh-spark-app/client/src/api/mobile.ts（deviceExecution 类型契约）
+      - ewoh-spark-app/client/src/pages/MobileWorkbench/MobileWorkbench.tsx（工单卡状态行）
+
+  perceptionCleanupSelfProof:
+    # perception 场景清理自证（NO-67d 推广，NO-79b）：收尾删除后四类行计数
+    # （冲突/任务/融合快照/环境），残留或清理异常记 FAIL。
+    implemented: true
+    tested: true                       # e2e:perception-fusion 21/21（步骤 17 PASS）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/test/e2e/perception-fusion-loop.mjs（步骤 17）
+
+  dataQualityCleanupSelfProof:
+    # data-quality 场景清理自证（NO-83a）：收尾先收尾本场景注入的时间旅行告警
+    # （合成数据，场景拥有清理责任），再直查断言无 open 残留；注入 id 提升到 try 外
+    # （早期失败时 finally 读到 null 而非 TDZ ReferenceError——实测踩过）。
+    # 首跑当场抓出 8 条历史运行遗留的 open 告警并一次性清洗。
+    implemented: true
+    tested: true                       # e2e:data-quality 16/16（步骤 15 PASS）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/test/e2e/data-quality-notification-leg.mjs（步骤 15 + injectedAlertId 提升）
+
+  mobileMultiDeviceDisplay:
+    # 移动工单多设备显示（NO-83b）：协同派工工单此前只显示首台设备（静默丢弃协同事实）
+    # → deviceExecution 返回全部派工设备，工单卡显示首台 + "+N 台协同"。
+    implemented: true
+    tested: true                       # 类型契约 + 浏览器多设备/协同未就绪变体（NO-85a）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true              # 真浏览器 48/48（含协同未就绪合并视图）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/server/modules/mobile/mobile.service.ts（deviceIds 全量去重）
+      - ewoh-spark-app/client/src/api/mobile.ts（otherDevices）
+      - ewoh-spark-app/client/src/pages/MobileWorkbench/MobileWorkbench.tsx（+N 台协同 / +N 台未就绪 分色）
+      - ewoh-spark-app/test/browser/mobile-device-execution.spec.js（NO-85a 协同未就绪变体）
+
+  contractTouchpointAudit:
+    # 契约触达面审计（NO-84b）：`scripts/audit-contract-touchpoints.js` +
+    # `make audit-contract-touchpoints`。维护契约桩注册表（桩形态正则 + 合法返回词表 +
+    # 修正指引）；测试桩命中形态但返回值不在现行词表 → FAIL。
+    # 背景：第 76 轮 `_post_batch` verdict 契约演进漏改非链目录桩 → 挂死。
+    # 本审计把该教训固化为机器可执行门禁；注册表按契约演进扩展。
+    implemented: true
+    tested: true                       # 首跑抓出 tests/ 残留 bool 桩 → 对齐为 "retry"（6/6 回归）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - scripts/audit-contract-touchpoints.js（注册表 + walker + 词表校验）
+      - Makefile（audit-contract-touchpoints 目标）
+      - tests/test_edge_bridge_ingest.py（bool 桩对齐为 verdict）
+
+  goldenFreshToolchain:
+    # golden 全路径复验工具链（NO-87a）：`make e2e-golden-fresh` =
+    # reset → db/runner/clear-execution-facts.mjs（清本 org 执行/反馈/KPI 快照——
+    # reset 只删 seed 任务的执行行，场景自建任务的迟到回执会让门禁持续"不达标"）
+    # → e2e:golden 全路径（gate → ack 激活 → rollback）。实测 22/22 全绿。
+    implemented: true
+    tested: true                       # make e2e-golden-fresh 22/22（含 47-48 ack 激活 + 回滚）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - db/runner/clear-execution-facts.mjs（清派生事实；org_id 为 varchar 不加 ::uuid cast）
+      - Makefile（e2e-golden-fresh 目标，自动加载 /tmp/ewoh-e2e-env.sh）
+      - test/e2e/golden-path-verify.mjs（21 PASS + 1 SKIP 全路径分支）
+
+  policyGatePanel:
+    # 策略门禁指标看板（NO-87b）：FactoryOperations 的 PolicyGatePanel——
+    # 每条检查实际值 vs 阈值 + 三态结论（通过/缺数据（未验证 ≠ 通过）/不达标——
+    # ack 无法豁免）；汇总徽章三态与证据不足徽章；60s 轮询。
+    # 价值：指标漂移早发现（而不是等激活被拒才发现 on_time_rate 已滑到阈值下）。
+    implemented: true
+    tested: true                       # 渲染测试 5 例（全通过/缺数据/不达标/失败/加载）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: false             # 面板的真浏览器验收待补（渲染测试已覆盖三态）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/client/src/pages/FactoryOperations/PolicyGatePanel.tsx
+      - ewoh-spark-app/client/src/pages/FactoryOperations/PolicyGatePanel.test.tsx（+sparkline/tooltip 断言）
+      - Makefile（e2e-receipt-fresh / e2e-agv-fresh / e2e-golden-fresh 三目标）
+      - ewoh-spark-app/server/modules/scheduler/kpi.service.ts（persistThrottled 节流持久化，NO-90a）
+      - ewoh-spark-app/server/modules/scheduler/__tests__/kpi-persist-throttled.spec.ts（节流 3 例）（+趋势 2 例）
+      - GET /api/scheduler/kpi/history（历史序列契约 + OpenAPI）
+
+  backlogTrendHistory:
+    # 积压趋势历史化（NO-91a，迁移 102）：巡检每次落一条历史快照
+    # （totals/逐设备聚合），`GET /api/control/delivery-backlog/history` 最近在前，
+    # FactoryOperations 积压 sparkline（命令数随巡检节拍变化）。
+    # 教训：新表必须显式 GRANT ewoh_api（不继承既有授权）。
+    implemented: true
+    tested: true                       # sweep 用例扩展快照断言 + 迁移 102 verify + e2e 31/31 落库
+    deployable: true                   # standalone_102
+    productionEnabled: false
+    runtimeVerified: true              # e2e 场景巡检后快照表出现 1 条（端到端积累）
+    docsUpdated: true
+    evidence:
+      - db/migrations/standalone_102_control_backlog_snapshot.sql（表 + 索引 + GRANT；2026-09-18 自 101 重编号——与死信注册表 101 冲突导致迁移链 Duplicate ID）
+      - ewoh-spark-app/server/modules/control/control.service.ts（sweep 落快照 + getDeliveryBacklogHistory）
+      - ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.tsx（sparkline + NO-99a 清库复验目标推广）
+      - ewoh-spark-app/test/e2e/control-actuator-loop.mjs（步骤 20 sweep 落快照）
+
+  socPlausibilityGate:
+    # 执行机构电量合理性闸门（NO-92a）：AGV SOC 单帧非物理跳变（坏传感/spoofing）
+    # → SOC_JUMP_IMPLAUSIBLE 显式拒绝、不写台账/世界状态、幂等认领释放（重放再显式
+    # 拒绝）；越界（非 [0,100]/NaN）无条件拒绝；连续 reanchorStreak 帧同一新水平
+    # → 再锚定接受并标记 soc_reanchored（真实充电是持续过程，毛刺只有一帧）。
+    # 销账：simfarm 对抗 A6 已知缺口（回跳如实接受）。
+    implemented: true
+    tested: true                       # 纯函数 15 例 + 服务级 6 例（拒绝/再锚定/缺帧/越界/无锚/合理增量）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true              # device-physics 对抗场景 A1/A4a/A4b/A7 端到端取证（合理曲线受理/跳变拒绝/再锚定/台账跟随）
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/shared/soc-plausibility.ts（领域口径唯一事实源：包络/噪声下限/锚点时效/再锚定）
+      - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts（gateActuatorSoc 接线）
+      - ewoh-spark-app/server/modules/ingest/__tests__/soc-plausibility.spec.ts + sensor-ingest-actuator-soc-gate.spec.ts
+      - ewoh-spark-app/test/e2e/device-physics-adversarial.mjs（A4a 对抗腿 + A4b 再锚定腿 + A7 全链取证）
+      - tools/device_physics_sim.py（--soc-window-min 时间窗：物理时间匹配的合法曲线 vs 对抗腿）
+
+  receiptAuthBoundarySelfEstablish:
+    # receipt 授权边界用例自建前置（NO-100a）：步骤 20/21 此前依赖求解器恰好把
+    # 任务派给张伟 → 环境 SKIP。自建：未终结执行行归到张伟绑定人员（派工行+执行行
+    # 同步 person_id；行态 STARTED），本人可报 / 他人被拒 403 均验证。19/19 全绿。
+    implemented: true
+    tested: true                       # e2e:receipt 19/19（含越权 403）
+    deployable: true
+    productionEnabled: false
+    runtimeVerified: true
+    docsUpdated: true
+    evidence:
+      - ewoh-spark-app/test/e2e/execution-receipt-closed-loop.mjs（NO-100a 自建前置）

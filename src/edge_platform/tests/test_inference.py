@@ -286,6 +286,113 @@ class RuleTest(unittest.TestCase):
         self.assertEqual(field.cfg["load_sec"], 150)
 
 
+# ---------- 热积累规则（THERMAL_ACCUMULATION） ----------
+class ThermalRuleTest(unittest.TestCase):
+    """热积累：负载×时间积分推算温度 ≥ warn 阈值触发，滞回收口，冷却防风暴。
+
+    用缩短的物理常数让温度在秒级测试里越过阈值（等价现场的长时重负载）。
+    """
+
+    def setUp(self):
+        # k·tau·τ² = 0.02*60*25 = 30 → τ=5Nm 连续稳态 ≈ 55°C；warn=50 / exit=45
+        self.rules = RuleEngine(
+            config={
+                "cooldown_sec": 30,
+                "thermal_warn_c": 50.0,
+                "thermal_k_heat": 0.02,
+                "thermal_tau_cool_sec": 60.0,
+                "thermal_dt_cap_sec": 5.0,
+            }
+        )
+
+    def _burn(self, dev, t0, frames=120, torque=5.0, step_ms=1000, seq0=0):
+        drafts = []
+        for i in range(frames):
+            drafts += self.rules.on_telemetry(
+                mk_msg(dev, "P1", t0 + i * step_ms, seq0 + i, torque=torque)
+            )
+        return drafts
+
+    def test_trigger_condition_carries_model_estimate_not_measurement(self):
+        drafts = self._burn("D1", BASE_TS)
+        fires = [d for d in drafts if d["event_code"] == "THERMAL_ACCUMULATION" and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+        d = fires[0]
+        self.assertEqual(d["severity"], "L2")
+        # 诚实边界：condition 必须声明这是模型推算并带模型版本，不许伪装成测量
+        self.assertIn("thermal_est(", d["trigger"]["condition"])
+        self.assertIn("非测量", d["trigger"]["condition"])
+
+    def test_light_load_never_triggers(self):
+        drafts = self._burn("D1", BASE_TS, torque=0.5)
+        self.assertEqual([d for d in drafts if d["event_code"] == "THERMAL_ACCUMULATION"], [])
+
+    def test_unload_closes_with_hysteresis(self):
+        self._burn("D1", BASE_TS)
+        # 降温到 [exit, warn) 区间：不收口（滞回保持）
+        hold = self.rules.on_telemetry(mk_msg("D1", "P1", BASE_TS + 200_000, 900, torque=0.0))
+        self.assertEqual([x for x in hold if x.get("end_time") and x["event_code"] == "THERMAL_ACCUMULATION"], [])
+        # 继续冷却跌破 exit → 收口
+        closed = []
+        for i in range(120):
+            closed += self.rules.on_telemetry(
+                mk_msg("D1", "P1", BASE_TS + 201_000 + i * 1000, 1000 + i, torque=0.0)
+            )
+        self.assertEqual(
+            len([x for x in closed if x.get("end_time") and x["event_code"] == "THERMAL_ACCUMULATION"]), 1
+        )
+
+    def test_cooldown_prevents_alert_storm(self):
+        """触发→收口→冷却期内再越线：被抑制（防抖动风暴）；持续越线跨过冷却期 → 允许再触发。"""
+        # 快散热参数：tau=10s，可在几秒内完成一次"越线→收口→再越线"抖动循环
+        r = RuleEngine(
+            config={
+                "cooldown_sec": 30,
+                "thermal_warn_c": 50.0,
+                "thermal_k_heat": 0.2,
+                "thermal_tau_cool_sec": 10.0,
+                "thermal_dt_cap_sec": 5.0,
+            }
+        )
+        self.rules = r
+
+        def run(t0, torque, n, seq0):
+            out = []
+            for i in range(n):
+                out += r.on_telemetry(mk_msg("D9", "P1", t0 + i * 1000, seq0 + i, torque=torque))
+            return out
+
+        first = run(BASE_TS, 5.0, 10, 0)  # t≈7s 首次触发
+        fires = [d for d in first if d["event_code"] == "THERMAL_ACCUMULATION" and "end_time" not in d]
+        self.assertEqual(len(fires), 1)
+        closes = run(BASE_TS + 10_000, 0.0, 5, 100)  # t≈12s 跌破 exit → 收口
+        self.assertEqual(
+            len([d for d in closes if d.get("end_time") and d["event_code"] == "THERMAL_ACCUMULATION"]), 1
+        )
+        reheat = run(BASE_TS + 15_000, 5.0, 15, 200)  # t≈18s 再越线：距上次触发 11s < 冷却 30s
+        self.assertEqual(
+            [d for d in reheat if d["event_code"] == "THERMAL_ACCUMULATION" and "end_time" not in d], []
+        )
+        later = run(BASE_TS + 30_000, 5.0, 40, 300)  # 持续越线，t≈37s 冷却期满 → 再触发恰一次
+        self.assertEqual(
+            len([d for d in later if d["event_code"] == "THERMAL_ACCUMULATION" and "end_time" not in d]), 1
+        )
+
+    def test_backfill_negative_dt_does_not_fabricate_physics(self):
+        """补传/倒退帧（时间戳倒退）不推进热模型，且不得把基线拖回过去——
+        否则下一正常帧会按 dt_cap 凭空积分出最多 5s 的假物理（2026-09-15 评审修复）。"""
+        self._burn("D1", BASE_TS)
+        est = self.rules._thermal["D1"]
+        t = est.temperature_c
+        # 倒退帧：自身不变温……
+        self.rules.on_telemetry(mk_msg("D1", "P1", BASE_TS + 5000, 5000, torque=5.0))
+        self.assertEqual(self.rules._thermal["D1"].temperature_c, t)
+        # ……且基线仍停在最后一帧（119s）：下一正常帧（120s）只积分 1s，不是 dt_cap 5s
+        self.rules.on_telemetry(mk_msg("D1", "P1", BASE_TS + 120_000, 5001, torque=5.0))
+        advanced = self.rules._thermal["D1"].temperature_c - t
+        self.assertLess(advanced, 1.0, f"倒退帧后下一帧凭空积分 {advanced:.2f}°C（应 ≈1s 步进 ~0.3°C）")
+
+
 # ---------- 模型 unknown 三路径 ----------
 class ModelUnknownTest(unittest.TestCase):
     def setUp(self):

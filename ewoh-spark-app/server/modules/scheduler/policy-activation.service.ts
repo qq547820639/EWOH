@@ -120,6 +120,13 @@ export class PolicyActivationService {
     // R2-SSV-02（2026-08-17）：KPI 输入透传 orgId——HTTP gate 评估与 activate
     // 现场评估按调用租户作用域（此前无 org：HTTP 必 400 / 系统流全租户聚合）。
     const kpi = await this.kpiService.aggregateForPolicyEvaluation(orgId ?? null);
+    // NO-90a：评估顺带**按节拍持久化** KPI 快照（历史序列自动积累，漂移早发现）。
+    // 节拍默认 5 分钟：面板 60s 轮询不会刷爆历史表（kpiService 内部按最近快照节流）。
+    try {
+      await this.kpiService.persistThrottled(orgId ?? null, 5 * 60_000);
+    } catch {
+      // 持久化失败不影响评估结果（趋势是增强，不是闸门的依赖）
+    }
     const checks: PolicyGateEvaluation['checks'] = [];
 
     /** 构造检查项：actual 为 null = 无证据 → skipped，绝不记为"通过"。 */

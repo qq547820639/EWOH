@@ -76,8 +76,11 @@ e2e-agv-transport:  ## 搬运任务→执行机构（NO-61a）：AGV 状态投�
 	cd ewoh-spark-app && npm run e2e:agv-transport
 
 .PHONY: capability-drift
-capability-drift:  ## 能力停用漂移巡检（NO-65c；只读；超阈值非零退出；需 EWOH_DATABASE_URL=owner）
-	@test -n "$(EWOH_DATABASE_URL)" || { echo "需要 EWOH_DATABASE_URL（owner 连接串）"; exit 2; }
+capability-drift:  ## 能力停用漂移巡检（NO-65c；只读；超阈值非零退出；缺 EWOH_DATABASE_URL 时自动从 /tmp/ewoh-e2e-env.sh 加载）
+	@if [ -z "$(EWOH_DATABASE_URL)" ] && [ -f /tmp/ewoh-e2e-env.sh ]; then \
+	  set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
+	fi; \
+	test -n "$${EWOH_DATABASE_URL:-$$EWOH_E2E_OWNER_DATABASE_URL}" || { echo "需要 EWOH_DATABASE_URL 或 EWOH_E2E_OWNER_DATABASE_URL（owner 连接串）"; exit 2; }; \
 	node scripts/capability-drift-check.js $(if $(ORG_ID),--org-id $(ORG_ID),)
 
 .PHONY: e2e-chain
@@ -119,6 +122,33 @@ e2e-closed-loop:  ## 主产品完整闭环（golden + receipt），真实 Postgr
 
 # DR-2~DR-6 全闭环（2026-09-11）：故障感知→数据质量确认→方案→审批→派工→回执
 # →偏差→取消回滚→复盘运行记忆→班次解析。消费可调度任务：先 scenario-reset YES=1。
+e2e-receipt-fresh:  ## NO-99a：清库后全路径复验 receipt（reset → 清执行事实 → receipt）
+	@if [ ! -f /tmp/ewoh-e2e-env.sh ]; then echo "缺凭证：先准备 /tmp/ewoh-e2e-env.sh（runbook 模板）"; exit 2; fi
+	set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
+	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
+	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
+	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
+	cd ewoh-spark-app && npm run e2e:receipt
+
+e2e-agv-fresh:  ## NO-99a：清库后全路径复验 agv-transport（reset → 清执行事实 → agv）
+	@if [ ! -f /tmp/ewoh-e2e-env.sh ]; then echo "缺凭证：先准备 /tmp/ewoh-e2e-env.sh（runbook 模板）"; exit 2; fi
+	set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
+	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
+	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
+	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
+	cd ewoh-spark-app && npm run e2e:agv-transport
+
+e2e-golden-fresh:  ## NO-87a：清库后全路径复验 golden（reset → gate → activate → rollback）
+	@if [ -f /tmp/ewoh-e2e-env.sh ]; then \
+	  set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
+	else \
+	  echo "缺凭证：请先准备 /tmp/ewoh-e2e-env.sh（模板见 runbook『E2E 凭证的角色分工』）"; exit 2; \
+	fi; \
+	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
+	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
+	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
+	cd ewoh-spark-app && npm run e2e:golden
+
 e2e-fault-replan:  ## 全闭环验收：感知/质量/决策/授权/执行/反馈/回滚/复盘/班次
 	cd ewoh-spark-app && npm run e2e:fault-replan
 
@@ -127,6 +157,9 @@ test:  ## 运行 unittest 测试套件
 
 test-contract:  ## 运行契约测试（tests/，需 pytest；也可用 unittest 运行）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/ -q
+
+audit-contract-touchpoints:  ## NO-84b：契约桩触达面审计（桩返回值 vs 现行词表；防 r76 类事故）
+	node scripts/audit-contract-touchpoints.js
 
 contract-state-machine:  ## P1-contract：校验 Python 状态机与 contracts/state-machines/*.yaml 一致
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_state_machine_contract.py -q

@@ -5,6 +5,7 @@ import {
   connectOwner,
   createE2EFixture,
   findControlRequest,
+  seedSchedulerFixture,
   type E2EFixture,
   type OwnerSql,
 } from '../helpers/e2e-db';
@@ -18,6 +19,7 @@ import {
   login,
   logout,
   refresh,
+  refreshCookieValue,
 } from '../helpers/e2e-http';
 
 const e2eConfig = resolveE2EConfig();
@@ -264,7 +266,11 @@ if (!e2eConfig) {
       expect(example.body.workflowId).toBe('mes-execution');
       expect(example.body.steps).toHaveLength(8);
 
-      const workerAdvance = await apiRequest<{
+      // NEST-610（2026-08-17）：advance 的角色一律取服务端认证上下文
+      // （userContext.roles），body.roles 被显式忽略——这里故意传
+      // roles:['worker'] 验证其不影响判定：dispatcher 在 create 步仍被允许，
+      // 且后续可达步按 dispatcher 角色过滤（release 亦 dispatcher-only）。
+      const dispatcherAdvance = await apiRequest<{
         currentActionAllowed: boolean;
         allowedNextSteps: Array<{ name: string; action: string }>;
       }>(baseUrl, '/api/workflows/advance', {
@@ -272,29 +278,55 @@ if (!e2eConfig) {
         headers: jsonHeaders(token),
         body: JSON.stringify({
           workflow: example.body,
-          currentStep: 'report',
+          currentStep: 'create',
           roles: ['worker'],
         }),
       });
-      expect(workerAdvance.status).toBe(201);
-      expect(workerAdvance.body.currentActionAllowed).toBe(true);
-      expect(workerAdvance.body.allowedNextSteps).toEqual([]);
+      expect(dispatcherAdvance.status).toBe(201);
+      expect(dispatcherAdvance.body.currentActionAllowed).toBe(true);
+      expect(dispatcherAdvance.body.allowedNextSteps).toEqual([
+        { name: 'release', action: 'release' },
+      ]);
 
-      const qualityAdvance = await apiRequest<{
+      // 角色伪装钉死：body.roles 声明 worker 不改变服务端判定——dispatcher
+      // 对 worker-only 的 start 步 currentActionAllowed=false。
+      const workerImpersonation = await apiRequest<{
+        currentActionAllowed: boolean;
         allowedNextSteps: Array<{ name: string; action: string }>;
       }>(baseUrl, '/api/workflows/advance', {
         method: 'POST',
         headers: jsonHeaders(token),
         body: JSON.stringify({
           workflow: example.body,
-          currentStep: 'report',
-          roles: ['quality'],
+          currentStep: 'start',
+          roles: ['worker'],
         }),
       });
-      expect(qualityAdvance.status).toBe(201);
-      expect(qualityAdvance.body.allowedNextSteps).toEqual([
-        { name: 'inspect', action: 'inspect' },
-      ]);
+      expect(workerImpersonation.status).toBe(201);
+      expect(workerImpersonation.body.currentActionAllowed).toBe(false);
+      expect(workerImpersonation.body.allowedNextSteps).toEqual([]);
+
+      const viewer = await login(
+        baseUrl,
+        fixture!.viewerA.username,
+        fixture!.viewerA.password,
+      );
+      expect(viewer.status).toBe(201);
+      const viewerAdvance = await apiRequest<{
+        currentActionAllowed: boolean;
+        allowedNextSteps: Array<{ name: string; action: string }>;
+      }>(baseUrl, '/api/workflows/advance', {
+        method: 'POST',
+        headers: jsonHeaders(viewer.body.accessToken),
+        body: JSON.stringify({
+          workflow: example.body,
+          currentStep: 'create',
+          roles: ['global_admin'],
+        }),
+      });
+      expect(viewerAdvance.status).toBe(201);
+      expect(viewerAdvance.body.currentActionAllowed).toBe(false);
+      expect(viewerAdvance.body.allowedNextSteps).toEqual([]);
 
       const instanceKey = `workflow.mes-execution.T-${runId}`;
       const startedInstance = await apiRequest<{
@@ -320,7 +352,7 @@ if (!e2eConfig) {
         method: 'POST',
         headers: jsonHeaders(token),
         body: JSON.stringify({
-          roles: ['dispatcher'],
+          roles: ['worker'],
           toStep: 'release',
         }),
       });
@@ -844,25 +876,35 @@ if (!e2eConfig) {
     });
 
     it('rotates refresh tokens and revokes them after reuse/logout', async () => {
+      // CLI-501/701：refresh token 经 httpOnly cookie 下发（ewoh_refresh_token），
+      // 不再进入登录/刷新响应体；续期/登出按 cookie 通道携带。
       const first = await login(
         baseUrl,
         fixture!.viewerB.username,
         fixture!.viewerB.password,
       );
       expect(first.status).toBe(201);
-      const firstRefresh = first.body.refreshToken;
+      // CLI-501：refresh token 不再随响应体下发。
+      expect('refreshToken' in first.body).toBe(false);
+      const firstRefresh = refreshCookieValue(first.setCookie);
+      expect(firstRefresh).toBeTruthy();
 
-      const rotated = await refresh(baseUrl, firstRefresh);
+      const rotated = await refresh(baseUrl, firstRefresh!);
       expect(rotated.status).toBe(201);
-      expect(rotated.body.refreshToken).not.toBe(firstRefresh);
+      expect(rotated.body.accessToken).toBeTruthy();
+      const rotatedRefresh = refreshCookieValue(rotated.setCookie);
+      expect(rotatedRefresh).toBeTruthy();
+      expect(rotatedRefresh).not.toBe(firstRefresh);
 
-      const reused = await refresh(baseUrl, firstRefresh);
+      // Rotate 语义：已消费的旧 token 永不复用。
+      const reused = await refresh(baseUrl, firstRefresh!);
       expect(reused.status).toBe(401);
 
-      const signedOut = await logout(baseUrl, rotated.body.refreshToken);
+      const signedOut = await logout(baseUrl, rotatedRefresh!);
       expect(signedOut.status).toBe(201);
+      expect(signedOut.body.success).toBe(true);
 
-      const afterLogout = await refresh(baseUrl, rotated.body.refreshToken);
+      const afterLogout = await refresh(baseUrl, rotatedRefresh!);
       expect(afterLogout.status).toBe(401);
     });
 
@@ -950,6 +992,24 @@ if (!e2eConfig) {
       expect(Array.isArray(delta.body.upserts)).toBe(true);
       expect(delta.body.nextCursor).toBeTruthy();
 
+      // NEST-638（2026-08-17）：snapshot 读路径幂等——无新 delta 时不落新快照行，
+      // 重复读不再膨胀 ewoh_world_snapshot。版本递增必须由真实 delta 驱动，
+      // 这里显式追加一条 upsert delta（org 作用域）后再取快照。
+      const deltaEntityId = `E2E-WS-${runId}`;
+      await owner!.unsafe(
+        `insert into public.ewoh_world_delta_log
+           (org_id, snapshot_version, entity_type, entity_id, delta_type, payload, source_type)
+         values ($1::uuid,
+                 coalesce((select max(snapshot_version) from public.ewoh_world_snapshot
+                           where org_id = $1::uuid), 0),
+                 'device', $2, 'upsert', $3::jsonb, 'service')`,
+        [
+          fixture!.orgA.id,
+          deltaEntityId,
+          JSON.stringify({ id: deltaEntityId, type: 'device', name: deltaEntityId }),
+        ],
+      );
+
       const secondSnapshot = await apiRequest<{
         snapshotVersion: number;
         cursor: string;
@@ -959,6 +1019,7 @@ if (!e2eConfig) {
         firstSnapshot.body.snapshotVersion,
       );
 
+      // 旧 cursor 编码旧快照版本：新版本落库后即过期（CURSOR_EXPIRED → 410）。
       const expired = await apiRequest(
         baseUrl,
         `/api/world/delta?cursor=${encodeURIComponent(firstSnapshot.body.cursor)}`,
@@ -1048,6 +1109,10 @@ if (!e2eConfig) {
         method: 'POST',
         headers: {
           ...jsonHeaders(),
+          // P1-INGEST-002/R2-SOP-004：INGEST_API_KEY 已配置（legacy 无绑定模式，
+          // org 取 X-Org-Id 头）→ 请求必须携带匹配的 X-Ingest-Key；
+          // INGEST_INSECURE_DEV_MODE 只在「完全未配置 key」时放行。
+          'x-ingest-key': process.env.INGEST_API_KEY ?? 'e2e-ingest-key',
           'x-org-id': fixture!.orgA.id,
         },
         body: JSON.stringify(frame),
@@ -1091,6 +1156,7 @@ if (!e2eConfig) {
         method: 'POST',
         headers: {
           ...jsonHeaders(),
+          'x-ingest-key': process.env.INGEST_API_KEY ?? 'e2e-ingest-key',
           'x-org-id': fixture!.orgA.id,
         },
         body: JSON.stringify({ ...frame, record_id: `${recordId}-dup` }),
@@ -1872,7 +1938,16 @@ if (!e2eConfig) {
       const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
       const statuses = [
-        { status: 'running', startedAt: new Date(Date.now() - 200_000).toISOString(), endedAt: new Date(Date.now() - 140_000).toISOString() },
+        {
+          status: 'running',
+          startedAt: new Date(Date.now() - 200_000).toISOString(),
+          endedAt: new Date(Date.now() - 140_000).toISOString(),
+          // NEST-634：performance/OEE 只在产出与理想速率证据齐备时计算
+          // （缺证据 → 显式 null，绝不伪造）。60 件产出 / 1 件每秒 × 60s
+          // → performance=1，OEE=availability×performance×quality=0.6。
+          outputQty: 60,
+          idealRatePerSec: 1,
+        },
         { status: 'fault', startedAt: new Date(Date.now() - 140_000).toISOString(), endedAt: new Date(Date.now() - 110_000).toISOString() },
         { status: 'idle', startedAt: new Date(Date.now() - 110_000).toISOString(), endedAt: new Date(Date.now() - 100_000).toISOString() },
       ];
@@ -1891,7 +1966,8 @@ if (!e2eConfig) {
 
       const oee = await apiRequest<{
         availability: number;
-        oee: number;
+        performance: number | null;
+        oee: number | null;
         downtimeBreakdown: Array<{ reason: string; seconds: number }>;
       }>(
         baseUrl,
@@ -1903,6 +1979,7 @@ if (!e2eConfig) {
       );
       expect(oee.status).toBe(201);
       expect(oee.body.availability).toBeCloseTo(0.6, 3);
+      expect(oee.body.performance).toBeCloseTo(1, 3);
       expect(oee.body.oee).toBeCloseTo(0.6, 3);
       expect(oee.body.downtimeBreakdown[0].reason).toBe('fault');
 
@@ -1945,8 +2022,21 @@ if (!e2eConfig) {
          where external_ref = $1`,
         [andonId],
       );
-      expect(notificationRows).toHaveLength(1);
-      expect(notificationRows[0].org_id).toBe(fixture!.orgA.id);
+      // R-58/ADR-037 + NO-48a：开灯落 `raised` 桶；slaSeconds=-1 的接手必然
+      // 超时 → acknowledge 时落 `sla_escalation` 升级桶（独立通知，不覆盖
+      // 开灯提醒）。两条都是本 org 作用域，关灯时随前缀一并了结。
+      expect(notificationRows).toHaveLength(2);
+      expect(
+        notificationRows.some((row) => row.notification_id.includes('-raised-')),
+      ).toBe(true);
+      expect(
+        notificationRows.some((row) =>
+          row.notification_id.includes('-sla_escalation-'),
+        ),
+      ).toBe(true);
+      for (const row of notificationRows) {
+        expect(row.org_id).toBe(fixture!.orgA.id);
+      }
 
       for (const action of ['process', 'close']) {
         const transition = await apiRequest(
@@ -2267,6 +2357,10 @@ if (!e2eConfig) {
           runtime: 'edge-python',
           protocol: 'opcua',
           outputEvents: ['DeviceStateChanged'],
+          // NEST-231：未声明核心版本范围的资产 fail-closed 判不兼容
+          // （reason 'unconstrained'）——合规连接器必须显式声明 range。
+          // 核心版本 0.6.0-rc4 按 semver 满足 >=0.6.0-rc0（rc4 > rc0）。
+          compatibility: { core: '>=0.6.0-rc0' },
         }),
       });
       expect(connector.status).toBe(201);
@@ -2973,6 +3067,9 @@ if (!e2eConfig) {
       const token = adminA.body.accessToken;
       const entityId = `T-${runId}`;
 
+      // R2-SMI-003：审批图由服务端按 entityType 映射（APPROVAL_ROLE_POLICY），
+      // 请求体 roles 仅展示性输入；未登记 entityType 一律 400。
+      // 'task' → 两步：workshop_lead → safety_admin。
       const created = await apiRequest<{
         id: string;
         entityType: string;
@@ -2984,14 +3081,14 @@ if (!e2eConfig) {
         method: 'POST',
         headers: jsonHeaders(token),
         body: JSON.stringify({
-          entityType: 'production_task',
+          entityType: 'task',
           entityId,
           roles: ['lead', 'safety'],
         }),
       });
       expect(created.status).toBe(201);
       expect(created.body.id).toBeTruthy();
-      expect(created.body.entityType).toBe('production_task');
+      expect(created.body.entityType).toBe('task');
       expect(created.body.entityId).toBe(entityId);
       expect(created.body.steps).toHaveLength(2);
 
@@ -3006,6 +3103,7 @@ if (!e2eConfig) {
             entityType: string;
             entityId: string;
             createdAt: string;
+            createdBy: string;
           };
         }>
       >(
@@ -3017,10 +3115,12 @@ if (!e2eConfig) {
       expect(eventRows).toHaveLength(1);
       expect(eventRows[0].status).toBe('pending');
       expect(eventRows[0].org_id).toBe(fixture!.orgA.id);
-      expect(eventRows[0].evidence_json).toEqual({
-        entityType: 'production_task',
+      // NEST-405：evidence 记录发起人（职责分离判定依据）。
+      expect(eventRows[0].evidence_json).toMatchObject({
+        entityType: 'task',
         entityId,
         createdAt: created.body.createdAt,
+        createdBy: fixture!.globalAdminA.username,
       });
 
       const chainRows = await owner!.unsafe<
@@ -3055,16 +3155,34 @@ if (!e2eConfig) {
       expect(fetched.body.id).toBe(created.body.id);
       expect(fetched.body.steps).toHaveLength(2);
 
-      const stepId = created.body.steps[0].id;
+      // 发起人回避（R2-SMI-003 职责分离）：adminA 发起的实例不能自批
+      // （global_admin 亦回避）→ 用同 org 的 workshop_lead 账号批第一步。
+      const selfApprove = await apiRequest(
+        baseUrl,
+        `/api/approvals/${created.body.id}/steps/${created.body.steps[0].id}/state?action=approve`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(token),
+          body: JSON.stringify({ reason: 'self approve must be rejected' }),
+        },
+      );
+      expect(selfApprove.status).toBe(403);
+
+      const approver = await login(
+        baseUrl,
+        fixture!.approverA.username,
+        fixture!.approverA.password,
+      );
+      expect(approver.status).toBe(201);
       const approved = await apiRequest<{
         status: string;
         steps: Array<{ status: string }>;
       }>(
         baseUrl,
-        `/api/approvals/${created.body.id}/steps/${stepId}/state?action=approve`,
+        `/api/approvals/${created.body.id}/steps/${created.body.steps[0].id}/state?action=approve`,
         {
           method: 'POST',
-          headers: jsonHeaders(token),
+          headers: jsonHeaders(approver.body.accessToken),
           body: JSON.stringify({ reason: 'e2e approve' }),
         },
       );
@@ -3107,7 +3225,20 @@ if (!e2eConfig) {
       const idempotencyKey = `e2e-plan-${runId}`;
       const body = JSON.stringify({ idempotencyKey });
 
-      const first = await apiRequest<Array<{ planId: string }>>(
+      // P1-SSOT：legacy 合成方案生成器已删除——POST /api/scheduler/plans 现在委托
+      // 真实 V2 链路（createRun → SolverService），响应包 legacy 兼容信封
+      // {deprecated, notice, legacyPath, suggestedV2, data}；body 里的
+      // idempotencyKey 不再参与幂等（触发幂等由 TriggerService 的
+      // 冷却去抖 + trigger_key 唯一键承担）。同 key 重复触发在冷却窗口内
+      // 合并为同一次 run，不产生重复方案。
+      await seedSchedulerFixture(owner!, fixture!.orgA.id);
+
+      const first = await apiRequest<{
+        deprecated: boolean;
+        legacyPath: string;
+        suggestedV2: string;
+        data: Array<{ planId: string }>;
+      }>(
         baseUrl,
         '/api/scheduler/plans',
         {
@@ -3117,10 +3248,15 @@ if (!e2eConfig) {
         },
       );
       expect(first.status).toBe(201);
-      expect(Array.isArray(first.body)).toBe(true);
-      expect(first.body.length).toBeGreaterThan(0);
+      expect(first.body.deprecated).toBe(true);
+      expect(first.body.suggestedV2).toBe('POST /api/scheduler/runs');
+      expect(Array.isArray(first.body.data)).toBe(true);
+      expect(first.body.data.length).toBeGreaterThan(0);
 
-      const second = await apiRequest<Array<{ planId: string }>>(
+      const second = await apiRequest<{
+        deprecated: boolean;
+        data: Array<{ planId: string }>;
+      }>(
         baseUrl,
         '/api/scheduler/plans',
         {
@@ -3130,9 +3266,18 @@ if (!e2eConfig) {
         },
       );
       expect(second.status).toBe(201);
-      expect(second.body.map((plan) => plan.planId).sort()).toEqual(
-        first.body.map((plan) => plan.planId).sort(),
+      // 冷却去抖：重复触发合并 → 无新 run、无新方案（data 空数组）。
+      expect(second.body.data).toEqual([]);
+
+      const triggerRows = await owner!.unsafe<
+        Array<{ trigger_key: string }>
+      >(
+        `select trigger_key
+         from public.ewoh_replan_trigger
+         where org_id = $1 and trigger_type = 'MANUAL'`,
+        [fixture!.orgA.id],
       );
+      expect(triggerRows).toHaveLength(1);
     });
 
     it('keeps system config rows org-scoped and unreadable by org B users', async () => {
@@ -3182,7 +3327,9 @@ if (!e2eConfig) {
           body: JSON.stringify({ enabled: true, metadata: {} }),
         },
       );
-      expect(flagSet.status).toBe(201);
+      // PUT 语义（与本文件 feature-flag 定向用例一致）：setFeatureFlag 走
+      // setConfig 幂等写 → 200（非 201；无独立"创建"语义）。
+      expect(flagSet.status).toBe(200);
 
       const dispatcherBLogin = await login(
         baseUrl,

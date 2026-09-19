@@ -103,6 +103,21 @@ const FEATURE_DOC_KEYWORDS = {
   deviceExecutionBoundaryView: ['执行边界', '排队（设备忙）', '验签结论'],
   fingerprintKeyRotation: ['密钥轮换', 'SECRET_PREVIOUS', '轮换窗口'],
   deviceDeliveryQuota: ['投递配额', 'delivered_at', '配额用尽'],
+  deliveryBacklogPatrol: ['投递积压', 'delivery_backlog', 'delivery-backlog'],
+  modbusHardening: ['批量写', 'FC16', '重连退避'],
+  opcuaRealStack: ['AsyncuaOpcUaClient', 'opcua_sdk_unavailable', 'asyncua'],
+  backlogSnapshotCacheAndDrilldown: ['TTL 缓存', '下钻', 'DeliveryBacklogTable'],
+  ciTestWorkflow: ['tests.yml', 'Python 矩阵'],
+  exoCleanupSelfProof: ['清理自证', '无活跃残留'],
+  mobileOrderDeviceExecution: ['deviceExecution', '我的工单为什么没动', '设备排队中'],
+  perceptionCleanupSelfProof: ['清理自证', 'perception'],
+  dataQualityCleanupSelfProof: ['清理自证', 'EVT-DQ-OLD'],
+  backlogTrendHistory: ['backlog_snapshot', '积压趋势', 'delivery-backlog/history'],
+  receiptAuthBoundarySelfEstablish: ['授权边界', '自建前置', '本人可报'],
+  mobileMultiDeviceDisplay: ['台协同', 'otherDevices'],
+  contractTouchpointAudit: ['契约桩', 'audit-contract-touchpoints', '触达面'],
+  goldenFreshToolchain: ['e2e-golden-fresh', 'clear-execution-facts', '全路径复验'],
+  policyGatePanel: ['策略门禁', 'PolicyGatePanel', '未验证 ≠ 通过'],
 };
 
 // 生产声明短语：productionEnabled=false 时，README/CHANGELOG 中特征提及附近

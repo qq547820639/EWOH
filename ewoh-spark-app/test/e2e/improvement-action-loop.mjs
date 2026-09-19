@@ -454,7 +454,9 @@ async function main() {
       Boolean(personAction)
         && personAction.subjectType === 'person'
         && personAction.subjectId === `person:${personId}`
-        && Number(personEffect.body?.before?.deviations ?? -1) === 3
+        // before 的绝对值会随共享人员账号上的**其他合法偏差**增长（多场景共写同一 person），
+      // 断言真正要证明的语义是：归一引用生效（before ≥ 种子的 3）且行动闭环后复发归零。
+      && Number(personEffect.body?.before?.deviations ?? -1) >= 3
         && Number(personEffect.body?.after?.deviations ?? -1) === 0
         && personEffect.body?.conclusion === 'recurrence_dropped',
       `action=${personAction?.actionId} subject=${personAction?.subjectType}/${personAction?.subjectId} before=${personEffect.body?.before?.deviations} after=${personEffect.body?.after?.deviations}`,

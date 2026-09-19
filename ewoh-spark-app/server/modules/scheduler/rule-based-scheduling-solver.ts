@@ -124,9 +124,31 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
 
     const assignments: SchedulingAssignment[] = [];
     const violations: Array<Record<string, unknown>> = [...unsupportedViolations];
-    const bookedTimeSlots: Array<{ personId: string; start: number; end: number }> = [];
-    const bookedDeviceSlots: Array<{ deviceId: string; start: number; end: number }> = [];
-    const bookedStationSlots: Array<{ stationId: string; start: number; end: number }> = [];
+    // 预订时间片：快照 reservations（person/device/station）+ 本 solve 内新增
+    // 占用统一进槽位。此前只喂本 solve 新增占用——快照里已被 dispatch 预占的
+    // 设备/工位对求解器不可见，方案把新任务派上已占资源，dispatch 预占硬后盾
+    // 409 RESOURCE_CONFLICT 整波失败（与 heuristic 同根因，同口径修复）。
+    const baseBookedSlots: Array<{ personId: string; start: number; end: number }> = [];
+    const baseBookedDeviceSlots: Array<{ deviceId: string; start: number; end: number }> = [];
+    const baseBookedStationSlots: Array<{ stationId: string; start: number; end: number }> = [];
+    for (const r of snapshot.reservations ?? []) {
+      if (r.resourceType === 'person') {
+        baseBookedSlots.push({ personId: r.resourceId, start: r.startMs, end: r.endMs });
+      } else if (r.resourceType === 'device') {
+        baseBookedDeviceSlots.push({ deviceId: r.resourceId, start: r.startMs, end: r.endMs });
+      } else if (r.resourceType === 'station') {
+        baseBookedStationSlots.push({ stationId: r.resourceId, start: r.startMs, end: r.endMs });
+      }
+    }
+    const bookedTimeSlots: Array<{ personId: string; start: number; end: number }> = [
+      ...baseBookedSlots,
+    ];
+    const bookedDeviceSlots: Array<{ deviceId: string; start: number; end: number }> = [
+      ...baseBookedDeviceSlots,
+    ];
+    const bookedStationSlots: Array<{ stationId: string; start: number; end: number }> = [
+      ...baseBookedStationSlots,
+    ];
     const bookedStationCounts = new Map<string, number>();
 
     // 任务序：前置 DAG 就绪集内按确定性规则推进（未就绪任务轮空）。

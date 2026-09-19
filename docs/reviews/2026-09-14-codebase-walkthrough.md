@@ -1,6 +1,6 @@
 # EWOH 全仓代码结构走读
 
-> 基于全仓系统性扫描 + 三轮对抗式审查（SR 109 文件 / UR 2 包 / FR 6 包）的第一手知识。
+> 基于全仓系统性扫描 + 三轮对抗式审查（SR 109 文件 / UR 2 包 / FR 6 包）+ 全仓逐行走读（WR 8 包）的第一手知识。
 > 代码量：边缘 281 .py / 服务端 570 .ts / 前端 703 .tsx / 共享契约 91 文件 / 迁移 100 项。
 > 生成日期：2026-09-14。
 
@@ -160,8 +160,8 @@ EWOH/
 | `exo/` | 外骨骼会话域：开始/结束/更正/佩戴绑定/一致性校验 | ExoSessionService |
 | `alert/` | 安灯开灯→确认→处置→关闭→SLA 升级 | AlertService |
 | `notification/` | 确定性通知号 + 渠道分发（app/lark/email） | NotificationService / ChannelDispatcherService |
-| `field/` | 现场操作（回执/偏差/离线） | FieldOperationsService |
-| `mobile/` | 移动端工作台（离线扫码/工序报工） | MobileWorkbenchService |
+| `data-quality/` | 数据质量确认/质疑 + 待核实提醒 | DataQualityService |
+| `maintenance/` | 维护条件 + 调度封锁投影 | MaintenanceService |
 
 #### 数据域
 | 模块 | 核心职责 | 关键服务 |
@@ -175,10 +175,10 @@ EWOH/
 #### 学习域
 | 模块 | 核心职责 | 关键服务 |
 |---|---|---|
-| `learning/` | 学习提案（信号→人点→提案→影子→审批→激活→回滚） | LearningProposalService / LearningSignalService |
+| `learning/` | 学习信号→提案→影子→审批→激活→回滚 | LearningProposalService / LearningSignalService |
 | `retrospective/` | 复盘/运行记忆（六段组装 + AI 总结双路留痕） | RetrospectiveService |
 | `knowledge/` | 知识库（经验回流） | KnowledgeService |
-| `improvement/` | 改进行动项（复盘经验→行动） | ImprovementActionService |
+| `improvement/` | 改进行动项（复盘经验→行动→逾期 sweep） | ImprovementActionService |
 
 #### 智能域
 | 模块 | 核心职责 | 关键服务 |
@@ -191,36 +191,12 @@ EWOH/
 #### 支撑域
 | 模块 | 核心职责 |
 |---|---|
-| `auth/` | JWT 认证 + refresh token httpOnly cookie 轮转 |
+| `auth/` | JWT 认证 + httpOnly refresh cookie 轮转 |
 | `organization/` | 组织树 + 成员管理 |
 | `audit/` | 审计查询 |
-| `health/` | 健康探活（NEST-437 匿名收敛） |
+| `dashboard/` | 仪表盘 + 工作台聚合（now 端点） |
 | `files/` | 文件上传/下载 |
 | `work-orchestration/` | Work Graph 控制面（门禁/锁/工件/交接） |
-
-### 3.4 多租户实现（三层）
-
-```
-AccessTokenGuard → OrgScopeService → OrgContextInterceptor → postgres.js GUC 事务
-                                                                        ↓
-RolesGuard (default-deny) ← AccessTokenGuard.roles                    RLS 策略
-                                                                        ↓
-assertTenantVisible（应用层纵深防御，反枚举 404）
-```
-
-**关键组件**：
-- `request-database-context.ts`：ALS (AsyncLocalStorage) 存储事务 store；无 store 时回落根句柄（NEST-504 告警）
-- `org-context.interceptor.ts`：每 HTTP 请求包 GUC 事务 + 挂 userContext；@Sse / @StreamingResponse 豁免
-- `plan-tenant-guard.ts`：调度域纵深防御（跨租户 404）
-
-### 3.5 审计链
-
-```
-业务操作 → AuditService.appendAuditLog()
-         → DatabaseAuditSink.append()
-         → ewoh_append_audit_log() [SECURITY DEFINER]
-         → ewoh_audit_log 表（advisory lock + chain_seq + prev_hash 哈希链）
-```
 
 ---
 
@@ -402,39 +378,5 @@ app.tsx (Routes)
 | 匿名 /health/ready 只暴露 {status} | NEST-437 安全收敛 |
 | 边缘 production 模式拒绝明文 http | X-Ingest-Key 会暴露 |
 | instance-level guard 只接管连接类故障 | 不掩盖业务异常 |
-
----
-
-## 9. 学习闭环端到端验证（"系统越用越准"实证）
-
-用符合制造业时间研究标准（对数正态分布）的合成数据，走完"模型训练 → advisory 求解 → 排产质量对比"全链路：
-
-| 配置 | makespan | 结论 |
-|---|---|---|
-| off 模式（无模型） | 480min | 对照组：全部任务用默认 30min |
-| advisory + 模型（学到 12min 中位数） | **~168min** | **改善率 ~65%**：模型知道任务只需 12min，方案排得更紧 |
-
-验证点：
-- off 模式下 provider 绝不被调用（确定性护栏不变）
-- advisory + 模型可用 → durationMsByTask 使用模型值（makespan 缩短）
-- advisory + 来源非 ml → 回退默认时长（不把"没模型"说成"用了模型"）
-- advisory + 置信度不足 → 回退默认时长
-- advisory + 预测抛错 → 逐任务回退（不拖垮 run）
-- public resolveModelDurations 可被 CP-SAT 复用同源解析
-- open→closed 不是合法边：global_admin 也不能发明（拓扑回归）
-
-## 10. 全域测试终态
-
-| 层 | 测试数 | 状态 |
-|---|---|---|
-| 服务端 Jest | **3431 tests / 381 suites** | ✅ |
-| 前端 Jest | **1706 tests / 173 suites** | ✅ |
-| 边缘 unittest | **1210 tests** | ✅ OK |
-| OpenAPI | **466/466** | ✅ 零漂移 |
-| 迁移链 | **98 项** | ✅ apply+verify |
-| **16 场景链** | **425 PASS / 0 FAIL** | ✅ exit 0 |
-| 浏览器 mock | **107** | ✅ |
-| 浏览器真实（本地 PG） | **41** | ✅ |
-| 浏览器真实（ECS 云端） | **19** | ✅ |
-| 十二条主线门禁 | **全通过** | ✅ |
-| **总计** | **~7000 tests** | **全绿** |
+EOF
+wc -l docs/reviews/2026-09-14-codebase-walkthrough.md

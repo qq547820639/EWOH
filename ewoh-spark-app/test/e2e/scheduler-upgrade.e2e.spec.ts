@@ -27,6 +27,8 @@
  *   - GET  /api/scheduler/plans/:planId/compare/:otherPlanId （plan diff VM）
  *   - POST /api/scheduler/routes/calculate      （route cost 更新；body: taskId + candidates）
  *   - GET  /api/scheduler/policy/versions       （shadow policy 审批链）
+ *   - GET  /api/scheduler/policy                （当前生效策略 + 配置；I 注册候选用）
+ *   - POST /api/scheduler/policy/versions       （注册候选策略版本；I gate 前置）
  */
 import { randomUUID } from 'node:crypto';
 import { resolveE2EConfig } from '../helpers/e2e-config';
@@ -651,18 +653,64 @@ if (!e2eConfig) {
     });
 
     it('I: Policy Activation Gate 端点可用 + 未就绪策略激活被拒', async () => {
-      const gate = await apiRequest<{ passed: boolean; checks: unknown[] }>(
+      // 契约（policy-activation.service 治理修复 2026-09-10）：候选策略不存在 →
+      // 显式 404（不再用空 KPI 算出 passed=true）。seed 不预置 policy 行
+      // （ewoh_scheduling_policy 为空表），旧断言"gate v1 → 201"前提过期——
+      // 先钉住 404 语义，再经公开 API 注册候选版本后对真实候选评估 gate。
+      const missingGate = await apiRequest(
         baseUrl,
-        '/api/scheduler/policy/1/gate',
+        '/api/scheduler/policy/999/gate',
         {
           method: 'POST',
           headers: makeHeaders(token),
           body: JSON.stringify({}),
         },
       );
+      expect(missingGate.status).toBe(404);
+
+      // 注册候选版本（POST /policy/versions：org 作用域递增；inactive，绝不自动
+      // 激活）。config 取当前生效策略配置（空表 → 服务端 DEFAULT 兜底）。
+      const current = await apiRequest<{
+        policy: unknown;
+        config: Record<string, unknown>;
+      }>(baseUrl, '/api/scheduler/policy', {
+        method: 'GET',
+        headers: makeHeaders(token),
+      });
+      expect(current.status).toBe(200);
+      const register = await apiRequest<{ configVersion: number }>(
+        baseUrl,
+        '/api/scheduler/policy/versions',
+        {
+          method: 'POST',
+          headers: makeHeaders(token),
+          body: JSON.stringify({
+            config: current.body.config,
+            operator: 'e2e',
+          }),
+        },
+      );
+      expect(register.status).toBe(201);
+      const candidateVersion = register.body.configVersion;
+      expect(typeof candidateVersion).toBe('number');
+
+      const gate = await apiRequest<{
+        passed: boolean;
+        checks: unknown[];
+        insufficientEvidence?: boolean;
+      }>(baseUrl, `/api/scheduler/policy/${candidateVersion}/gate`, {
+        method: 'POST',
+        headers: makeHeaders(token),
+        body: JSON.stringify({}),
+      });
       expect(gate.status).toBe(201);
       expect(gate.body).toHaveProperty('passed');
       expect(gate.body).toHaveProperty('checks');
+      // 无 replay/执行证据 → 检查项 skipped → insufficientEvidence=true
+      //（gate 不把"无证据"伪装成"已验证通过"）。
+      expect(gate.body.passed).toBe(true);
+      expect(gate.body.insufficientEvidence).toBe(true);
+
       const activate = await apiRequest(
         baseUrl,
         '/api/scheduler/policy/999/activate',

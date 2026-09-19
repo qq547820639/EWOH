@@ -100,12 +100,60 @@
 | NO-65c/d | 能力停用漂移巡检 + 审批路径恢复 / 场景清理自证 | 6 | `scripts/capability-drift-check.js`、`scripts/capability-restore.js`、`make capability-drift` |
 | NO-66a/b | 执行边界人面读面与面板 / 授权指纹密钥轮换窗口 | 3/2 | `ExecutionBoundaryPanel.tsx`、`GET /api/control/requests?deviceId=`、`e2e:control-actuator`（28/28） |
 | NO-67a/b | 执行边界浏览器验收 / 单设备投递配额与排队 | 3/2 | `test/browser/execution-boundary.spec.js`（30 项）、`standalone_095`、`e2e:control-actuator`（29/29） |
+| NO-68a/b | 投递积压巡检与提醒 / 清理自证推广 + 反事实断言条件化 | 4/2 | `standalone_096`、`control-delivery-backlog.worker.ts`、`e2e:control-actuator`（30/30） |
+| NO-70a | 积压巡检升级链（≥3× SLA 加发 production_manager）+ 双状态扩展（sent/gateway_received） | 4 | `control.service.ts`（backlogEscalationMultiplier/sweep 双状态）、`notification-metrics.ts`（升级桶样例） |
+| NO-74a-d | 升级链 e2e / 凭证矩阵预检 / 运动类配额 / 轮换演练脚本 | 4/1/2/1 | `tools/control-key-rotation-drill.mjs`、`scripts/e2e-chain.sh`（预检）、`e2e:control-actuator`（31/31） |
+| NO-75a/b | Modbus 加固（FC16/退避）/ OPC-UA 真实栈（asyncua 可选依赖） | 5/2 | `modbus.py`（18/18）、`opcua_real.py` + 真线用例（3/3 连续） |
 
 ## 3. 剩余缺口（先审计后立项；成批交付）
 
 > 已销账：第 56 轮审计发现"执行机构动作闭环 / 订单物料投影 / 预测侧 shadow"**其实已有**；
 > 第 57 轮完成当时剩下的三项（订单链消费面、预计vs实际对账、经验回流）。
 > 下一批在完成一次完整审计后重新推导，不预先抄写。
+
+**第 75 轮批次（已完成并验证，逐项销账）**：
+1. ✅ **Modbus 加固（NO-75a）**：FC16 单事务批量写（协议级原子）+ 重连指数退避。18/18。
+2. ✅ **OPC-UA 真实栈（NO-75b）**：AsyncuaOpcUaClient（可选依赖 asyncua ≥ 2.0，懒加载
+   fail-closed）+ 真线用例 3/3 连续全绿。**选型结论（六维对比）**：
+   | 维度 | asyncua | node-opcua | open62541 | Eclipse Milo |
+   |---|---|---|---|---|
+   | 功能匹配 | client+server+sync 包装 | 全功能（Node） | 全功能（C） | 全功能（Java） |
+   | License | LGPLv3+（pip 依赖动态使用，不拷码→兼容） | MIT | MPL2 | EPL2 |
+   | 维护活跃 | 2.0.1（2026-06）活跃 | 活跃 | 活跃 | 活跃 |
+   | 安全风险 | 纯 Python 无原生编译 | sidecar 进程面 | FFI 包装易错 | JVM 面 |
+   | 代码质量 | 测试覆盖 95%+ | 高 | 高 | 高 |
+   | 适配成本 | **最低**（实现既有 ABC 三方法） | 跨语言 sidecar | 原生编译 | 跨语言 |
+   结论：asyncua 作**可选依赖**（懒加载 fail-closed；未安装显式 `opcua_sdk_unavailable`，
+   绝不静默降级到孪生）。
+3. ✅ **tests/ 挂死排查与修复（NO-76a，第 76 轮）**：根因 = verdict 契约演进未同步
+   非链目录桩 + `_backoff` 整段睡眠吞停止信号；修复后 **688 passed / 1.48s 全绿**。
+4. ⏳ **下一批候选**：① `tests/` 目录**入链**（现已全绿且 1.5s）；② 积压巡检结构化指标进看板；
+   ③ 清理自证推广到 wave/exo 场景；④ 真线用例入 CI（3.10+ 与 asyncua 2.x 矩阵）。
+
+**第 74 轮批次（已完成并验证，逐项销账）**：
+1. ✅ **升级链 e2e（NO-74a）**：control-actuator 31/31（20b：escalated + pm + critical）。
+2. ✅ **凭证矩阵链前自检（NO-74b）**：链前登录三凭证核对角色，配错即失败。
+3. ✅ **运动类配额（NO-74c）**：默认通用一半；quota-motion 显式排队；e2e 环境显式配置。
+4. ✅ **轮换演练脚本（NO-74d）**：四步全通 + 恢复路径；演练抓出 4 个真实缺陷并修复。
+5. ⏳ **下一批候选**：① Modbus 批量写事务与重连退避、OPC-UA 适配器（先做候选方案六维对比）；
+   ② 积压巡检结构化指标进看板；③ 清理自证推广到 wave/exo 场景。
+
+**第 70 轮批次（已完成并验证，逐项销账）**：
+1. ✅ **积压巡检升级链与双状态扩展（NO-70a）**：积压含 `sent`（未交付）与 `gateway_received`
+   （已投未回执）两种状态；年龄 ≥ 3× SLA → 桶升 `delivery_backlog_escalated` + 加发
+   production_manager（critical），一级收件人仍在。升级链 3 例 + 双状态 2 例。
+2. ⏳ **下一批候选**：① 配额按命令类别细分；② 密钥轮换演练脚本；③ Modbus 批量写事务与
+   重连退避、OPC-UA 适配器；④ 清理自证推广到 wave/exo 场景；⑤ 投递积压的**结构化指标**
+   （巡检输出进 metrics/看板，不只是提醒）。
+
+**第 68 轮批次（已完成并验证，逐项销账）**：
+1. ✅ **投递积压巡检（NO-68a）**：`sent` 超 SLA 未交付 → 按设备确定性提醒 + 审计（worker + 手动 sweep）；
+   人面读面给投递老化（oldestWaitingMs/overdue/SLA），面板显"投递积压 N 条"。
+   e2e 30/30（步骤 20：回拨 sent_at → created=3、提醒与审计都在）。
+2. ✅ **清理自证推广（NO-68b）**：capability 收尾自查停用恢复；plan-staleness 删除后计数；
+   7b/7b2/7d 反事实断言条件化（环境不满足记 SKIP 附拒绝原因清单，不再误报 3 FAIL）。
+3. ⏳ **下一批候选**：① 投递积压提醒的**升级**（积压超 N 倍 SLA → 升级给 production_manager，同安灯 SLA 语义）；
+   ② 配额按命令类别细分；③ Modbus 批量写事务与重连退避、OPC-UA 适配器；④ 密钥轮换演练脚本。
 
 **第 67 轮批次（已完成并验证，逐项销账）**：
 1. ✅ **执行边界浏览器验收（NO-67a）**：`test/browser/execution-boundary.spec.js` 5 用例 × 6 浏览器画像
@@ -306,7 +354,7 @@
    第 64 轮新增 `modbusActuatorTransport`/`freshnessContentVersionGate`，
    第 65 轮新增 `signedAuthorizationFingerprint`/`deviceBusyDeliveryGuard`/`capabilityDriftPatrol`，
    第 66 轮新增 `deviceExecutionBoundaryView`/`fingerprintKeyRotation`，
-   第 67 轮新增 `deviceDeliveryQuota`）。
+   第 67 轮新增 `deviceDeliveryQuota`，第 68 轮新增 `deliveryBacklogPatrol`）。
 4. **完成即销账**：§3 的条目落地后必须从清单移出并写进 §2（避免"清单永远挂着同一批下一步"，
    第 53 轮已按此销掉原 #1）。
 5. **门禁必须"真的会跑"**：第 53 轮把"全新库全链 apply + 全量 verify"跑通后发现，

@@ -585,13 +585,41 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     const EMPTY_DEVICE_SLOTS: Array<{ deviceId: string; start: number; end: number }> = [];
     const EMPTY_STATION_SLOTS: Array<{ stationId: string; start: number; end: number }> = [];
 
-    // 预订时间片（来自快照 reservations，person 类型映射为 personId 区间）。
+    // 预订时间片（来自快照 reservations）：person/device/station 三类都进占用
+    // 槽位。此前只喂 person——device/station 预约被静默丢弃，求解器把新任务
+    // 派到已被 dispatch 预占的设备/工位，方案资源不可行，dispatch 预占硬后盾
+    // 409 RESOURCE_CONFLICT 使整波下发失败（E2E scheduler-upgrade F 复现）。
+    // 与候选引擎端点路径（evaluateTaskCandidates 映射三类）和 CP-SAT worker
+    // 契约（reservations 全量透传）对齐；snapshot.reservations 仅含
+    // reserved/active 行（world-state collectState 过滤），与 reserve() 同口径。
     const baseBookedSlots: Array<{ personId: string; start: number; end: number }> =
       [];
+    const baseBookedDeviceSlots: Array<{
+      deviceId: string;
+      start: number;
+      end: number;
+    }> = [];
+    const baseBookedStationSlots: Array<{
+      stationId: string;
+      start: number;
+      end: number;
+    }> = [];
     for (const r of snapshot.reservations ?? []) {
       if (r.resourceType === 'person') {
         baseBookedSlots.push({
           personId: r.resourceId,
+          start: r.startMs,
+          end: r.endMs,
+        });
+      } else if (r.resourceType === 'device') {
+        baseBookedDeviceSlots.push({
+          deviceId: r.resourceId,
+          start: r.startMs,
+          end: r.endMs,
+        });
+      } else if (r.resourceType === 'station') {
+        baseBookedStationSlots.push({
+          stationId: r.resourceId,
           start: r.startMs,
           end: r.endMs,
         });
@@ -654,12 +682,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       deviceId: string;
       start: number;
       end: number;
-    }> = [];
+    }> = [...baseBookedDeviceSlots];
     const bookedStationSlots: Array<{
       stationId: string;
       start: number;
       end: number;
-    }> = [];
+    }> = [...baseBookedStationSlots];
     // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
     const bookedStationCounts = new Map<string, number>();
     // T9（审计批次 D）：资源维度槽位索引（SlotIndex：按 start 排序 + 前缀

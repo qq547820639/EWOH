@@ -428,7 +428,7 @@ export class WorkOrchestrationService {
     await this.domainPersistence.recoverExpiredLocks(orgId);
     const locks = await this.domainPersistence.listActiveLocks(orgId);
     const lockById = new Map(locks.map((lock) => [lock.resourceId, lock]));
-    return graph.resources.map((resource) => {
+    const graphRows = graph.resources.map((resource) => {
       const lock = lockById.get(resource.resourceId);
       return {
         ...resource,
@@ -442,9 +442,34 @@ export class WorkOrchestrationService {
           : null,
       };
     });
+    // NO-68j（2026-09-16 fresh-runtime 实测）：DB 里存在、但内存图未登记的资源锁
+    // 被整行丢弃——"锁上了却列表看不见"（F61-02 契约）。DB 是锁的事实源：
+    // 未被图覆盖的锁补行输出（resourceKey/resourceId 同值）。
+    const covered = new Set(graph.resources.map((r) => r.resourceId));
+    const dbOnlyRows = locks
+      .filter((lock) => lock.active && !covered.has(lock.resourceId))
+      .map((lock) => ({
+        resourceId: lock.resourceId,
+        resourceKey: lock.resourceId,
+        name: lock.resourceId,
+        lock: {
+          holder: lock.holder,
+          purpose: lock.purpose,
+          acquiredAt: lock.acquiredAt,
+          expiresAt: lock.expiresAt,
+        },
+      }));
+    return [...graphRows, ...dbOnlyRows];
   }
 
   getHandoffs() {
+    // NO-68j（2026-09-16 fresh-runtime 实测）：POST 写 postgres 持久层、GET 读内存
+    // 图——双事实源导致重启后/跨实例看不到已创建的 handoff（F61-02 契约）。
+    // 持久层可用时以 **DB 为事实源**（listHandoffs 含 scope/status 全字段）；
+    // 不可用时回退内存图（无持久化部署的历史口径）。
+    if (this.domainPersistence) {
+      return this.domainPersistence.listHandoffs();
+    }
     return this.getGraph().handoffs;
   }
 
@@ -957,6 +982,7 @@ export class WorkOrchestrationService {
       contextPack?: string;
       openQuestions?: string[];
       acceptance?: string;
+      idempotencyKey?: string;
     },
     actor: { userId: string; primaryOrgId: string } | undefined,
   ) {
@@ -965,6 +991,16 @@ export class WorkOrchestrationService {
       throw new BadRequestException('fromActor, toActor, and scope are required');
     }
     this.assertWritable();
+    // NO-68j：幂等重放（F61-02 契约）——同一 idempotencyKey 的重放返回**同一个**
+    // handoff 对象，不产生副本（2026-09-16 fresh-runtime 实测：重放生成了第二个
+    // HO-id）。并发重复键竞争唯一约束，先到先得，后到回放同一响应。
+    const idemKey = body.idempotencyKey?.trim();
+    if (idemKey) {
+      const stored = await this.domainPersistence.getIdempotency<
+        Record<string, unknown>
+      >('work-handoff', idemKey);
+      if (stored) return stored as never;
+    }
     const id = `HO-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const record = await this.domainPersistence.createHandoffWithTransfer(
       {
@@ -983,7 +1019,7 @@ export class WorkOrchestrationService {
         result: 'handoff_created',
       },
     );
-    return {
+    const response = {
       handoffId: record.handoffId,
       fromActor: record.fromActor,
       toActor: record.toActor,
@@ -995,6 +1031,15 @@ export class WorkOrchestrationService {
       createdAt: record.createdAt,
       persisted: 'postgres',
     };
+    if (idemKey) {
+      // 重放安全：并发重复键竞争唯一约束，先到先得，后到回放同一响应。
+      return await this.domainPersistence.setIdempotency(
+        'work-handoff',
+        idemKey,
+        response as never,
+      ) as never;
+    }
+    return response;
   }
 
   /**

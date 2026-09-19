@@ -174,6 +174,7 @@ export class WorkOrchestrationController {
       contextPack?: string;
       openQuestions?: string[];
       acceptance?: string;
+      idempotencyKey?: string;
     },
     @Req() request: { userContext?: OrgContext },
   ) {

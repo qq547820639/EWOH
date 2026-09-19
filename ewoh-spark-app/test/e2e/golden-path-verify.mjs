@@ -455,7 +455,35 @@ async function main() {
   }
 
   // 47-48. Activate
-  if (gateInsufficient) {
+  // 第三分支（NO-86a）：Gate **逐条失败**（有数据、指标不达标 ≠ 证据缺失）。
+  // 这是策略门在真实数据漂移（共享 dev 库累积执行历史）下的正确行为：
+  //   · 未确认激活 → 409 POLICY_GATE_FAILED（FAIL 不可被 ack 豁免——那才能拦住真失败）；
+  //   · ack 激活 → 同样拒绝（acknowledge 只豁免"缺数据"，不豁免"数据不达标"）；
+  //   · 激活路径本验证轮次显式 SKIP，并附上门禁的实测指标（供运营看数据漂移）。
+  // 失败的"已评估"检查**优先于**缺数据（FAIL 不可被 ack 豁免；insufficient 只豁免跳过项）
+  const gateFailedChecks = !gate.body?.passed
+    && (gate.body?.checks ?? []).some((c) => c.ok === false && c.skipped === false);
+  if (gateFailedChecks) {
+    const failedNames = (gate.body?.checks ?? [])
+      .filter((c) => c.ok === false && c.skipped === false)
+      .map((c) => `${c.name}=${c.actual}(≤${c.threshold})`).join(', ');
+    const unacked = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
+      operator: ADMIN_USER, reason: 'golden path activation against failed gate',
+    }, token);
+    step('47a-2. Gate 逐条失败时拒绝激活（FAIL 不被 ack 豁免——治理语义）',
+      unacked.status === 409 && /POLICY_GATE_FAILED/i.test(errText(unacked)),
+      `status=${unacked.status} msg=${errText(unacked).slice(0, 90)}`);
+    const ackedFailed = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
+      operator: ADMIN_USER, reason: 'golden path activation against failed gate (acked)',
+      acknowledgeInsufficientEvidence: true,
+    }, token);
+    step('47b-2. 显式 ack 也无法激活 FAIL 的 Gate（ack 只豁免缺数据，不豁免不达标）',
+      [409, 403].includes(ackedFailed.status),
+      `status=${ackedFailed.status} msg=${errText(ackedFailed).slice(0, 90)}`);
+    skip('47-50. Activate/Rollback',
+      `数据漂移：指标不达标（${failedNames}）——门禁行为正确，激活路径本验证轮次显式跳过`
+        + '（清库或修复数据后可全路径验证）');
+  } else if (gateInsufficient) {
     // 本轮修复的治理门禁：证据不足时，未经显式确认的激活必须被拒绝。
     const unacked = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
       operator: ADMIN_USER, reason: 'golden path activation without acknowledgement',

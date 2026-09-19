@@ -480,6 +480,17 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
       expect(plans[0].createdAt).toBeTruthy();
     });
 
+    it('generatePlans 透传 actor 到触发器（NEST-146：HTTP legacy 路由缺 actor = 全体调用方 401）', async () => {
+      const { svc, mocks } = makeSvc();
+      await svc.generatePlans({ idempotencyKey: 'k' }, ACTOR);
+      expect(mocks.triggerService.evaluate).toHaveBeenCalledWith(
+        'MANUAL',
+        null,
+        expect.objectContaining({ primaryOrgId: 'org1', userId: 'char-user' }),
+        expect.any(Number),
+      );
+    });
+
     it('getPlans 返回按创建时间倒序的 legacy 方案', async () => {
       const { svc } = makeSvc({ plans: [PLAN_ROW] });
       const rows = await svc.getPlans('proposed');

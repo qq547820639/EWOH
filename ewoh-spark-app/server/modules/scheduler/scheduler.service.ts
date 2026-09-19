@@ -198,9 +198,16 @@ export class SchedulerService {
   // Legacy 兼容入口 / 只读查询面（QueryService / RunOrchestrator）
   // ==========================================================================
 
-  /** @deprecated 请改用 POST /api/scheduler/runs（保留仅为兼容旧调用方）。 */
-  async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
-    return this.runOrchestrator.generatePlans(body);
+  /**
+   * @deprecated 请改用 POST /api/scheduler/runs（保留仅为兼容旧调用方）。
+   * actor 必须透传：HTTP 请求上下文下 TriggerService 强制租户语义（NEST-146），
+   * 丢 actor 会让 legacy 路由对任何已认证调用方 401。
+   */
+  async generatePlans(
+    body?: { idempotencyKey?: string },
+    actor?: OrgContext,
+  ): Promise<SchedulePlan[]> {
+    return this.runOrchestrator.generatePlans(body, actor);
   }
 
   async getPlans(status?: string, actor?: OrgContext): Promise<SchedulePlan[]> {

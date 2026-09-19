@@ -316,6 +316,29 @@ describe('IngestService canonical UnifiedExoFrame mapping', () => {
       } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('单帧时钟漂移同样显式拒绝（CLOCK_DRIFT_FUTURE_TS，不落库；先决拒绝不触发 entity 预检）', async () => {
+    const { db, insertCalls } = createBatchDb({
+      existingEntities: [],
+      existingRawRefs: [],
+    });
+    const service = new IngestService(db as never, createRuleEngine() as unknown as never, createMesService() as unknown as never,
+      createSensorIngest() as unknown as never,
+      createReplanCoordinator() as unknown as never,
+      createIdentityService() as unknown as never);
+
+    const result = await service.ingestExoskeleton({
+      entity_id: 'EXO-NOT-REGISTERED',
+      event_time: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      source_type: 'real',
+      device: { battery_pct: 88 },
+    } as never);
+
+    expect(result.accepted).toBe(false);
+    expect(result.clock_drift).toBe(true);
+    expect(String(result.error)).toContain('CLOCK_DRIFT_FUTURE_TS');
+    expect(insertCalls.find((c) => c.table === ewohTelemetry)).toBeUndefined();
+  });
 });
 
 // ---------- P1-INGEST-001：batch 回归测试 ----------
@@ -425,7 +448,10 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
     expect((telemetryInsert?.rows[0] as Record<string, unknown>)?.rawRef).toBe('new-raw-ref');
   });
 
-  it('批量时钟漂移帧标 invalid（quality 记录，行为与单帧一致）', async () => {
+  it('批量时钟漂移帧被显式拒绝（CLOCK_DRIFT_FUTURE_TS，与环境/定位/执行机构通道同一纪律）', async () => {
+    // 2026-09-15 仿真对抗（exo_fleet_sim 未来时间戳注入）实测缺陷修正：
+    // exo 通道此前只在响应里标记 clock_drift、帧仍照常落库（坏时钟被写成台账
+    // 事实）。现与环境/执行机构通道统一为显式拒绝，不再写入。
     const future = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 超前 10min
     const { db, insertCalls } = createBatchDb({
       existingEntities: ['EXO-BATCH-1'],
@@ -441,10 +467,11 @@ describe('IngestService batch（P1-INGEST-001 回归）', () => {
     ]);
 
     expect(result.total).toBe(1);
-    // 与单帧一致：时钟漂移帧仍入库，但 data_quality=invalid
-    expect(result.results[0].data_quality).toBe('invalid');
+    expect(result.results[0].accepted).toBe(false);
+    expect(result.results[0].clock_drift).toBe(true);
+    expect(String(result.results[0].error)).toContain('CLOCK_DRIFT_FUTURE_TS');
     const telemetryInsert = insertCalls.find((c) => c.table === ewohTelemetry);
-    expect((telemetryInsert?.rows[0] as Record<string, unknown>)?.dataQuality).toBe('invalid');
+    expect(telemetryInsert).toBeUndefined();
   });
 
   it('部分无效 batch（entity 不存在）→ 该帧 rejected，其余 accepted', async () => {

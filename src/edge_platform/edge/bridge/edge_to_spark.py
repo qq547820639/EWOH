@@ -371,10 +371,46 @@ class SparkBridge:
         except Exception as exc:
             print(f"[bridge] ERROR: 死信写入失败（保留计数）: {exc}")
 
+    def _dead_letter_per_item(self, batch: list, resp) -> None:
+        """2xx 批量响应的逐帧对账：accepted=false 的帧转死信（对齐 sensor_uplink 口径）。
+
+        results 与 batch 按位置对位（平台保持请求序）；record_id 两侧都有且不等
+        视为错位 → 整批跳过对账（退回整批成功口径，不误判）。
+        """
+        try:
+            payload = json.loads(resp.read().decode() or "{}")
+        except Exception:
+            return
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list) or len(results) != len(batch):
+            return
+        rejected = []
+        for frame, item in zip(batch, results):
+            if not isinstance(item, dict):
+                continue
+            rid_ok = (
+                item.get("record_id") is None
+                or frame.get("record_id") is None
+                or str(item.get("record_id")) == str(frame.get("record_id"))
+            )
+            if not rid_ok:
+                continue
+            if item.get("accepted") is False and item.get("skipped") is not True:
+                rejected.append(frame)
+                print(f"[bridge] 帧被平台逐帧拒绝: {item.get('error') or 'accepted=false'}")
+        if rejected:
+            self._dead_letter(rejected, "批量逐帧拒绝（results.accepted=false，非 skipped）")
+
     def _post_batch(self, batch: list) -> str:
         """POST 批量帧到 /api/ingest/exoskeleton/batch。
 
         返回 "ok" / "retry"（瞬态失败）/ "dead_letter"（云端 4xx 非 429 永久拒绝）。
+
+        2026-09-15 仿真对抗收口：2xx 响应含逐帧 results[]（平台可能逐帧拒绝，
+        如 CLOCK_DRIFT_FUTURE_TS）。此前 2xx 一律记"发送成功 N 条"，逐帧拒绝的
+        帧在本通道彻底消失（无死信、无计数）。现按 results 逐帧对位，拒绝帧转
+        本通道死信文件（账目与 sensor_uplink 桥同一口径）；results 缺失/错位时
+        退回整批成功口径（不误判）。
         """
         url = f"{self.spark_url}/api/ingest/exoskeleton/batch"
         body = json.dumps({"frames": batch}).encode("utf-8")
@@ -387,6 +423,7 @@ class SparkBridge:
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 - configured internal HTTP client
                 if 200 <= resp.status < 300:
+                    self._dead_letter_per_item(batch, resp)
                     return "ok"
                 print(f"[bridge] HTTP {resp.status}")
                 return "retry"
@@ -403,10 +440,17 @@ class SparkBridge:
             return "retry"
 
     def _backoff(self):
-        """指数退避，最大 60s。"""
+        """指数退避，最大 60s；**分片睡眠并响应停止信号**。
+
+        为什么不分片就睡：实测（tests/test_edge_bridge_ingest 挂死复盘）一次 60s 的
+        整段 sleep 会吞掉停止请求——桥接器"看起来退出不了"，现场只能 kill -9。
+        分片（0.1s）检查 `self._running`：停止信号到达即刻返回，退避节奏不变。
+        """
         delay = min(2 ** min(self._consecutive_failures, 6), self.MAX_BACKOFF_SEC)
         print(f"[bridge] {delay}s 后重试（连续失败 {self._consecutive_failures}）...")
-        time.sleep(delay)
+        deadline = time.monotonic() + delay
+        while self._running and time.monotonic() < deadline:
+            time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
 
 # ===== 主入口 =====

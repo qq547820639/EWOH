@@ -765,6 +765,28 @@ async function main() {
       `sweep=${sweep.status} devices=${sweep.body?.devicesWithBacklog} created=${sweep.body?.created} `
         + `notifications=${backlogNotifications.length} audit=${backlogAudit.length}`);
 
+    // ── 20b. NO-70a 升级链：积压 30 分钟 = 6× SLA(5min) > 3× 阈值 → 必须升级 ──────
+    const escalatedNotifications = await sql`
+      select notification_id, recipient_id, severity, title
+        from ewoh_notification
+       where external_ref = ${backlogDevice}
+         and notification_id like '%delivery_backlog_escalated%'
+       limit 10`;
+    const pmNotified = escalatedNotifications.some(
+      (row) => String(row.recipient_id) === 'production_manager',
+    );
+    const criticalSeverity = escalatedNotifications.some(
+      (row) => String(row.severity) === 'critical',
+    );
+    step('20b. NO-70a 升级链：积压超 3× SLA → 桶升 escalated + 加发 production_manager（critical）',
+      Number(sweep.body?.escalationMultiplier) === 3
+        && Number(sweep.body?.escalatedDevices) >= 1
+        && escalatedNotifications.length > 0
+        && pmNotified
+        && criticalSeverity,
+      `escalated=${escalatedNotifications.length} pmNotified=${pmNotified} `
+        + `critical=${criticalSeverity} multiplier=${sweep.body?.escalationMultiplier}`);
+
     // ── 11. 重复 ack 幂等 ───────────────────────────────────────────
     // 命令必须挂在一个**非终态**请求下才能被确认投递（NO-62a：终态请求下的命令
     // 一律拒绝投递确认——主链路请求此刻已是 executed）。这里为幂等探针单独建一个

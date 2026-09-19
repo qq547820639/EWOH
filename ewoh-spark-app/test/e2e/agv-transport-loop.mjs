@@ -190,13 +190,19 @@ async function main() {
     // 场景永远建不起前置条件（实测：persons=12 全部 UNKNOWN）。这里先挑一个
     // 有技能的人员补帧，再回读快照确认它真的变成 AVAILABLE（不假设补帧一定生效）。
     const persons = Array.isArray(snapshot.body?.persons) ? snapshot.body.persons : [];
-    const personCandidate = persons.find((p) => (p.skills ?? []).length > 0) ?? persons[0] ?? null;
+    // 依次给最多 5 个有技能的人补位置帧，取第一个变为 AVAILABLE 的（没有就如实标记 null）。
     let availablePerson = null;
-    if (personCandidate?.id) {
+    const candidatesWithSkills = persons.filter((p) => (p.skills ?? []).length > 0);
+    for (const personCandidate of (candidatesWithSkills.length > 0 ? candidatesWithSkills : persons).slice(0, 5)) {
+      if (!personCandidate?.id) continue;
       await ingestPersonFrame(personCandidate.id);
       const refreshed = await get('/api/scheduler/snapshot', adminToken);
       const after = (refreshed.body?.persons ?? []).find((p) => p.id === personCandidate.id);
-      availablePerson = after ?? personCandidate;
+      if (after && String(after.status ?? '') === 'AVAILABLE') {
+        availablePerson = after;
+        break;
+      }
+      if (!availablePerson) availablePerson = after ?? personCandidate;
     }
     step('2b. 人员前置条件成立：档案刷新 + 位置补帧后至少 1 人 AVAILABLE（否则搬运任务不可调度）',
       persons.some((p) => String(p.status ?? '') === 'AVAILABLE')

@@ -231,6 +231,212 @@ kind/helm/kubectl/docker/PG）仍不可复现，CI 证据以 workflow 运行日�
 - **NO-67c 轮换窗口提示**：启动时检测 `_PREVIOUS` 并告警（窗口必须有期限）。
 - **NO-67d 清理自证**：`e2e:plan-staleness` 收尾删除后计数，残留即 FAIL（异常也不许只 warn）。
 
+### 3.6z 协同设备未就绪合并视图（NO-85a，2026-09-16 第 85 轮）
+
+- **命令**：`EWOH_BROWSER_MODE=mock npx playwright test … mobile-device-execution.spec.js`
+  （**48 项 = 8 用例 ×6 画像**，新增协同未就绪变体）。
+- **语义**：主设备摘要 + 协同设备"未就绪聚合"（其余台设备排队/未交付/超时>0 计数）；
+  单台查询失败不影响主摘要；未就绪（degraded 色）与已就绪（muted）**分色不混淆**。
+
+### 3.76 receipt 授权边界自建前置（NO-100a，2026-09-19 第 100 轮）
+
+- **命令**：`make e2e-receipt-fresh`（**19/19 全绿**，SKIP 清零）。
+- **自建前置**：把一条未终结执行行归到张伟绑定人员（派工行 + 执行行同步改 person_id；
+  行态 STARTED），20/21 断言本人可报 / 他人被拒 403。
+- **要点**：授权比较的是派工行 personId（非执行行）；worker 只能 START→COMPLETED。
+  自建前置消灭了最后两个环境依赖 SKIP——标准链 SKIP 清零。
+
+### 3.75 积压趋势历史化（NO-91a，2026-09-17 第 91 轮）
+
+- **命令**：`EWOH_DATABASE_URL=… node db/runner/run_migrations.js
+  --apply/--verify-standalone-control-backlog-snapshot`（表+索引+探针）+
+  `npm run e2e:control-actuator`（31/31，sweep 落快照）+
+  `npx jest server/modules/control`（86 例，快照断言）。
+- **表**：`ewoh_control_backlog_snapshot`（迁移 097；**含 ewoh_api GRANT**——
+  新表不继承既有授权，漏 GRANT = 历史端点 500）。
+- **链路**：巡检落快照（与提醒同节拍）→ history 端点（最近在前）→
+  FactoryOperations 积压 sparkline。
+- **教训**：新增表必须显式 GRANT 给运行时角色（同 fresh-chain 重置密码教训同族）。
+
+### 3.74 KPI 历史自动积累 + sparkline（NO-90a/b，2026-09-17 第 90 轮）
+
+- **命令**：`npx jest server/modules/scheduler/__tests__/kpi-persist-throttled.spec.ts`
+  （3 例）+ 活体（两次 gate 相隔 2s → kpi 表仅 1 条）+
+  `npm run test:client -- --testPathPattern PolicyGatePanel`（7 例，含 sparkline 断言）。
+- **NO-90a**：`persistThrottled(orgId, minIntervalMs)`——按最近快照节流落库；
+  门禁评估（含面板轮询、golden、e2e）顺带积累历史序列，节拍默认 5 分钟。
+- **NO-90b**：趋势 sparkline（SVG 折线 + 阈值虚线；缺数据点断开）。
+
+### 3.73 门禁指标历史化（NO-89a，2026-09-16 第 89 轮）
+
+- **命令**：`npx jest server/modules/scheduler`（listHistory）+
+  `npm run test:client -- --testPathPattern PolicyGatePanel`（7 例，含趋势两态）+
+  活体 `GET /api/scheduler/kpi/history?limit=5`（200）。
+- **语义**：`listHistory(orgId, limit≤48)` 按周期倒序返回快照序列（kpiJson 全量）；
+  看板趋势表按阈值分色（达标/不达标/缺数据），无快照如实缺项。
+- OpenAPI：`GET /api/scheduler/kpi/history` 契约（468 ops）。
+
+### 3.72 门禁看板浏览器验收 + 面板未渲染缺陷修复（NO-88a，2026-09-16 第 88 轮）
+
+- **命令**：`EWOH_BROWSER_MODE=mock npx playwright test … policy-gate-panel.spec.js`
+  （**30 项 = 5 用例 ×6 画像**；`test:browser:mock` 121 passed）。
+- **三态覆盖**：全通过（axe）/ 缺数据（"需显式确认"+"证据不足"+未验证标注）/
+  不达标（"已拒绝"徽章 + cell 角色精确断言）/ 混合态（失败优先于缺数据）/
+  读面失败显式报错。
+- **缺陷修复**：FactoryOperations 三面板被错插进 useEffect 函数体（JSX 悬空表达式
+  从不执行，面板从未渲染且完全静默）→ 挂载到页面 JSX 顶部。渲染测试的教训：
+  **mount 断言必须配套可见性断言**。
+
+### 3.71 golden 全路径复验工具链 + 门禁指标看板（NO-87a/b，2026-09-16 第 87 轮）
+
+- **命令**：`make e2e-golden-fresh`（reset → clear-execution-facts → golden，**22/22 全绿**）+
+  `npx jest …/PolicyGatePanel.test.tsx`（5 例）+ 活体 gate=201。
+- **NO-87a**：`db/runner/clear-execution-facts.mjs`——reset 只删 seed 任务的执行行；
+  场景自建任务的迟到回执残留会让门禁持续"不达标"。fresh 目标先清本 org 的
+  执行/反馈/KPI 快照（派生事实，可重建；不碰配置种子），再跑 golden 全路径。
+- **NO-87b**：`PolicyGatePanel`（FactoryOperations）——门禁逐条检查
+  实际 vs 阈值 + 三态结论（通过/缺数据（未验证 ≠ 通过）/不达标——ack 无法豁免），
+  60s 轮询；渲染测试 5 例（全通过/缺数据/不达标/失败/加载）。
+
+### 3.70 golden 激活门禁第三分支（NO-86a，2026-09-16 第 86 轮）
+
+- **命令**：`npm run e2e:golden`（**16 PASS / 0 FAIL / 2 SKIP**；SKIP 附实测指标）。
+- **治理语义三分支**：① 全通过 → 正常激活+回滚；② 缺数据 → 拒绝未确认激活、
+  ack 可豁免（记审计）；③ **逐条失败（有数据不达标）→ 未确认与 ack 激活都拒绝**
+  （FAIL 不可被豁免——ack 只豁免"缺数据"，不豁免"数据不达标"）。
+- 场景判定顺序：失败检查 > 缺数据 > 全通过；SKIP 附门禁实测指标（数据漂移可观测）。
+
+### 3.6y 契约触达面审计 + 移动多设备浏览器变体（NO-84a/b，2026-09-16 第 84 轮）
+
+- **命令**：`make audit-contract-touchpoints` + `npm run test:browser:mock`
+  （mobile spec **7 用例 ×6 画像 = 42**，新增多设备协同变体）。
+- **NO-84b 契约桩注册表**：`scripts/audit-contract-touchpoints.js`——
+  首个受治理契约 = `SparkBridge._post_batch` verdict 词表（ok/retry/dead_letter）；
+  **首跑即抓出** `tests/` 里残留的 bool 桩（`False`）→ 对齐为 `"retry"`。
+  注册表可扩展：契约演进时**先注册、后改名**，门禁自动拦截未同步的桩。
+- **NO-84a**：多设备协同派工在移动工单卡显示"+N 台协同"入真浏览器验收。
+
+### 3.6x data-quality 清理自证 + 移动多设备显示（NO-83a/b，2026-09-16 第 83 轮）
+
+- **命令**：`npm run e2e:data-quality`（**16/16**，含步骤 15 清理自证）。
+- **NO-83a**：场景收尾先收尾自己注入的合成告警（本 tag），再自证无 open 残留；
+  历史残留一次性清洗（8 条）；**TDZ 修复**（注入 id 提升到 try 外，早期失败时
+  finally 读到的是 null 而非 ReferenceError）。
+- **NO-83b**：移动工单 `deviceExecution` 返回全部派工设备；工单卡显示首台 + "+N 台协同"。
+
+### 3.6w 排队原因细分（NO-81a，2026-09-16 第 81 轮）
+
+- **命令**：`npx jest server/modules/control`（86 例，细分断言）+
+  `EWOH_BROWSER_MODE=mock npx playwright test … mobile-device-execution.spec.js`
+  （**42 项 = 7 用例 ×6 画像**，新增限流排队变体）。
+- **细分语义**：`queuedReason ∈ {device_busy, quota, null}` 逐命令输出；
+  配额用尽 → `queued_quota` 投递态（面板既有档位接上数据源）；
+  移动端文案拆分"等上一单完成" vs "等下一分钟配额窗口"（解除条件不同）。
+- **口径注释**：页面 remaining 为只读近似（未含网关 CAS 扣减）——诚实标注，不冒充精确值。
+
+### 3.6v 移动工单状态行浏览器验收（NO-80a，2026-09-16 第 80 轮）
+
+- **命令**：`EWOH_BROWSER_MODE=mock npx playwright test … mobile-device-execution.spec.js`
+  （**30 项 = 5 用例 × 6 画像**；已并入 `test:browser:mock` → 105 → **113**）。
+- 四态覆盖：排队中（不是工单失败）/ 执行中 / 积压（已通知值班）/ 空闲 + 无派工设备缺项。
+- **分支顺序修复**：积压判定优先于排队（严重度倒挂缺陷，浏览器验收抓出）。
+
+### 3.6u 移动工单设备执行状态行 + perception 清理自证（NO-79a/b，2026-09-16 第 79 轮）
+
+- **命令**：`npx jest server/modules/mobile`（5 例）+ `npm run e2e:perception-fusion`
+  （**21/21**，含步骤 17 清理自证）+ `npm run e2e:control-actuator`（31/31 回归）。
+- **NO-79a**：移动工单详情 `deviceExecution`（派工表 → listDeviceCommands 摘要，
+  同一判定实现）；工单卡状态行区分"设备执行中 / **设备排队中（不是工单失败）** /
+  命令投递积压（已通知值班）/ 设备空闲"；查不到派工设备如实缺项。
+- **NO-79b**：perception 场景收尾四类行计数自证（冲突/任务/融合/环境）。
+
+### 3.6t 测试 CI 工作流 / TTL 缓存与下钻表 / exo 清理自证（NO-78a/b/c，2026-09-16 第 78 轮）
+
+- **命令**：`npx jest …/DeliveryBacklogTable.test.tsx`（5 例）+
+  `npx jest server/modules/control`（86 例，含 TTL 缓存 2 例）+
+  `PYTHONPATH=src python3 -m pytest -q tests/test_edge_bridge_ingest.py`（6/6）+
+  `npm run e2e:exo-session`（53/53，含步骤 16 清理自证）。
+- **NO-78a**：快照 TTL 缓存（默认 5s；0=关闭；按租户分桶+容量 64；sweep 不走缓存）+
+  FactoryOperations 逐设备下钻表（升级徽章/未交付与已投未回执分列/零积压不渲染/失败显式）。
+- **NO-78b**：`.github/workflows/tests.yml`（Python 矩阵 3.11/3.12 + ruff + 标准链；
+  Node 双 tsconfig + lint + jest；actions 按 SHA pin）——keywords: tests.yml、Python 矩阵。
+- **NO-78c**：exo 场景步骤 16 清理自证（单点跟踪 createdSessionIds；无活跃残留 PASS，
+  残留/自查失败 FAIL，无 OWNER_DB 显式 SKIP）。
+
+### 3.6s 积压实时快照进工作台 + Python 测试矩阵（NO-77a/b，2026-09-16 第 77 轮）
+
+- **命令**：`npx jest server/modules/dashboard/__tests__/workbench-now-backlog.spec.ts`
+  （4 例）+ `npx jest server/modules/control`（84 例）+ `bash scripts/python-test-matrix.sh`
+  （3.9 SKIP / 3.12 PASS）+ 活体 `GET /api/control/delivery-backlog/status`。
+- **NO-77a**：判定抽取为 `collectBacklogRows` **唯一实现**（巡检/快照共用，永不两套口径）；
+  快照端点（RBAC 同 sweep）+ `WorkbenchNow` 聚合项（升级 → priority 1/critical；
+  零积压不伪造"需要处置"；快照失败不阻塞其余事实）。
+- **NO-77b**：解释器矩阵脚本（3.9 SKIP[版本守卫] / 3.12 全绿），CI 接入就绪。
+
+### 3.6r 桥接器挂死修复 + tests/ 目录全绿 + 配额徽章真浏览器验收（NO-76a/b，2026-09-16 第 76 轮）
+
+- **命令**：`PYTHONPATH=src python3 -m pytest -q tests`（**688 passed / 11 skipped / 1.48s**，
+  此前因桩过期+退避吞停止信号而"挂死"）+ `npm run test:browser:execution-boundary`
+  （**7 用例 ×6 画像**全绿，新增配额徽章）。
+- **NO-76a**：`_backoff` 分片睡眠响应停止信号（产品健壮性）；测试桩对齐 verdict 契约。
+- **预存在缺陷排查结论**：非 asyncua/端口问题，是**契约演进未同步非链目录**——
+  教训：契约变更的触面盘点必须包含**所有**测试目录（包括不在链里的）。
+- **入链（NO-76c）**：标准验证命令升级为
+  `PYTHONPATH=src python3 -m pytest -q src/edge_platform tests tools`
+  （**1934 passed / 13 skipped / 78s**）——`tests/` 修复后纳入权威链，
+  防止非链目录再度腐化（契约演进触面盘点的结构性保障）。
+
+### 3.6q Modbus 加固 + OPC-UA 真实栈（NO-75a/b，2026-09-16 第 75 轮）
+
+- **命令**：`PYTHONPATH=src python3 -m pytest -q src/edge_platform/tests/test_actuator_modbus.py`
+  （**18/18**）+ `PYTHONPATH=src python3.12 -m pytest -q src/edge_platform/tests/test_actuator_opcua_real.py`
+  （**2/2，×3 连续**；3.9+asyncua 1.1.8 下显式 SKIP）+ 全量 `pytest -q src/edge_platform tools`
+  （**1246 passed, 2 skipped**——SKIP 为真栈用例的显式版本守卫）。
+- **NO-75a**：FC16 单事务批量写（撕裂写在协议层不可能）+ 重连指数退避（快速失败/成功重置）。
+- **NO-75b**：`AsyncuaOpcUaClient`（可选依赖、懒加载、fail-closed）+ 真线用例
+  （in-process asyncua Server；设备侧代理按节拍应用命令；2s 有界轮询等待状态迁移）。
+- **发现并如实记录（预存在，非本轮引入）**：顶层 `tests/` 目录**不在标准验证链**
+  （`pytest -q src/edge_platform tools`），其中 `test_edge_backfill.py` 存在挂起——
+  待专项排查后才能入链。
+
+### 3.6p 升级链 e2e / 凭证矩阵预检 / 运动类配额 / 轮换演练（NO-74a/b/c/d，2026-09-16 第 74 轮）
+
+- **命令**：`npm run e2e:control-actuator`（**31** 项）+ `npx jest server/modules/control`（**82** 例）+
+  `node tools/control-key-rotation-drill.mjs`（dry-run/apply/resume 三路径）+ jest 全量 3441。
+- **NO-74a**：升级链 e2e（20b：回拨 6× SLA → escalated + production_manager + critical 实测通过）。
+- **NO-74b**：链前凭证角色矩阵自检（配错立即失败带指引；三凭证不能混用）。
+- **NO-74c**：运动类配额（默认通用一半；quota-motion 排队；stop 仍插队不占额）；
+  OpenAPI quota 增 motion 三元组；本地 env 显式配置教训（默认 1/分钟会把主回路排队）。
+- **NO-74d**：轮换演练四步全通；演练抓出并修复 4 个真实缺陷
+  （子进程 env/日志、env 引号剥离、resume 守卫顺序、假清零）——**演练的意义就是这些**。
+
+### 3.6o 积压巡检升级链与双状态扩展（NO-70a，2026-09-16 第 70 轮）
+
+- **命令**：`npx jest server/modules/control`（80 例，含升级链 3 例）。
+- **积压双状态**：`sent`（平台一直没能交付网关：网关掉线/密钥不配对/配额打满）与
+  `gateway_received`（网关已收但设备迟迟不执行/不回执）**都是积压**——现场表现都是"设备不动"，
+  都必须叫到人。提醒正文分两个数字：`未交付 X 条；已投未回执 Y 条`（处置入口不同）。
+- **升级链（复用安灯 SLA 升级语义）**：积压年龄 ≥ N 倍 SLA
+  （`EWOH_CONTROL_BACKLOG_ESCALATION_MULTIPLIER`，默认 3）→ 桶升 `delivery_backlog_escalated`
+  + 加发 `production_manager`（critical）；**一级收件人仍在**（升级 = 加发管理者，不是拿走提醒）；
+  未达阈值不升级。
+- **纪律**：升级桶**替换**桶名（一条积压一条提醒链，靠桶名区分等级），收件人**加发**；
+  轮换/升级都只放宽"叫到谁"，不放宽积压判定本身。
+
+### 3.6n 投递积压巡检与提醒 / 清理自证推广（NO-68a/b，2026-09-16 第 68 轮）
+
+- **命令**：`make e2e-control-actuator`（**30** 项，含步骤 20）+
+  `npx jest server/modules/control`（62 例）+ `make e2e-capability-explain`（25 PASS / 3 SKIP，SKIP 原因可追）。
+- **NO-68a 投递积压巡检**：`sent` 且 `delivered_at IS NULL` 且 `sent_at < now-SLA`（默认 5 分钟）
+  → 按设备发确定性提醒（幂等，`NTF-CTRL-<deviceId>-delivery_backlog-*`），审计留痕；
+  worker 逐租户 GUC 事务（`standalone_096` SECURITY DEFINER 只返回 org_id），值班角色可手动 sweep。
+  人面读面给 `oldestWaitingMs`/`overdue`/`deliverySlaMs`，面板显"投递积压 N 条（最久等待 X 分钟）"。
+- **NO-68b 清理自证推广**：capability 场景收尾自查停用能力已全恢复；plan-staleness 收尾删除后计数。
+  同轮把 7b/7b2/7d 反事实建议断言**条件化**（放宽后无合格候选 = 引擎正确不给建议 → SKIP 附原因）。
+- **巡检边界**：只写提醒与审计，**绝不改命令/设备事实**；已交付（`delivered_at` 非空）不计积压。
+- **环境事故处置入库**：colima 停机数日 → postgres 不可达 + fresh-chain 重置集群级 `ewoh_api`
+  密码 → dev 登录 503；处置与预防已写进 runbook（重置密码 SQL + 纪律）。
+
 ### 3.6l 执行边界对现场可见 + 密钥轮换 + 场景预检（NO-66a/b/c/d，2026-09-13 第 66 轮）
 
 - **命令**：`make e2e-control-actuator`（**28** 项）+ `npx jest server/modules/control`（58 例）+

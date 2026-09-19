@@ -1,15 +1,11 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import {
-  ewohEvent,
-  ewohLearningProposal,
-  ewohNotification,
-} from '@server/database/schema';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { ControlService } from '../control/control.service';
 
 /**
  * "现在需要我做什么"聚合（2026-09-13，FR6 交互愿景落地）。
@@ -22,31 +18,30 @@ import type { OrgContext } from '../shared/org-context.interceptor';
  * 优先级语义（从高到低）：
  *   1. critical 开异常（安全/质量红灯）
  *   2. high 开异常
- *   3. 严重级未读通知（积压待处置的）
- *
- * 范围裁决（2026-09-13）：待审批已有独立入口（审批控制台 + 顶栏收件箱）、
- * 物料缺口已有班次工作台面板、逾期行动项已有专门 sweep——这些域已有各自的
- * "叫人"机制，不需要重复聚合（重复聚合 = 同一件事叫两次 = 狼来了）。
- * 本端点聚合的是**目前没有独立叫人机制的域**：开异常 + 严重级通知。
+ *   3. 物料缺口（需求 > 库存，影响交付）
+ *   4. 待审批提案（人在关键节点必须介入的）
+ *   5. 严重级未读通知（积压待处置的）
  *
  * 每一条都带 kind / ref / route——聚合不造新事实，只是已有事实的优先级索引。
  */
 
 export interface NowItem {
-  kind: 'anomaly' | 'approval' | 'notification';
+  kind: 'anomaly' | 'approval' | 'notification' | 'material_gap';
   priority: 1 | 2 | 3 | 4 | 5;
   title: string;
   ref: string;
-  /** 处置页路由（前端据此跳转，聚合不造路由） */
   route: string;
   severity: string | null;
   createdAt: string;
+  /** 附加量化信息（缺口量、等待时长等），前端直接渲染 */
+  detail?: string;
 }
 
 @Injectable()
 export class WorkbenchNowService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly controlService?: ControlService,
   ) {}
 
   async getNow(actor?: OrgContext): Promise<{
@@ -58,9 +53,13 @@ export class WorkbenchNowService {
       throw new BadRequestException('org 上下文缺失：工作台聚合必须带租户上下文');
     }
 
-    const [anomalies, notifications] = await Promise.all([
+    const [anomalies, notifications, proposals, materialGaps, backlog] = await Promise.all([
       this.readOpenAnomalies(orgId),
       this.readCriticalNotifications(orgId),
+      this.readPendingProposals(orgId),
+      this.readMaterialGaps(orgId),
+      // NO-77a：投递积压**实时快照**（不依赖"恰好有人跑过巡检"；判定与巡检同一实现）
+      this.readDeliveryBacklog(orgId),
     ]);
 
     const items: NowItem[] = [
@@ -73,9 +72,50 @@ export class WorkbenchNowService {
         severity: r.severity,
         createdAt: r.createdAt,
       })),
+      ...materialGaps.map((m) => ({
+        kind: 'material_gap' as const,
+        priority: 3 as const,
+        title: `物料缺口 ${m.materialId}：需求 ${m.demand} > 库存 ${m.stock}`,
+        ref: m.materialId,
+        route: '/materials',
+        severity: 'high',
+        createdAt: m.generatedAt,
+        detail: `需求 ${m.demand} / 库存 ${m.stock} / 缺口 ${m.gap}`,
+      })),
+      ...proposals.map((p) => ({
+        kind: 'approval' as const,
+        priority: 4 as const,
+        title: `学习提案待审批 ${p.kind}：${p.parameter} ${p.baseline}→${p.candidate}`,
+        ref: p.proposalId,
+        route: '/learning-console',
+        severity: 'medium',
+        createdAt: p.createdAt,
+      })),
+      ...(backlog && backlog.totals.commands > 0
+        ? [
+            {
+              kind: 'anomaly' as const,
+              // 升级（≥3× SLA）= 管理层事件 → priority 1；普通积压 → 2（与高优异常同级）
+              priority: (backlog.totals.escalatedDevices > 0 ? 1 : 2) as 1 | 2,
+              title:
+                `投递积压：${backlog.totals.devices} 台设备 ${backlog.totals.commands} 条命令`
+                + `（最久等待 ${Math.max(1, Math.round((backlog.totals.oldestWaitingMs ?? 0) / 60_000))} 分钟）`
+                + (backlog.totals.escalatedDevices > 0
+                  ? `，${backlog.totals.escalatedDevices} 台已升级`
+                  : ''),
+              ref: 'delivery-backlog',
+              route: '/devices',
+              severity: backlog.totals.escalatedDevices > 0 ? 'critical' : 'high',
+              createdAt: new Date().toISOString(),
+              detail:
+                `未交付 ${backlog.totals.undelivered} / 已投未回执 ${backlog.totals.receivedNotExecuted}`
+                + `（SLA ${Math.round(backlog.slaMs / 60_000)} 分钟）`,
+            },
+          ]
+        : []),
       ...notifications.map((n) => ({
         kind: 'notification' as const,
-        priority: 4 as const,
+        priority: 5 as const,
         title: n.title,
         ref: n.notificationId,
         route: '/field-operations',
@@ -157,5 +197,102 @@ export class WorkbenchNowService {
       severity: r.severity,
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     }));
+  }
+
+  private async readPendingProposals(orgId: string): Promise<Array<{
+    proposalId: string;
+    kind: string;
+    parameter: string;
+    baseline: string;
+    candidate: string;
+    createdAt: string;
+  }>> {
+    const rows = (await this.db.execute(sql`
+      SELECT proposal_id, kind, parameter,
+             baseline_value::text AS baseline,
+             candidate_value::text AS candidate,
+             _created_at AS created_at
+        FROM ewoh_learning_proposal
+       WHERE org_id = ${orgId}
+         AND status IN ('proposed', 'shadow_evaluated')
+       ORDER BY _created_at DESC
+       LIMIT 20
+    `)) as unknown as Array<{
+      proposal_id: string;
+      kind: string;
+      parameter: string;
+      baseline: string;
+      candidate: string;
+      created_at: string | Date;
+    }>;
+    return rows.map((r) => ({
+      proposalId: String(r.proposal_id),
+      kind: r.kind,
+      parameter: r.parameter,
+      baseline: r.baseline,
+      candidate: r.candidate,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+  }
+
+  private async readMaterialGaps(orgId: string): Promise<Array<{
+    materialId: string;
+    demand: number;
+    stock: number;
+    gap: number;
+    generatedAt: string;
+  }>> {
+    const rows = (await this.db.execute(sql`
+      SELECT m.material_id, m.name,
+             COALESCE(req.total_demand, 0) AS demand,
+             COALESCE(stk.total_stock, 0) AS stock
+        FROM ewoh_material m
+        LEFT JOIN (
+          SELECT material_id, SUM(quantity::numeric) AS total_stock
+            FROM ewoh_material_stock
+           WHERE org_id = ${orgId} AND quantity_status = 'known'
+           GROUP BY material_id
+        ) stk ON stk.material_id = m.material_id
+        LEFT JOIN (
+          SELECT material_id, SUM(quantity::numeric) AS total_demand
+            FROM ewoh_material_requirement
+           WHERE org_id = ${orgId} AND quantity_status = 'known' AND status = 'open'
+             AND requirement_type = 'demand'
+           GROUP BY material_id
+        ) req ON req.material_id = m.material_id
+       WHERE COALESCE(req.total_demand, 0) > COALESCE(stk.total_stock, 0)
+       ORDER BY (COALESCE(req.total_demand, 0) - COALESCE(stk.total_stock, 0)) DESC
+       LIMIT 20
+    `)) as unknown as Array<{
+      material_id: string;
+      name: string | null;
+      demand: string | number;
+      stock: string | number;
+    }>;
+    return rows.map((r) => {
+      const demand = Number(r.demand ?? 0);
+      const stock = Number(r.stock ?? 0);
+      return {
+        materialId: String(r.material_id),
+        demand,
+        stock,
+        gap: Math.max(0, demand - stock),
+        generatedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  /** NO-77a：投递积压实时快照（ControlService 同一判定实现；失败如实返回 null——工作台不因此整页失败）。 */
+  private async readDeliveryBacklog(orgId: string) {
+    if (!this.controlService) return null;
+    try {
+      return await this.controlService.getDeliveryBacklogSnapshot({
+        userId: 'system:workbench-now',
+        primaryOrgId: orgId,
+      } as never);
+    } catch {
+      // 快照失败不阻塞工作台其余事实（异常计数/告警由调用方日志承载）
+      return null;
+    }
   }
 }

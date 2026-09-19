@@ -620,8 +620,31 @@ async function main() {
       for (const entityId of seededEntities) {
         await sql`delete from ewoh_spatial_entity where org_id = ${ORG} and entity_id = ${entityId}`;
       }
+      // NO-67d：清理必须**自证生效**（删除后数一遍，残留/异常都记 FAIL——不许只 warn）。
+      const leftover = await sql`
+        select
+          (select count(*)::int from ewoh_scheduling_conflict
+             where org_id = ${ORG} and conflict_id like 'CFL-%'
+               and type = 'perception_inconsistent' and resource_id = ${person}) as conflicts,
+          (select count(*)::int from ewoh_production_task
+             where org_id = ${ORG}::uuid and title like ${`e2e fuse conflict ${tag}%`}) as tasks,
+          (select count(*)::int from ewoh_perception_fusion
+             where org_id = ${ORG} and subject_id like ${`person:e2e-fuse-%${tag}%`}) as fusion,
+          (select count(*)::int from ewoh_environment
+             where org_id = ${ORG} and sensor_id like ${`%-${tag}`}) as env`;
+      const row = leftover[0] ?? {};
+      const residue = Number(row.conflicts ?? 0) + Number(row.tasks ?? 0) + Number(row.fusion ?? 0) + Number(row.env ?? 0);
+      if (residue > 0) {
+        record(
+          'FAIL',
+          '17. 清理自证',
+          `残留 conflicts=${row.conflicts} tasks=${row.tasks} fusion=${row.fusion} env=${row.env}`,
+        );
+      } else {
+        record('PASS', '17. 清理自证（本场景造的冲突/任务/融合/环境行已全部删除）', true);
+      }
     } catch (error) {
-      console.warn(`[cleanup] 清理失败（不掩盖断言结果）：${error?.message ?? error}`);
+      record('FAIL', '17. 清理自证', `清理或自查失败：${error?.message ?? error}`);
     }
     await sql.end().catch(() => undefined);
   }

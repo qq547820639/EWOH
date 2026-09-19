@@ -1400,7 +1400,11 @@ export class ScaleService {
     const status = await this.fleetStatus(actor);
     // NEST-219：traces 单次 list 复用（两次调用间 traces 变化会导致
     // traceCount 与 traces 数组不一致）。
-    const traces = this.tracingService?.list(20) ?? [];
+    // R2-SNZ-007：list 需显式租户作用域——不传 actor 时非 global_admin 调用方
+    // 直接 400（"org context missing: trace list requires tenant context"），
+    // 支持包生成整体失败；global_admin 不传 actor 则拿到全租户混存 traces
+    // （跨租户泄漏进单租户支持包）。必须透传 actor。
+    const traces = this.tracingService?.list(20, actor) ?? [];
     const bundle = {
       bundleId: `SB-${randomUUID().slice(0, 8)}`,
       generatedAt: status.generatedAt,

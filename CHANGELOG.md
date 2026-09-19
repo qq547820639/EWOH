@@ -6,6 +6,468 @@
 ## [Unreleased]
 
 ### Added
+- **批次交付（NO-101b）：Python 矩阵脚本 pytest 可用性检查**：
+  `python3.13` 存在但没装 pytest → 之前直接 FAIL（矩阵整体红）→
+  现在先检查 `import pytest` 是否可用，不可用 → SKIP（与 asyncua 未装的 SKIP 同纪律）。
+  修复后矩阵：3.9 PASS / 3.12 PASS / 3.13 SKIP → **matrix OK**。
+- **批次交付（NO-101b）：共享 dev 库数据残留归因（agv-fresh 挂死根因）**：
+  多轮场景运行后共享库累积 40+ 台场景专用 AGV 设备（全部 OFFLINE / 电量 8%）。
+  调度器候选池过大导致 seed 任务与场景任务均不可调度（plans=0）。
+  清洗 AGV-SIM 残留后仍 plans=0（seed 任务的 requiredDeviceCapabilities 依赖
+  已删除的设备能力）。**结论**：agv-fresh 需要全链 reset（非单独 reset+clear），
+  runbook 新增处置流程与教训（单场景 standalone 失败 ≠ 产品缺陷）。
+  全链 r98 确认绿色（471 PASS / 0 FAIL）。
+
+- **批次交付（NO-101a）：全量质量审计（第 101 轮，所有门禁与套件一次性核验）**：
+  jest server **387 suites / 3483 tests**、client **175/1718**、pytest **1934+13**、
+  tsc 双 0、ruff clean、truth 82/82、reconcile 6/6、OpenAPI in sync 467 ops 0 未登记、
+  lint 0（design tokens clean）、security clean、迁移 fresh-chain **verify 100/100**、
+  Python 矩阵 OK、契约桩审计通过、能力漂移清零。
+  e2e 抽检：control-actuator **31/31**、device-physics **18/18**、golden **16 PASS + 2 SKIP**
+  （SKIP 附漂移实测：on_time_rate=0.714、lateness_p95=12.16M ms——门禁行为正确）。
+  技术债务标记：TODO 仅 3 处（均带上下文与计划）、eslint-disable 均有注释理由。
+
+- **批次交付（NO-97a/b）：迁移 ID 冲突处置 + 场景环境衰减自愈**：
+  - **NO-97a 迁移 ID 冲突处置**：与延续会话并行认领 `standalone_097` 被唯一性门禁拦截
+    → 自己的积压快照迁移经两次改名收敛为 **standalone_102_control_backlog_snapshot**
+    （延续会话相继占用 097/101）；三件套文件/四张注册表/verify 标记同步更新，
+    standalone-chain spec 与双迁移 verify 均 OK。runbook 新增处置流程
+    （不重编号对方、取下一个空闲 ID、重跑 verify + standalone-chain spec）。
+  - **NO-97b 场景环境衰减自愈**（全链回归 3 FAIL 的根因与修复）：
+    ① **边缘密钥漂移**：第 91 轮轮换演练后平台密钥已为 rotated 值，而重建的
+    `/tmp/ewoh-e2e-env.sh` 用旧钥 → 所有命令 `fingerprint_mismatch` 被拒
+    （agv/control-actuator 全红）→ 密钥对齐 `.env.local-standalone` 现行值 +
+    runbook 模板加轮换警告。实测 control-actuator **31/31**、agv **11/11**。
+    ② **共享人员池污染**：device-physics 全员 BUSY（其它场景残留派工；资源预约已全
+    released 仍 BUSY = 分配行残留）→ 场景播种**专用人员**（randomUUID，自带技能），
+    迭代候选取首个 AVAILABLE。实测 device-physics **18/18**。
+
+- **批次交付（NO-92a）：执行机构电量合理性闸门（SOC plausibility gate，销账 simfarm A6 已知缺口）**：
+  - **领域口径**（`shared/soc-plausibility.ts` 唯一事实源）：电量是物理量——对称包络
+    `1.5%/min`（覆盖机会快充 + 余量）× dt，量化噪声下限 4 点，锚点时效 30 分钟
+    （过期=unjudgeable 如实接受，不拿过期锚拒绝真实状态）；越界/NaN 无条件拒绝；
+    连续 3 帧同一新水平 → **再锚定接受**并标记 `soc_reanchored`（真实充电是持续
+    过程，毛刺只有一帧）。四参数均可经 `EWOH_SOC_*` 环境变量按机型放宽。
+  - **行为**：`/api/ingest/actuator` 带电量的帧经 `gateActuatorSoc`——非物理跳变
+    `SOC_JUMP_IMPLAUSIBLE` 显式拒绝（不写台账/世界状态、幂等认领释放、重放再显式
+    拒绝），错误文案带完整判据数值（现场可解释）；锚点读取失败 fail-open 放行
+    （数据优先，留 warn）。
+  - **对抗实测**（device-physics 场景重写 A 腿）：合理放电曲线（时间窗匹配物理，
+    仿真器新增 `--soc-window-min`）4/4 受理；单帧 8→95 回跳显式拒绝且台账保持 8；
+    连续 95 帧 → 第 3 帧再锚定（soc_reanchored=true）台账更新 95；SOC 跌破门槛
+    → 候选 `battery_low` 可解释拒绝；台账电量始终跟随最后可信值。**18 PASS / 0 FAIL**。
+  - 选型说明：领域校验规则，无成熟第三方库可复用（prophet/ADTK 等统计离群需训练
+    窗口且不可解释到单帧；工业网关实践为参数化包络判据）——按仓库既有闸门模式
+    自实现，设计取舍记录在 `shared/soc-plausibility.ts` 头注。
+- **批次交付（TS E2E 规格漂移清账）：9 套件全部对齐现行契约（长期挂账的"39 过/19 挂"全绿），实测修掉 4 个真实产品缺陷**：
+  - **产品缺陷修复**：① 并发 replan 撞 `ewoh_schedule_plan_plan_id_key`（23505）
+    500 → 409 `PLAN_REPLAN_CONFLICT`（`plan.service.ts`，与模块内"原生约束竞态转
+    409"既有约定对齐 + 3 个单测）；② `scale.service.generateSupportBundle` 漏传
+    actor 给 `tracingService.list` → 非 global_admin 恒 400 / global_admin 全租户
+    trace 泄漏进单租户支持包（+2 单测钉死）；③ legacy `POST /api/scheduler/plans`
+    actor 透传三跳断裂 → 任何已认证调用方恒 401（NEST-146+P1-SSOT 回归，路由在册
+    却坏死）；④ **heuristic/rule-based 求解器构建资源占用槽位时只映射 person 预约，
+    device/station 预约被静默丢弃**——求解把任务派上已预占设备，dispatch 二值占用
+    硬后盾正确拒绝 → 整波 409（`heuristic-scheduling-solver.ts`/`rule-based-
+    scheduling-solver.ts` 三类全量映射 + 3 个回归单测；409 的 fail-closed 语义不动）。
+  - **规格漂移对齐**：ewoh-http 33/33（cookie 语义/幂等快照/OEE 证据/审批图服务端
+    映射/ingest key 头等 9 处）、concurrency（exclusion 40P01/23P01 双码）、
+    f61-02（审计注错 revoke→rename，owner 特权下 revoke 是空操作）、org-rls-guc
+    与 pg-temporary-failure（运行角色与 harness 形态前提修正：RLS 断言必须对
+    NOSUPERUSER NOBYPASSRLS 角色成立；故障注入改为子进程生产形态，R-4 守卫真实
+    生效）、scheduler-upgrade（F=上述缺陷④；I=policy 候选 404 契约自建注册流程）。
+  - 教训：**env-gated 套件长期无人执行 = 漂移温床**；契约演进轮必须把同目录
+    e2e spec 纳入回归清单。
+  - **运行环境教训（产品正确，harness 配错）**：control-actuator 首跑 6 失败，
+    审计留痕定位为 `fingerprint_signature_invalid`——场景进程未导出
+    `EWOH_CONTROL_FINGERPRINT_SECRET`，边缘代理用回退密钥本地验签平台签名失败，
+    按 fail-closed 回传"验签失败"，平台**正确地**拒绝投递并撤销命令（原则 4/8：
+    边缘验不过签名的命令绝不执行）。补齐环境后 31/31。链脚本 usage 已补凭据
+    清单（OPERATOR_PASS/FINGERPRINT_SECRET/可选 PG_URL 与 PERSON_ID）。
+- **批次交付（质量门禁修复）**：
+  - **20 场景主产品闭环链终验**：`bash scripts/e2e-chain.sh` **0 失败 / 0 SKIP**（exit=0；
+    20 场景 500+ 断言全 PASS，含 golden 22 / control-actuator 31 / exo-session 53 /
+    edge 59 / device-physics 18 / exo-simfarm 25）；链脚本 usage 补齐凭据纪律
+    （OPERATOR_PASS、FINGERPRINT_SECRET、可选 PG_URL/PERSON_ID——PERSON_ID 必须
+    是已绑定登录账号的人员）。
+  - **迁移 ID 冲突**：`standalone_101_control_backlog_snapshot` 与死信注册表
+    `standalone_101` 撞号 → 迁移链 Duplicate ID 直接失败。重编号 **102**（文件/
+    runner/verify 标记/CHANGELOG 引用同步；runner 中误指向 `standalone_097_verified`
+    的标记一并修正——本地初始化链实测 100 项校验通过）。
+  - **OpenAPI 文档缺口**：`GET /api/control/delivery-backlog/history` 实现与
+    manifest 在册但 ewoh.yaml 缺路径（路由对齐门禁红）→ 补全契约（limit 上限 48、
+    空数组=尚无快照不伪造趋势）+ 重生成两份 route-manifest（469 操作 / 0 未文档化 /
+    0 未实现）；`IngestResponse` 契约补 `soc_reanchored` 字段（三投影同步）。
+  - **RLS 缺口（audit-unrls-tenant-tables 实测抓出）**：迁移 102 的
+    `ewoh_control_backlog_snapshot` 含 org_id 却未开 RLS → 补 org 隔离策略
+    （与 KPI 快照表同款 GUC 判据）+ verify 断言 RLS/策略存在；四库重放验证通过。
+
+- **批次交付（NO-91a）：积压趋势历史化（与 KPI 同模式，迁移 102）**：
+  - **表**：`ewoh_control_backlog_snapshot`（迁移 102：org_id/sla_ms/escalation_multiplier/
+    totals/devices jsonb + org/时间倒序索引；**含 ewoh_api GRANT**——新表不继承既有授权，
+    097 首版漏 GRANT 导致历史端点 500，已补）。
+  - **落库**：`sweepDeliveryBacklog` 每次巡检顺带落一条历史快照（totals/逐设备聚合；
+    快照失败不阻断提醒与审计，但留痕不静默）。
+  - **读取**：`GET /api/control/delivery-backlog/history?limit=`（最近在前）+ 前端
+    `DeliveryBacklogTable` 新增积压命令数 **sparkline**（巡检节拍驱动）。
+  - **端到端**：`e2e:control-actuator` 回归 31/31（步骤 20 的 sweep 落了 1 条快照）。
+  - 测试：sweep 用例扩展快照断言；迁移 102 verify（表+索引+插入探针）。
+
+- **批次交付（NO-90a/b）：KPI 历史自动积累 + 趋势 sparkline**：
+  - **NO-90a 节流持久化**：门禁评估顺带调用 `kpiService.persistThrottled(orgId, 5min)`
+    ——距最近快照超 5 分钟才落一条（看板 60s 轮询不会刷爆 kpi 表），历史序列随使用自动积累。
+    持久化失败不影响评估结果（趋势是增强，不是闸门的依赖）。活体验证：两次 gate（相隔 2s）
+    → kpi 表仅 1 条快照。单测 3 例（窗口内不落/超窗落/首部落）。
+  - **NO-90b 趋势 sparkline**：KPI 趋势表上方新增 SVG 折线（on-time 随周期变化；
+    阈值参考虚线与门禁同源 0.8；**缺数据点断开不连线**——不伪造连续性，原则 7）。
+    渲染测试补 sparkline 断言（7/7）。
+  - `kpi.service.ts`：`persistThrottled` + `latestRawMeta`（override 注入点供测试）。
+
+- **批次交付（NO-89a/b）：门禁指标历史化（趋势可见，漂移早发现）**：
+  - **后端**：`kpiService.listHistory(orgId, limit≤48)` + `GET /api/scheduler/kpi/history`
+    （org 作用域与 GET kpi 一致；按周期倒序；**缺数据的旧快照也如实返回**——不裁剪成好看的序列）。
+    OpenAPI 契约（468 ops documented，0 未登记）。活体验证：history=200（清库后诚实空数组）。
+  - **前端**：PolicyGatePanel 新增 **KPI 趋势表**（最近 N 个快照的 on-time / lateness p95，
+    达标/不达标/缺数据分色；无快照如实缺项不伪造趋势）；渲染测试 **7 例**（useQuery mock
+    按 queryKey 区分主查询与 history 查询）。
+  - **防御**：TrendSection 对非数组输入加守卫（测试 mock 污染与真实契约双面防护）。
+
+- **批次交付（NO-88a）：策略门禁看板浏览器验收（三态 + 混合态 + axe，30 项全绿）+ 修复面板未渲染缺陷**：
+  - **NO-88a**：`test/browser/policy-gate-panel.spec.js`（5 用例 × 6 画像 = **30 passed**，
+    含 axe 无障碍扫描与混合态"失败优先于缺数据显示（严重度不倒挂）"）。
+    已接入 `test:browser:mock` → 套件 115 → **121**。
+  - **真浏览器验收抓出严重渲染缺陷**：FactoryOperations 的三个面板
+    （WorkbenchNowPanel/DeliveryBacklogTable/PolicyGatePanel）此前被插在 **useEffect 函数体内**
+    ——JSX 悬空表达式**从不执行**，面板从未渲染（tsc 与既有测试全绿，缺陷完全静默）。
+    修复：面板挂载到页面 JSX 顶部（header 之后的"第一屏事实"区）。
+    教训：**无断言的挂载 = 未挂载**；面板级浏览器验收是必要的，渲染测试也必须断言可见性。
+  - 修 2 处 strict-mode 定位（"不达标"在徽章/表格/图例三处出现 → 用 cell 角色；补 NOW 常量）。
+
+- **批次交付（NO-87a/b）：golden 全路径复验工具链 + 策略门禁指标看板**：
+  - **NO-87a golden 全路径复验工具链**：`make e2e-golden-fresh`（reset →
+    `db/runner/clear-execution-facts.mjs` 清空本 org 执行/反馈事实 → golden）。
+    **根因定位**：KPI 24h 窗口读 `ewoh_scheduling_execution`，而 reset 只删
+    **seed 任务**派生的执行行——场景自建任务的迟到回执（实测 2.4h）持续让门禁
+    "不达标"，全路径激活复验永远 SKIP。清掉派生事实后门禁回到缺数据态，
+    golden **22/22 全绿**（ack 激活 + 回滚全路径首次闭环验证）。
+  - **NO-87b 策略门禁指标看板**：`PolicyGatePanel`（FactoryOperations）——
+    每条检查的实际值 vs 阈值 + 三态结论（通过/缺数据（未验证 ≠ 通过）/不达标），
+    汇总徽章三态（可激活 / 可激活但需显式确认 / 已拒绝——ack 无法豁免）。
+    指标漂移早发现（而不是等激活被拒才发现 on_time_rate 已滑到阈值下）。
+    渲染测试 5 例。活体验证 gate=201。
+  - **NO-86b 补记**：`queuedReason/queuedReasons` 契约补入 OpenAPI（467 ops，0 未登记）。
+
+- **批次交付（NO-86a）：golden 学习激活门禁的第三分支（数据漂移下的正确断言）**：
+  共享 dev 库累积执行历史后，激活门禁的 `on_time_rate/lateness_p95` 从"缺数据跳过"变为
+  **"有数据但不达标"**——这是门禁在正确工作（真失败拒绝激活，且 ack 无法豁免 FAIL，
+  只豁免缺数据）。场景此前只有"缺数据"与"全通过"两分支 → 误报 FAIL。
+  新增第三分支：Gate 逐条失败时断言 **未确认激活 409 POLICY_GATE_FAILED + 显式 ack 同样拒绝**
+  （治理语义），激活路径显式 SKIP 并附实测指标（on_time_rate=0.75<0.8、
+  lateness_p95=8.58M ms>1.8M ms——数据漂移可观测）。golden **16 PASS / 0 FAIL / 2 SKIP**。
+
+- **批次交付（NO-85a）：协同设备未就绪的合并视图（首台空闲 ≠ 万事大吉）**：
+  多设备协同派工此前只显示主设备摘要——主设备空闲时工人会误以为万事大吉，
+  而协同设备可能正卡在排队/未交付。`deviceExecution` 新增 `otherStuckCount`/
+  `otherStuck`（对其余派工设备各查执行边界，排队/未交付/超时>0 即算未就绪）；
+  工单卡显示"+N 台协同设备未就绪"（risk-degraded 色）与"+N 台协同（均已就绪）"
+  （语义不同，不混为一谈）。浏览器变体 +1：首台空闲 + 协同设备卡住 →
+  两个事实同屏（**8 用例 ×6 画像 = 48 全绿**）。
+
+- **批次交付（NO-84a/b）**：
+  - **NO-84a 移动多设备协同的浏览器变体**：`+N 台协同`显示入真浏览器验收
+    （mobile spec 6→7 用例 ×6 画像）。加入 `test:browser:mock` 套件清单。
+  - **NO-84b 契约触达面审计（把 r76 的教训固化为可执行门禁）**：
+    `scripts/audit-contract-touchpoints.js` + `make audit-contract-touchpoints`。
+    维护**契约桩注册表**（桩形态正则 + 合法返回词表 + 修正指引）；任一测试桩命中
+    桩形态但返回值不在现行词表 → FAIL。注册表可扩展（下次契约演进时加一行注册）。
+    **首跑即抓出一个真残留**：`tests/test_edge_bridge_ingest.py` 的失败分支桩仍返回
+    bool 时代 `False`（现行契约 `"retry"`）→ 对齐后 6/6 通过。Makefile 新增目标。
+
+- **批次交付（NO-83a/b）**：
+  - **NO-83a data-quality 清理自证**：场景收尾收尾**本场景注入**的时间旅行告警
+    （合成数据，场景拥有清理责任），再直查断言无 open 残留。实测当场抓出
+    **8 条历史运行遗留的 open 告警**（此前运行从不收尾自己注入的告警）→
+    一次性清洗 + 自证范围限定为本场景 tag（历史残留不计入）。
+    **同轮修掉 TDZ 缺陷**：注入 id 在 try 内声明，早期失败跳过赋值后 finally 访问
+    会 ReferenceError → 提升到 try 外（未注入 = null = 无需清理）。
+    `e2e:data-quality` **16/16**。
+  - **NO-83b 移动工单多设备显示**：协同派工工单此前只显示首台设备（静默丢弃协同事实）
+    → `deviceExecution` 返回全部派工设备，工单卡显示首台 + "+N 台协同"。
+  - 决策记录（target-state D-1/D-2）与现场标定模板见第 82 轮。
+
+- **批次交付（NO-82a/b）：决策记录 + 现场标定模板 + 改进行动断言语义修正**：
+  - **NO-82a 决策记录**（target-state.md）：① 投递积压快照**不引入 Redis**——缓存只影响
+    运营观测面数字延迟（≤5s），控制判定面直读数据库不受影响；列明三条复核触发条件。
+    ② `tests/`（跨运行时契约层）与 `src/edge_platform/tests`（边缘语义层）**分层不合并**；
+    复核触发条件：同一契约出现两份各自维护的期望值时收敛到 contracts/ 单一来源。
+  - **NO-82b 现场标定计划模板**（runbook）：配额（通用/运动）、SLA、升级倍数四个参数的
+    默认值、标定方法、留档表（标定值/日期/签字）与标定纪律（实测依据、班次观察、变更留痕）。
+  - **NO-82c 全链回归 + 改进行动断言语义修正**：全链 21 步复跑（自第 67 轮后首次）。
+    抓出并修复：改进行动场景步骤 23 断言 `before===3` 与**共享人员账号上的其他合法偏差**
+    冲突（before=4）→ 改为 `before≥3`（归一引用生效）+ `after===0`（复发归零）+
+    `conclusion==='recurrence_dropped'`——断言回归其要证明的语义本身。
+    实测 28/28。修复后全部受影响套件复验：jest server **383/3449**、client **174/1711**。
+
+- **批次交付（NO-81a）：排队原因细分——工人要知道自己在等什么**：
+  两种排队都不是失败，但**解除条件不同**：`device_busy`（一车一活）等设备空下来；
+  `quota`（限流）等下一分钟窗口。人面读面逐条给出 `queuedReason`，summary 给
+  `queuedReasons` 计数；配额用尽的命令投递态细化为 `queued_quota`（面板已有该档位，
+  此前无数据源）。移动工单卡把"一车一活或配额节流"的合并文案拆成：
+  **"设备在执行上一单（本单排队 N 条，等它空下来）"** vs **"投递限流中（等下一分钟配额窗口）"**
+  ——工人能预判还要等多久、该不该催。注意：页面 remaining 为只读近似
+  （未含网关 CAS 扣减），已注释说明。测试：控制域既有用例扩展细分断言；
+  浏览器 7 用例 ×6 画像全绿（新增限流排队变体）。
+
+- **批次交付（NO-80a）：移动工单设备状态行的浏览器验收（四态 + 缺项，30 项全绿）**：
+  `test/browser/mobile-device-execution.spec.js`（5 用例 × 6 浏览器画像 = **30 passed**，
+  已接入 `test:browser:mock` → 该套件 105 → **113**）：排队中（"不是工单失败"）/ 执行中 /
+  积压（"已通知值班"——工人不需要自己升级）/ 空闲四态 + 无派工设备缺项。
+  **同轮修掉分支顺序缺陷**：积压（超 SLA）判定必须**优先于**排队（此前
+  awaitingDelivery>0 会先命中"排队中"分支，把积压说成排队——严重度倒挂）。
+  修掉 1 处 strict-mode 定位（toast 与标题同文 → 用 heading 角色）。
+
+- **批次交付（NO-79a/b）：移动端工单的设备执行状态行 + perception 清理自证**：
+  - **NO-79a 移动工单"我的工单为什么没动"**：`GET /api/mobile/workbench/orders/:id`
+    附带 `deviceExecution`（经派工表找到工单关联设备 → `listDeviceCommands` 摘要：
+    在飞/排队/未交付/最久等待/占用者——**判定与执行边界面板同一实现**）。
+    查不到派工设备或查询失败如实 null（不伪造"设备正常"）。移动工单卡新增状态行：
+    设备执行中 / **设备排队中（不是工单失败）** / 命令投递积压（已通知值班）/ 设备空闲。
+    现场语义：工人看到"设备排队中"就知道不是自己的工单出错，也不用反复重扫。
+  - **NO-79b perception 清理自证**：`e2e:perception-fusion` 收尾删除后**数一遍**
+    （冲突/任务/融合/环境四类行），残留或清理异常记 FAIL（不许只 warn）。
+    实测 **21 PASS / 0 FAIL / 0 SKIP**（步骤 17）。
+  - 回归：`e2e:control-actuator` **31/31**（快照/工作台改动后无回归）。
+
+- **批次交付（NO-78a/b/c）：快照缓存与工厂级下钻 + 测试 CI 工作流 + exo 清理自证**：
+  - **NO-78a**：积压快照**短 TTL 缓存**（`EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS` 默认 5s；
+    0=显式关闭；按租户分桶+容量收敛；巡检 sweep 不走缓存——写提醒必须每次真实执行）。
+    FactoryOperations 新增**逐设备下钻表**（设备/命令/未交付/已投未回执/最久等待/升级徽章；
+    零积压不渲染表格；读失败显式报错；前端 30s 轮询）。测试：TTL 2 例 + 渲染 5 例。
+  - **NO-78b**：`.github/workflows/tests.yml`（**Python 矩阵** 3.11/3.12：ruff + 标准链
+    `pytest -q src/edge_platform tests tools`，3.12 装 asyncua≥2.0 跑真栈用例；
+    Node job：双 tsconfig 类型检查 + lint + jest server/client——零 DB/零浏览器，
+    与本地验证口径一致；actions 按 SHA pin 与 package.yml 同风格）。YAML 解析验证通过；
+    命令清单与本地等价（本地全部跑过）。runner 实际执行属外部条件。
+  - **NO-78c**：`e2e:exo-session` 新增步骤 16 **清理自证**——单点跟踪本场景创建的所有
+    会话（call 包装），收尾直查会话表断言"无活跃残留"；残留/自查失败记 FAIL，
+    无 OWNER_DB 显式 SKIP。实测 **53/53**。
+
+- **批次交付（NO-77a/b）：投递积压实时快照进工作台 + Python 测试矩阵脚本**：
+  - **NO-77a 积压实时快照**：巡检（sweep）的产出是提醒（有节拍）；工作台/看板需要
+    **两次巡检之间也可见**的实时聚合。新增 `GET /api/control/delivery-backlog/status`
+    （只读快照：工厂级 totals + 逐设备明细，判定与巡检**同一实现**
+    `collectBacklogRows`——看板与巡检永不两套口径）；`WorkbenchNow` 聚合新增积压项
+    （升级 ≥3× SLA → priority 1/critical，普通 → 2/high；带聚合数字与 `/devices` 处置路由；
+    **零积压不伪造"需要处置"**；快照失败不阻塞工作台其余事实）。
+    测试：快照 2 例 + 工作台聚合 4 例；活体验证（status 端点诚实全零 + now 端点）。
+    OpenAPI 新增 status 契约（467 ops documented，0 未登记）。
+  - **NO-77b Python 测试矩阵脚本**：`scripts/python-test-matrix.sh`——真栈用例跨解释器
+    （3.9 显式 SKIP[版本守卫] / 3.12 全绿），三态语义与 e2e 链一致；CI 接入就绪。
+  - 全量：`pytest -q src/edge_platform tools`（1246+2s）· 控制域 84 例 · jest 全绿 ·
+    OpenAPI in sync · ruff 干净。
+
+- **批次交付（NO-76a）：修复边缘桥接器挂死（预存在产品缺陷，非链目录暴露）**：
+  - **根因链（复盘）**：`SparkBridge._post_batch` 的返回契约在某次重构中从 bool 演进为
+    verdict 字符串（`"ok"/"retry"/"dead_letter"`）；不在标准验证链里的顶层 `tests/`
+    的旧桩仍返回 `True` → `_flush_batch` 把成功误判为 retry → `_backoff` 指数退避
+    **整段睡眠**（2→4→…→60s）→ 场景挂死。此前"tests/ 有挂起"的完整解释就是它。
+  - **产品修复**：`_backoff` 改为**分片睡眠并响应停止信号**（0.1s 分片检查 `_running`）
+    ——一次 60s 的整段 sleep 会吞掉停止请求，现场只能 kill -9；退避节奏不变。
+  - **测试对齐契约**：两处 `_post_batch` 桩 `True` → `"ok"`（意图不变：成功发送清空缓冲）。
+  - 实测：`pytest -q tests`（此前视为挂死禁区）**688 passed / 11 skipped / 1.48s 全绿**；
+    `e2e:bridge` 类语义回归 6/6。**该目录可考虑入链**（下一批）。
+  - **浏览器补验（NO-76b）**：执行边界面板新增配额徽章真浏览器验收
+    （"窗口内已投 3 / 上限 3 每分钟"+"命令排队到下一分钟，不是失败"），7 用例 ×6 画像全绿。
+
+- **批次交付（NO-75a/b）：Modbus 加固 + OPC-UA 真实栈接入（选型调研驱动）**：
+  - **选型调研（六维）**：OPC-UA 真实栈候选对比——**asyncua**（纯 Python、LGPLv3+、
+    活跃维护 2.0.1、内置 sync 包装与 Server、测试覆盖 95%+）vs node-opcua（MIT、成熟，
+    但需 Node sidecar 跨语言）vs open62541（C，原生编译+FFI）vs Eclipse Milo（Java）。
+    结论：边缘为 Python stdlib-only，**asyncua 作可选依赖**（懒加载，未安装显式
+    `opcua_sdk_unavailable`，绝不静默降级到孪生）适配成本最低且 License 干净
+    （pip 依赖动态使用不拷码）。重连退避参照 pymodbus 生态的 reconnect_delay 实践。
+  - **NO-75a Modbus 加固**：① 命令块（command/command_target/command_seq）合并为
+    **单次 FC16 批量写事务**——撕裂写从"命令码最后写"的顺序纪律升级为**协议级原子**
+    （从站 PDU 内原子生效），2~3 次往返 → 1 次；② 重连指数退避（0.5s 起、30s 封顶、
+    full jitter），失败后窗口内**快速失败**（不发起真实握手），成功后窗口重置。
+    新增 5 例（FC16 单事务可观测 ×2 / 命令真实生效一次 / 退避快速失败 / 成功重置），
+    全套件 **18/18**（FakeModbusSlave 真帧）。
+  - **NO-75b OPC-UA 真实栈**：`AsyncuaOpcUaClient`（read/write/close 实现 `OpcUaClient` ABC）
+    + in-process `asyncua.sync.Server` 真线用例（真 UA-TCP 会话：connect/读初态/写命令块/
+    设备侧代理按节拍应用/真线读回状态迁移/连接失败显式化）。Python 3.12 + asyncua 2.0.1
+    **3/3 连续全绿**；asyncua < 2.0（1.1.x 有 sync 线程收线缺陷，实测挂进程）显式 SKIP。
+    踩坑记录（都已修/防）：非守护 ThreadLoop 不收线 = 进程挂死（连接失败也必须收）；
+    env 值的 shell 引号必须剥离；服务端命名空间索引要用**实际 idx** 构造节点映射注入两侧；
+    设备侧应用有节拍 → 读回需 2s 有界轮询（不是死等）。
+
+- **批次交付（NO-74a/b/c/d）：升级链接入 e2e + 凭证矩阵链前自检 + 运动类配额 + 轮换演练脚本**：
+  - **NO-74a 升级链 e2e（control-actuator 步骤 20b）**：积压回拨 30 分钟（6× SLA）→ sweep →
+    断言 `escalated=4`、`production_manager` 收到、`critical`——升级链首次端到端验证。
+  - **NO-74b 凭证角色矩阵链前自检**：`scripts/e2e-chain.sh` 跑场景前先登录三凭证并核对角色
+    （admin=global_admin；OPERATOR∈{workshop_lead,dispatcher}；FIELD=worker），
+    配错**立即失败**并给修正指引——第 73 轮"审批人误设为工人"整条链白跑的教训固化成预检。
+  - **NO-74c 配额按命令类别细分**：`EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION`
+    （默认取通用配额一半）——运动命令（dispatch_task/resume）驱动物理动作，连发代价高；
+    用尽后显式排队（`blockedBy: quota-motion:N/min`），安全动作（stop）仍插队不占额。
+    同步 OpenAPI 契约（quota 增 motion 三元组）。实测教训：本地 env 未显式配置 →
+    默认 1/分钟把主回路第二条 dispatch_task 排队（7 FAIL）→ e2e 环境显式配置与通用一致。
+  - **NO-74d 密钥轮换演练脚本**：`tools/control-key-rotation-drill.mjs`
+    （dry-run 默认 / `--apply` 真轮换 / `--resume` 中断恢复）：
+    挪旧→切新→重启→**用 owner 连接轮询在飞清零**→移除 `_PREVIOUS`→再重启。
+    演练本身抓出 4 个真实缺陷：① 子进程没继承 env 文件（平台起不来且静默）
+    → 补 env 合并 + 子进程日志落盘；② env 值的 shell 引号没剥（`INGEST_API_KEYS='{"…"}'`
+    → JSON 解析失败 → ingest fail-closed 拒启）；③ `--resume` 被 `_PREVIOUS` 守卫拦截
+    （恢复路径永远走不到）→ 调整守卫顺序；④ 计数失败返回 -2 被当成"已清零"
+    （**假清零**）→ 只有 `remaining===0` 才算数，且计数优先 owner 连接
+    （ewoh_api 走 RLS 会把行滤成假 0）。轮换后平台用新钥签发 + 边缘同钥验签：
+    control-actuator **31/31 全绿**。
+
+- **批次交付（NO-72a）：E2E 凭证角色分工纠偏（"审批人被误设为现场工人"）**：
+  重建 `/tmp/ewoh-e2e-env.sh` 时把 `EWOH_E2E_OPERATOR_USER` 误设为 `worker.zhangwei`
+  （worker 角色，无审批权限）→ `e2e:receipt` 的方案审批 403 → 候选耗尽 → 整条回执闭环 SKIP。
+  修正为 `approver.li`（workshop_lead+dispatcher），`worker.zhangwei` 归位 `EWOH_E2E_FIELD_*`
+  （现场回执/佩戴验收）。补 `EWOH_E2E_PG_URL`（数据库事实断言用）。runbook 新增
+  **E2E 凭证角色分工表 + 完整 env 模板**（三凭证不能混用：admin 生成/代批，
+  approver.li 审批派工，worker.zhangwei 现场回执）。实测：receipt 由 3 PASS+1 SKIP → **19 PASS / 0 FAIL / 0 SKIP**；
+  `e2e:edge` 补 `EWOH_E2E_PERSON_ID`（张伟，责任关系点名）后由 52+1SKIP → **59 全绿**；
+  全链 **20/20 场景 0 FAIL / 0 SKIP**（461+ PASS）。
+
+- **批次交付（NO-68a/b/c/d/e/f）：仿真对抗验证——把「需真机/未实现」的平台侧缺口用设备物理仿真对抗验证掉，并修掉两个实测缺陷**：
+  - **NO-68a 热积累从「未实现」转「已实现（仿真对抗验证）」**：行业对标曾把「热积累模拟」标为
+    ❌（需要设备热模型）。新增边缘热估计器 `src/edge_platform/inference/thermal.py`
+    （一阶集总参数模型 `dT/dt = k·τ² − (T−T_amb)/τ_cool`，从 torque 帧流积分，**系数是假设值待真机标定**）+
+    `THERMAL_ACCUMULATION` 规则（warn 阈值 + 5°C 反向滞回 + 冷却窗防风暴；`condition` 诚实标注
+    "负载×时间推算，非测量"并带模型版本 thermal-v1）+ 目录事件 `DeviceThermalRisk`
+    （三处投影同步：catalog YAML / shared TS / edge Python，70 类，audit 全绿）。
+    事件信封同步补齐 `subject`/`payload`（deviceId/trigger/模型估计值）——此前边缘规则事件
+    落到平台后**既无设备归属也看不到触发依据**（仿真对抗实测发现）。
+  - **NO-68b 虚拟外骨骼机群仿真器** `tools/exo_fleet_sim.py`：真实 RuntimeFactory 装配 +
+    真实 NXP1 线协议（codec 编码 IDENT/HEARTBEAT/TELEMETRY → TCP → 真实适配器 CRC/SEQ/重同步）
+    + 三条对抗腿（thermal 重载占空比 / battery 快放电 / faults 线协议注入：CRC 坏帧、SEQ 重放、
+    未来时间戳、突发粘包）+ **独立参数的热真值模型**（真值不进帧——线协议没有温度字段——只进
+    stats-json；E2E 断言平台事件里的估计值与事件时刻真值插值在 ±8°C 内）。
+  - **NO-68c 设备物理仿真器（AGV SOC + PLC 故障门控孪生）** `tools/device_physics_sim.py`：
+    AGV SOC 序列流（真实 `/api/ingest/actuator` + 坏传感电量回跳记录）；
+    PLC 孪生基于 `FakeModbusSlave`（真实 Modbus/TCP 帧）+ **故障门控**（fault 态拒绝 dispatch_task，
+    按「真实设备不带病执行」的前提建模——该前提属设备控制器层，真机边界见
+    `docs/reviews/2026-09-15-simfarm-adversarial.md` §6）+ 脚本化故障窗口，
+    验证"故障期执行必须失败、恢复后才能成功、回执不得伪装终态"。
+  - **NO-68d 两条新场景链入库**：`e2e:exo-simfarm`（**25 PASS / 0 FAIL**：热估计 vs 真值容差、
+    热积累/低电量事件必达平台、边缘+云双路 LOW_BATTERY 印证、坏时钟拒绝逐帧对账、事件**行为级**幂等
+    （同一信封重发 → duplicate=true 且不双写）、SEQ 重放/突发重复被平台幂等吸收（99 个重复副本不双写，桥 duplicates=70）、
+    佩戴人不符双源判定）与 `e2e:device-physics`（**16 PASS / 0 FAIL**：SOC 95% eligible →
+    8% 全候选 `battery_low` 可解释拒绝、故障窗口内孪生以 `device_faulted` 拒绝 → `execution_failed`
+    终态不伪装成功（孪生命令账目留拒绝痕迹）、恢复后 `executed`、
+    gateway_ack/command_receipt 两段事实、坏传感电量回跳如实落账（缺口取证））。`e2e-chain.sh` 18 → **20 场景**。
+  - **NO-68e 实测缺陷修复①——exo 通道坏时钟静默落库**：`/api/ingest/exoskeleton`（单帧+批量）此前
+    只在响应里**标记** `clock_drift`，帧仍照常落库——未来时间戳被写成台账事实；环境/定位/执行机构
+    通道都是显式拒绝（`CLOCK_DRIFT_FUTURE_TS`）。统一为 fail-closed 拒绝（单帧先决拒绝不做任何
+    DB 读写；批量逐帧拒绝），单测先红后绿（含"不再写 telemetry 行"断言）。
+  - **NO-68f 实测缺陷修复②——上行桥批量账目失真**：`SensorUplinkBridge._send_group` 批量路径按
+    HTTP 整组一口径计数——平台逐帧拒绝被桥记成 `sent`（实测 rejected=0 而 18 帧未来时间戳全被
+    平台拒绝）。现按批量响应 `results[]` 逐帧分类（sent/duplicate/rejected），rejected 单帧转死信；
+    results 缺失/错位退回整组口径（不误判）。`edge_to_spark.py`（外骨骼缺省上行通道）同样收口：
+    2xx 不再一律记"发送成功"，逐帧拒绝转本通道死信文件——否则坏时钟帧在该通道从"照常落库"
+    变成"彻底消失"（无死信无计数）。
+  - **NO-68j 求解器三族实测对比 + 参数标定数字化 + 覆盖面补强**：
+    - **求解器三族同负载实测**：benchmark-scheduler 增加 MILP（HiGHS WASM）第三族对比腿
+      （真实 CandidateEngine/ObjectiveEvaluator 同口径装配），CP-SAT worker（ortools）实测同台。
+      8 任务实例：heuristic feasible=1.0/wall≈5ms；MILP **OPTIMAL**/102ms/feasible=0.5；
+      CP-SAT **OPTIMAL+空指派**（objective 对未指派无惩罚——挂账立项；真实负载 SHADOW=OPTIMAL
+      已有 e2e 取证）。新增 jest 包装 spec（4 例）守护该对比可重复运行。
+      **实测发现 MILP 适用边界 bug**：buildLpModel 在 40 任务规模爆栈（RangeError）——挂账修复。
+    - **热参数标定数字化（系统辨识）**：新增 `inference/thermal_calib.py`——模型对
+      (k, 1/τ) 线性 → OLS 闭式辨识；仿真真值自证：参数还原 k 误差 <3%、τ 误差 <5%，
+      标定后估计器在保持段跟踪偏差 <1°C；退化数据（样本不足/力矩无变化/非物理解）
+      显式拒绝（6 例单测）。真机标定 = 把真机观测序列喂同一流程。
+    - **FaultGatedActuatorTransport 入库**：从 tools 提升到
+      `edge/adapters/actuator/fault_gated.py`（stop 永远允许 / 故障拒绝进账目 / clear_fault
+      可用），device_physics_sim 改用之；6 例正式单测（原 tools 冒烟升级为仓库资产）。
+    - **TS e2e 19 红定性为规格漂移**（铁证：f61-02 断言 `body.state` 而 API 返回 `status`；
+      env-gated 套件漂移累积，非本轮回归）；修复两处测试基建：e2e 应用摄入凭据缺失
+      （所有 /api/ingest/* 503/401 → 配 INGEST_API_KEY + INSECURE_DEV_MODE + 限流放宽）、
+      全新 runtime 库基础设施（建库 + 99 项迁移 + 种子 + 双 URL env）。
+  - **NO-68i 覆盖面补跑与挂账**：补跑此前不在链内的 `e2e:fault-replan`（**18 PASS / 0 FAIL**）；
+    TS e2e specs（test/e2e/*.e2e.spec.ts，8 套件 58 例）首次在**全新 runtime 库**上打通基础设施
+    （专用库 + 99 项迁移 + 种子 + 双 URL env）——实测 39 过 / 19 挂，红项横跨 auth/OEE/模板等
+    本轮未触碰域，**未逐条定性**（需对照改动前构建复跑），如实挂账为遗留工作项。
+  - **NO-68h 行为级探针再抓第四层投影——数据库 CHECK 约束**：死信注册表三处代码投影改齐后，
+    行为探针（POST 坏时钟事件）炸出 `ewoh_dead_letter.chk_ewoh_dead_letter_reason` 约束白名单
+    未同步——应用校验通过后 INSERT 违约，整请求 500，依然没有死信行。迁移 **101**
+    （apply/rollback/verify + 行为探针）对齐约束白名单；探针复跑取证：坏时钟事件 → 201 逐帧拒绝
+    （CLOCK_DRIFT_FUTURE_TS）+ **死信行真实落账**（clock_drift_future/pending）+ 事件表 0 行——
+    "落死信人审"首次真正闭环。新库 fresh-install 全链 verify **99/99** PASS。
+    批量逐帧对账两通道（SensorUplinkBridge/SparkBridge）补 **5 个单测**（混合分类/无 results 回退/
+    record_id 错位回退/死信留痕/skipped 不计 rejected）。
+  - **NO-68g 对抗评审补强（4 视角 × 25 findings，全部处置）**：
+    - **死信注册表缺 reason（major）**：`clock_drift_future` / `event_write_failed` 不在 Canonical
+      Dead Letter 封闭注册表 → `DeadLetterService.record` 抛 unknown_reason 被 `.catch` 吞掉——
+      坏时钟"落死信人审"承诺静默失效。三投影补注册（schema reasonRegistry / shared TS / edge
+      Python，锁步）+ 2 条 valid 向量钉死。
+    - **热估计基线被倒退帧反向拖动（major）**：`_thermal_last_ms` 无条件赋值——补传/乱序帧把基线
+      拖回过去，下一正常帧按 dt_cap 凭空积分至多 5s 假物理（实测 60s 跨度积 109s）。改高水位基线
+      （只前进不后退）+ 回归测试（倒退帧后下一帧增量必须 ≈ 真实步长）。
+    - **仿真架三套时钟不互洽（major）**：心跳帧额外推进帧时间轴（快 ~10%），真值/事件时刻插值被
+      harness 自身时钟泄漏污染（45s 终点差 3.74°C 中过半来自泄漏）。心跳改为窥视当前 tick 不推进；
+      对抗注入改确定性调度（每第 N 帧必注入，替代概率——短时长运行概率注入偶发 0 次会打伪红）。
+    - **NaN torque 静默解除热规则武装（minor）**：`max(nan, 0.0)` 返回 nan → 温度永久 NaN →
+      nan>=阈值 恒 False，L2 规则永久哑火。非有限值一律按 0 处理 + 单测。
+    - **行为级断言补强**：故障拒绝必须带 `adapterReason=device_faulted`（区分"故障拒绝"与"任意失败"，
+      孪生命令账目留拒绝痕迹）；`rejected ≥ 注入数`（逐帧全覆盖，漏拒一帧即红）；事件幂等从
+      "查唯一约束"（恒真）升级为行为重放；A6 观察项配真实取证（SOC 8/95 两行并存）；未认证探测
+      与可达性拆成两步（不把"可达"当"已鉴权"）。
+    - **已知缺口补登记**：location 帧不反哺路由投影（人员路由坐标来自档案空间实体，E2E 前置按
+      档案绑定配置建设，location→路由的集成缺口如实留待立项）。
+  - **已知缺口（如实记录，本轮不修）**：AGV 电量回跳（8%→95% 单帧跳变）无合理性/变化率门槛，
+    坏传感或 spoofing 的读数会照单进台账（A6 观察项留证）；热模型系数待真机标定。
+  - **诚实边界**：仿真验证的是平台/边缘侧**逻辑**（阈值、累积、事件必达、幂等、回执终态语义）；
+    真实热物理保真度、真机安全闭环（设备控制器层）、真人工效学、真实退化速率不在覆盖内
+    （仿真覆盖 ≠ 真机通过）。
+
+### Added
+- **批次交付（NO-70a）：积压巡检升级链 + 双状态扩展（把"提醒了没人管"也闭环掉）**：
+  - **积压双状态**：巡检原来只看 `sent`（平台一直没能交付网关：网关掉线/密钥不配对/配额打满）；
+    但 `gateway_received`（网关已收、设备迟迟不执行/不回执）同样让"设备不动"且无人被叫到。
+    现在两种状态都算积压，提醒正文分 `未交付 X 条；已投未回执 Y 条` 两个数字——处置入口不同
+    （前者查网关/密钥/配额，后者查设备侧）。
+  - **升级链（复用安灯 SLA 升级语义）**：积压年龄 ≥ N 倍 SLA
+    （`EWOH_CONTROL_BACKLOG_ESCALATION_MULTIPLIER`，默认 3）→ 桶升
+    `delivery_backlog_escalated` + 加发 `production_manager`（critical）。**一级收件人仍在**
+    （升级 = 加发管理者，不是把提醒从值班手里拿走）；未达阈值不升级。
+  - 测试：升级链 3 例（超倍数升级且加发管理者 + 一级仍在 / 未达阈值不升级 /
+    `gateway_received` 老化也算积压）+ 双状态 2 例。全控制域 **80 例**。
+
+- **批次交付（NO-68a/b）：投递积压从"没人知道"变成"叫到人" + 清理自证推广**：
+  - **NO-68a 投递积压巡检**：命令下发后超过 SLA（默认 5 分钟）仍未交付网关时，按设备发
+    **确定性提醒**（`NTF-CTRL-<deviceId>-delivery_backlog-*`，收件人 dispatcher/workshop_lead/device_ops，
+    内容含积压条数/最久等待/常见原因清单），审计 `control.delivery_backlog_sweep`；
+    触发 = 定时 worker（10 分钟，逐租户 GUC 事务；`CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）
+    + 值班角色手动 `POST /api/control/delivery-backlog/sweep`。租户清单走 SECURITY DEFINER
+    `ewoh_control_pending_orgs()`（standalone_096：只返回 org_id + PUBLIC 不可执行），
+    明细在逐租户 GUC 事务里读（后台无 GUC 直接查会被 RLS 全挡——本仓库已多次踩到）。
+    人面读面同步给出投递老化（`oldestWaitingMs`/`overdue`/`deliverySlaMs`），面板显示
+    "投递积压 N 条（最久等待 X 分钟，超过 SLA Y 分钟）"徽章。
+    e2e（步骤 20，真实 PG）：回拨 sent_at 30 分钟 → sweep=201、devices=1、created=3、
+    提醒与审计行都在。巡检**只写提醒与审计，绝不改命令/设备事实**。
+  - **NO-68b 清理自证推广**：`e2e:capability-explain` 收尾自查"本场景停用的高风险能力已全部恢复"；
+    `e2e:plan-staleness` 收尾删除后计数，残留/异常记 FAIL。同轮把 7b/7b2/7d 的反事实建议断言
+    改为**条件化**：建议引擎的前提是"放宽后能产生合格候选"，当前世界不满足（如整 fleet 遥测老化、
+    person_unavailable）时引擎**正确地**不给建议 → 场景按环境前置条件记 SKIP（附候选拒绝原因清单），
+    不再误报 3 项 FAIL。实测 25 PASS / 0 FAIL / 3 SKIP（SKIP 原因可追到具体前置条件）。
+  - **同轮修复三处链上暴露的问题**：① `ai.controller.ts` 的 `.method()\n[Symbol.asyncIterator]()`
+    触发 eslint `no-unexpected-multiline`（合并括号）；② `WorkbenchNowPanel` 的 severity 徽章用
+    **具名颜色**（red/amber/blue/purple/gray ×20）→ 全部换成语义 token（risk-\*/muted，
+    随主题与对比度联动）；③ NO-62a 的"下发时落库指纹"单测依赖外部环境密钥
+    （链上带 `EWOH_CONTROL_FINGERPRINT_SECRET` → 服务正确签发 v2 → v1 断言误报）
+    → 用例内显式移除/恢复密钥（环境确定性）；
+  - **同轮改进 agv 场景挑人逻辑**：只试第一个人（恰好 BUSY）→ 改为遍历最多 5 个有技能候选
+    逐个补帧，取第一个 AVAILABLE（11/11 保持全绿）；
+  - **同轮环境事故处置（如实记录）**：colima（docker 守护进程）停机 4 天 → postgres 不可达、
+    API 全部查询 5xx；且第 67 轮 `migration-fresh-chain` 在集群级重置了 `ewoh_api` 角色密码，
+    与 dev env 不一致 → 登录 503（Authentication store unavailable）。处置：colima start →
+    docker start ewoh-pg-dev → 按 env 重置 `ewoh_api` 密码 → API 重启 → login=201。
+    runbook 已补"跑过 fresh-chain 后 dev 库登录 503 的处置"。
+
 - **批次交付（NO-67a/b/c/d）：执行边界进浏览器验收 + 单设备投递配额 + 轮换提示 + 清理自证**：
   - **NO-67a 执行边界浏览器验收**：`test/browser/execution-boundary.spec.js`
     （**30 项 = 5 用例 × 6 浏览器画像**，含 axe 无障碍扫描；已接入 `npm run test:browser:mock`
@@ -27,6 +489,7 @@
   - **NO-67d 清理自证推广**：`e2e:plan-staleness` 收尾删除后**计数**，残留甚至清理异常都记 FAIL
     （异常不许只 `warn`——NO-64 的教训）。
   - 验收：`e2e:control-actuator` **29 PASS / 0 FAIL / 0 SKIP**、浏览器 **30 项全绿**（mock 套件 105）、
+    jest 全量 **382 suites / 3436 tests 全绿**、lint 回归 0（含 design-token 拦截清零）、
     `migration-fresh-chain` **93/93**、控制域单测 59 例。
 
 - **批次交付（NO-66a/b/c/d）：把执行边界的事实**交回现场**，并补上密钥轮换与场景预检**：

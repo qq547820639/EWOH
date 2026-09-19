@@ -220,6 +220,24 @@ export class IngestService {
     for (let i = 0; i < parsed.length; i++) {
       const p = parsed[i];
       const frameSemantics = this.frameSemantics(p.frame);
+      // NO-04a/ADR-009：坏时钟不得伪造为事实（与环境/定位/执行机构摄入同一纪律，
+      // sensor-ingest CLOCK_DRIFT_FUTURE_TS）。2026-09-15 仿真对抗（exo_fleet_sim
+      // 未来时间戳注入）实测：exo 批量通道此前只在响应里**标记** clock_drift，
+      // 帧仍照常落库——未来时间戳被写成台账事实。现统一为显式拒绝。
+      if (frameSemantics.clockDrift) {
+        driftCount += 1;
+        results.push({
+          accepted: false,
+          skipped: false,
+          record_id: p.recordId,
+          data_quality: 'invalid',
+          events_triggered: 0,
+          error: `CLOCK_DRIFT_FUTURE_TS：event_time 超前接收时刻超过 ${ENVELOPE_CLOCK_DRIFT_TOLERANCE_MS / 60000} 分钟，拒绝写入`,
+          is_late: frameSemantics.isLate,
+          clock_drift: true,
+        });
+        continue;
+      }
       if (p.entityId && !existingEntityIds.has(p.entityId)) {
         // 写告警事件（同一批次内同 (eventCode,device) 只写一次，避免批量风暴与重试重复投递）
         const dedupKey = `ENTITY_NOT_FOUND|${p.deviceId}`;
@@ -301,8 +319,9 @@ export class IngestService {
         is_late: frameSemantics.isLate,
         clock_drift: frameSemantics.clockDrift,
       });
+      // 2026-09-15：坏时钟帧已在上面的 0.5 闸逐帧拒绝并计入 driftCount——
+      // 能走到这里的帧 clockDrift 恒为 false，不再重复累加（死代码移除）。
       if (frameSemantics.isLate) lateCount += 1;
-      if (frameSemantics.clockDrift) driftCount += 1;
     }
 
     // 5. 批量 upsert devices（一次）
@@ -875,6 +894,22 @@ export class IngestService {
     const deviceId = frame.device_id ?? frame.entity_id;
     if (!deviceId) {
       throw new BadRequestException('entity_id 或 device_id 必填');
+    }
+
+    // 0.5 坏时钟闸（最先做，不做任何 DB 读写的先决拒绝）：未来时间戳显式拒绝，
+    // 不允许"标记了 clock_drift 仍照常落库"的静默失效（与批量路径/sensor-ingest 同纪律）。
+    const singleSemantics = this.frameSemantics(frame);
+    if (singleSemantics.clockDrift) {
+      return {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: `CLOCK_DRIFT_FUTURE_TS：event_time 超前接收时刻超过 ${ENVELOPE_CLOCK_DRIFT_TOLERANCE_MS / 60000} 分钟，拒绝写入`,
+        is_late: singleSemantics.isLate,
+        clock_drift: true,
+      };
     }
 
     // 1. entity_id 存在性校验

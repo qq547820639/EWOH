@@ -178,7 +178,7 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
     const scope = `HO-RESTART-${runId}`;
     const created = await apiRequest<{
       handoffId: string;
-      state: string;
+      status: string;
     }>(baseUrl, '/api/work/handoffs', {
       method: 'POST',
       headers,
@@ -189,7 +189,8 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
       }),
     });
     expect(created.status).toBe(201);
-    expect(created.body.state).toBe('open');
+    // 2026-09-15 规格漂移修正：API 字段为 status（语义=handoff state）
+    expect(created.body.status).toBe('open');
 
     // "Restart" the app against the same PostgreSQL database.
     await handle!.close();
@@ -270,21 +271,21 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
       idempotencyKey: `replay-${runId}`,
     });
 
-    const first = await apiRequest<{ handoffId: string; state: string }>(
+    const first = await apiRequest<{ handoffId: string; status: string }>(
       baseUrl,
       '/api/work/handoffs',
       { method: 'POST', headers, body },
     );
     expect(first.status).toBe(201);
 
-    const replay = await apiRequest<{ handoffId: string; state: string }>(
+    const replay = await apiRequest<{ handoffId: string; status: string }>(
       baseUrl,
       '/api/work/handoffs',
       { method: 'POST', headers, body },
     );
     expect(replay.status).toBe(201);
     expect(replay.body.handoffId).toBe(first.body.handoffId);
-    expect(replay.body.state).toBe(first.body.state);
+    expect(replay.body.status).toBe(first.body.status);
   });
 
   // -----------------------------------------------------------------
@@ -298,13 +299,19 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
     const resourceId = `EXO-TX-${runId}`;
     const ownerSql = owner!;
     // Force the audit-write step of the composite lock+audit path to fail.
-    // (The composite path calls `ewoh_append_audit_log`; revoking EXECUTE on the
-    // exact 12-arg signature makes the transaction's second step throw, which must
-    // roll back the lock row. A `create or replace function ...(...)` overload does
-    // NOT work here because it would create a 0-arg overload with a non-matching
-    // `void` return that never shadows the real 12-arg, `uuid`-returning function.)
-    const auditFn = `public.ewoh_append_audit_log(uuid, text, text, text, text, jsonb, jsonb, text, text, text, boolean, text)`;
-    await ownerSql.unsafe(`revoke execute on function ${auditFn} from service_role`);
+    // (The composite path calls `ewoh_append_audit_log`; breaking that call makes
+    // the transaction's second step throw, which must roll back the lock row.)
+    // The previous injection (`revoke execute ... from service_role`) is a NO-OP
+    // on this harness: the in-process E2E app connects as the database OWNER
+    // (EWOH_E2E_OWNER_DATABASE_URL) and a function owner always retains EXECUTE
+    // regardless of grants. Renaming the function away makes the unqualified
+    // `select ewoh_append_audit_log(...)` inside the transaction fail (42883)
+    // for ANY caller; the rename is restored in `finally`.
+    const auditFnSig = `(uuid, text, text, text, text, jsonb, jsonb, text, text, text, boolean, text)`;
+    const auditFnOff = 'ewoh_append_audit_log_e2e_fault';
+    await ownerSql.unsafe(
+      `alter function public.ewoh_append_audit_log${auditFnSig} rename to ${auditFnOff}`,
+    );
     try {
       const response = await apiRequest(
         baseUrl,
@@ -318,7 +325,9 @@ describe('F61-02 Persistence + Multi-Instance E2E (BLOCKED_BY_ENVIRONMENT unless
       // The composite write must fail (500 / 503), never a partial success.
       expect([500, 502, 503]).toContain(response.status);
     } finally {
-      await ownerSql.unsafe(`grant execute on function ${auditFn} to service_role`);
+      await ownerSql.unsafe(
+        `alter function public.${auditFnOff}${auditFnSig} rename to ewoh_append_audit_log`,
+      );
     }
 
     // The lock must NOT have been persisted (atomic rollback).

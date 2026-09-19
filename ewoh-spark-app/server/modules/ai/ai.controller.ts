@@ -223,9 +223,10 @@ export class AiController {
       // collectSystemContext 的 3 个 RLS 读在首个 yield 之前执行，没有 org GUC
       // 会静默读空（AI 实时上下文凭空变成"暂无实时数据"）。之后的 LLM 增量步
       // 一律不持有事务/连接，长回答不再压住连接池。
+      // 括号消除 eslint no-unexpected-multiline（`.method()[Symbol.asyncIterator]()` 的
+      // 换行会被解析成"对象 + 成员访问"的多义形态）。
       const stream = this.aiService
-        .chatWithContextStream(question, orgId)
-        [Symbol.asyncIterator]();
+        .chatWithContextStream(question, orgId)[Symbol.asyncIterator]();
       try {
         let step = await this.advanceStreamStep(stream, request?.userContext);
         while (!step.done) {

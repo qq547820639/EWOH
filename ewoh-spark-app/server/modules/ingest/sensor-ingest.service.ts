@@ -24,6 +24,13 @@ import {
 } from '@shared/device-capability';
 import { validateCapability } from '@shared/capability';
 import { isActuatorState } from '@shared/actuator';
+import {
+  evaluateSocPlausibility,
+  resolveSocPlausibilityConfig,
+  SocReanchorTracker,
+  socRejectionMessage,
+  type SocPlausibilityConfig,
+} from '@shared/soc-plausibility';
 import type {
   ActuatorFrameDto,
   EnvironmentFrameDto,
@@ -57,6 +64,13 @@ export class SensorIngestService {
   private static readonly SCOPE_CAMERA = 'ingest:camera';
   private static readonly SCOPE_LOCATION = 'ingest:location';
   private static readonly SCOPE_ACTUATOR = 'ingest:actuator';
+
+  /** NO-92a：SOC 合理性闸门——配置自环境解析（非法回退默认），连击追踪进程内有界。 */
+  private readonly socConfig: SocPlausibilityConfig = resolveSocPlausibilityConfig().cfg;
+  private readonly socTracker = new SocReanchorTracker();
+  /** 被拒 record_id 集（重放不虚增再锚定连击）；有界，超容淘汰最老。 */
+  private readonly socRejectedRecords = new Map<string, number>();
+  private static readonly SOC_REJECTED_RECORDS_CAP = 5_000;
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -383,6 +397,101 @@ export class SensorIngestService {
   // ===== 执行机构（AGV/PLC）接入（NO-59b）=====
 
   /**
+   * NO-92a：执行机构电量合理性闸门（SOC plausibility gate）。
+   *
+   * 判据与领域口径的唯一事实源是 `@shared/soc-plausibility`（含为何不用现成库、
+   * 为何守在平台侧而非边缘侧的设计取舍）。
+   *
+   * 行为契约：
+   * - battery_pct 缺帧 → 闸门不参与（只有带电量的帧才可判）；
+   * - 锚点（台账现值 + 最近遥测时刻）读取失败 → fail-open 放行（数据优先，
+   *   与"台账投影失败不阻断状态上行"同一纪律），但留 warn 痕迹；
+   * - 越界/非物理跳变 → 显式拒绝（不写世界状态与台账）；调用方释放幂等认领，
+   *   同帧重放再次得到显式拒绝——拒绝是可重复观察的事实，不是一次性错误；
+   *   且**同 record_id 重放不虚增再锚定连击**（拒绝集去重）：at-least-once 重投
+   *   的是同一次观测，不是设备的新话——1 帧毛刺重放 3 次不得误判为"持续新水平"；
+   * - 连续 `reanchorStreak` 帧（不同 record_id）同一新水平 → 再锚定接受（真实
+   *   充电/换电是持续过程，毛刺只有一帧），调用方在成功响应上标记
+   *   `soc_reanchored: true`。
+   */
+  private async gateActuatorSoc(
+    orgId: string,
+    deviceId: string,
+    batteryPct: number | null | undefined,
+    candidateAt: Date,
+    recordId: string,
+  ): Promise<{ outcome: 'allow'; reanchored: boolean } | { outcome: 'reject'; response: IngestResponse }> {
+    if (batteryPct === null || batteryPct === undefined) {
+      return { outcome: 'allow', reanchored: false };
+    }
+    const candidate = Number(batteryPct);
+    const trackerKey = `${orgId}:${deviceId}`;
+    let prevPct: number | null = null;
+    let prevAt: Date | null = null;
+    try {
+      const [deviceRow] = await this.db
+        .select({ batteryPct: ewohDevice.batteryPct, lastTelemetryAt: ewohDevice.lastTelemetryAt })
+        .from(ewohDevice)
+        .where(and(eq(ewohDevice.orgId, orgId), eq(ewohDevice.deviceId, deviceId)));
+      prevPct = deviceRow?.batteryPct ?? null;
+      prevAt = deviceRow?.lastTelemetryAt ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `SOC 闸门锚点读取失败 device=${deviceId}（fail-open 放行本帧，不阻断状态上行）`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { outcome: 'allow', reanchored: false };
+    }
+    const verdict = evaluateSocPlausibility({ prevPct, prevAt, candidate, candidateAt, cfg: this.socConfig });
+    if (verdict.verdict === 'plausible' || verdict.verdict === 'unjudgeable') {
+      this.socTracker.clear(trackerKey);
+      this.socRejectedRecords.delete(recordId);
+      return { outcome: 'allow', reanchored: false };
+    }
+    if (verdict.verdict === 'out_of_range') {
+      return {
+        outcome: 'reject',
+        response: {
+          accepted: false,
+          skipped: false,
+          record_id: recordId,
+          data_quality: 'invalid',
+          events_triggered: 0,
+          error: socRejectionMessage(verdict, candidate, prevPct),
+        },
+      };
+    }
+    // 同 record_id 重放：连击不虚增（同一观测只记一次），但拒绝语义原样重现。
+    const isReplay = this.socRejectedRecords.has(recordId);
+    const streak = isReplay
+      ? this.socTracker.currentStreak(trackerKey)
+      : this.socTracker.record(trackerKey, Math.round(candidate));
+    if (!isReplay) {
+      this.socRejectedRecords.set(recordId, Date.now());
+      if (this.socRejectedRecords.size > SensorIngestService.SOC_REJECTED_RECORDS_CAP) {
+        const oldest = this.socRejectedRecords.keys().next().value;
+        if (oldest !== undefined) this.socRejectedRecords.delete(oldest);
+      }
+    }
+    if (streak >= this.socConfig.reanchorStreak) {
+      this.socTracker.clear(trackerKey);
+      this.socRejectedRecords.delete(recordId);
+      return { outcome: 'allow', reanchored: true };
+    }
+    return {
+      outcome: 'reject',
+      response: {
+        accepted: false,
+        skipped: false,
+        record_id: recordId,
+        data_quality: 'invalid',
+        events_triggered: 0,
+        error: `${socRejectionMessage(verdict, candidate, prevPct)}（连击 ${streak}/${this.socConfig.reanchorStreak}${isReplay ? '，重放不连击' : ''}）`,
+      },
+    };
+  }
+
+  /**
    * 执行机构状态帧上行：写世界状态实体行（`state_json.actuator`）+ 登记设备与能力。
    *
    * 为什么落 `ewoh_world_state` 而不是遥测表：执行机构的位置/状态是**世界状态的实体事实**
@@ -463,6 +572,13 @@ export class SensorIngestService {
       return this.duplicateResponse(recordId, semantics);
     }
     try {
+      // NO-92a：电量合理性闸门（在幂等认领之后、任何写入之前；拒绝路径释放认领，
+      // 同帧重放会再次得到显式拒绝而不是 duplicate 静默）。
+      const socGate = await this.gateActuatorSoc(orgId, deviceId, frame.battery_pct, new Date(frame.event_time), recordId);
+      if (socGate.outcome === 'reject') {
+        await this.releaseClaim(orgId, SensorIngestService.SCOPE_ACTUATOR, recordId);
+        return socGate.response;
+      }
       await this.db.insert(ewohWorldState).values({
         entityId: deviceId,
         ts: new Date(frame.event_time),
@@ -513,6 +629,7 @@ export class SensorIngestService {
         events_triggered: 0,
         is_late: semantics.isLate,
         clock_drift: false,
+        ...(socGate.reanchored ? { soc_reanchored: true } : {}),
       };
     } catch (error) {
       await this.releaseClaim(orgId, SensorIngestService.SCOPE_ACTUATOR, recordId);

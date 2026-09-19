@@ -24,6 +24,26 @@ export interface MobileWorkOrderDetail {
   };
   steps: MobileWorkbenchStep[];
   materials: unknown[];
+  /**
+   * NO-79a：工单已派设备的**执行边界摘要**（现场问题"我的工单为什么没动"的答案）。
+   * null = 未派设备或查询失败（不伪造"设备正常"）。
+   */
+  deviceExecution?: {
+    deviceId: string;
+    /** 多设备协同工单的其余派工设备（首台为主显示，其余计数展示）。 */
+    otherDevices?: string[];
+    inFlight: number;
+    queued: number;
+    awaitingDelivery: number;
+    overdue: number;
+    oldestWaitingMs: number | null;
+    busyBlocker: string | null;
+    /** NO-81a：排队原因计数——等设备空下来（device_busy）vs 等下一分钟配额（quota）。 */
+    queuedReasons?: { device_busy: number; quota: number };
+    /** NO-85a：协同设备中"未就绪"的聚合（排队/未交付/超时>0 即算未就绪）。 */
+    otherStuckCount?: number;
+    otherStuck?: Array<{ deviceId: string; queued: number; awaitingDelivery: number; overdue: number }>;
+  } | null;
 }
 
 export interface MobileStepScanResult {

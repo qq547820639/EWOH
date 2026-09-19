@@ -156,7 +156,11 @@ const config = resolveE2EConfig();
           (r): r is PromiseRejectedResult => r.status === 'rejected',
         );
         expect(rejected).toHaveLength(1);
-        expect(rejected[0].reason.code).toBe('23P01');
+        // 并发 INSERT 命中同一 exclusion 约束时，PostgreSQL 以两种等价方式裁决
+        // 「恰好一个事务被拒」：赢者先提交 → 输家得 exclusion_violation（23P01）；
+        // 两侧互等对方未提交元组 → 死锁检测器中止其一（40P01，事务整体回滚）。
+        // 两者均为合法输家结局；唯一性不变量由下方行数断言承载。
+        expect(['23P01', '40P01']).toContain(rejected[0].reason.code);
         const rows =
           await owner`SELECT reservation_id FROM ewoh_resource_reservation WHERE org_id = ${fixture.orgA.id} AND resource_id = ${resources.personId}`;
         expect(rows).toHaveLength(1);

@@ -74,7 +74,7 @@ class TestSparkBridgeBuffer(unittest.TestCase):
         bridge = SparkBridge("http://localhost:3000", source=None)
         bridge._buffer = [{"n": 1}, {"n": 2}]
         seen = []
-        bridge._post_batch = lambda batch: (seen.append(len(batch)) or True)
+        bridge._post_batch = lambda batch: (seen.append(len(batch)) or "ok")
         bridge._flush_batch()
         self.assertEqual(seen, [2])
         self.assertEqual(bridge._buffer, [])
@@ -83,7 +83,7 @@ class TestSparkBridgeBuffer(unittest.TestCase):
         bridge = SparkBridge("http://localhost:3000", source=None)
         bridge._buffer = [{"n": 1}]
         bridge._backoff = lambda: None
-        bridge._post_batch = lambda batch: False
+        bridge._post_batch = lambda batch: "retry"  # verdict 契约（NO-84b 审计对齐）
         bridge._flush_batch()
         self.assertEqual(len(bridge._buffer), 1)
         self.assertGreaterEqual(bridge._consecutive_failures, 1)
@@ -93,7 +93,7 @@ class TestSparkBridgeBuffer(unittest.TestCase):
         source = _FakeSource(frames)
         bridge = SparkBridge("http://localhost:3000", source=source)
         sent = []
-        bridge._post_batch = lambda batch: (sent.append(len(batch)) or True)
+        bridge._post_batch = lambda batch: (sent.append(len(batch)) or "ok")
         bridge._running = True
         original_flush = bridge._flush_batch
 

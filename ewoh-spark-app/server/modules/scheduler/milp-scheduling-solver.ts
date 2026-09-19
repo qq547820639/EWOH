@@ -266,7 +266,9 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     const varsByTask = new Map<string, MilpVariable[]>();
     for (const e of entries) {
       const list = e.eligible.map((candidate) => ({ taskId: e.task.id, candidate }));
-      vars.push(...list);
+      // 逐个 push：spread（vars.push(...list)）在候选数大时超出 V8 参数栈上限
+      // → RangeError: Maximum call stack size exceeded（2026-09-15 三族基准实测）。
+      for (const v of list) vars.push(v);
       varsByTask.set(e.task.id, list);
     }
     const varIndex = new Map<MilpVariable, number>();
@@ -512,7 +514,8 @@ export class MilpSchedulingSolver implements SchedulingSolver {
 
     if (rows.length > 0) {
       lines.push('Subject To');
-      lines.push(...rows);
+      // 逐个 push（同上：大规模实例的 rows 数十万行，spread 必爆参数栈）
+      for (const row of rows) lines.push(row);
     }
     lines.push('Bounds');
     for (const v of vars) {

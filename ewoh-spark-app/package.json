@@ -75,7 +75,7 @@
     "test:browser:real": "playwright test --config playwright.config.ts test/browser/scheduling-wave-real.e2e.spec.ts test/browser/field-receipt-real.e2e.spec.ts test/browser/learning-console-real.e2e.spec.ts --project=chromium --retries=0",
     "e2e:learning": "node test/e2e/learning-proposal-governance.mjs",
     "e2e:edge": "node test/e2e/edge-multisource-uplink.mjs",
-    "test:browser:mock": "EWOH_BROWSER_MODE=mock playwright test --config playwright.config.ts test/browser/field-operations.spec.js test/browser/learning-console.spec.js test/browser/scheduling-wave-dispatch.spec.js test/browser/devices-inventory.spec.js test/browser/responsibility-readiness.spec.js test/browser/data-quality-verification.spec.js test/browser/approval-authorizations.spec.js test/browser/reasoning-console.spec.js test/browser/materials-inventory.spec.js test/browser/exo-workbench.spec.js test/browser/execution-boundary.spec.js --project=chromium --retries=0",
+    "test:browser:mock": "EWOH_BROWSER_MODE=mock playwright test --config playwright.config.ts test/browser/field-operations.spec.js test/browser/learning-console.spec.js test/browser/scheduling-wave-dispatch.spec.js test/browser/devices-inventory.spec.js test/browser/responsibility-readiness.spec.js test/browser/data-quality-verification.spec.js test/browser/approval-authorizations.spec.js test/browser/reasoning-console.spec.js test/browser/materials-inventory.spec.js test/browser/exo-workbench.spec.js test/browser/execution-boundary.spec.js test/browser/mobile-device-execution.spec.js test/browser/policy-gate-panel.spec.js --project=chromium --retries=0",
     "e2e:capability-explain": "node test/e2e/capability-disabled-plan-explain.mjs",
     "e2e:observation-reasoning": "node test/e2e/observation-reasoning-live.mjs",
     "e2e:master-data": "node test/e2e/master-data-capability-import.mjs",
@@ -88,6 +88,8 @@
     "e2e:perception-fusion": "node test/e2e/perception-fusion-loop.mjs",
     "e2e:control-actuator": "node test/e2e/control-actuator-loop.mjs",
     "e2e:agv-transport": "node test/e2e/agv-transport-loop.mjs",
+    "e2e:exo-simfarm": "node test/e2e/exo-simfarm-adversarial.mjs",
+    "e2e:device-physics": "node test/e2e/device-physics-adversarial.mjs",
     "e2e:plan-staleness": "node test/e2e/plan-staleness-loop.mjs"
   },
   "dependencies": {

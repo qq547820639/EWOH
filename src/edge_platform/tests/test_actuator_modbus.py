@@ -11,6 +11,7 @@ import os
 import socket
 import struct
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -394,3 +395,113 @@ class ModbusCliEndToEndTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             slave.stop()
+
+
+# ── NO-75a：批量写事务（FC16 单 PDU）+ 重连退避 ─────────────────────────────
+
+class TestBatchWriteTransaction(unittest.TestCase):
+    """NO-75a：命令块必须**一帧到达**（撕裂写在协议层不可能，单事务可观测）。"""
+
+    def _make_pair(self, device_id="AGV-BATCH"):
+        slave = FakeModbusSlave(device_id).start()
+        slave.device.register_station("ST-A", 1.0, 1.0)
+        transport = ModbusTcpActuatorTransport(
+            "127.0.0.1", device_id, port=slave.port, timeout=2.0,
+            backoff_base_s=0.05, backoff_max_s=0.5,
+        )
+        transport.connect()
+        return slave, transport
+
+    def test_dispatch_arrives_in_single_fc16_transaction(self):
+        """dispatch_task 的命令块（命令码+目标+序号）＝ 1 次 FC16、0 次 FC06。"""
+        slave, transport = self._make_pair()
+        try:
+            result = transport.send(ActuatorCommand(
+                device_id="AGV-BATCH", command_key="dispatch_task",
+                authorization_ref=None, payload={"targetStationId": "ST-A"}, requested_at="",
+            ))
+            self.assertTrue(result.accepted)
+            self.assertEqual(slave.stats["fc16"], 1, f"stats={slave.stats}")
+            self.assertEqual(slave.stats["fc06"], 0, f"stats={slave.stats}")
+        finally:
+            transport.close()
+            slave.stop()
+
+    def test_non_dispatch_also_single_transaction(self):
+        """非运动命令同样单帧（同块原子写入，目标寄存器写 0 不携带语义）。"""
+        slave, transport = self._make_pair()
+        try:
+            result = transport.send(ActuatorCommand(
+                device_id="AGV-BATCH", command_key="stop",
+                authorization_ref=None, payload={}, requested_at="",
+            ))
+            self.assertTrue(result.accepted)
+            self.assertEqual(slave.stats["fc16"], 1)
+            self.assertEqual(slave.stats["fc06"], 0)
+        finally:
+            transport.close()
+            slave.stop()
+
+    def test_command_applied_exactly_once_with_target(self):
+        """语义不回退：命令真实生效一次（目标正确、状态机迁移）。"""
+        slave, transport = self._make_pair()
+        try:
+            transport.send(ActuatorCommand(
+                device_id="AGV-BATCH", command_key="dispatch_task",
+                authorization_ref=None, payload={"targetStationId": "ST-A"}, requested_at="",
+            ))
+            slave.tick()
+            state = transport.recv()
+            self.assertIsNotNone(state)
+            # 回环设备的真实状态机：dispatch 后是 moving（运动中），不是凭空"已完成"
+            self.assertEqual(state.state, "moving")
+            self.assertEqual(state.target_station_id, "ST-A")
+        finally:
+            transport.close()
+            slave.stop()
+
+
+class TestReconnectBackoff(unittest.TestCase):
+    """NO-75a：失败后退避窗口内**快速失败**；成功后窗口重置。"""
+
+    def test_failed_connect_arms_backoff_and_fast_fails(self):
+        transport = ModbusTcpActuatorTransport(
+            "127.0.0.1", "AGV-BACKOFF", port=1,  # 端口 1 必连失败
+            backoff_base_s=60.0, backoff_max_s=60.0,
+        )
+        with self.assertRaises(ModbusError) as first:
+            transport.connect()
+        self.assertIn("connect_failed", str(first.exception))
+        self.assertGreater(transport._backoff_until, 0)
+        # 窗口内第二次：快速失败（不发起真实握手）并给出退避原因
+        started = time.monotonic()
+        with self.assertRaises(ModbusError) as second:
+            transport.connect()
+        elapsed = time.monotonic() - started
+        self.assertIn("reconnect_backoff", str(second.exception))
+        self.assertLess(elapsed, 0.05, "窗口内必须快速失败，不能发起真实握手")
+        transport.close()
+
+    def test_successful_connect_resets_backoff(self):
+        # 短窗口走完整"失败 → 窗口 → 成功"流程（不改内部状态，等真实窗口过期）。
+        dead = ModbusTcpActuatorTransport(
+            "127.0.0.1", "AGV-BACKOFF2", port=1,  # 必连失败
+            backoff_base_s=0.05, backoff_max_s=0.05,
+        )
+        with self.assertRaises(ModbusError):
+            dead.connect()
+        self.assertGreater(dead._backoff_until, 0)
+        dead.close()
+        time.sleep(0.2)  # 等过 0.05s 全抖动窗口
+
+        slave = FakeModbusSlave("AGV-BACKOFF2").start()
+        transport = ModbusTcpActuatorTransport(
+            "127.0.0.1", "AGV-BACKOFF2", port=slave.port,
+            backoff_base_s=0.05, backoff_max_s=0.05,
+        )
+        transport.connect()
+        self.assertEqual(transport._backoff_seconds, 0.0)
+        self.assertEqual(transport._backoff_until, 0.0)
+        transport.close()
+        slave.stop()
+

@@ -29,6 +29,7 @@ import {
   ewohControlCommand,
   ewohControlResult,
   ewohDeviceConfig,
+  ewohControlBacklogSnapshot,
 } from '@server/database/schema';
 import { AuditService, type AuditLogEntry } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -316,6 +317,19 @@ export function controlDeliveryQuotaPerMinute(): number {
   const raw = Number(process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE ?? 60);
   return Number.isFinite(raw) ? Math.trunc(raw) : 60;
 }
+/**
+ * NO-74c：**运动类命令的更严配额**（每分钟，按设备）。
+ *
+ * 运动命令（dispatch_task/resume）驱动物理动作，误发/连发的现场代价远高于读类命令；
+ * 默认取通用配额的**一半**（≤0 = 关闭运动配额，只受通用配额约束）。
+ */
+export function controlDeliveryQuotaPerMinuteMotion(): number {
+  const raw = Number(
+    process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION
+      ?? Math.max(1, Math.floor(controlDeliveryQuotaPerMinute() / 2)),
+  );
+  return Number.isFinite(raw) ? Math.trunc(raw) : Math.max(1, Math.floor(controlDeliveryQuotaPerMinute() / 2));
+}
 /** 配额窗口（ms）。 */
 const DELIVERY_QUOTA_WINDOW_MS = 60 * 1000;
 /** 安全动作（永不受排队/配额约束）：与共享契约 `ACTUATOR_SAFETY_COMMANDS` 同源。 */
@@ -354,6 +368,21 @@ export class ControlService {
   private static fingerprintSchemeWarned = false;
   /** NO-67c：轮换窗口提示只打一次。 */
   private static rotationWindowWarned = false;
+  /**
+   * NO-78a：积压快照缓存（按租户分桶；短 TTL）。
+   *
+   * 为什么缓存：快照是工作台/看板的实时数据源，可能被高频轮询；判定查询是
+   * 全表扫（500 行上限）。5s TTL 让"实时"与"不 hammer 数据库"兼得——
+   * 巡检（sweep）**不走缓存**（写提醒的动作每次都要真实执行）。
+   */
+  private static snapshotCache = new Map<
+    string,
+    { data: Awaited<ReturnType<ControlService['getDeliveryBacklogSnapshot']>>; expiresAt: number }
+  >();
+  private static snapshotCacheTtlMs(): number {
+    const raw = Number(process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS ?? 5_000);
+    return Number.isFinite(raw) && raw >= 0 ? Math.trunc(raw) : 5_000;
+  }
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
@@ -1026,16 +1055,27 @@ export class ControlService {
    *   · 提醒内容带：设备号、积压条数、最久等待时长、最早一条的命令键 —— 现场可照着查；
    *   · 交付过的命令（`delivered_at` 非空）不计入积压：它已经到网关了，问题在设备侧。
    */
-  async sweepDeliveryBacklog(ctx: OrgContext): Promise<{
-    scanned: number;
-    devicesWithBacklog: number;
-    created: number;
-    duplicates: number;
+  /** NO-70a：升级倍数（积压超过 N 倍 SLA → 升级给生产管理者），可用 env 覆盖。 */
+  static backlogEscalationMultiplier(): number {
+    const raw = Number(process.env.EWOH_CONTROL_BACKLOG_ESCALATION_MULTIPLIER ?? 3);
+    return Number.isFinite(raw) && raw > 0 ? raw : 3;
+  }
+
+  /** NO-77a：积压判定的**唯一实现**（巡检与只读快照共用，不许两套口径漂移）。 */
+  private async collectBacklogRows(orgId: string): Promise<{
+    rows: Array<{
+      commandId: string;
+      commandKey: string;
+      sentAt: Date | null;
+      deliveredAt: Date | null;
+      orgId: string | null;
+      deviceId: string | null;
+      status: string | null;
+    }>;
     slaMs: number;
-    notificationIds: string[];
+    escalationMultiplier: number;
   }> {
-    const orgId = String(ctx?.primaryOrgId ?? '').trim();
-    if (orgId === '') throw new BadRequestException('sweepDeliveryBacklog: 缺少租户上下文');
+    const backlogStatuses = ['sent', 'gateway_received'];
     const slaMs = ControlService.deliverySlaMs();
     const cutoff = new Date(Date.now() - slaMs);
     const rows = await this.db
@@ -1043,8 +1083,10 @@ export class ControlService {
         commandId: ewohControlCommand.commandId,
         commandKey: ewohControlCommand.commandKey,
         sentAt: ewohControlCommand.sentAt,
+        deliveredAt: ewohControlCommand.deliveredAt,
         orgId: ewohControlCommand.orgId,
         deviceId: ewohControlRequest.deviceId,
+        status: ewohControlCommand.status,
       })
       .from(ewohControlCommand)
       .innerJoin(
@@ -1052,13 +1094,168 @@ export class ControlService {
         eq(ewohControlCommand.requestId, ewohControlRequest.requestId),
       )
       .where(and(
-        eq(ewohControlCommand.status, 'sent'),
-        isNull(ewohControlCommand.deliveredAt),
+        inArray(ewohControlCommand.status, backlogStatuses),
         lt(ewohControlCommand.sentAt, cutoff),
+        // `gateway_received`（已交付）不算"未交付积压"；`sent` 只有在确实未交付时才算。
+        or(
+          and(eq(ewohControlCommand.status, 'sent'), isNull(ewohControlCommand.deliveredAt)),
+          eq(ewohControlCommand.status, 'gateway_received'),
+        ),
         or(eq(ewohControlCommand.orgId, orgId), isNull(ewohControlCommand.orgId)),
       ))
       .orderBy(asc(ewohControlCommand.sentAt))
       .limit(500);
+    return { rows, slaMs, escalationMultiplier: ControlService.backlogEscalationMultiplier() };
+  }
+
+  /**
+   * NO-77a：**投递积压实时快照**（只读）——两次巡检之间积压也必须可见、可数。
+   *
+   * 巡检（sweep）的产出是提醒（有节拍）；快照回答"**现在**积压多少、在哪些设备、
+   * 最久等多久、几台已升级"——看板/工作台按它展示，不依赖"恰好有人跑过巡检"。
+   * 判定与 sweep 同一实现（`collectBacklogRows`），绝不两套口径。
+   */
+  async getDeliveryBacklogSnapshot(actor: OrgContext): Promise<{
+    slaMs: number;
+    escalationMultiplier: number;
+    totals: {
+      devices: number;
+      commands: number;
+      undelivered: number;
+      receivedNotExecuted: number;
+      escalatedDevices: number;
+      oldestWaitingMs: number | null;
+    };
+    devices: Array<{
+      deviceId: string;
+      commands: number;
+      undelivered: number;
+      receivedNotExecuted: number;
+      oldestWaitingMs: number;
+      escalated: boolean;
+    }>;
+    checkedAt: string;
+  }> {
+    const orgId = String(actor?.primaryOrgId ?? '').trim();
+    if (orgId === '') throw new BadRequestException('getDeliveryBacklogSnapshot: 缺少租户上下文');
+    // NO-78a：TTL 缓存命中直接返回（容量收敛防泄漏：仅保留最近 64 个租户）。
+    const ttlMs = ControlService.snapshotCacheTtlMs();
+    const cached = ControlService.snapshotCache.get(orgId);
+    if (ttlMs > 0 && cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+    const { rows, slaMs, escalationMultiplier } = await this.collectBacklogRows(orgId);
+    const now = Date.now();
+    const byDevice = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const deviceId = String(row.deviceId ?? '');
+      if (deviceId === '') continue;
+      const list = byDevice.get(deviceId) ?? [];
+      list.push(row);
+      byDevice.set(deviceId, list);
+    }
+    const devices = [...byDevice.entries()]
+      .map(([deviceId, commands]) => {
+        const undelivered = commands.filter((c) => c.deliveredAt == null).length;
+        const oldest = commands[0];
+        const ageMs = oldest?.sentAt
+          ? Math.max(0, now - new Date(oldest.sentAt as unknown as string).getTime())
+          : 0;
+        return {
+          deviceId,
+          commands: commands.length,
+          undelivered,
+          receivedNotExecuted: commands.length - undelivered,
+          oldestWaitingMs: ageMs,
+          escalated: ageMs >= escalationMultiplier * slaMs,
+        };
+      })
+      .sort((a, b) => b.oldestWaitingMs - a.oldestWaitingMs);
+    const total = (pick: (d: (typeof devices)[number]) => number) =>
+      devices.reduce((acc, d) => acc + pick(d), 0);
+    const snapshot = {
+      slaMs,
+      escalationMultiplier,
+      totals: {
+        devices: devices.length,
+        commands: total((d) => d.commands),
+        undelivered: total((d) => d.undelivered),
+        receivedNotExecuted: total((d) => d.receivedNotExecuted),
+        escalatedDevices: devices.filter((d) => d.escalated).length,
+        oldestWaitingMs: devices.length > 0 ? devices[0].oldestWaitingMs : null,
+      },
+      devices,
+      checkedAt: new Date().toISOString(),
+    };
+    if (ttlMs > 0) {
+      if (ControlService.snapshotCache.size >= 64) {
+        const oldestKey = ControlService.snapshotCache.keys().next().value;
+        if (oldestKey !== undefined) ControlService.snapshotCache.delete(oldestKey);
+      }
+      ControlService.snapshotCache.set(orgId, {
+        data: snapshot,
+        expiresAt: Date.now() + ttlMs,
+      });
+    }
+    return snapshot;
+  }
+
+  /**
+   * NO-91a：积压**历史序列**（最近在前）——趋势可见，漂移早发现。
+   */
+  async getDeliveryBacklogHistory(
+    actor: OrgContext,
+    limit = 24,
+  ): Promise<{
+    slaMs: number;
+    escalationMultiplier: number;
+    snapshots: Array<{
+      checkedAt: string;
+      commands: number;
+      undelivered: number;
+      receivedNotExecuted: number;
+      escalatedDevices: number;
+    }>;
+  }> {
+    const orgId = String(actor?.primaryOrgId ?? '').trim();
+    if (orgId === '') throw new BadRequestException('getDeliveryBacklogHistory: 缺少租户上下文');
+    const bounded = Math.min(Math.max(Number(limit) || 24, 1), 96);
+    const rows = await this.db
+      .select()
+      .from(ewohControlBacklogSnapshot)
+      .where(or(eq(ewohControlBacklogSnapshot.orgId, orgId), isNull(ewohControlBacklogSnapshot.orgId)))
+      .orderBy(desc(ewohControlBacklogSnapshot.createdAt))
+      .limit(bounded);
+    return {
+      slaMs: ControlService.deliverySlaMs(),
+      escalationMultiplier: ControlService.backlogEscalationMultiplier(),
+      snapshots: rows.map((row) => {
+        const totals = (row.totals ?? {}) as Record<string, number>;
+        return {
+          checkedAt: row.createdAt ? this.toIso(row.createdAt) : '',
+          commands: Number(totals.commands ?? 0),
+          undelivered: Number(totals.undelivered ?? 0),
+          receivedNotExecuted: Number(totals.receivedNotExecuted ?? 0),
+          escalatedDevices: Number(totals.escalatedDevices ?? 0),
+        };
+      }),
+    };
+  }
+
+  async sweepDeliveryBacklog(ctx: OrgContext): Promise<{
+    scanned: number;
+    devicesWithBacklog: number;
+    escalatedDevices: number;
+    created: number;
+    duplicates: number;
+    slaMs: number;
+    escalationMultiplier: number;
+    notificationIds: string[];
+  }> {
+    const orgId = String(ctx?.primaryOrgId ?? '').trim();
+    if (orgId === '') throw new BadRequestException('sweepDeliveryBacklog: 缺少租户上下文');
+    // NO-77a：判定与快照共用同一实现（collectBacklogRows）——巡检与看板永不两套口径。
+    const { rows, slaMs, escalationMultiplier } = await this.collectBacklogRows(orgId);
     const byDevice = new Map<string, typeof rows>();
     for (const row of rows) {
       const deviceId = String(row.deviceId ?? '');
@@ -1069,37 +1266,88 @@ export class ControlService {
     }
     let created = 0;
     let duplicates = 0;
+    let escalatedDevices = 0;
     const notificationIds: string[] = [];
     const now = Date.now();
     for (const [deviceId, commands] of byDevice) {
       const oldest = commands[0];
-      const waitedMinutes = oldest?.sentAt
-        ? Math.max(1, Math.round((now - new Date(oldest.sentAt as unknown as string).getTime()) / 60_000))
-        : null;
+      const ageMs = oldest?.sentAt
+        ? Math.max(0, now - new Date(oldest.sentAt as unknown as string).getTime())
+        : 0;
+      const waitedMinutes = Math.max(1, Math.round(ageMs / 60_000));
+      // NO-70a：积压年龄超过 N 倍 SLA → **升级**给生产管理者（复用安灯 SLA 升级语义：
+      // 一级没人处置/处置不动 → 按倍数升级到上一级，避免"提醒躺着没人管"）。
+      const escalated = ageMs >= escalationMultiplier * slaMs;
+      const undelivered = commands.filter((c) => c.deliveredAt == null).length;
+      const receivedNotExecuted = commands.length - undelivered;
       const result = await insertDeterministicNotifications(this.db as never, {
         orgId,
         externalRef: deviceId,
         prefix: `NTF-CTRL-${deviceId}-`,
-        bucket: 'delivery_backlog',
+        bucket: escalated ? 'delivery_backlog_escalated' : 'delivery_backlog',
         recipients: [
           { recipientType: 'role', recipientId: 'dispatcher' },
           { recipientType: 'role', recipientId: 'workshop_lead' },
           { recipientType: 'role', recipientId: 'device_ops' },
+          // NO-70a：升级时**加发**生产管理者（不替换原有收件人——值班仍要看到）。
+          ...(escalated ? [{ recipientType: 'role' as const, recipientId: 'production_manager' }] : []),
         ],
-        title: '控制命令积压：下发后迟迟未投递到设备',
+        title: escalated
+          ? `【升级】控制命令积压超 ${escalationMultiplier} 倍 SLA：${deviceId}`
+          : '控制命令积压：下发后迟迟未投递到设备',
         body:
-          `设备 ${deviceId} 有 ${commands.length} 条命令超过 ${Math.round(slaMs / 60_000)} 分钟仍未投递`
-          + `（最早一条 ${oldest?.commandKey ?? '未知命令'}`
-          + `${waitedMinutes ? `，已等待约 ${waitedMinutes} 分钟` : ''}）。`
+          `设备 ${deviceId} 有 ${commands.length} 条命令积压`
+          + `（未交付 ${undelivered} 条；已投未回执 ${receivedNotExecuted} 条），`
+          + `最久已等待约 ${waitedMinutes} 分钟`
+          + `（SLA ${Math.round(slaMs / 60_000)} 分钟，最早一条 ${oldest?.commandKey ?? '未知命令'}）。`
           + '常见原因：网关掉线 / 指纹密钥两侧不配对（revoked_reason=fingerprint_key_missing）/ '
-          + '投递配额用尽（deferred reason=quota）/ 设备一直在执行上一条命令（reason=device_busy）。'
-          + '请在设备详情「执行边界」面板核对后处置。',
-        severity: 'high',
+          + '投递配额用尽（deferred reason=quota）/ 设备一直忙（reason=device_busy）。'
+          + '请在设备详情「执行边界」面板核对后处置。'
+          + (escalated ? '【已升级至生产管理者：积压超过 3 倍 SLA，请管理层跟进。】' : ''),
+        severity: escalated ? 'critical' : 'high',
       });
       created += result.created;
       duplicates += result.duplicates;
       notificationIds.push(...result.notificationIds);
+      if (escalated) escalatedDevices += 1;
     }
+    // NO-91a：落**历史快照**（趋势可见，漂移早发现）——与提醒同节拍（每次巡检一条）。
+    try {
+      await this.db.insert(ewohControlBacklogSnapshot).values({
+        orgId,
+        slaMs,
+        escalationMultiplier,
+        totals: {
+          devices: byDevice.size,
+          commands: rows.length,
+          undelivered: [...byDevice.values()].reduce(
+            (acc, cmds) => acc + cmds.filter((c) => c.deliveredAt == null).length,
+            0,
+          ),
+          receivedNotExecuted: [...byDevice.values()].reduce(
+            (acc, cmds) => acc + cmds.filter((c) => c.deliveredAt != null).length,
+            0,
+          ),
+          escalatedDevices,
+          oldestWaitingMs: rows.length > 0 && rows[0].sentAt
+            ? Math.max(0, now - new Date(rows[0].sentAt as unknown as string).getTime())
+            : 0,
+        },
+        devices: [...byDevice.entries()].map(([devId, cmds]) => ({
+          deviceId: devId,
+          commands: cmds.length,
+          escalated: cmds[0]?.sentAt
+            ? (now - new Date(cmds[0].sentAt as unknown as string).getTime()) >= escalationMultiplier * slaMs
+            : false,
+        })),
+      });
+    } catch (error) {
+      // 快照落库失败不阻断提醒/审计（趋势是增强）；但必须留痕不静默
+      this.logger?.warn?.(
+        `积压历史快照落库失败（不影响提醒与审计）：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     await this.recordAudit(
       {
         action: 'control.delivery_backlog_sweep',
@@ -1109,8 +1357,10 @@ export class ControlService {
         after: {
           scanned: rows.length,
           devicesWithBacklog: byDevice.size,
+          escalatedDevices,
           created,
           duplicates,
+          escalationMultiplier,
         },
       },
       ctx,
@@ -1118,9 +1368,11 @@ export class ControlService {
     return {
       scanned: rows.length,
       devicesWithBacklog: byDevice.size,
+      escalatedDevices,
       created,
       duplicates,
       slaMs,
+      escalationMultiplier,
       notificationIds,
     };
   }
@@ -1150,6 +1402,8 @@ export class ControlService {
       status: string;
       /** 现场可读的投递态：awaiting_delivery / queued_device_busy / gateway_received / 终态 */
       deliveryState: string;
+      /** NO-81a：排队原因（device_busy = 一车一活；quota = 配额用尽；null = 未排队）。 */
+      queuedReason: 'device_busy' | 'quota' | null;
       /** NO-67b：平台把命令交给网关的时刻（NULL = 从未交付；与"授权复核通过"是两个事实）。 */
       deliveredAt: string | null;
       deliveryNote: string | null;
@@ -1179,6 +1433,8 @@ export class ControlService {
       overdue?: number;
       /** NO-68a：当前投递 SLA（ms），供页面判断"算不算积压"。 */
       deliverySlaMs?: number;
+      /** NO-81a：排队原因计数（device_busy / quota）——现场要知道在等什么。 */
+      queuedReasons?: { device_busy: number; quota: number };
       /** NO-67b：本设备投递配额现状（perMinute<=0 = 不限；remaining=null 表示不限）。 */
       quota?: { perMinute: number; usedInWindow: number; remaining: number | null };
     };
@@ -1244,7 +1500,8 @@ export class ControlService {
       list.push(row);
       resultsByCommand.set(key, list);
     }
-    // NO-67b：配额现状（与投递闸门同一计量口径：authorization_verified_at + 60s 窗口）。
+    // NO-67b：配额现状（与投递闸门同一计量口径：delivered_at + 60s 窗口；
+    // 页面口径为**只读近似**——网关轮询时的 CAS 扣减不在此处）。
     const quotaPerMinute = controlDeliveryQuotaPerMinute();
     const quotaUsed = quotaPerMinute > 0
       ? rows.filter((row) => row.deliveredAt
@@ -1272,15 +1529,34 @@ export class ControlService {
           resultCode: r.resultCode ? String(r.resultCode) : null,
           at: r.completedAt ? this.toIso(r.completedAt) : null,
         }));
-      const queued = status === 'sent'
+      const busyQueued = status === 'sent'
         && MOTION_COMMAND_KEYS.has(key)
         && busyBlocker !== null
         && busyBlocker !== `${key}:${String(row.commandId)}`;
-      const deliveryState = queued
+      // NO-81a：排队原因细分——运动命令被"一车一活"挡（device_busy）；其余普通命令
+      // 在配额用尽时被"限流"挡（quota）。两者都不是失败，但**解除条件不同**
+      // （前者等设备空下来，后者等下一分钟窗口），现场要知道自己在等什么。
+      // 页面口径为只读近似（未含网关 CAS 扣减）；安全动作（stop）永不因配额排队。
+      const quotaRemainingNow = quotaPerMinute > 0
+        ? Math.max(0, quotaPerMinute - quotaUsed)
+        : null;
+      const quotaQueued = status === 'sent'
+        && !SAFETY_COMMAND_KEYS.has(key)
+        && !busyQueued
+        && quotaRemainingNow !== null
+        && quotaRemainingNow <= 0;
+      const queuedReason: 'device_busy' | 'quota' | null = busyQueued
+        ? 'device_busy'
+        : quotaQueued
+          ? 'quota'
+          : null;
+      const deliveryState = busyQueued
         ? 'queued_device_busy'
-        : status === 'sent'
-          ? 'awaiting_delivery'
-          : status;
+        : quotaQueued
+          ? 'queued_quota'
+          : status === 'sent'
+            ? 'awaiting_delivery'
+            : status;
       const fingerprint = String(row.authorizationFingerprint ?? '');
       const ackJson = ackRow?.resultJson && typeof ackRow.resultJson === 'object'
         ? (ackRow.resultJson as Record<string, unknown>)
@@ -1292,9 +1568,12 @@ export class ControlService {
         attemptNo: Number(row.attemptNo),
         status,
         deliveryState,
-        deliveryNote: queued
-          ? `设备正在执行 ${busyBlocker}，本条按"一车一活"排队（暂缓 ≠ 失败）`
-          : status === 'revoked'
+        queuedReason,
+        deliveryNote: quotaQueued
+          ? '投递配额本分钟已用尽，等待下一分钟窗口（限流 ≠ 失败）'
+          : busyQueued
+            ? `设备正在执行 ${busyBlocker}，本条按"一车一活"排队（暂缓 ≠ 失败）`
+            : status === 'revoked'
             ? row.errorMessage
               ? String(row.errorMessage)
               : CONTROL_REVOKE_REASON_LABELS[
@@ -1355,6 +1634,10 @@ export class ControlService {
             && Date.now() - new Date(String(c.sentAt)).getTime() >= ControlService.deliverySlaMs(),
         ).length,
         deliverySlaMs: ControlService.deliverySlaMs(),
+        queuedReasons: {
+          device_busy: commands.filter((c) => c.queuedReason === 'device_busy').length,
+          quota: commands.filter((c) => c.queuedReason === 'quota').length,
+        },
         quota: {
           perMinute: quotaPerMinute,
           usedInWindow: quotaUsed,
@@ -1721,8 +2004,16 @@ export class ControlService {
      * NO-67b：本设备投递配额现状（`perMinute <= 0` = 不限）。
      * `usedInWindow` = **本轮开始前**窗口内已投递条数（不含本轮即将投出的）；
      * `remaining` = 本轮还能投几条（null = 不限；0 = 已用尽，后续命令排队到下一分钟）。
+     * NO-74c：`motion*` 三元组为运动类命令（dispatch_task/resume）的更严配额，同口径。
      */
-    quota: { perMinute: number; usedInWindow: number; remaining: number | null };
+    quota: {
+      perMinute: number;
+      usedInWindow: number;
+      remaining: number | null;
+      motionPerMinute: number;
+      motionUsedInWindow: number;
+      motionRemaining: number | null;
+    };
     oldestSentAt: string | null;
     /** 待投递命令数超过扫描上限（true = 计数是下界，不是精确值）。 */
     truncated: boolean;
@@ -1791,10 +2082,16 @@ export class ControlService {
       .limit(5);
     // NO-67b：本设备最近 60s 投出去的条数（按"投递前复核通过时刻"计）。
     const quotaPerMinute = controlDeliveryQuotaPerMinute();
+    const quotaPerMinuteMotion = controlDeliveryQuotaPerMinuteMotion();
     const windowStart = new Date(Date.now() - DELIVERY_QUOTA_WINDOW_MS);
-    const deliveredRecently = quotaPerMinute > 0
+    // 需要按命令类别分桶计数（NO-74c）：运动类吃更严的 motion 配额，其余吃通用配额。
+    const needWindow = quotaPerMinute > 0 || quotaPerMinuteMotion > 0;
+    const deliveredRecently = needWindow
       ? await this.db
-          .select({ commandId: ewohControlCommand.commandId })
+          .select({
+            commandId: ewohControlCommand.commandId,
+            commandKey: ewohControlCommand.commandKey,
+          })
           .from(ewohControlCommand)
           .innerJoin(
             ewohControlRequest,
@@ -1807,8 +2104,14 @@ export class ControlService {
           .limit(1000)
       : [];
     const usedInWindow = deliveredRecently.length;
+    const usedMotionInWindow = deliveredRecently.filter((row) =>
+      MOTION_COMMAND_KEYS.has(String(row.commandKey)),
+    ).length;
     let quotaRemaining = quotaPerMinute > 0
       ? Math.max(0, quotaPerMinute - usedInWindow)
+      : Number.POSITIVE_INFINITY;
+    let quotaMotionRemaining = quotaPerMinuteMotion > 0
+      ? Math.max(0, quotaPerMinuteMotion - usedMotionInWindow)
       : Number.POSITIVE_INFINITY;
     const inFlightMotionIds = new Set(inFlightMotion.map((row) => String(row.commandId)));
     const inFlightBy = inFlightMotion[0]
@@ -1888,19 +2191,26 @@ export class ControlService {
         });
         continue;
       }
-      // NO-67b：配额闸门。**安全动作插队且不占配额**（停机不能被吞吐限制卡住）；
-      // 其余命令在本分钟配额用尽后显式排队（`reason: quota`），下一分钟自动继续。
-      if (!SAFETY_COMMAND_KEYS.has(key) && quotaRemaining <= 0) {
+      // NO-67b/NO-74c：配额闸门。**安全动作插队且不占配额**（停机不能被吞吐限制卡住）；
+      // 运动类吃更严的 motion 配额，其余吃通用配额；本分钟用尽后显式排队（`reason: quota`）。
+      const motionQuotaBlocked = MOTION_COMMAND_KEYS.has(key) && quotaMotionRemaining <= 0;
+      const generalQuotaBlocked = !SAFETY_COMMAND_KEYS.has(key) && quotaRemaining <= 0;
+      if (!SAFETY_COMMAND_KEYS.has(key) && (motionQuotaBlocked || generalQuotaBlocked)) {
         deferred.push({
           commandId: String(row.commandId),
           commandKey: key,
           reason: 'quota',
-          blockedBy: `quota:${quotaPerMinute}/min`,
+          blockedBy: motionQuotaBlocked
+            ? `quota-motion:${quotaPerMinuteMotion}/min`
+            : `quota:${quotaPerMinute}/min`,
         });
         continue;
       }
       if (!SAFETY_COMMAND_KEYS.has(key) && Number.isFinite(quotaRemaining)) {
         quotaRemaining -= 1;
+      }
+      if (!SAFETY_COMMAND_KEYS.has(key) && MOTION_COMMAND_KEYS.has(key) && Number.isFinite(quotaMotionRemaining)) {
+        quotaMotionRemaining -= 1;
       }
       verified.push({
         commandId: String(row.commandId),
@@ -1945,6 +2255,7 @@ export class ControlService {
     //   · 本窗口内已投过、网关还没 ack → 仍返回（边缘是 at-least-once：丢包靠下一轮重投恢复，
     //     见 `control_downlink.py` 的诚实边界 3），但**不重复占配额**。
     let chargedInWindow = 0;
+    let chargedMotionInWindow = 0;
     const deliverable: typeof verified = [];
     for (const item of verified.slice(0, limit)) {
       const claimedAt = new Date();
@@ -1979,6 +2290,7 @@ export class ControlService {
         }
       } else if (!SAFETY_COMMAND_KEYS.has(item.commandKey)) {
         chargedInWindow += 1;
+        if (MOTION_COMMAND_KEYS.has(item.commandKey)) chargedMotionInWindow += 1;
       }
       deliverable.push(item);
     }
@@ -2000,6 +2312,12 @@ export class ControlService {
         // 不用循环里那个"预计要投几条"的预扣值——否则并发/重投会让页面上的剩余配额说谎。
         remaining: quotaPerMinute > 0
           ? Math.max(0, quotaPerMinute - usedInWindow - chargedInWindow)
+          : null,
+        // NO-74c：运动类同口径（CAS 命中数扣减，页面不撒谎）。
+        motionPerMinute: quotaPerMinuteMotion,
+        motionUsedInWindow: usedMotionInWindow,
+        motionRemaining: quotaPerMinuteMotion > 0
+          ? Math.max(0, quotaPerMinuteMotion - usedMotionInWindow - chargedMotionInWindow)
           : null,
       },
       oldestSentAt: sentTimes[0] ?? null,

@@ -1023,7 +1023,7 @@ export interface paths {
                         "application/json": {
                             items?: {
                                 /** @enum {string} */
-                                kind?: "anomaly" | "notification";
+                                kind?: "anomaly" | "notification" | "material_gap" | "approval";
                                 priority?: number;
                                 title?: string;
                                 ref?: string;
@@ -1031,6 +1031,8 @@ export interface paths {
                                 severity?: string | null;
                                 /** Format: date-time */
                                 createdAt?: string;
+                                /** @description 附加量化信息 */
+                                detail?: string;
                             }[];
                             /** Format: date-time */
                             generatedAt?: string;
@@ -7359,6 +7361,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scheduler/kpi/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * KPI snapshot history (NO-89a)
+         * @description 门禁指标**历史序列**（最近快照，按周期倒序，缺数据的旧快照也如实返回）。 看板画趋势：on_time_rate / lateness_p95 随时间变化一眼可见——漂移早发现。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description KPI snapshot history (newest first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            periodStart: string;
+                            periodEnd: string;
+                            createdAt: string;
+                            kpi: {
+                                onTimeRate?: number | null;
+                                latenessP95Ms?: number | null;
+                            };
+                        }[];
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/delivery-backlog/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Delivery backlog live snapshot (plant-level, NO-77a)
+         * @description 投递积压**实时快照**（只读，工厂级聚合）。判定与巡检（sweep）同一实现： `sent`（未交付）与 `gateway_received`（已投未回执）且 `sent_at < now-SLA`。 看板/工作台按它展示聚合数字——不依赖"恰好有人跑过巡检"。
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Backlog snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            slaMs: number;
+                            escalationMultiplier: number;
+                            totals: {
+                                devices?: number;
+                                commands?: number;
+                                undelivered?: number;
+                                receivedNotExecuted?: number;
+                                escalatedDevices?: number;
+                                oldestWaitingMs?: number | null;
+                            };
+                            devices: {
+                                deviceId?: string;
+                                commands?: number;
+                                undelivered?: number;
+                                receivedNotExecuted?: number;
+                                oldestWaitingMs?: number;
+                                escalated?: boolean;
+                                /** @description NO-81a 排队原因计数（现场要知道在等什么） */
+                                queuedReasons?: {
+                                    device_busy?: number;
+                                    quota?: number;
+                                };
+                            }[];
+                            checkedAt: string;
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                Forbidden: components["responses"]["Forbidden"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/control/requests": {
         parameters: {
             query?: never;
@@ -7420,6 +7540,11 @@ export interface paths {
                                 responseAt?: string | null;
                                 revokedReason?: string | null;
                                 revokedReasonLabel?: string | null;
+                                /**
+                                 * @description NO-81a 排队原因：device_busy = 一车一活（等设备空下来）； quota = 配额用尽（等下一分钟窗口）。null = 未排队。 两者都不是失败，但**解除条件不同**——现场据此决定等着还是去催。
+                                 * @enum {string|null}
+                                 */
+                                queuedReason?: "device_busy" | "quota" | null;
                                 /** @enum {string} */
                                 fingerprintScheme?: "hmac-sha256:v2" | "fnv1a64:v1" | "none";
                                 fingerprintVerified?: boolean;
@@ -7662,6 +7787,61 @@ export interface paths {
                 InternalError: components["responses"]["InternalError"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/control/delivery-backlog/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Delivery backlog history snapshots (newest first, NO-91a)
+         * @description 投递积压**历史序列**（最近在前）。每次巡检顺带落一条历史快照，趋势可见、漂移早发现。 `limit` 上限 48（超出按 48 截断）；无快照如实返回空数组（不伪造趋势，原则 7）。
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 最多返回的快照条数（最近 N 条）。 */
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Backlog history (newest first) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            slaMs: number;
+                            escalationMultiplier: number;
+                            /** @description 最近在前；空数组=尚无历史快照（巡检从未运行）。 */
+                            snapshots: {
+                                checkedAt: string;
+                                commands: number;
+                                undelivered: number;
+                                receivedNotExecuted: number;
+                                escalatedDevices: number;
+                            }[];
+                        };
+                    };
+                };
+                Unauthorized: components["responses"]["Unauthorized"];
+                InternalError: components["responses"]["InternalError"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -13014,7 +13194,7 @@ export interface paths {
                                 commandId?: string;
                                 commandKey?: string;
                                 /**
-                                 * @description device_busy = 一车一活；quota = 本分钟投递配额用尽（均非失败）
+                                 * @description device_busy = 一车一活；quota = 配额用尽（blockedBy 以 quota-motion 前缀区分运动类更严配额；均非失败）
                                  * @enum {string}
                                  */
                                 reason?: "device_busy" | "quota";
@@ -13026,6 +13206,10 @@ export interface paths {
                                 perMinute?: number;
                                 usedInWindow?: number;
                                 remaining?: number | null;
+                                /** @description NO-74c 运动类命令（dispatch_task/resume）的更严配额；默认为通用配额一半 */
+                                motionPerMinute?: number;
+                                motionUsedInWindow?: number;
+                                motionRemaining?: number | null;
                             };
                             oldestSentAt?: string | null;
                             truncated?: boolean;
@@ -21666,6 +21850,8 @@ export interface components {
             clock_drift?: boolean;
             /** @description True only for transient write failures (DB/connection); edge uplink retries these. Absent/false = permanent rejection (dead-letter). */
             retryable?: boolean;
+            /** @description NO-92a SOC plausibility gate: set true when this frame re-anchors the device battery after `reanchorStreak` consecutive implausible-jump rejections (sustained real change, not a one-frame glitch). */
+            soc_reanchored?: boolean;
         };
         BatchIngestResponse: {
             total: number;

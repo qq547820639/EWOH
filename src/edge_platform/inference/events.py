@@ -35,6 +35,7 @@ EVENT_CODE_CATALOG_TYPE = {
     "POSTURE_BEND_LONG": "WorkerPostureRisk",
     "DEVICE_OFFLINE": "DeviceOffline",
     "DATA_DEGRADED": "DataDegraded",
+    "THERMAL_ACCUMULATION": "DeviceThermalRisk",
 }
 
 # Task 17: 证据摘要关注的遥测字段（pitch 均值 / torque 峰值等）
@@ -190,6 +191,31 @@ class EventEngine:
         # ADR-009 / NO-04b：事件信封（occurred=规则触发时刻；observed/received=边缘
         # 本地生成时刻；eventType 收敛到 Canonical Event Catalog；Late 语义由云侧
         # 重生成/重放时按契约计算）。
+        # 2026-09-15 仿真对抗发现：信封此前不带 subject/payload——平台侧事件行
+        # 无法归属设备、也看不到触发依据（目录契约为各类型声明了 payload schema，
+        # 边缘却发 null）。现按目录契约携带 payload（deviceId/trigger 等），subject
+        # 在规范身份合法时携带（identity fail-closed：非法不携带，不让坏身份炸信封）。
+        device_ref = draft.get("device_id")
+        subject = None
+        if device_ref:
+            from edge_platform.contracts.identity import is_canonical_identity
+
+            candidate = f"device:{device_ref}"
+            if is_canonical_identity(candidate):
+                subject = candidate
+        # payload 合并规则给出的结构化指标（如热规则的 estimatedTempC/modelVersion，
+        # 对齐目录 DeviceThermalRisk payload 契约的类型化字段；orgId 由云端按上行
+        # 租户头归属，边缘不冒充）。
+        payload = {
+            "deviceId": draft.get("device_id"),
+            "personId": draft.get("person_id"),
+            "eventCode": draft["event_code"],
+            "severity": draft["severity"],
+            "trigger": draft.get("trigger"),
+            "occurredAt": draft["start_time"],
+        }
+        if isinstance(draft.get("metrics"), dict):
+            payload.update(draft["metrics"])
         evt["envelope"] = {
             "eventId": evt["event_id"],
             "eventType": EVENT_CODE_CATALOG_TYPE.get(evt["event_code"], "DeviceStateChanged"),
@@ -198,6 +224,8 @@ class EventEngine:
             "observedAt": now_iso,
             "receivedAt": now_iso,
             "source": "edge:rule-engine",
+            "subject": subject,
+            "payload": payload,
         }
         self.storage.insert_event(evt)
         self._open[(evt["event_code"], evt["device_id"])] = evt["event_id"]

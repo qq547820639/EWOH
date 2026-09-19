@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Benchmark: 智能调度 Solver 可重复基准（Phase 3.1）。
  *
@@ -27,7 +26,10 @@
  */
 import { HeuristicSchedulingSolver } from '../server/modules/scheduler/heuristic-scheduling-solver';
 import { CpSatSchedulingSolver } from '../server/modules/scheduler/cp-sat-scheduling-solver';
+import { MilpSchedulingSolver } from '../server/modules/scheduler/milp-scheduling-solver';
 import { EligibilityService } from '../server/modules/scheduler/eligibility.service';
+import { CandidateEngineService } from '../server/modules/scheduler/candidate-engine.service';
+import { SchedulingObjectiveEvaluator } from '../server/modules/scheduler/scheduling-objective-evaluator.service';
 import { PriorityEngine } from '../server/modules/scheduler/priority-engine';
 import type {
   SchedulingPlanMetrics,
@@ -59,10 +61,10 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
-    tasks: 40,
-    persons: 12,
-    devices: 8,
-    runs: 3,
+    tasks: Number(process.env.BENCH_TASKS || 40),
+    persons: Number(process.env.BENCH_PERSONS || 12),
+    devices: Number(process.env.BENCH_DEVICES || 8),
+    runs: Number(process.env.BENCH_RUNS || 3),
     cpSatUrl: process.env.CPSAT_WORKER_URL || null,
     out: '',
     seed: 20260807,
@@ -288,6 +290,7 @@ function generateSnapshot(nTasks: number, nPersons: number, nDevices: number, se
 function buildSolvers(cpSatUrl: string | null): {
   heuristic: HeuristicSchedulingSolver;
   cpSat: CpSatSchedulingSolver | null;
+  milp: MilpSchedulingSolver | null;
   candidateGenMs: () => number;
   candidateCount: () => number;
   hardRejectCount: () => number;
@@ -357,11 +360,13 @@ function buildSolvers(cpSatUrl: string | null): {
   // P0-bench：route-cost memo 命中统计（默认 off；仅注入到 heuristic 供命中率报告）。
   const routeMemoStats = { lookups: 0, hits: 0 };
 
+  const eligibility = new EligibilityService();
+
   const heuristic = new HeuristicSchedulingSolver(
     policyService,
     null as never,
     routeCostProvider,
-    new EligibilityService(),
+    eligibility,
     new PriorityEngine(),
     metricsCapture,
     undefined,
@@ -369,13 +374,81 @@ function buildSolvers(cpSatUrl: string | null): {
     routeMemoStats,
   );
 
+  // NO-68j：合成 TravelCostService（矩阵能力）——修掉"CP-SAT 客户端缺矩阵服务时
+  // fail-open 送零候选"的实测缺陷（worker 返回 OPTIMAL+空指派，伪装成功）。
+  // 矩阵语义：人员技能全匹配 + 设备能力全匹配（与真实 eligibility 同判据的合成版）。
+  const fakeTravelCost = {
+    buildEligibilityMatrix: async (snapshot: WorldStateSnapshot) => {
+      const out = new Map<string, { personIds: string[]; deviceIds: string[] }>();
+      for (const t of snapshot.tasks) {
+        if (t.status && !['draft', 'pending_confirm', 'pending_approval', 'pending_dispatch', 'pending', 'queued'].includes(t.status)) continue;
+        const req = new Set(t.requiredSkills ?? []);
+        const personIds = snapshot.persons
+          .filter((p) => (p.skills ?? []).every((sk) => req.has(sk)))
+          .map((p) => p.id);
+        const reqDev = new Set(t.requiredDeviceCapabilities ?? []);
+        const deviceIds = snapshot.devices
+          .filter((d) => (d.capabilities ?? []).every((c) => reqDev.has(c)))
+          .map((d) => d.id);
+        out.set(t.id, { personIds, deviceIds });
+      }
+      return out;
+    },
+    buildMatrix: async (
+      snapshot: WorldStateSnapshot,
+      task: { id: string; stationId: string | null },
+      candidates: Array<{ personId: string; deviceId: string | null; stationId: string | null }>,
+    ) => {
+      const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
+      const personById = new Map(snapshot.persons.map((p) => [p.id, p]));
+      return {
+        candidates: candidates.map((c) => {
+          const person = personById.get(c.personId);
+          const station = c.stationId ? stationById.get(c.stationId) : undefined;
+          const dist = person && station
+            ? Math.hypot((station.x ?? 0) - (person.x ?? 0), (station.y ?? 0) - (person.y ?? 0))
+            : 0;
+          return {
+            personId: c.personId,
+            deviceId: c.deviceId,
+            stationId: c.stationId,
+            feasible: true,
+            distanceMeters: Math.round(dist),
+            etaSeconds: Math.round(dist),
+            dataQuality: 'FRESH',
+            fallbackReason: 'euclidean_fallback',
+            geometry: [] as Array<{ x: number; y: number }>,
+          };
+        }),
+      };
+    },
+  } as never;
+
   const cpSat = cpSatUrl
-    ? new CpSatSchedulingSolver(heuristic, { workerUrl: cpSatUrl, timeoutMs: 8000 })
+    ? new CpSatSchedulingSolver(heuristic, { workerUrl: cpSatUrl, timeoutMs: 8000 }, fakeTravelCost)
     : null;
+
+  // NO-68i：MILP（HiGHS WASM）第三族——候选引擎/目标评估器与 heuristic 同口径
+  // （共享 fake policyService + 同一 routeCostProvider + 真 EligibilityService）。
+  // HiGHS WASM 加载失败/超约束 → solve 返回 UNAVAILABLE，报告 milp.available=false
+  // 如实标记（不伪造数值）。
+  const candidateEngine = new CandidateEngineService(
+    {} as never, // worldStateSnapshotService：buildCandidatePool 直接收 snapshot，不经过该服务
+    {} as never, // resourceProjectionService：同上
+    eligibility,
+    routeCostProvider,
+    policyService,
+  );
+  const milp = new MilpSchedulingSolver(
+    policyService,
+    candidateEngine,
+    new SchedulingObjectiveEvaluator(),
+  );
 
   return {
     heuristic,
     cpSat,
+    milp,
     candidateGenMs: () => candidateGenMs,
     candidateCount: () => recordedCandidateCount,
     hardRejectCount: () => recordedHardRejectCount,
@@ -701,7 +774,7 @@ async function main() {
     `Benchmark tasks=${args.tasks} persons=${args.persons} devices=${args.devices} runs=${args.runs} seed=${args.seed} cpSat=${args.cpSatUrl || 'none'}`,
   );
 
-  const { heuristic, cpSat, candidateGenMs, candidateCount, hardRejectCount, prunedCount, routeCacheHitRatio } =
+  const { heuristic, cpSat, milp, candidateGenMs, candidateCount, hardRejectCount, prunedCount, routeCacheHitRatio } =
     buildSolvers(args.cpSatUrl);
 
   // 每个 run 使用同一种子生成同构负载，仅时间窗随机。
@@ -749,6 +822,40 @@ async function main() {
     }
   }
 
+  // NO-68i：MILP（HiGHS WASM）第三族对比腿。HiGHS 加载失败 → solve 返回
+  // UNAVAILABLE（不伪造数值），报告 milp.available=false 如实标记。
+  // 规模护栏（NO-68j 实测）：成对互斥约束是 O(候选²) 构建——40 任务已数百万行，
+  // >60 任务构建时间/内存不可行（clique/时间窗聚合优化挂账）。超界如实跳过。
+  const MILP_MAX_TASKS = 60;
+  let milpRows: RunResult[] = [];
+  let milpAvailable = false;
+  let milpNote = 'milp 未启用（模块加载失败或 solve 全部 UNAVAILABLE 时如实标记）';
+  if (args.tasks > MILP_MAX_TASKS) {
+    milpNote = `tasks=${args.tasks} 超出 MILP 实用边界（>${MILP_MAX_TASKS}，成对互斥 O(候选²) 构建）——如实跳过`;
+  } else {
+    for (let i = 0; i < args.runs; i += 1) {
+      try {
+        const r = await runOnce(
+          milp,
+          snapshot,
+          `M-${i}`,
+          baseline,
+          candidateGenMs,
+          candidateCount,
+          prunedCount,
+        );
+        milpRows.push(r);
+        if (r.solverStatus === 'OPTIMAL' || r.solverStatus === 'FEASIBLE') milpAvailable = true;
+      } catch (err) {
+        milpNote = `milp run 失败：${err instanceof Error ? err.message : String(err)}`;
+        break;
+      }
+    }
+    if (!milpAvailable && milpRows.length === 0) {
+      milpNote = `milp 全部 UNAVAILABLE：${milpRows[0]?.solverStatus ?? 'UNKNOWN'}（HiGHS WASM 不可用或问题规模超限）`;
+    }
+  }
+
   const report = {
     generatedAt: new Date().toISOString(),
     commitSha: gitSha(),
@@ -789,6 +896,20 @@ async function main() {
       ),
       changedAssignments,
     },
+    milp: {
+      available: milpAvailable,
+      note: milpNote,
+      avgSolveDurationMs: avg('solveDurationMs', milpRows),
+      avgWallMs: avg('wallMs', milpRows),
+      avgFeasibleRate: avg('feasibleRate', milpRows),
+      solverStatus: milpRows[0]?.solverStatus ?? 'UNKNOWN',
+      rows: milpRows.map((r) => ({
+        solverStatus: r.solverStatus,
+        solveDurationMs: r.solveDurationMs,
+        feasibleRate: r.feasibleRate,
+        violations: r.violations,
+      })),
+    },
     cpSat: {
       available: cpSatAvailable,
       note: cpSatNote,
@@ -817,5 +938,8 @@ async function main() {
 
 main().catch((err) => {
   console.error('BENCHMARK ERROR:', err?.message || err);
+  if (process.env.BENCH_STACK === '1') {
+    console.error(String(err?.stack || ''));
+  }
   process.exit(1);
 });

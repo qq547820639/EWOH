@@ -15,6 +15,8 @@ import {
   ControlService,
   HIGH_RISK_COMMAND_KEYS,
   classifyControlRisk,
+  controlDeliveryQuotaPerMinute,
+  controlDeliveryQuotaPerMinuteMotion,
   isPlatformCommandKey,
 } from './control.service';
 import {
@@ -645,19 +647,29 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
   }
 
   it('下发时落库的授权指纹 = 共享契约对（请求/设备/命令/审批实例/参数）的计算值', async () => {
-    const { service, inserts } = serviceWith(approvalInstance('approved', { id: 'appr-9' }));
-    await service.sendCommand('ctl-1', 'dispatch_task', ACTOR, { targetStationId: 'ST-9' });
-    const cmd = inserts.find((i) => i.table === ewohControlCommand)?.row;
-    expect(cmd?.authorizationFingerprint).toBe(
-      authorizationFingerprint({
-        requestId: 'ctl-1',
-        deviceId: 'exo-1',
-        commandKey: 'dispatch_task',
-        approvalInstanceId: 'appr-9',
-        payload: { targetStationId: 'ST-9' },
-      }),
-    );
-    expect(cmd?.authorizationVerifiedAt).toBeInstanceOf(Date);
+    // NO-67c 教训：签发方案取决于环境密钥（`EWOH_CONTROL_FINGERPRINT_SECRET`）。
+    // 本用例断言 v1 形态 → 必须**显式移除密钥**再实例化服务，否则断言依赖外部环境
+    // （实测：链上带着密钥跑 → 服务正确签发 v2 → 用例误报）。
+    const prevSecret = process.env.EWOH_CONTROL_FINGERPRINT_SECRET;
+    delete process.env.EWOH_CONTROL_FINGERPRINT_SECRET;
+    try {
+      const { service, inserts } = serviceWith(approvalInstance('approved', { id: 'appr-9' }));
+      await service.sendCommand('ctl-1', 'dispatch_task', ACTOR, { targetStationId: 'ST-9' });
+      const cmd = inserts.find((i) => i.table === ewohControlCommand)?.row;
+      expect(cmd?.authorizationFingerprint).toBe(
+        authorizationFingerprint({
+          requestId: 'ctl-1',
+          deviceId: 'exo-1',
+          commandKey: 'dispatch_task',
+          approvalInstanceId: 'appr-9',
+          payload: { targetStationId: 'ST-9' },
+        }),
+      );
+      expect(cmd?.authorizationVerifiedAt).toBeInstanceOf(Date);
+    } finally {
+      if (prevSecret !== undefined) process.env.EWOH_CONTROL_FINGERPRINT_SECRET = prevSecret;
+      else delete process.env.EWOH_CONTROL_FINGERPRINT_SECRET;
+    }
   });
 
   it('授权指纹随审批实例走：换一张审批实例 → 指纹必须变（不许"有审批就算过"）', async () => {
@@ -864,7 +876,7 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
   });
 
   it('NO-68a 投递积压巡检：超过 SLA 仍未交付 → 按设备发确定性提醒（幂等）+ 审计', async () => {
-    const old = new Date(Date.now() - 30 * 60_000); // 30 分钟前下发（SLA 默认 5 分钟）
+    const old = new Date(Date.now() - 6 * 60_000); // 6 分钟前下发（SLA 默认 5 分钟 → 积压但未升级）
     const fake = makeControlDb({
       requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
       commands: [
@@ -894,9 +906,177 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
     const notification = fake.notificationRows.find((row) =>
       String((row as Record<string, unknown>).notificationId ?? '').includes('delivery_backlog'),
     ) as Record<string, unknown>;
-    expect(String(notification?.body ?? '')).toContain('30');
+    // 新文案（NO-70a）：积压分两个状态（未交付 / 已投未回执）+ SLA 与最久等待
+    expect(String(notification?.body ?? '')).toContain('积压（未交付 1 条；已投未回执 0 条）');
+    expect(String(notification?.body ?? '')).toContain('已等待约 6 分钟');
+    expect(String(notification?.body ?? '')).toContain('SLA 5 分钟');
     expect(String(notification?.body ?? '')).toContain('执行边界');
     expect(audit.logs.some((log) => log.action === 'control.delivery_backlog_sweep')).toBe(true);
+    // NO-91a：历史快照插入（fake-db 记录全部 insert；表名见迁移 097）。
+    // fake-db 未记录 backlog_snapshot 表时跳过（记录器覆盖面随实现演进）。
+    const snapshotInsert = (fake.inserts ?? []).find((i) =>
+      String(i.table ?? '').includes('backlog_snapshot'),
+    );
+    if (snapshotInsert) {
+      expect(snapshotInsert.row.slaMs).toBeGreaterThan(0);
+      expect(snapshotInsert.row.escalationMultiplier).toBe(3);
+    }
+  });
+
+  it('NO-77a 实时快照：与巡检同一判定，聚合数字正确（两台设备/未交付与已投未回执分列）', async () => {
+    const old = new Date(Date.now() - 30 * 60_000); // 6× SLA → 升级
+    const fake = makeControlDb({
+      requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+      commands: [
+        commandSeed({ commandId: 'att-snap1', commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null }),
+        commandSeed({
+          commandId: 'att-snap2', commandKey: 'dispatch_task', status: 'gateway_received',
+          sentAt: new Date(Date.now() - 7 * 60_000), deliveredAt: new Date(Date.now() - 6 * 60_000), payload: null,
+        }),
+      ],
+    });
+    const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+    const snap = await service.getDeliveryBacklogSnapshot(ACTOR);
+
+    expect(snap.slaMs).toBeGreaterThan(0);
+    expect(snap.escalationMultiplier).toBe(3);
+    expect(snap.totals.devices).toBe(1);
+    expect(snap.totals.commands).toBe(2);
+    expect(snap.totals.undelivered).toBe(1);
+    expect(snap.totals.receivedNotExecuted).toBe(1);
+    expect(snap.totals.escalatedDevices).toBe(1);
+    expect(snap.devices[0].deviceId).toBe('exo-1');
+    expect(typeof snap.checkedAt).toBe('string');
+    expect(snap.checkedAt.length).toBeGreaterThan(0);
+  });
+
+  it('NO-78a 快照 TTL 缓存：命中返回同一对象；过期后重新计算（巡检不受缓存影响）', async () => {
+    const prevTtl = process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS;
+    process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS = '5000';
+    try {
+      const old = new Date(Date.now() - 30 * 60_000);
+      const fake = makeControlDb({
+        requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+        commands: [commandSeed({ commandId: 'att-cache', commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null })],
+      });
+      const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+      const first = await service.getDeliveryBacklogSnapshot(ACTOR);
+      const second = await service.getDeliveryBacklogSnapshot(ACTOR);
+      expect(second).toBe(first); // TTL 内命中缓存（同一对象）
+
+      // 过期后重新计算（fake 时间走真实时钟，TTL 5s：手工把缓存戳改成已过期）
+      const actor = ACTOR as unknown as { primaryOrgId: string };
+      const cached = (ControlService as unknown as { snapshotCache: Map<string, { data: unknown; expiresAt: number }> })
+        .snapshotCache.get(actor.primaryOrgId);
+      if (cached) cached.expiresAt = Date.now() - 1;
+      const third = await service.getDeliveryBacklogSnapshot(ACTOR);
+      expect(third).not.toBe(first);
+      expect(third.totals.commands).toBe(1);
+    } finally {
+      if (prevTtl === undefined) delete process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS;
+      else process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS = prevTtl;
+      (ControlService as unknown as { snapshotCache: Map<string, unknown> }).snapshotCache.clear();
+    }
+  });
+
+  it('NO-78a TTL=0 → 显式关闭缓存（每次真实计算）', async () => {
+    const prevTtl = process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS;
+    process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS = '0';
+    try {
+      const old = new Date(Date.now() - 30 * 60_000);
+      const fake = makeControlDb({
+        requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+        commands: [commandSeed({ commandId: 'att-nocache', commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null })],
+      });
+      const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+      const a = await service.getDeliveryBacklogSnapshot(ACTOR);
+      const b = await service.getDeliveryBacklogSnapshot(ACTOR);
+      expect(b).not.toBe(a);
+      expect((ControlService as unknown as { snapshotCache: Map<string, unknown> }).snapshotCache.size).toBe(0);
+    } finally {
+      if (prevTtl === undefined) delete process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS;
+      else process.env.EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS = prevTtl;
+      (ControlService as unknown as { snapshotCache: Map<string, unknown> }).snapshotCache.clear();
+    }
+  });
+
+  it('NO-77a 实时快照：无积压 → 全零聚合（不伪造积压）', async () => {
+    const { service } = serviceWith(approvalInstance('approved'), {
+      commands: [commandSeed({ commandId: 'att-fine', commandKey: 'pause', status: 'sent', sentAt: new Date(), payload: null })],
+    });
+    const snap = await service.getDeliveryBacklogSnapshot(ACTOR);
+    expect(snap.totals).toMatchObject({ devices: 0, commands: 0, escalatedDevices: 0, oldestWaitingMs: null });
+  });
+
+  it('NO-70a 升级链：积压超过 N 倍 SLA → 加发生产管理者（critical，升级桶）', async () => {
+    // 6 倍 SLA（30 分钟 > 3×5 分钟）→ 必须升级
+    const old = new Date(Date.now() - 30 * 60_000);
+    const fake = makeControlDb({
+      requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+      commands: [commandSeed({ commandId: 'att-esc', commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null })],
+    });
+    const audit = makeAuditStub();
+    const service = new ControlService(fake.db as never, audit.stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+
+    expect(result.escalatedDevices).toBe(1);
+    expect(result.escalationMultiplier).toBe(3);
+    const escalated = fake.notificationRows.filter((row) =>
+      String((row as Record<string, unknown>).notificationId ?? '').includes('delivery_backlog_escalated'),
+    );
+    expect(escalated.length).toBeGreaterThan(0);
+    // 升级提醒：加发生产管理者 + critical + 明示升级语义
+    const escalatedRows = escalated as Array<Record<string, unknown>>;
+    expect(escalatedRows.some((row) => row.recipientId === 'production_manager')).toBe(true);
+    expect(escalatedRows.some((row) => row.severity === 'critical')).toBe(true);
+    expect(String(escalatedRows[0].body)).toContain('已升级至生产管理者');
+    // 升级桶**替换**桶名（一条积压一条提醒链），但收件人是**加发**：
+    // 一级（dispatcher/workshop_lead/device_ops）与升级（production_manager）都在同一批提醒里。
+    const escalatedRecipients = escalated as Array<Record<string, unknown>>;
+    const recipients = new Set(escalatedRecipients.map((row) => String(row.recipientId)));
+    for (const role of ['dispatcher', 'workshop_lead', 'device_ops', 'production_manager']) {
+      expect(recipients.has(role)).toBe(true);
+    }
+    expect(audit.logs.some((l) => (l.after as Record<string, unknown> | undefined)?.escalatedDevices === 1)).toBe(true);
+  });
+
+  it('NO-70a 升级链：积压未达倍数阈值 → 不升级（一级处理即可）', async () => {
+    const recent = new Date(Date.now() - 6 * 60_000); // 6 分钟 < 3×5 分钟
+    const fake = makeControlDb({
+      requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+      commands: [commandSeed({ commandId: 'att-plain', commandKey: 'dispatch_task', status: 'sent', sentAt: recent, payload: null })],
+    });
+    const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+    expect(result.escalatedDevices).toBe(0);
+    expect(
+      fake.notificationRows.some((row) =>
+        String((row as Record<string, unknown>).notificationId ?? '').includes('delivery_backlog_escalated'),
+      ),
+    ).toBe(false);
+  });
+
+  it('NO-70a 已投递未回执（gateway_received 老化）也算积压——设备侧问题同样要叫人', async () => {
+    const old = new Date(Date.now() - 30 * 60_000);
+    const fake = makeControlDb({
+      requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+      commands: [commandSeed({
+        commandId: 'att-got',
+        commandKey: 'dispatch_task',
+        status: 'gateway_received',
+        sentAt: old,
+        // 已投递（网关确认）→ delivered_at 必须有值；否则会被误算成"未交付"
+        deliveredAt: new Date(old.getTime() + 30_000),
+        payload: null,
+      })],
+    });
+    const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+    expect(result.devicesWithBacklog).toBe(1);
+    const notification = fake.notificationRows.find((row) =>
+      String((row as Record<string, unknown>).notificationId ?? '').includes('delivery_backlog'),
+    ) as Record<string, unknown>;
+    expect(String(notification?.body ?? '')).toContain('已投未回执 1 条');
   });
 
   it('NO-68a 投递积压巡检：没有积压时不发提醒（不制造噪音）', async () => {
@@ -969,6 +1149,9 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
       expect(view.summary.queued).toBe(1);
       expect(view.summary.revoked).toBe(1);
       expect(view.summary.busyBlocker).toContain('att-inflight');
+      // NO-81a：排队原因细分——排队命令必须带原因（device_busy）
+      expect(queued?.queuedReason).toBe('device_busy');
+      expect(view.summary.queuedReasons).toMatchObject({ device_busy: 1, quota: 0 });
       break label;
     }
   });
@@ -1002,6 +1185,53 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
     } finally {
       if (prev === undefined) delete process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE;
       else process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE = prev;
+    }
+  });
+
+  it('NO-74c 运动类配额更严：motion 用尽 → 运动命令排队（quota-motion），普通命令不受影响', async () => {
+    const prev = process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE;
+    const prevMotion = process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION;
+    process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE = '10';
+    process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION = '1';
+    try {
+      const { service } = serviceWith(approvalInstance('approved'), {
+        commands: [
+          commandSeed({ commandId: 'att-m1', commandKey: 'dispatch_task', status: 'sent', payload: null }),
+          commandSeed({ commandId: 'att-m2', commandKey: 'resume', status: 'sent', payload: null }),
+          commandSeed({ commandId: 'att-g1', commandKey: 'pause', status: 'sent', payload: null }),
+        ],
+      });
+      const pending = await service.listPendingCommands('exo-1', {}, ACTOR);
+      // motion 配额 1：第一条运动命令可投，第二条排队（quota-motion）；普通命令照常投
+      expect(pending.commands.map((c) => c.commandId)).toContain('att-m1');
+      expect(pending.commands.map((c) => c.commandId)).toContain('att-g1');
+      const motionDeferred = pending.deferred.filter((d) => String(d.blockedBy).startsWith('quota-motion:'));
+      expect(motionDeferred).toHaveLength(1);
+      expect(motionDeferred[0].commandKey).toBe('resume');
+      expect(pending.quota.motionPerMinute).toBe(1);
+      expect(pending.quota.motionRemaining).toBe(0);
+      // remaining 按 F4 口径（CAS 命中扣减）：att-m1 + att-g1（pause 非安全动作，占通用配额；
+      // 安全插队词表只有 stop）→ 10 - 2 = 8
+      expect(pending.quota.remaining).toBe(8);
+    } finally {
+      if (prev === undefined) delete process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE;
+      else process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE = prev;
+      if (prevMotion === undefined) delete process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION;
+      else process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION = prevMotion;
+    }
+  });
+
+  it('NO-74c 未配置 motion 配额 → 默认取通用配额的一半（不打扰现场）', () => {
+    const prev = process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE;
+    const prevMotion = process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION;
+    delete process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE;
+    delete process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION;
+    try {
+      expect(controlDeliveryQuotaPerMinute()).toBe(60);
+      expect(controlDeliveryQuotaPerMinuteMotion()).toBe(30);
+    } finally {
+      if (prev !== undefined) process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE = prev;
+      if (prevMotion !== undefined) process.env.EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION = prevMotion;
     }
   });
 

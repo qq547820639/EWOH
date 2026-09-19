@@ -64,13 +64,18 @@ export class SchedulerRunOrchestrator {
     private readonly narratorService?: SchedulingNarratorService,
   ) {}
 
-  async generatePlans(body?: { idempotencyKey?: string }): Promise<SchedulePlan[]> {
+  async generatePlans(
+    body?: { idempotencyKey?: string },
+    actor?: OrgContext,
+  ): Promise<SchedulePlan[]> {
     // P1-SSOT：遗留合成方案生成器（KEEP/CAP/BAL 伪造指标并写 ewohSchedulePlan）
     // 已删除。正式调度只走 V2 链路（createRun → SolverService → planService），
     // 本接口保留仅为兼容旧调用方：委托真实调度并把结果映射为 legacy 形状，
     // metricsJson 仅含真实 solver 指标（solverStatus/objective/solveDurationMs），不伪造。
+    // actor 必须透传：HTTP 路径下 TriggerService 强制租户语义（NEST-146），
+    // 丢 actor = 每个已认证调用方 401。
     void body;
-    const { plans } = await this.createRun({ trigger: 'MANUAL' });
+    const { plans } = await this.createRun({ trigger: 'MANUAL' }, actor);
     return plans.map((p) => this.toLegacyPlan(p));
   }
 

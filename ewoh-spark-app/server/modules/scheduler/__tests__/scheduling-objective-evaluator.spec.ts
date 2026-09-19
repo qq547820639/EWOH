@@ -373,6 +373,19 @@ describe('P0-5: SchedulingObjectiveEvaluator', () => {
   });
 
   it('CP-SAT 路径 metrics 基于 CP-SAT assignments（不再复用 heuristic shell）', async () => {
+    // NO-68j：无 travelCostService 时 CP-SAT fail-closed（矩阵缺位同矩阵失败）——
+    // 要走 worker 路径必须注入最小矩阵服务（下面本测试即注入）。
+    const matrix = {
+      buildEligibilityMatrix: jest.fn().mockResolvedValue(
+        new Map([['t1', { personIds: ['p1'], deviceIds: [] }]]),
+      ),
+      buildMatrix: jest.fn().mockResolvedValue({
+        candidates: [
+          { personId: 'p1', deviceId: null, stationId: 'S1', feasible: true,
+            distanceMeters: 10, etaSeconds: 10, dataQuality: 'FRESH', fallbackReason: null },
+        ],
+      }),
+    };
     const response: SolverResponse = {
       solverVersion: 'cpsat-v1',
       solverStatus: 'OPTIMAL',
@@ -434,7 +447,7 @@ describe('P0-5: SchedulingObjectiveEvaluator', () => {
     const solver = new CpSatSchedulingSolver(
       heuristic,
       { workerUrl: 'http://127.0.0.1:8000', timeoutMs: 50, fetch },
-      undefined,
+      matrix as never,
       undefined,
     );
     const snapshot = buildSnapshot({

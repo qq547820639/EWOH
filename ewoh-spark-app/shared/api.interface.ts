@@ -726,6 +726,12 @@ export interface IngestResponse {
   is_late?: boolean;
   /** NO-04a：ADR-009 时间语义（越 5min 时钟漂移容忍界，标记不重写） */
   clock_drift?: boolean;
+  /**
+   * NO-92a：SOC 再锚定标记。电量合理性闸门拒绝同水平跳变 `reanchorStreak` 次后，
+   * 判定为真实电量变化（持续充电/换电而非单帧毛刺）→ 接受本帧并显式标记——
+   * 消费方据此知道台账电量经历过"争议→再锚定"，不是无争议的连续观测。
+   */
+  soc_reanchored?: boolean;
 }
 
 /** 批量 Ingestion 响应 */

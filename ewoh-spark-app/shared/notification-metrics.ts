@@ -173,6 +173,8 @@ export const NOTIFICATION_ID_FAMILIES = [
       { id: 'NTF-CTRL-att-1-unauthorized_execution-role-safety_admin-app', kind: 'control_authorization' },
       // NO-68a：投递积压（命令超 SLA 仍未交付；按设备聚合，收件人是值班/班组长/设备运维）
       { id: 'NTF-CTRL-AGV-01-delivery_backlog-role-dispatcher-app', kind: 'control_authorization' },
+      // NO-70a：积压超 N 倍 SLA 升级给生产管理者（一级值班没处置动时的升级通道）
+      { id: 'NTF-CTRL-AGV-01-delivery_backlog_escalated-role-production_manager-app', kind: 'control_authorization' },
     ],
   },
   {

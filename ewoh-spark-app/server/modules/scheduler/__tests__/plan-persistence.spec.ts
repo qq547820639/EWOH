@@ -1,4 +1,6 @@
-import { PlanService } from '../plan.service';
+import { PlanService, isPlanIdUniqueViolation } from '../plan.service';
+import { ConflictException } from '@nestjs/common';
+import { ewohSchedulePlan } from '@server/database/schema';
 import { SolverService } from '../solver.service';
 import { WorldStateSnapshotService } from '../world-state.service';
 import { DispatchCoordinatorService } from '../dispatch-coordinator.service';
@@ -134,6 +136,7 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
 
   return {
     svc,
+    db,
     state,
     mocks: {
       requestDatabaseContext,
@@ -396,5 +399,111 @@ describe('Task 3: 手动资源操作 → SchedulingConstraint 触发重排', () 
     expect(persisted!.type).toBe('LOCKED_PERSON');
     expect(persisted!.active).toBe(true);
     expect((persisted!.valueJson as { personId?: string }).personId).toBe('p2');
+  });
+});
+
+describe('并发 replan：plan_id 唯一键竞态 → 409（E2E concurrency-real-pg J3 对齐）', () => {
+  /** 模拟 drizzle DrizzleQueryError：原生 postgres 错误挂 cause（带 code/constraint_name）。 */
+  function drizzleUniqueViolation(constraintName: string): Error {
+    const cause = Object.assign(
+      new Error(
+        `duplicate key value violates unique constraint "${constraintName}"`,
+      ),
+      { code: '23505', constraint_name: constraintName },
+    );
+    const err = new Error(
+      `Failed query: insert into "ewoh_schedule_plan" (...) — duplicate key value violates unique constraint "${constraintName}"`,
+    );
+    (err as { cause?: unknown }).cause = cause;
+    return err;
+  }
+
+  function seedReplanRace() {
+    const handle = makePlanServiceWith({
+      plans: [
+        {
+          planId: 'PLAN-SRC',
+          planName: 'src',
+          strategy: 'scheduling_v2',
+          status: 'approved',
+          version: 1,
+          snapshotVersion: 'WS-1',
+          policyVersion: 7,
+          solverVersion: 'heuristic-v2',
+          horizonMinutes: 360,
+        },
+      ],
+      assignments: [],
+      tasks: [],
+    });
+    handle.mocks.schedulingPolicyService.getPolicy.mockResolvedValue(
+      makePolicy(7),
+    );
+    handle.mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue({
+      snapshotVersion: 'WS-LATEST',
+    });
+    handle.mocks.solverService.solve.mockResolvedValue(fullPlan());
+    return handle;
+  }
+
+  it('isPlanIdUniqueViolation 识别直接挂 code 与 cause 包装两种 23505 形态', () => {
+    expect(
+      isPlanIdUniqueViolation(drizzleUniqueViolation('ewoh_schedule_plan_plan_id_key')),
+    ).toBe(true);
+    expect(
+      isPlanIdUniqueViolation(
+        Object.assign(new Error('dup'), {
+          code: '23505',
+          constraint_name: 'ewoh_schedule_plan_plan_id_key',
+        }),
+      ),
+    ).toBe(true);
+    // 非该表唯一键 / 非唯一键错误 → 不识别
+    expect(
+      isPlanIdUniqueViolation(drizzleUniqueViolation('ewoh_idempotency_keys_org_scope_key')),
+    ).toBe(false);
+    expect(isPlanIdUniqueViolation(Object.assign(new Error('x'), { code: '23P01' }))).toBe(false);
+    expect(isPlanIdUniqueViolation(new Error('boom'))).toBe(false);
+  });
+
+  it('replan 撞 plan_id 唯一键（23505）→ ConflictException，而非裸驱动错误当 500', async () => {
+    const { svc, db, state } = seedReplanRace();
+    const originalInsert = db.insert.bind(db);
+    (db as { insert: unknown }).insert = (table: unknown) => {
+      if (table === ewohSchedulePlan) {
+        // persistPlan 形态：await db.insert(...).values(...)（无 returning），
+        // 桩以 rejected promise 使 await 抛出。
+        return {
+          values: () =>
+            Promise.reject(drizzleUniqueViolation('ewoh_schedule_plan_plan_id_key')),
+        };
+      }
+      return originalInsert(table);
+    };
+
+    await expect(
+      svc.replan('PLAN-SRC', { lockedConstraints: [] }, testOrgContext()),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // 竞态输家事务中止：原方案不被本请求标记 superseded（由赢家负责）
+    expect(state.plans.get('PLAN-SRC')?.status).toBe('approved');
+  });
+
+  it('其他唯一键冲突（非 plan_id）不被误映射，原样抛出', async () => {
+    const { svc, db } = seedReplanRace();
+    const originalInsert = db.insert.bind(db);
+    const rawError = drizzleUniqueViolation('uq_some_other_table_key');
+    (db as { insert: unknown }).insert = (table: unknown) => {
+      if (table === ewohSchedulePlan) {
+        return {
+          values: () => Promise.reject(rawError),
+        };
+      }
+      return originalInsert(table);
+    };
+
+    await expect(
+      svc.replan('PLAN-SRC', { lockedConstraints: [] }, testOrgContext()),
+    ).rejects.toBe(rawError);
   });
 });

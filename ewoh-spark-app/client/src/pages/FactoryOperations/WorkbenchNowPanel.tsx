@@ -15,18 +15,44 @@
  * 队列空时显式说"当前没有需要你决策的事项——系统正常运行中"（正面确认，不是空态）。
  */
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, BellRing, ChevronRight, Inbox } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BellRing, CheckCircle2, Package, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getWorkbenchNow, type WorkbenchNowItem } from '../../api/workbench';
 
-const PRIORITY_LABELS: Record<number, { label: string; className: string }> = {
-  1: { label: '紧急', className: 'bg-risk-blocked-soft text-risk-blocked-foreground border-risk-blocked-border' },
-  2: { label: '高', className: 'bg-risk-degraded-soft text-risk-degraded-foreground border-risk-degraded-border' },
-  4: { label: '通知', className: 'bg-muted text-muted-foreground border-border' },
+// NO-68e：severity 徽章改用语义 token（lint-design-tokens 拦截具名颜色；语义 token
+// 会随主题/对比度联动，硬编码 named color 不会）。图标颜色走同族语义色。
+const SEVERITY_STYLE: Record<number, { label: string; badge: string; icon: React.ReactNode }> = {
+  1: {
+    label: '紧急',
+    badge: 'inline-flex items-center gap-1 rounded-full border border-risk-blocked-border bg-risk-blocked-soft px-2 py-0.5 text-xs font-semibold text-risk-blocked-foreground',
+    icon: <AlertTriangle className="size-3.5 text-risk-blocked-foreground" />,
+  },
+  2: {
+    label: '高',
+    badge: 'inline-flex items-center gap-1 rounded-full border border-risk-degraded-border bg-risk-degraded-soft px-2 py-0.5 text-xs font-semibold text-risk-degraded-foreground',
+    icon: <AlertTriangle className="size-3.5 text-risk-degraded-foreground" />,
+  },
+  3: {
+    label: '缺口',
+    badge: 'inline-flex items-center gap-1 rounded-full border border-risk-normal-border bg-risk-normal-soft px-2 py-0.5 text-xs font-semibold text-risk-normal-foreground',
+    icon: <Package className="size-3.5 text-risk-normal-foreground" />,
+  },
+  4: {
+    label: '待审批',
+    badge: 'inline-flex items-center gap-1 rounded-full border border-risk-warning-border bg-risk-warning-soft px-2 py-0.5 text-xs font-semibold text-risk-warning-foreground',
+    icon: <ShieldCheck className="size-3.5 text-risk-warning-foreground" />,
+  },
+  5: {
+    label: '通知',
+    badge: 'inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground',
+    icon: <BellRing className="size-3.5 text-muted-foreground" />,
+  },
 };
 
 const KIND_LABELS: Record<string, string> = {
   anomaly: '异常',
+  material_gap: '物料缺口',
+  approval: '待审批',
   notification: '提醒',
 };
 
@@ -60,16 +86,18 @@ export function WorkbenchNowPanel(): React.ReactElement {
   if (items.length === 0) {
     return (
       <section className="rounded-lg border border-border bg-card p-4" data-testid="workbench-now-empty">
-        <p className="text-sm text-muted-foreground">
-          当前没有需要你决策的事项——系统正常运行中。
-        </p>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="size-5 text-semantic-success" />
+          <p className="text-sm font-medium text-foreground">
+            当前没有需要你决策的事项——系统正常运行中。
+          </p>
+        </div>
       </section>
     );
   }
 
   const critical = items.filter((i) => i.priority === 1);
   const high = items.filter((i) => i.priority === 2);
-  const normal = items.filter((i) => i.priority > 2);
 
   return (
     <section
@@ -78,54 +106,64 @@ export function WorkbenchNowPanel(): React.ReactElement {
       aria-label="现在需要我做什么"
     >
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">
+        <h2 className="text-base font-semibold text-foreground">
           需要你决策的事项
-          <span className="ml-2 text-muted-foreground font-normal">
-            {critical.length > 0 && <span className="text-risk-blocked-foreground">紧急 {critical.length} · </span>}
-            {high.length > 0 && <span className="text-risk-degraded-foreground">高 {high.length} · </span>}
-            共 {items.length} 项
-          </span>
         </h2>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {critical.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-risk-blocked-border bg-risk-blocked-soft px-2 py-0.5 font-semibold text-risk-blocked-foreground">
+              紧急 {critical.length}
+            </span>
+          )}
+          {high.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-risk-degraded-border bg-risk-degraded-soft px-2 py-0.5 font-semibold text-risk-degraded-foreground">
+              高 {high.length}
+            </span>
+          )}
+          <span>共 {items.length} 项</span>
+        </div>
       </div>
 
-      <ul className="space-y-2" role="list">
-        {items.slice(0, 10).map((item) => (
-          <WorkbenchNowRow key={item.ref} item={item} />
+      <ul className="space-y-1.5" role="list">
+        {items.slice(0, 12).map((item) => (
+          <NowQueueRow key={item.kind + ':' + item.ref} item={item} />
         ))}
       </ul>
-      {items.length > 10 && (
+      {items.length > 12 && (
         <p className="mt-2 text-xs text-muted-foreground">
-          还有 {items.length - 10} 项未显示（按优先级截断）
+          还有 {items.length - 12} 项未显示（按优先级截断）
         </p>
       )}
     </section>
   );
 }
 
-function WorkbenchNowRow({ item }: { item: WorkbenchNowItem }): React.ReactElement {
-  const style = PRIORITY_LABELS[item.priority] ?? PRIORITY_LABELS[4]!;
+function NowQueueRow({ item }: { item: WorkbenchNowItem }): React.ReactElement {
+  const style = SEVERITY_STYLE[item.priority] ?? SEVERITY_STYLE[5]!;
   const kindLabel = KIND_LABELS[item.kind] ?? item.kind;
+
   return (
     <li
-      className="flex items-center justify-between gap-2 rounded-md border border-border bg-background/60 px-3 py-2"
+      className="group flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-border hover:bg-muted/50"
       data-testid={`workbench-item-${item.kind}`}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-xs font-medium ${style.className}`}
-        >
-          {style.label}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{kindLabel}</span>
-        <span className="truncate text-sm text-foreground">{item.title}</span>
-      </div>
+      {style.icon}
+      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${style.badge}`}>
+        {kindLabel}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+        {item.title}
+        {item.detail && (
+          <span className="ml-1.5 text-xs text-muted-foreground">{item.detail}</span>
+        )}
+      </span>
       <Link
         to={item.route}
-        className="shrink-0 text-xs font-medium text-primary hover:underline"
+        className="shrink-0 rounded px-2 py-1 text-xs font-medium text-primary opacity-0 transition-opacity hover:bg-primary/10 group-hover:opacity-100"
         aria-label={`去处理：${item.title}`}
       >
         去处理
-        <ChevronRight className="ml-0.5 inline size-3" />
+        <ArrowRight className="ml-0.5 inline size-3" />
       </Link>
     </li>
   );

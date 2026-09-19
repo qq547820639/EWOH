@@ -776,3 +776,24 @@ export async function rollbackPolicyActivation(
   });
   return res.data;
 }
+
+/** NO-89a：门禁指标历史序列（最近的在前；趋势可见，漂移早发现）。 */
+export interface KpiHistoryEntry {
+  periodStart: string;
+  periodEnd: string;
+  createdAt: string;
+  kpi: {
+    onTimeRate: number | null;
+    latenessP95Ms: number | null;
+    periodStart: string;
+    periodEnd: string;
+  };
+}
+
+export async function getKpiHistory(limit = 12): Promise<KpiHistoryEntry[]> {
+  const res = await axiosForBackend({
+    url: `/api/scheduler/kpi/history?limit=${encodeURIComponent(String(limit))}`,
+    method: 'GET',
+  });
+  return res.data;
+}

@@ -2629,6 +2629,16 @@ export const ewohWorldStateTable = ewohWorldState;
 export const ewohSavedViewsTable = ewohSavedViews;
 export const ewohWorkbenchExportTaskTable = ewohWorkbenchExportTask;
 export const ewohSchedulingRunTable = ewohSchedulingRun;
+export const ewohControlBacklogSnapshot = pgTable("ewoh_control_backlog_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: varchar("org_id", { length: 255 }).notNull(),
+  slaMs: integer("sla_ms").notNull(),
+  escalationMultiplier: integer("escalation_multiplier").notNull(),
+  totals: jsonb("totals").notNull(),
+  devices: jsonb("devices").notNull().default([]),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const ewohSchedulingPlanAssignmentTable = ewohSchedulingPlanAssignment;
 export const ewohSchedulingConstraintTable = ewohSchedulingConstraint;
 export const ewohWorldStateSnapshotTable = ewohWorldStateSnapshot;

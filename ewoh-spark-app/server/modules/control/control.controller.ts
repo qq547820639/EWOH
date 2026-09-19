@@ -105,6 +105,31 @@ export class ControlController {
 export class ControlDeliveryBacklogController {
   constructor(private readonly controlService: ControlService) {}
 
+  /**
+   * NO-77a：投递积压**实时快照**（只读）——两次巡检之间积压也必须可见、可数。
+   * 判定与 sweep 同一实现；看板/工作台按它展示聚合数字。
+   */
+  @Get('delivery-backlog/status')
+  @Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops')
+  deliveryBacklogStatus(@Req() request: { userContext: OrgContext }) {
+    return this.controlService.getDeliveryBacklogSnapshot(request.userContext);
+  }
+
+  /**
+   * NO-91a：积压**历史序列**（最近在前）——趋势可见，漂移早发现。
+   */
+  @Get('delivery-backlog/history')
+  @Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops')
+  deliveryBacklogHistory(
+    @Query('limit') limit?: string,
+    @Req() request: { userContext: OrgContext } = { userContext: undefined as unknown as OrgContext },
+  ) {
+    return this.controlService.getDeliveryBacklogHistory(
+      request.userContext,
+      limit ? Number(limit) : undefined,
+    );
+  }
+
   @Post('delivery-backlog/sweep')
   @Roles('global_admin', 'dispatcher', 'workshop_lead', 'device_ops')
   sweepDeliveryBacklog(@Req() request: { userContext: OrgContext }) {

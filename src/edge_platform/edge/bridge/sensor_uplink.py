@@ -462,6 +462,47 @@ class SensorUplinkBridge:
             return "retry"
         if verdict == "rejected":
             return "rejected"
+        # 2026-09-15 仿真对抗发现：批量端点（/api/ingest/exoskeleton/batch）返回
+        # 201 + 逐帧 results，此前整组按 HTTP 结果一口径计数——平台逐帧拒绝
+        # （如 CLOCK_DRIFT_FUTURE_TS）被桥记成 sent，账目失真。现按 results[]
+        # 逐帧分类：accepted=true → sent；accepted=false&skipped=true → duplicate；
+        # accepted=false → rejected + 单帧死信。results 缺失/错位时退回整组口径。
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if isinstance(results, list) and len(results) == len(entries):
+            sent_n = dup_n = 0
+            dead: list[dict] = []
+            for entry, item in zip(entries, results):
+                if not isinstance(item, dict):
+                    sent_n += 1
+                    continue
+                rid_ok = (
+                    item.get("record_id") is None
+                    or entry.get("record_id") is None
+                    or str(item.get("record_id")) == str(entry.get("record_id"))
+                )
+                if not rid_ok:
+                    sent_n += 1  # results 与请求错位：退回乐观口径，不误判
+                    continue
+                if item.get("accepted") is False and item.get("skipped") is True:
+                    dup_n += 1
+                elif item.get("accepted") is False:
+                    dead.append(entry)
+                else:
+                    sent_n += 1
+                    self._trace_ids(entry, "sent_record_ids")
+            with self._lock:
+                self._stats["sent"] += sent_n
+                self._stats["duplicates"] += dup_n
+            self._bump(endpoint, "sent", sent_n)
+            self._bump(endpoint, "duplicates", dup_n)
+            if dead:
+                # rejected 的总数/分端点计数由 _dead_letter 内部累加（不要重复计）
+                self._dead_letter(dead, "batch_item_rejected")
+                with self._lock:
+                    dead_uids = {e["_uid"] for e in dead}
+                    self._buffer = deque(e for e in self._buffer if e["_uid"] not in dead_uids)
+            self._persist()
+            return "sent"
         with self._lock:
             if verdict == "duplicate":
                 self._stats["duplicates"] += len(entries)

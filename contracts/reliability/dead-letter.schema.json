@@ -2,26 +2,48 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "ewoh:///reliability/dead-letter/v1",
   "title": "EWOH Canonical Dead Letter Record",
-  "description": "EWOH Dead Letter 体系契约（ADR-024 / NO-11a，§20 Reliability 失败终态）。永久失败消息的终态台账：envelope 快照必填（失败证据可审计，§3）；reason ∈ 封闭注册表（contract_violation/unknown_event_type/permanent_failure/ttl_expired/max_attempts_exceeded）；status ∈ {pending, requeued, discarded}（人审重放语义：requeue 时 attempts+1，杜绝自动无限重试）；discarded 必须带非空 discardedReason（丢弃显式理由，§33 不静默）；sourceId 声明失败源；auditTrail 必须 true。",
+  "description": "EWOH Dead Letter 体系契约（ADR-024 / NO-11a，§20 Reliability 失败终态）。永久失败消息的终态台账：envelope 快照必填（失败证据可审计，§3）；reason ∈ 封闭注册表（contract_violation/unknown_event_type/permanent_failure/ttl_expired/max_attempts_exceeded/clock_drift_future/event_write_failed）；status ∈ {pending, requeued, discarded}（人审重放语义：requeue 时 attempts+1，杜绝自动无限重试）；discarded 必须带非空 discardedReason（丢弃显式理由，§33 不静默）；sourceId 声明失败源；auditTrail 必须 true。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "reasonRegistry", "statusRegistry", "rules"],
+  "required": [
+    "schemaVersion",
+    "reasonRegistry",
+    "statusRegistry",
+    "rules"
+  ],
   "properties": {
-    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
     "reasonRegistry": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[a-z_]{1,32}$" }
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z_]{1,32}$"
+      }
     },
     "statusRegistry": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[a-z_]{1,24}$" }
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z_]{1,24}$"
+      }
     },
     "rules": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["envelopeContract", "reasonContract", "attemptContract", "discardContract", "sourceContract", "auditContract", "noAutoRetry"],
+      "required": [
+        "envelopeContract",
+        "reasonContract",
+        "attemptContract",
+        "discardContract",
+        "sourceContract",
+        "auditContract",
+        "noAutoRetry"
+      ],
       "properties": {
         "envelopeContract": {
           "type": "string",
@@ -56,10 +78,19 @@
   },
   "schemaVersion": "1.0.0",
   "reasonRegistry": [
-    "contract_violation", "unknown_event_type", "permanent_failure",
-    "ttl_expired", "max_attempts_exceeded"
+    "contract_violation",
+    "unknown_event_type",
+    "permanent_failure",
+    "ttl_expired",
+    "max_attempts_exceeded",
+    "clock_drift_future",
+    "event_write_failed"
   ],
-  "statusRegistry": ["pending", "requeued", "discarded"],
+  "statusRegistry": [
+    "pending",
+    "requeued",
+    "discarded"
+  ],
   "rules": {
     "envelopeContract": "envelope 快照必填——失败证据可审计（§3 Factory Truth，失败也要回答为什么）",
     "reasonContract": "reason ∈ reasonRegistry 封闭注册表（未注册失败原因整体拒绝）",

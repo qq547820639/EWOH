@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "target": "ES2021",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@server/*": ["../server/*"],
+      "@shared/*": ["../shared/*"],
+      "@client/*": ["../client/*"]
+    }
+  },
+  "include": ["scripts/**/*", "server/**/*", "shared/**/*"]
+}

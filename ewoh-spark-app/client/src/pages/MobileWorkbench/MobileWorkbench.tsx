@@ -528,6 +528,45 @@ const MobileWorkbench = (): React.ReactElement => {
               </div>
               <Badge>{orderStatusLabel(activeOrder.workOrder.status)}</Badge>
             </div>
+            {/* NO-79a：设备执行状态行——"我的工单为什么没动"的现场答案。
+                排队/未交付不是失败：设备忙时等它空下来，配额用尽等下一分钟；
+                查不到派工设备时如实缺项（不伪造"设备正常"）。 */}
+            {activeOrder.deviceExecution && (
+              <div className="mt-2 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs" data-testid="order-device-execution">
+                <span className="font-mono">{activeOrder.deviceExecution.deviceId}</span>
+                {(activeOrder.deviceExecution.otherStuckCount ?? 0) > 0 ? (
+                  // NO-85a：协同设备未就绪必须可见（首台空闲 ≠ 万事大吉）
+                  <span className="text-risk-degraded-foreground">
+                    {' '}+{activeOrder.deviceExecution.otherStuckCount} 台协同设备未就绪
+                  </span>
+                ) : (activeOrder.deviceExecution.otherDevices?.length ?? 0) > 0 ? (
+                  <span className="text-muted-foreground">
+                    {' '}+{activeOrder.deviceExecution.otherDevices?.length} 台协同（均已就绪）
+                  </span>
+                ) : null}
+                {' · '}
+                {activeOrder.deviceExecution.overdue > 0 ? (
+                  // 积压（超 SLA）最严重 → 优先判定；已由巡检叫到人，工人只需知道"已通知值班"
+                  <span className="text-risk-blocked-foreground">
+                    命令投递积压（最久等待 {Math.max(1, Math.round((activeOrder.deviceExecution.oldestWaitingMs ?? 0) / 60_000))} 分钟）——已通知值班
+                  </span>
+                ) : activeOrder.deviceExecution.inFlight > 0 ? (
+                  <span>设备执行中（等待回执）</span>
+                ) : activeOrder.deviceExecution.queued > 0 ? (
+                  // NO-81a：排队原因细分——两种排队都不是失败，但**等待的解除条件不同**
+                  <span className="text-risk-degraded-foreground">
+                    设备在执行上一单（本单排队 {activeOrder.deviceExecution.queued} 条，等它空下来）——不是工单失败
+                  </span>
+                ) : (activeOrder.deviceExecution.queuedReasons?.quota ?? 0) > 0
+                  || activeOrder.deviceExecution.awaitingDelivery > 0 ? (
+                  <span className="text-risk-degraded-foreground">
+                    投递限流中（等下一分钟配额窗口）——不是工单失败
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">设备空闲，可执行</span>
+                )}
+              </div>
+            )}
             <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
               {actionableSteps.map((step) => {
                 const failed = failedMutation[step.stepId];

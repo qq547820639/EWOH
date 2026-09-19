@@ -17,6 +17,7 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   testMatch: ['<rootDir>/test/e2e/**/*.e2e.spec.ts'],
+  setupFiles: ['<rootDir>/test/e2e/e2e-global-env.ts'],
   testTimeout: 60000,
   maxWorkers: 1,
   clearMocks: true,

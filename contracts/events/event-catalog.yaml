@@ -46,6 +46,7 @@ x-event-types:
   - PolicyRolledBack
   - EntityIdentityMapped
   - DeviceLowBattery
+  - DeviceThermalRisk
   - WorkerHighLoad
   - WorkerPostureRisk
   - DeviceOffline
@@ -226,6 +227,10 @@ channels:
     publish:
       message:
         $ref: '#/components/messages/DeviceLowBattery'
+  device.thermal_risk:
+    publish:
+      message:
+        $ref: '#/components/messages/DeviceThermalRisk'
   worker.high_load:
     publish:
       message:
@@ -1464,6 +1469,31 @@ components:
           eventId: { type: string }
           deviceId: { type: string }
           batteryPct: { type: number }
+          occurredAt: { type: string, format: date-time }
+        required:
+          - orgId
+          - eventId
+          - deviceId
+          - occurredAt
+    DeviceThermalRisk:
+      name: DeviceThermalRisk
+      title: Device Thermal Risk
+      summary: Motor/battery temperature estimated from load×time crossed the thermal threshold (model estimate, not a measurement).
+      contentType: application/cloudevents+json
+      x-cloud-events:
+        specversion: '1.0'
+        type: com.ewoh.device.thermal_risk
+        source: ewoh:///organizations/{orgId}/devices/{deviceId}
+        subject: device/{deviceId}
+        datacontenttype: application/json
+      payload:
+        type: object
+        properties:
+          orgId: { type: string }
+          eventId: { type: string }
+          deviceId: { type: string }
+          estimatedTempC: { type: number }
+          modelVersion: { type: string }
           occurredAt: { type: string, format: date-time }
         required:
           - orgId

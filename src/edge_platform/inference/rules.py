@@ -10,6 +10,9 @@
 - TIME_SYNC_ANOMALY  L1  时间戳倒退/漂移超过阈值（Task 21）
 - PACKET_LOSS_BURST  L1  packet_loss_pct>packet_loss_enter_pct 持续 packet_loss_sec（Task 21）
 - ACTION_ANOMALY_LOW_QUALITY  L1  动作异常(unknown)且 data_quality!=good（Task 21，on_inference 触发）
+- THERMAL_ACCUMULATION L2  负载×时间积分推算电机温度 ≥ thermal_warn_c（热积累；
+  线协议无温度字段，估计器见 inference/thermal.py——模型推算非测量，
+  trigger.condition 带模型版本与估计值）
 
 每个 (设备, 事件代码) 有冷却（默认 30s）防止刷屏；条件消失时输出带 end_time 的收口 draft。
 Task 22 滞回区间（hysteresis）：enter_threshold 与 exit_threshold 分离，
@@ -18,6 +21,7 @@ Task 22 滞回区间（hysteresis）：enter_threshold 与 exit_threshold 分离
 """
 
 from . import ms_to_ts, ts_to_ms
+from .thermal import MODEL_VERSION, ThermalEstimator
 
 # 现场默认阈值
 # exit_*  值为 None 时按规则自动从 enter 派生（见 _derive_exit_thresholds）。
@@ -43,6 +47,13 @@ DEFAULT_CONFIG = {
     "packet_loss_exit_pct": None,  # auto: packet_loss_enter_pct * 0.8
     "packet_loss_sec": 5,
     "action_anomaly_sec": 5,
+    # THERMAL_ACCUMULATION（热积累估计；系数为假设值待真机标定，见 inference/thermal.py）
+    "thermal_warn_c": 60.0,
+    "thermal_exit_c": None,  # auto: thermal_warn_c - 5（反向裕度滞回）
+    "thermal_k_heat": 0.00105,
+    "thermal_tau_cool_sec": 120.0,
+    "thermal_ambient_c": 25.0,
+    "thermal_dt_cap_sec": 5.0,
 }
 
 # 演示短窗（现场演示等待时间不可过长）
@@ -58,6 +69,7 @@ SEVERITY = {
     "TIME_SYNC_ANOMALY": "L1",
     "PACKET_LOSS_BURST": "L1",
     "ACTION_ANOMALY_LOW_QUALITY": "L1",
+    "THERMAL_ACCUMULATION": "L2",
 }
 
 
@@ -79,6 +91,7 @@ class RuleEngine:
         "LOW_BATTERY",
         "TIME_SYNC_ANOMALY",
         "PACKET_LOSS_BURST",
+        "THERMAL_ACCUMULATION",
     )
     INFERENCE_RULE_IDS = ("ACTION_ANOMALY_LOW_QUALITY",)
 
@@ -94,6 +107,8 @@ class RuleEngine:
         self._pending = []  # on_recover 产生的收口 draft，随下次 on_telemetry 吐出
         self._last_ts = {}  # device_id -> 上一条遥测 ms（时间戳倒退/漂移检测）
         self._person = {}  # device_id -> 最新 person_id（on_inference 复用）
+        self._thermal = {}  # device_id -> ThermalEstimator（热积累逐帧积分状态）
+        self._thermal_last_ms = {}  # device_id -> 上一条遥测 ms（热模型 dt 用，独立于漂移检测基线）
 
     # ---- exit_threshold 自动派生（Task 22 滞回区间） ----
     def _derive_exit_thresholds(self):
@@ -115,6 +130,9 @@ class RuleEngine:
             c["time_sync_exit_ms"] = c["time_sync_drift_ms"] * 0.8
         if c.get("packet_loss_exit_pct") is None:
             c["packet_loss_exit_pct"] = c["packet_loss_enter_pct"] * 0.8
+        if c.get("thermal_exit_c") is None:
+            # "高于阈值"类，但热积累是慢变量：反向裕度用固定 5°C（比比例裕度更抗抖动）
+            c["thermal_exit_c"] = c["thermal_warn_c"] - 5.0
 
     # ---- 内部工具 ----
     def _st(self, dev):
@@ -128,6 +146,7 @@ class RuleEngine:
                 "packet_loss_since": None,
                 "time_sync_since": None,
                 "action_anomaly_since": None,
+                "thermal_since": None,
             },
         )
 
@@ -324,6 +343,51 @@ class RuleEngine:
             f"packet_loss_pct>{self.cfg['packet_loss_enter_pct']} 持续>={self.cfg['packet_loss_sec']}s",
             cond_exit=pl_exit,
         )
+
+        # THERMAL_ACCUMULATION：负载×时间积分推算电机温度 ≥ warn 阈值（滞回收口）。
+        # dt 取相邻遥测帧间隔（帧时间戳口径）；超 dt_cap 的大间隔按上限积分——
+        # 长时间缺帧不允许瞬间冷却到底/加热到顶；倒退/补传帧 dt 按 0（不伪造物理）。
+        # 估计值不是测量事实：condition 里显式带模型版本，消费方按"模型推算"对待。
+        torque_th = _f(tel.get("torque_nm"))
+        est = self._thermal.get(dev)
+        if est is None:
+            est = self._thermal[dev] = ThermalEstimator(
+                k_heat=self.cfg["thermal_k_heat"],
+                tau_cool_sec=self.cfg["thermal_tau_cool_sec"],
+                ambient_c=self.cfg["thermal_ambient_c"],
+                dt_cap_sec=self.cfg["thermal_dt_cap_sec"],
+            )
+        last_ms = self._thermal_last_ms.get(dev)
+        # 基线只前进不后退：倒退/补传帧（ts<=last）dt 按 0 不积分，且不能把基线
+        # 拖回过去——否则下一正常帧会按 dt_cap 凭空积分出最多 5s 的假物理。
+        if last_ms is None or ts_ms > last_ms:
+            self._thermal_last_ms[dev] = ts_ms
+        dt_sec = None if last_ms is None else max(0, ts_ms - last_ms) / 1000.0
+        temp_c = est.update(torque_th, dt_sec)
+        th_enter = temp_c >= self.cfg["thermal_warn_c"]
+        th_exit = temp_c >= self.cfg["thermal_exit_c"]
+        drafts += self._track(
+            "thermal_since",
+            th_enter,
+            ts_ms,
+            0,  # 温度越线即触发（热积累已在模型里积分，不再叠加持续时间条件）
+            "THERMAL_ACCUMULATION",
+            dev,
+            person,
+            src,
+            "thermal_est({})={:.1f}°C>={:.1f}°C（负载×时间推算，非测量）".format(
+                MODEL_VERSION, temp_c, self.cfg["thermal_warn_c"]
+            ),
+            cond_exit=th_exit,
+        )
+        # 目录契约的结构化指标（DeviceThermalRisk payload：estimatedTempC/
+        # modelVersion）——EventEngine 合并进信封 payload，平台侧不必解析文案。
+        # 仅挂在"开启"草稿上（收口草稿不带指标，避免噪声）。
+        if drafts and drafts[-1].get("event_code") == "THERMAL_ACCUMULATION" and "end_time" not in drafts[-1]:
+            drafts[-1]["metrics"] = {
+                "estimatedTempC": round(temp_c, 1),
+                "modelVersion": MODEL_VERSION,
+            }
         return drafts
 
     def on_inference(self, res):

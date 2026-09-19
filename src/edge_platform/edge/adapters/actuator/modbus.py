@@ -44,10 +44,13 @@ LoopbackActuatorTransport    ← 复用既有确定性设备语义（移动/电�
 
 from __future__ import annotations
 
+import os
+import random
 import socket
 import socketserver
 import struct
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -123,6 +126,19 @@ class ModbusError(RuntimeError):
     """Modbus 层错误（连接/超时/异常响应）；调用方必须显式处理，不吞。"""
 
 
+#: 重连退避（NO-75a）：现场网关抖动时主站不能 hammer 设备。指数退避 + 全抖动 + 封顶。
+RECONNECT_BACKOFF_BASE_S = 0.5
+RECONNECT_BACKOFF_MAX_S = 30.0
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        raw = float(os.getenv(name, "") or default)
+        return raw if raw > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
 class ModbusTcpActuatorTransport(ActuatorTransport):
     """Modbus/TCP 主站 Transport：真实帧 + 确定性设备语义（由从站提供）。
 
@@ -144,6 +160,8 @@ class ModbusTcpActuatorTransport(ActuatorTransport):
         register_map: RegisterMap | None = None,
         timeout: float = 2.0,
         unit_id: int | None = None,
+        backoff_base_s: float | None = None,
+        backoff_max_s: float | None = None,
     ):
         self.host = str(host)
         self.port = int(port)
@@ -160,17 +178,51 @@ class ModbusTcpActuatorTransport(ActuatorTransport):
         self._command_seq = 0
         self._last_fault: str | None = None
         self._closed = False
+        #: NO-75a：重连退避状态（base 可被 env 覆盖；max 封顶；jitter 防同步惊群）。
+        self._backoff_base_s = (
+            float(backoff_base_s)
+            if backoff_base_s is not None
+            else _env_float("EWOH_MODBUS_RECONNECT_BACKOFF_BASE_S", RECONNECT_BACKOFF_BASE_S)
+        )
+        self._backoff_max_s = (
+            float(backoff_max_s)
+            if backoff_max_s is not None
+            else _env_float("EWOH_MODBUS_RECONNECT_BACKOFF_MAX_S", RECONNECT_BACKOFF_MAX_S)
+        )
+        self._backoff_seconds = 0.0
+        self._backoff_until = 0.0
+        self.reconnects = 0
 
     # ── 连接管理 ─────────────────────────────────────────────────────
     def connect(self) -> None:
         if self._sock is not None:
             return
+        # NO-75a：退避窗口内**快速失败**（不发起网络请求）——网关还在抖时，每次轮询都
+        # 真连一次等于 hammer 设备；窗口过了才允许下一次真实连接。
+        if time.monotonic() < self._backoff_until:
+            raise ModbusError(
+                f"reconnect_backoff:{max(0, int((self._backoff_until - time.monotonic()) * 1000))}ms"
+            )
         try:
             sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as exc:
+            self._register_failed_connect()
             raise ModbusError(f"connect_failed:{type(exc).__name__}") from exc
         sock.settimeout(self.timeout)
         self._sock = sock
+        self._backoff_seconds = 0.0
+        self._backoff_until = 0.0
+
+    def _register_failed_connect(self) -> None:
+        """失败后拉长退避：base → ×2 → … → max；full jitter（防多主站同步惊群）。"""
+        self.reconnects += 1
+        self._backoff_seconds = (
+            self._backoff_base_s
+            if self._backoff_seconds <= 0
+            else min(self._backoff_max_s, self._backoff_seconds * 2)
+        )
+        delay = self._backoff_seconds * (0.5 + random.random() / 2)
+        self._backoff_until = time.monotonic() + min(delay, self._backoff_max_s)
 
     def close(self) -> None:
         self._closed = True
@@ -198,9 +250,11 @@ class ModbusTcpActuatorTransport(ActuatorTransport):
                 r_tx, protocol, length, _unit = struct.unpack(">HHHB", raw_header)
                 body = self._recv_exactly(max(int(length) - 1, 0))
             except (OSError, TimeoutError) as exc:
-                # 连接已不可信：丢弃句柄，让下一次调用重连（不假装成功）
+                # 连接已不可信：丢弃句柄，让下一次调用重连（不假装成功）；
+                # NO-75a：同时进入退避窗口——掉线后立刻重试就是 hammer 设备。
                 self.close()
                 self._closed = False
+                self._register_failed_connect()
                 raise ModbusError(f"io_error:{type(exc).__name__}") from exc
         if protocol != 0:
             raise ModbusError(f"bad_protocol_id:{protocol}")
@@ -241,6 +295,30 @@ class ModbusTcpActuatorTransport(ActuatorTransport):
         if body[0] != FC_WRITE_SINGLE:
             raise ModbusError(f"unexpected_function:{body[0]}")
 
+    def _write_registers(self, start: int, values: list[int]) -> None:
+        """NO-75a：FC16 **批量写**——把一条命令的整块寄存器写进**同一个 PDU**。
+
+        为什么：此前 dispatch 是 2~3 次 FC06 单寄存器往返，靠"命令码最后写"的
+        顺序纪律防撕裂；慢扫描的从站仍可能读到中间态。合并为单次 FC16 后，
+        从站在 PDU 级原子生效（命令码与参数同帧到达），撕裂写在**协议层**不可能，
+        且 3 次往返 → 1 次。地址必须连续（FC16 语义）；越界由从站异常响应兜底。
+        """
+        if not values:
+            raise ModbusError("batch_write_empty")
+        count = len(values)
+        if count > 123:  # FC16 单帧上限（协议 0x7B）
+            raise ModbusError(f"batch_write_too_long:{count}")
+        for value in values:
+            if not 0 <= int(value) <= 0xFFFF:
+                raise ModbusError(f"value_out_of_range:{value}")
+        pdu = (
+            struct.pack(">BHHB", FC_WRITE_MULTIPLE, start, count, count * 2)
+            + struct.pack(f">{count}H", *[int(v) for v in values])
+        )
+        body = self._request(pdu)
+        if body[0] != FC_WRITE_MULTIPLE:
+            raise ModbusError(f"unexpected_function:{body[0]}")
+
     # ── ActuatorTransport ───────────────────────────────────────────
     def send(self, command: ActuatorCommand) -> TransportResult:
         """把命令写进从站寄存器；从站执行结果由 `recv()` 读回（两件事分开）。"""
@@ -255,13 +333,20 @@ class ModbusTcpActuatorTransport(ActuatorTransport):
                         accepted=False, reason="target_station_required", state=self._safe_state()
                     )
                 self._pending_target = target
-                self._write_register(self.map.command_target, station_hash16(target))
             self._command_seq += 1
             code = ACTUATOR_COMMANDS.index(key) + 1
-            # 顺序有讲究：先写参数（目标/序号）、最后写命令码——命令码是"提交点"，
-            # 避免从站读到"命令已到但参数还没到"的半成品状态。
-            self._write_register(self.map.command_seq, self._command_seq % 0x10000)
-            self._write_register(self.map.command, code)
+            # NO-75a：命令块（command/command_target/command_seq）**单次 FC16 原子写入**。
+            # 此前是 2~3 次 FC06 靠"命令码最后写"防撕裂——升级为协议级原子（同 PDU 生效）。
+            block_start = min(self.map.command, self.map.command_target, self.map.command_seq)
+            block_end = max(self.map.command, self.map.command_target, self.map.command_seq)
+            block: dict[int, int] = {}
+            for address in range(block_start, block_end + 1):
+                block[address] = 0  # 未涉及的寄存器写 0（不改变语义：从站按命令码分发）
+            block[self.map.command] = code
+            if key == "dispatch_task":
+                block[self.map.command_target] = station_hash16(target)
+            block[self.map.command_seq] = self._command_seq % 0x10000
+            self._write_registers(block_start, [block[a] for a in sorted(block)])
         except ModbusError as exc:
             return TransportResult(accepted=False, reason=str(exc), state=self._safe_state())
         state = self.recv()
@@ -388,6 +473,14 @@ class FakeModbusSlave:
 
     # ── PDU 分发 ────────────────────────────────────────────────────
     def handle_pdu(self, pdu: bytes) -> bytes:
+        # NO-75a：事务统计（可观测的"单事务"证据；测试用它断言命令一帧到达）
+        if not hasattr(self, "stats"):
+            self.stats = {"fc16": 0, "fc06": 0}
+        if pdu:
+            if pdu[0] == FC_WRITE_MULTIPLE:
+                self.stats["fc16"] += 1
+            elif pdu[0] == FC_WRITE_SINGLE:
+                self.stats["fc06"] += 1
         if not pdu:
             return self._exception(FC_READ_HOLDING, EXCEPTION_ILLEGAL_FUNCTION)
         function = pdu[0]

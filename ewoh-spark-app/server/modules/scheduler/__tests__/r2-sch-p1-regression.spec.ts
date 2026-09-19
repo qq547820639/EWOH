@@ -2,6 +2,11 @@
  *
  * - R2-SCH-001：候选引擎 startMs 按人员/设备占用顺延（与内联 heuristic 分支语义
  *   等价）——同一人员第二个任务不再被 time_conflict 拒绝。
+ * - R2-SCH-001 补遗（dispatch 409 回归）：快照 reservations 的 device/station
+ *   占用必须进入 heuristic / rule-based 的占用槽位——此前仅喂 person，快照里
+ *   已被 dispatch 预占的设备/工位对求解器不可见，方案把新任务派上已占资源，
+ *   dispatch 预占硬后盾 409 RESOURCE_CONFLICT 使整波下发失败
+ *   （E2E scheduler-upgrade F 复现）。
  * - R2-SCH-002：solveVariants 变体权重必须作用于候选引擎路径（engine 消费
  *   variant policy，不再内部全局取 getActivePolicy 导致三变体趋同）。
  * - R2-SCH-003：rule-based / MILP 求解器真实解析输入约束（LOCKED/EXCLUDED/
@@ -164,6 +169,104 @@ describe('R2-SCH-001：候选引擎 startMs 按人员/设备占用顺延', () =>
     const t1 = plan.assignments.find((a) => a.taskId === 't1')!;
     const t2 = plan.assignments.find((a) => a.taskId === 't2')!;
     expect(Date.parse(t2.plannedStart)).toBeGreaterThanOrEqual(Date.parse(t1.plannedEnd));
+  });
+});
+
+describe('R2-SCH-001 补遗：快照 device/station 预约占用进求解槽位（dispatch 409 回归）', () => {
+  /** 生产同构 heuristic（engine 注入，与 SolverService 构造一致）。 */
+  function makeHeuristic(engine: CandidateEngineService) {
+    return new HeuristicSchedulingSolver(
+      { getActivePolicy: jest.fn().mockResolvedValue(defaultPolicy()), getConfig: jest.fn().mockResolvedValue(defaultConfig()) } as never,
+      {} as never,
+      // routeCostProvider：station 候选存在时 solve 会预热 (person, station)
+      // 路径成本（与生产 TravelCostService 同接口）。
+      { estimate: jest.fn(async () => routeCost(10)) } as never,
+      new EligibilityService(),
+      undefined,
+      undefined,
+      undefined,
+      engine,
+    );
+  }
+
+  it('heuristic：快照 device 预约占用 d1 → 避开 d1 改派空闲 d2（此前盲选 d1 → dispatch RESOURCE_CONFLICT）', async () => {
+    const { engine } = makeEngine();
+    const now = Date.now();
+    const snap = buildSnapshot({
+      persons: [seedPerson({ id: 'p1', skills: ['work'] })],
+      tasks: [
+        {
+          ...seedTask({ id: 't1', requiredSkills: ['work'] }),
+          requiredDeviceCapabilities: ['lift'],
+        },
+      ],
+      devices: [seedDevice({ id: 'd1' }), seedDevice({ id: 'd2' })],
+      reservations: [
+        // 已 dispatch 方案对 d1 的活跃预占（world-state 只透出 reserved/active 行）。
+        { reservationId: 'RSV-D1', resourceId: 'd1', resourceType: 'device', startMs: now, endMs: now + 3_600_000 },
+      ],
+    });
+    for (const d of snap.devices) {
+      (d as unknown as { capabilities: string[] }).capabilities = ['lift'];
+    }
+    const plan = await makeHeuristic(engine).solve(snap, [], BASE_OPTS);
+    expect(plan.assignments).toHaveLength(1);
+    expect(plan.assignments[0].deviceId).toBe('d2');
+    expect(plan.violations).toHaveLength(0);
+  });
+
+  it('heuristic：快照 station 预约占用 S1 → 候选工位避开 S1 改派 S2（station_reserved）', async () => {
+    const { engine } = makeEngine();
+    const now = Date.now();
+    const snap = buildSnapshot({
+      persons: [seedPerson({ id: 'p1', skills: ['work'] })],
+      tasks: [
+        {
+          ...seedTask({ id: 't1', requiredSkills: ['work'] }),
+          candidateStations: ['S1', 'S2'],
+        },
+      ],
+      devices: [],
+      stations: [
+        { id: 'S1', name: 'S1', x: 0, y: 0, capacity: 1 },
+        { id: 'S2', name: 'S2', x: 100, y: 0, capacity: 1 },
+      ],
+      reservations: [
+        { reservationId: 'RSV-S1', resourceId: 'S1', resourceType: 'station', startMs: now, endMs: now + 3_600_000 },
+      ],
+    });
+    const plan = await makeHeuristic(engine).solve(snap, [], BASE_OPTS);
+    expect(plan.assignments).toHaveLength(1);
+    expect(plan.assignments[0].stationId).toBe('S2');
+  });
+
+  it('rule-based：快照 device 预约占用 d1 → 同样避开 d1（同根因同口径）', async () => {
+    const { engine } = makeEngine();
+    const now = Date.now();
+    const snap = buildSnapshot({
+      persons: [seedPerson({ id: 'p1', skills: ['work'] })],
+      tasks: [
+        {
+          ...seedTask({ id: 't1', requiredSkills: ['work'] }),
+          requiredDeviceCapabilities: ['lift'],
+        },
+      ],
+      devices: [seedDevice({ id: 'd1' }), seedDevice({ id: 'd2' })],
+      reservations: [
+        { reservationId: 'RSV-D1', resourceId: 'd1', resourceType: 'device', startMs: now, endMs: now + 3_600_000 },
+      ],
+    });
+    for (const d of snap.devices) {
+      (d as unknown as { capabilities: string[] }).capabilities = ['lift'];
+    }
+    const solver = new RuleBasedSchedulingSolver(
+      { getActivePolicy: jest.fn().mockResolvedValue(defaultPolicy()), getConfig: jest.fn().mockResolvedValue(defaultConfig()) } as never,
+      engine,
+      new SchedulingObjectiveEvaluator(),
+    );
+    const plan = await solver.solve(snap, [], BASE_OPTS);
+    expect(plan.assignments).toHaveLength(1);
+    expect(plan.assignments[0].deviceId).toBe('d2');
   });
 });
 

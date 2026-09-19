@@ -20,6 +20,9 @@ describe('benchmark-scheduler.ts --matrix', () => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TS_NODE_COMPILER_OPTIONS: '{"module":"CommonJS","moduleResolution":"node"}',
+      // NO-68j：基准脚本现在引用 milp-scheduling-solver（参数装饰器）——
+      // 装饰器与路径解析需要专属 tsconfig（与 scripts/tsconfig.benchmark.json 同源）。
+      TS_NODE_PROJECT: 'scripts/tsconfig.benchmark.json',
     };
     const stdout = execFileSync(
       process.execPath,

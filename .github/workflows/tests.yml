@@ -1,0 +1,86 @@
+# EWOH 测试 CI（NO-78b）
+#
+# 覆盖：
+#  - Python 矩阵（3.11 / 3.12）：标准边缘+工具链套件；3.12 额外装 asyncua 2.x 跑
+#    OPC-UA **真栈用例**（<3.10 或未装 asyncua 时按版本守卫显式 SKIP，不算失败）。
+#  - Node：jest server + client + 双 tsconfig 类型检查（全部零 DB/零浏览器依赖，
+#    与本地验证口径一致；e2e/browser 链需要真实 PG/浏览器，仍按 runbook 本地跑）。
+#
+# 与本地等价的命令清单见 docs/runtime-gates.md（权威验证命令）。
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: 安装 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 安装 ruff（3.12 才装 asyncua 跑真栈用例）
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff
+          if [ "${{ matrix.python-version }}" = "3.12" ]; then
+            python -m pip install "asyncua>=2.0,<3"
+          fi
+
+      - name: Ruff（边缘平台 + 工具链）
+        run: PYTHONPATH=src python -m ruff check src/edge_platform tools
+
+      - name: Python 测试套件（标准链：src/edge_platform tests tools）
+        run: PYTHONPATH=src python -m pytest -q src/edge_platform tests tools
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 9
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c69c6477b0ccf # v4.2.0
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: ewoh-spark-app/pnpm-lock.yaml
+
+      - name: 安装依赖
+        working-directory: ewoh-spark-app
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查（server + client 双 tsconfig）
+        working-directory: ewoh-spark-app
+        run: |
+          npx tsc --noEmit --project tsconfig.node.json
+          npx tsc --noEmit --project tsconfig.app.json
+
+      - name: Lint
+        working-directory: ewoh-spark-app
+        run: npm run lint
+
+      - name: Jest（server + client 全量）
+        working-directory: ewoh-spark-app
+        run: |
+          npm test
+          npm run test:client

@@ -49,7 +49,9 @@
         "attempts": 1,
         "status": "discarded",
         "discardedReason": "上游设备固件错误，人工确认丢弃",
-        "envelope": { "eventId": "EVT-2" },
+        "envelope": {
+          "eventId": "EVT-2"
+        },
         "correlationId": null,
         "auditTrail": true
       },
@@ -63,7 +65,9 @@
         "reason": "teleport_failure",
         "attempts": 1,
         "status": "pending",
-        "envelope": { "eventId": "EVT-3" },
+        "envelope": {
+          "eventId": "EVT-3"
+        },
         "correlationId": null,
         "auditTrail": true
       },
@@ -77,7 +81,9 @@
         "reason": "permanent_failure",
         "attempts": 0,
         "status": "pending",
-        "envelope": { "eventId": "EVT-4" },
+        "envelope": {
+          "eventId": "EVT-4"
+        },
         "correlationId": null,
         "auditTrail": true
       },
@@ -91,7 +97,9 @@
         "reason": "permanent_failure",
         "attempts": 1,
         "status": "discarded",
-        "envelope": { "eventId": "EVT-5" },
+        "envelope": {
+          "eventId": "EVT-5"
+        },
         "correlationId": null,
         "auditTrail": true
       },
@@ -118,11 +126,51 @@
         "reason": "permanent_failure",
         "attempts": 1,
         "status": "pending",
-        "envelope": { "eventId": "EVT-7" },
+        "envelope": {
+          "eventId": "EVT-7"
+        },
         "correlationId": null,
         "auditTrail": false
       },
       "expectError": "audit_required"
+    },
+    {
+      "name": "valid_clock_drift_future",
+      "record": {
+        "letterId": "dl:abc123:VALID_CLOCK_DRIFT_FUTURE",
+        "sourceId": "cloud:ingest",
+        "reason": "clock_drift_future",
+        "attempts": 1,
+        "status": "pending",
+        "envelope": {
+          "eventId": "EVT-1",
+          "eventType": "TeleportEvent",
+          "source": "edge:world-projection",
+          "occurredAt": "2026-08-16T08:00:00Z"
+        },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": null
+    },
+    {
+      "name": "valid_event_write_failed",
+      "record": {
+        "letterId": "dl:abc123:VALID_EVENT_WRITE_FAILED",
+        "sourceId": "cloud:ingest",
+        "reason": "event_write_failed",
+        "attempts": 1,
+        "status": "pending",
+        "envelope": {
+          "eventId": "EVT-1",
+          "eventType": "TeleportEvent",
+          "source": "edge:world-projection",
+          "occurredAt": "2026-08-16T08:00:00Z"
+        },
+        "correlationId": null,
+        "auditTrail": true
+      },
+      "expectError": null
     }
   ]
 }

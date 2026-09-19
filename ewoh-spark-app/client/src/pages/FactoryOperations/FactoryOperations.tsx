@@ -19,6 +19,8 @@ import type { EventInfo, OverviewStats } from '@shared/api.interface';
 import type { SchedulingPlanV2 } from '@shared/scheduler';
 import { getEventsPage, getOverview } from '../../api/dashboard';
 import { WorkbenchNowPanel } from './WorkbenchNowPanel';
+import DeliveryBacklogTable from './DeliveryBacklogTable';
+import PolicyGatePanel from './PolicyGatePanel';
 import { getActivePlans } from '../../api/scheduler';
 import { queryKeys } from '../../hooks/queryKeys';
 import { OPERATIONAL_REFETCH_INTERVAL_MS, QUERY_STALE_TIME_MS } from '../../hooks/queryConfig';
@@ -70,7 +72,6 @@ const FactoryOperations = (): React.ReactElement => {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), OPERATIONAL_REFETCH_INTERVAL_MS);
     return () => clearInterval(timer);
-      <WorkbenchNowPanel />
   }, []);
   const userRoles = getAuthUser()?.roles;
   const canAccess = (path: string) => hasRoleAccess(userRoles, getAllowedRoles(path));
@@ -140,6 +141,11 @@ const FactoryOperations = (): React.ReactElement => {
           </Button>
         </div>
       </header>
+
+      {/* NO-78a/79a：工作台聚合 + 投递积压下钻 + NO-87b 门禁指标——第一屏事实 */}
+      <WorkbenchNowPanel />
+      <DeliveryBacklogTable />
+      <PolicyGatePanel />
 
       <section className="space-y-2 text-xs text-muted-foreground" aria-label="数据来源与新鲜度">
         <p>平台汇总未提供来源占比与采集时间，可能包含模拟、测试或历史数据；获取成功不代表现场实时或健康。</p>

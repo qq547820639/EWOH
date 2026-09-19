@@ -55,6 +55,26 @@ import { buildPlanLayoutParameters } from './pre-approval-simulation';
 import { assertPlanTenantVisible } from './plan-tenant-guard';
 import { TaskService } from '../task/task.service';
 
+/** 并发 replan 竞态识别：drizzle 把驱动原生错误包在 DrizzleQueryError.cause 上
+ * （cause = postgres PostgresError，带 code/constraint_name）。
+ * ewoh_schedule_plan.plan_id 唯一键冲突（23505）= 另一并发 replan 已基于同一
+ * plan.version 抢先落库 replacement，属确定性竞态结局（转 409），非内部错误。 */
+export function isPlanIdUniqueViolation(error: unknown): boolean {
+  let cur: unknown = error;
+  for (let depth = 0; cur && depth < 5; depth += 1) {
+    const e = cur as { code?: string; constraint_name?: string };
+    if (
+      e.code === '23505' &&
+      typeof e.constraint_name === 'string' &&
+      e.constraint_name.includes('ewoh_schedule_plan_plan_id')
+    ) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** 方案服务：持久化方案、审批/拒绝/下发/重排/对比。 */
 @Injectable()
 export class PlanService {
@@ -1287,66 +1307,79 @@ export class PlanService {
     // 此前 persistPlan 独立事务先行提交，第二事务（约束+supersede+审计）失败时
     // 留下半状态（新方案已落库但旧方案未 superseded/约束丢失）。
     // RequestDatabaseContext 嵌套复用同一事务（与 NEST-125/129 同模式）。
-    await this.requestDatabaseContext.runInTransaction(
-      buildGucSettings(ctx),
-      async () => {
-        await this.persistPlan(newPlan, ctx);
+    try {
+      await this.requestDatabaseContext.runInTransaction(
+        buildGucSettings(ctx),
+        async () => {
+          await this.persistPlan(newPlan, ctx);
 
-        // P0-2：落库本次新增的有效约束（含请求约束；继承的约束已在原 plan 下，
-        // 保持原 constraintId 以便后续解除与审计追溯——此处仅落库新请求项）。
-        // NEST-029 修复（2026-08-17）：过滤继承项——effectiveConstraints 混含
-        // 原方案已落库的继承约束（其 c.id 已存在于原 plan 下），全部重插会
-        // 撞 constraint_id 唯一键（org 复合键下同 org 同 id）或产生重复行；
-        // 仅落库本次请求新增项（无 id 的请求约束）。继承约束经 planId 继承
-        // 机制继续生效（loadForPlan），无需复制到新 plan。
-        const newConstraints = effectiveConstraints.filter(
-          (c) => c.id == null,
-        );
-        if (newConstraints.length > 0) {
-          await this.db.insert(ewohSchedulingConstraint).values(
-            newConstraints.map((c, i) => ({
-              constraintId:
-                c.id ?? `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
-              planId: newPlanId,
-              taskId: c.taskId ?? null,
-              type: c.type,
-              valueJson: {
-                personId: c.personId ?? null,
-                deviceId: c.deviceId ?? null,
-                stationId: c.stationId ?? null,
-                zoneId: c.zoneId ?? null,
-                startMs: c.startMs ?? null,
-                endMs: c.endMs ?? null,
-                operator: c.operator ?? ctx.userId,
-                reason: c.reason ?? null,
-                validFrom: c.validFrom ?? null,
-                expiresAt: c.expiresAt ?? null,
-                snapshotVersion: c.snapshotVersion ?? snapshot.snapshotVersion,
-              },
-              active: true,
-              createdBy: ctx.userId,
-              // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
-              orgId: ctx.primaryOrgId || null,
-            })),
+          // P0-2：落库本次新增的有效约束（含请求约束；继承的约束已在原 plan 下，
+          // 保持原 constraintId 以便后续解除与审计追溯——此处仅落库新请求项）。
+          // NEST-029 修复（2026-08-17）：过滤继承项——effectiveConstraints 混含
+          // 原方案已落库的继承约束（其 c.id 已存在于原 plan 下），全部重插会
+          // 撞 constraint_id 唯一键（org 复合键下同 org 同 id）或产生重复行；
+          // 仅落库本次请求新增项（无 id 的请求约束）。继承约束经 planId 继承
+          // 机制继续生效（loadForPlan），无需复制到新 plan。
+          const newConstraints = effectiveConstraints.filter(
+            (c) => c.id == null,
           );
-        }
+          if (newConstraints.length > 0) {
+            await this.db.insert(ewohSchedulingConstraint).values(
+              newConstraints.map((c, i) => ({
+                constraintId:
+                  c.id ?? `CON-${Date.now()}-${i}-${this.randomSuffix()}`,
+                planId: newPlanId,
+                taskId: c.taskId ?? null,
+                type: c.type,
+                valueJson: {
+                  personId: c.personId ?? null,
+                  deviceId: c.deviceId ?? null,
+                  stationId: c.stationId ?? null,
+                  zoneId: c.zoneId ?? null,
+                  startMs: c.startMs ?? null,
+                  endMs: c.endMs ?? null,
+                  operator: c.operator ?? ctx.userId,
+                  reason: c.reason ?? null,
+                  validFrom: c.validFrom ?? null,
+                  expiresAt: c.expiresAt ?? null,
+                  snapshotVersion: c.snapshotVersion ?? snapshot.snapshotVersion,
+                },
+                active: true,
+                createdBy: ctx.userId,
+                // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
+                orgId: ctx.primaryOrgId || null,
+              })),
+            );
+          }
 
-        // 旧方案标记为 superseded
-        await this.db
-          .update(ewohSchedulePlan)
-          .set({ status: 'superseded', supersededBy: newPlanId })
-          .where(eq(ewohSchedulePlan.planId, planId));
+          // 旧方案标记为 superseded
+          await this.db
+            .update(ewohSchedulePlan)
+            .set({ status: 'superseded', supersededBy: newPlanId })
+            .where(eq(ewohSchedulePlan.planId, planId));
 
-        await this.insertAudit(
-          planId,
-          'replan',
-          body.operator || ctx.userId,
-          [body.reason ?? '', policyChangeNote ?? ''].filter(Boolean).join('; '),
-          new Date(),
-          ctx.primaryOrgId,
+          await this.insertAudit(
+            planId,
+            'replan',
+            body.operator || ctx.userId,
+            [body.reason ?? '', policyChangeNote ?? ''].filter(Boolean).join('; '),
+            new Date(),
+            ctx.primaryOrgId,
+          );
+        },
+      );
+    } catch (error) {
+      // 并发 replan 竞态：两个 replan 基于同一 plan.version 计算同一 newPlanId，
+      // 输家在 ewoh_schedule_plan.plan_id 唯一键（23505）上冲突。这是确定性
+      // 竞态结局而非内部错误——按模块内既有约定（resource-reservation P0-5
+      // 「DB 约束是硬后盾，原生错误统一转 409 避免 500」）转 ConflictException。
+      if (isPlanIdUniqueViolation(error)) {
+        throw new ConflictException(
+          'PLAN_REPLAN_CONFLICT: plan is being replaced by a concurrent replan',
         );
-      },
-    );
+      }
+      throw error;
+    }
 
     await this.auditService.appendAuditLog({
       actorId: body.operator || ctx.userId,

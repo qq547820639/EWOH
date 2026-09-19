@@ -8,6 +8,10 @@
 export const DEAD_LETTER_REASONS = [
   'contract_violation', 'unknown_event_type', 'permanent_failure',
   'ttl_expired', 'max_attempts_exceeded',
+  // 2026-09-15 仿真对抗审计补注册：坏时钟事件拒绝（cloud:ingest）与事件写库失败
+  // 的死信此前 reason 不在封闭注册表 → DeadLetterService.record 抛 unknown_reason
+  // 被 .catch 吞掉——"落死信人审"承诺静默失效（review:integration 实测）。
+  'clock_drift_future', 'event_write_failed',
 ] as const;
 
 export const DEAD_LETTER_STATUSES = ['pending', 'requeued', 'discarded'] as const;

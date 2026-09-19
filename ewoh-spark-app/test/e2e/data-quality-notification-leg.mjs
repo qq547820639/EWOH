@@ -146,6 +146,9 @@ async function main() {
     return finish();
   }
   const sql = postgres(OWNER_DB, { max: 2, onnotice: () => {} });
+  // NO-67d：清理自证的目标 id——**在 try 外声明**（早期失败跳过赋值时，
+  // finally 里读它仍是 null 而不是 ReferenceError/TDZ；实测踩过一次）。
+  let injectedAlertId = null;
   try {
     // ── 2. 权限边界：现场工人不能触发扫描 ─────────────────────────────
     if (fieldToken) {
@@ -291,6 +294,7 @@ async function main() {
     // ── 8b. 长时间未核实 → 再催一次（quality_aging，NO-56b）─────────
     // 用 SQL 造一条"30 小时前产生、仍未了结"的告警（时间旅行只能由事实注入完成）
     const oldAlertId = `EVT-DQ-OLD-${tag}`;
+    injectedAlertId = oldAlertId;
     await sql`
       insert into ewoh_event
         (event_id, org_id, device_id, event_code, event_type, severity, title, status, source_type, evidence_json, created_at, occurred_at, received_at, observed_at, schema_version)
@@ -320,6 +324,38 @@ async function main() {
       `status=${pending.status} 残留=${stillPending.length}`,
     );
   } finally {
+    // NO-67d：清理自证——本场景注入的 open 告警（时间旅行用的 old 事件）必须已被
+    // worker 核实/了结；直查事实表计数，残留记 FAIL（不许只 warn）。
+    if (OWNER_DB) {
+      try {
+        const sqlCheck = postgres(OWNER_DB, { max: 1, onnotice: () => {} });
+        try {
+          if (injectedAlertId === null) {
+            record('PASS', '15. 清理自证（早期失败：未注入告警，无需清理）', true);
+          } else {
+            // 先收尾**本场景注入**的告警（合成数据，场景拥有清理责任）
+            await sqlCheck`
+              update ewoh_event set status = 'resolved'
+               where event_id = ${injectedAlertId} and status = 'open'`;
+            // 再自证：本场景的告警不再处于 open
+            const leftover = await sqlCheck`
+              select count(*)::int as n from ewoh_event
+               where event_id = ${injectedAlertId} and status = 'open'`;
+            if ((leftover[0]?.n ?? 0) > 0) {
+              record('FAIL', '15. 清理自证', `本场景注入的告警仍 open（${leftover[0].n} 条）`);
+            } else {
+              record('PASS', '15. 清理自证（注入的告警已全部核实/了结）', true);
+            }
+          }
+        } finally {
+          await sqlCheck.end({ timeout: 5 }).catch(() => {});
+        }
+      } catch (error) {
+        record('FAIL', '15. 清理自证', `自查失败：${error?.message ?? error}`);
+      }
+    } else {
+      record('SKIP', '15. 清理自证', '未提供 EWOH_E2E_OWNER_DATABASE_URL（无法直查事实表）');
+    }
     await sql.end().catch(() => undefined);
   }
   return finish();

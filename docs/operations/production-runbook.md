@@ -541,6 +541,62 @@ EWOH_DATABASE_URL=<owner 串> node scripts/capability-restore.js \
 **纪律**：任何停用高风险能力的场景/脚本，必须在 `finally` 里恢复**它所停用的全部设备**
 （含失败路径），否则残留会被下一个场景当成产品缺陷。
 
+## E2E 凭证的角色分工（重建 /tmp/ewoh-e2e-env.sh 时必读）
+
+三个凭证**不能混用**——角色不同，能做的事不同：
+
+| 变量前缀 | 账号 | 角色 | 用途 |
+|---|---|---|---|
+| `EWOH_E2E_ADMIN_*` | admin | global_admin | 生成调度、代安全角色审批、读面探针 |
+| `EWOH_E2E_OPERATOR_*` | approver.li | workshop_lead+dispatcher | **方案审批**、派工、投递积压处置 |
+| `EWOH_E2E_FIELD_*` | worker.zhangwei | worker | 现场回执、佩戴/数据质量"叫到人"的验收 |
+
+实测教训（第 73 轮）：把 `EWOH_E2E_OPERATOR_USER` 误设为 worker.zhangwei → `receipt`
+场景的方案审批 403（worker 无审批角色）→ 候选全部耗尽 → 整条"回执闭环"SKIP。
+`worker.zhangwei` 走 `EWOH_E2E_FIELD_*`（它的价值在现场视角的验收，不在审批）。
+
+完整 env 模板（重建设置时对照）：
+
+```bash
+export EWOH_E2E_BACKEND_URL=http://127.0.0.1:3100
+export EWOH_E2E_INGEST_ORG_ID=00000000-0000-4000-8000-000000000001
+export EWOH_E2E_INGEST_KEY=local-verify-ingest-key-0001
+export EWOH_E2E_ADMIN_USER=admin
+export EWOH_E2E_ADMIN_PASS='DevAdmin#2026x'
+export EWOH_E2E_APPROVER_USER=approver.li
+export EWOH_E2E_APPROVER_PASS='Approver#2026x'
+export EWOH_E2E_OPERATOR_USER=approver.li
+export EWOH_E2E_OPERATOR_PASS='Approver#2026x'
+export EWOH_E2E_FIELD_USER=worker.zhangwei
+export EWOH_E2E_FIELD_PASS='Worker#2026x'
+export EWOH_E2E_OWNER_DATABASE_URL='postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh'
+export EWOH_E2E_PG_URL="$EWOH_E2E_OWNER_DATABASE_URL"
+# 安灯"点名到人"（NO-49a）需要设备责任人的 personId：
+export EWOH_E2E_PERSON_ID=63000000-0000-4000-8000-000000000001  # 张伟（worker.zhangwei 绑定人）
+export EWOH_CONTROL_FINGERPRINT_SECRET=local-verify-fingerprint-secret-0001
+export EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE=3
+# ⚠️ 若跑过 `tools/control-key-rotation-drill.mjs --apply`，平台密钥已轮换——
+#    上面这行必须同步为 .env.local-standalone 里的现行值，否则边缘代理
+#    按旧钥算指纹 → 所有命令 fingerprint_mismatch 被拒（实测踩过）。
+```
+
+## 跑过 migration-fresh-chain 后 dev 库登录 503 的处置
+
+`make migration-fresh-chain` 会在临时库执行 `standalone_003_runtime_role.sql`，其中
+`ALTER ROLE ewoh_api ... PASSWORD ...` 是**集群级**操作——会把 dev 库正在使用的 `ewoh_api`
+密码一并改掉（角色不属于某个数据库）。症状：平台启动正常但**登录 503**
+（Authentication store is unavailable），且 `pg_connection_closed` 刷屏。
+
+处置（按 `.env.local-standalone` 里的 `DATABASE_URL` 重置密码）：
+
+```bash
+docker exec ewoh-pg-dev psql -U ewoh_owner -d ewoh \
+  -c "ALTER ROLE ewoh_api WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'DevApiPassword%232026x';"
+# 然后重启平台（换掉失效连接池）
+```
+
+（密码值必须与 `.env.local-standalone` 的 `DATABASE_URL` 中 URL 编码后的值一致：`#` → `%23`。）
+
 ## 投递配额与"排队"怎么读（NO-67b）
 
 平台按**设备**限制投递吞吐（`EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE`，默认 60/分钟；`<=0` = 显式关闭），
@@ -582,6 +638,19 @@ EWOH_CONTROL_FINGERPRINT_SECRET_PREVIOUS=<旧密钥>
 #    select status, count(*) from ewoh_control_command where status in ('sent','gateway_received') group by 1;
 # 4) 清零后**立即移除** _PREVIOUS 并重启平台（窗口越短越好）
 ```
+
+**演练脚本**（dev 环境把上面四步变成可重复执行，`--apply` 真轮换）：
+
+```bash
+cd ewoh-spark-app
+node tools/control-key-rotation-drill.mjs                # dry-run：只打印计划
+node tools/control-key-rotation-drill.mjs --apply        # 真轮换（改 env + 重启 + 轮询 + 收尾）
+node tools/control-key-rotation-drill.mjs --resume       # 中断后恢复（等清零 → 移除 _PREVIOUS）
+```
+
+纪律：演练**必须**给 owner 计数连接（`EWOH_E2E_OWNER_DATABASE_URL` 或 `--pg-url`）——
+用运行角色（ewoh_api）计数会被 RLS 把行滤成假 0，"清零"判定不可信；
+演练后**边缘侧同步换钥**（网关只验签；平台换新钥后边缘拿旧钥会把所有命令判 fingerprint_mismatch）。
 
 纪律：
 - `_PREVIOUS` 只在轮换期间存在；**不要**把它当"长期兼容开关"（越久 = 被撤销的旧密钥一直可用）；
@@ -651,3 +720,54 @@ EWOH_CONTROL_FINGERPRINT_SECRET_PREVIOUS=<旧密钥>
 ## SSE Failure
 
 - 前端自动：sequence 去重 → 缺口检测 → resync → 断线重连（Last-Event-ID）→ poll fallback → 恢复实时。
+
+## 现场标定计划（配额 / SLA / 升级倍数）
+
+以下三个参数目前是**工程推断值**，接入真实产线时必须按现场实测标定并留档：
+
+| 参数 | 默认 | 含义 | 标定方法 | 标定值 | 日期/签字 |
+|---|---|---|---|---|---|
+| `EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE` | 60 | 单设备每分钟最大投递条数（非安全类） | 网关/PLC 厂商吞吐规格 × 0.5 安全系数；压测观察丢帧阈值 | ______ | ______ |
+| `EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION` | 通用÷2 | 运动类命令（dispatch_task/resume）更严限流 | 实测设备连续执行运动命令的最小间隔（PLC 扫描周期 + 动作时间） | ______ | ______ |
+| `EWOH_CONTROL_DELIVERY_SLA_MS` | 300000 | 命令下发后多久未交付算积压 | 现场网关正常重连/恢复时间 P95 + 余量 | ______ | ______ |
+| `EWOH_CONTROL_BACKLOG_ESCALATION_MULTIPLIER` | 3 | 积压多久升级给生产管理者（×SLA） | 值班平均处置时长 P90 ÷ SLA，向上取整 | ______ | ______ |
+
+标定纪律：
+- 标定基于**实测**（压测/历史数据），不基于"感觉"；每个值留记录人与日期；
+- 标定后观察一个完整班次，`delivery_backlog` 提醒量应≈真实事件量（过多=阈值太松，过少=太紧）；
+- 参数变更走审计（平台启动日志 + 变更记录），不做无痕调整。
+
+## 新增迁移的 ID 冲突防范（多会话并行开发实测）
+
+本仓库多个会话可能并行产出迁移。实测（第 91–92 轮）：两个会话同时认领 `standalone_097`
+→ `run_migrations.js` 的"Duplicate standalone migration ID"门禁拦截（好事，ID 是唯一键）。
+
+处置流程：
+1. 被 `Duplicate standalone migration ID` 拦截后，**不要**给对方的迁移重编号；
+   给**自己**的迁移取下一个空闲 ID（`ls db/migrations | grep -oE '^standalone_[0-9]+' | sort -V | tail -1`）；
+2. 同步更新三件套文件名（apply/rollback/verify）、`run_migrations.js` 的四张注册表、
+   verify SQL 内部的 `AS standalone_<id>_verified` 标记；
+3. 重跑 `--verify-standalone-<name>` 确认 OK 后，跑 `npm test`（standalone-chain spec 会复核唯一性）。
+
+## 共享 dev 库数据残留（多场景轮次累积）
+
+多轮 e2e 场景运行后，共享 dev 库会累积大量场景专用设备/人员/任务（每场景按 tag 自建
+专用设备 + 专用人员 + 任务）。这些残留会导致：
+- 调度器候选池过大（343 台设备、12 人）
+- 种子任务的资格判定受残留数据影响
+- `e2e:agv-transport` 等需要"特定设备被选中"的场景间歇性失败
+
+**处置**（按优先级）：
+1. 全链跑 `bash scripts/e2e-chain.sh`（自带 reset 逻辑，处理最完整）
+2. `make e2e-golden-fresh`（reset + 清执行事实 + golden）
+3. 手动清共享池残留：
+   ```bash
+   docker exec ewoh-pg-dev psql -U ewoh_owner -d ewoh -c "
+     DELETE FROM ewoh_spatial_entity WHERE entity_id LIKE 'AGV-SIM-%';
+     DELETE FROM ewoh_device WHERE device_id LIKE 'AGV-SIM-%';
+     DELETE FROM ewoh_telemetry WHERE entity_id LIKE 'AGV-SIM-%';"
+   ```
+   然后重新 `reset-scenario-data` + 跑目标场景。
+
+**教训**：单场景 standalone 失败 ≠ 产品缺陷。先归因（凭证/密钥/共享数据/孤儿进程），
+再查产品代码。全链绿色 = 系统健康的最有力证据。

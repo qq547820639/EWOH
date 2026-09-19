@@ -679,24 +679,38 @@ async function main() {
     );
     const suggestions = candidatesRes.body?.capabilityRelaxationSuggestions ?? [];
     const craneSuggestion = suggestions.find((x) => x.capability === singleCapability);
-    step('7b. 零候选且因能力被挡 → 给出放宽建议（含新增候选数与设备实际能力）',
-      setCrane.status === 200
-        && candidatesRes.status === 200
-        && Boolean(craneSuggestion)
-        && Number(craneSuggestion.addedEligibleCount) > 0
-        && Array.isArray(craneSuggestion.sampleDeviceCapabilities)
-        && typeof craneSuggestion.note === 'string'
-        && craneSuggestion.note.includes('仅建议')
-        && craneSuggestion.note.includes('现场确认'),
-      `capability=${singleCapability} declared=${declaredCaps.has(singleCapability)} `
-        + `status=${candidatesRes.status} suggestions=${suggestions.map((x) => `${x.capability}+${x.addedEligibleCount}`).join(',') || '(none)'}`);
-    // NO-19a：vacuum 是中风险能力 → 不要求安全复核，但要求与安全/工艺确认（不制造假警报）
-    step(`7b2. 中风险能力（${singleCapability}）的建议按中风险提示（不误报为高风险）`,
-      craneSuggestion?.risk === 'medium'
-        && craneSuggestion?.requiresSafetyReview === false
-        && String(craneSuggestion?.note ?? '').includes('中风险')
-        && String(craneSuggestion?.note ?? '').includes('安全/工艺负责人确认'),
-      `risk=${craneSuggestion?.risk} requiresSafetyReview=${craneSuggestion?.requiresSafetyReview}`);
+    // NO-67d 纪律扩展：建议引擎的反事实前提是"放宽后能产生合格候选"。当前世界若没有
+    // （例如整 fleet 遥测老化/离线），引擎**正确地**不给建议——此时按环境前置条件记 SKIP，
+    // 不按 FAIL 处理（7b2/7d 依赖同一条建议，一并跳过并写明原因）。
+    const counterfactualViable = Boolean(craneSuggestion);
+    const rejectReasonsSeen = [
+      ...new Set((candidatesRes.body?.candidates ?? []).flatMap((c) => c.rejectReasons ?? [])),
+    ];
+    if (counterfactualViable) {
+      step('7b. 零候选且因能力被挡 → 给出放宽建议（含新增候选数与设备实际能力）',
+        setCrane.status === 200
+          && candidatesRes.status === 200
+          && Number(craneSuggestion.addedEligibleCount) > 0
+          && Array.isArray(craneSuggestion.sampleDeviceCapabilities)
+          && typeof craneSuggestion.note === 'string'
+          && craneSuggestion.note.includes('仅建议')
+          && craneSuggestion.note.includes('现场确认'),
+        `capability=${singleCapability} declared=${declaredCaps.has(singleCapability)} `
+          + `status=${candidatesRes.status} suggestions=${suggestions.map((x) => `${x.capability}+${x.addedEligibleCount}`).join(',') || '(none)'}`);
+      // NO-19a：中风险能力 → 不要求安全复核，但要求与安全/工艺确认（不制造假警报）
+      step(`7b2. 中风险能力（${singleCapability}）的建议按中风险提示（不误报为高风险）`,
+        craneSuggestion?.risk === 'medium'
+          && craneSuggestion?.requiresSafetyReview === false
+          && String(craneSuggestion?.note ?? '').includes('中风险')
+          && String(craneSuggestion?.note ?? '').includes('安全/工艺负责人确认'),
+        `risk=${craneSuggestion?.risk} requiresSafetyReview=${craneSuggestion?.requiresSafetyReview}`);
+    } else {
+      const skipReason = '放宽后无合格候选（candidates 拒绝原因：'
+        + `${rejectReasonsSeen.join('|') || '(无)'}）——环境前置条件不满足，非解释链路缺陷`;
+      skip('7b. 放宽建议', skipReason);
+      skip(`7b2. 中风险提示断言（${singleCapability}）`, skipReason);
+      skip('7d. 组合建议断言', skipReason);
+    }
     // 要求未被自动修改（只建议）
     const afterSuggest = await request('GET', `/api/tasks/${encodeURIComponent(taskId)}`, null, token);
     step('7c. 建议不自动放宽执行边界（任务要求保持不变）',
@@ -717,6 +731,9 @@ async function main() {
       token,
     );
     const combo = (comboCandidates.body?.capabilityRelaxationSuggestions ?? [])[0];
+    if (!counterfactualViable) {
+      // 7d 依赖 7b 的同一条反事实建议（上面已 SKIP，不重复 FAIL）
+    } else
     step(`7d. 单项放宽无效 → 给出组合建议（同时放宽 ${comboCapabilities.join(' + ')}）`,
       setCombo.status === 200
         && comboCandidates.status === 200

@@ -327,6 +327,66 @@ export class KpiService {
   }
 
   /** 读取最近一次持久化 KPI。 */
+  /**
+   * NO-89a：KPI 快照**历史序列**（最近的在前，缺数据快照也已排除）。
+   * 门禁看板用画趋势：on_time_rate / lateness_p95 随时间的变化一眼可见，
+   * 漂移早发现（而不是等激活被拒才发现）。
+   */
+  async listHistory(
+    orgId?: string | null,
+    limit = 12,
+  ): Promise<Array<{ periodStart: string; periodEnd: string; createdAt: string; kpi: SchedulerKpiSnapshot }>> {
+    const bounded = Math.min(Math.max(Number(limit) || 12, 1), 48);
+    const rows = await this.db
+      .select()
+      .from(ewohSchedulingKpi)
+      .where(orgId ? eq(ewohSchedulingKpi.orgId, orgId) : undefined)
+      .orderBy(desc(ewohSchedulingKpi.periodEnd))
+      .limit(bounded);
+    return rows.map((row) => {
+      const kpi = row.kpiJson as unknown as SchedulerKpiSnapshot;
+      return {
+        periodStart: kpi.periodStart,
+        periodEnd: kpi.periodEnd,
+        createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : '',
+        kpi,
+      };
+    });
+  }
+
+  /**
+   * NO-90a：**节流持久化**——距最近快照超过 `minIntervalMs` 才聚合并落一条。
+   * 用途：门禁评估/看板轮询（60s 级）顺带积累历史序列，而不把 kpi 表刷爆。
+   * 返回是否真正落了快照（供日志/测试断言）。
+   */
+  async persistThrottled(orgId: string | null, minIntervalMs: number): Promise<boolean> {
+    const latestRow = await this.latestRawMeta(orgId);
+    if (latestRow) {
+      const age = Date.now() - new Date(latestRow.createdAt).getTime();
+      if (age < minIntervalMs) return false;
+    }
+    const snapshot = await this.aggregate({ orgId: orgId ?? null });
+    await this.persist(snapshot, orgId ?? null);
+    return true;
+  }
+
+  /** 测试注入点：覆盖节流窗口内的“最近快照时间”（生产实现读 ewoh_scheduling_kpi）。 */
+  latestRawMetaOverride?: Promise<{ createdAt: Date | string } | null>;
+
+  /** 最近快照及其落库时间（节流判定用；无快照返回 null）。 */
+  private async latestRawMeta(
+    orgId?: string | null,
+  ): Promise<{ createdAt: Date | string } | null> {
+    if (this.latestRawMetaOverride) return this.latestRawMetaOverride;
+    const rows = await this.db
+      .select({ createdAt: ewohSchedulingKpi.createdAt })
+      .from(ewohSchedulingKpi)
+      .where(orgId ? eq(ewohSchedulingKpi.orgId, orgId) : undefined)
+      .orderBy(desc(ewohSchedulingKpi.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async latest(orgId?: string | null): Promise<SchedulerKpiSnapshot | null> {
     const rows = await this.db
       .select()

@@ -13,8 +13,10 @@ export interface DeviceCommandView {
   commandKey: string;
   attemptNo: number;
   status: string;
-  /** 现场可读的投递态：awaiting_delivery / queued_device_busy / gateway_received / 终态 */
+  /** 现场可读的投递态：awaiting_delivery / queued_device_busy / queued_quota / gateway_received / 终态 */
   deliveryState: string;
+  /** NO-81a：排队原因（device_busy = 一车一活；quota = 配额用尽；null = 未排队）。 */
+  queuedReason: 'device_busy' | 'quota' | null;
   deliveryNote: string | null;
   sentAt: string | null;
   responseAt: string | null;
@@ -63,6 +65,62 @@ export async function getDeviceExecutionBoundary(
 ): Promise<DeviceExecutionBoundary> {
   const res = await axiosForBackend({
     url: `/api/control/requests?deviceId=${encodeURIComponent(deviceId)}&limit=${limit}`,
+    method: 'GET',
+    timeout: 60_000,
+  });
+  return res.data;
+}
+
+/** NO-78a：工厂级投递积压实时快照（与巡检同一判定；服务端 5s TTL 缓存）。 */
+export async function getDeliveryBacklogStatus(): Promise<DeliveryBacklogStatus> {
+  const res = await axiosForBackend({
+    url: '/api/control/delivery-backlog/status',
+    method: 'GET',
+    timeout: 60_000,
+  });
+  return res.data;
+}
+
+export interface DeliveryBacklogStatus {
+  slaMs: number;
+  escalationMultiplier: number;
+  totals: {
+    devices: number;
+    commands: number;
+    undelivered: number;
+    receivedNotExecuted: number;
+    escalatedDevices: number;
+    oldestWaitingMs: number | null;
+  };
+  devices: Array<{
+    deviceId: string;
+    commands: number;
+    undelivered: number;
+    receivedNotExecuted: number;
+    oldestWaitingMs: number;
+    escalated: boolean;
+  }>;
+  checkedAt: string;
+}
+
+/** NO-91a：投递积压历史序列（最近在前；趋势可见漂移早发现）。 */
+export interface BacklogHistoryEntry {
+  checkedAt: string;
+  commands: number;
+  undelivered: number;
+  receivedNotExecuted: number;
+  escalatedDevices: number;
+}
+
+export interface DeliveryBacklogHistory {
+  slaMs: number;
+  escalationMultiplier: number;
+  snapshots: BacklogHistoryEntry[];
+}
+
+export async function getDeliveryBacklogHistory(limit = 24): Promise<DeliveryBacklogHistory> {
+  const res = await axiosForBackend({
+    url: `/api/control/delivery-backlog/history?limit=${encodeURIComponent(String(limit))}`,
     method: 'GET',
     timeout: 60_000,
   });
