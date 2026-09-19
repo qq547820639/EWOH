@@ -38,7 +38,18 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
   不一致时误把自己被改派的任务当他人任务，服务端正确放行 201）→ 改用
   plan_assignment.person_id 筛选；主腿行跨轮复位为洁净 DISPATCHED
 
-## 阶段二：时钟源统一抽象 —— 状态：未开始
+## 阶段二：时钟源统一抽象 —— 状态：已完成（2026-09-19）
+
+### 已完成
+- [x] ADR-084：新鲜度分类时间原点 = DB 时钟（clock_timestamp，每投影收集取一次）；
+      取时失败回落宿主机 Date.now()；5s 偏差容忍保留为纵深防御
+- [x] dbClockMs() 接入 project() / projectForSnapshot() 两处分类原点
+- [x] 单测：DB 时钟超前宿主机 27ms 写后立读 → FRESH（resource-state.spec）
+
+### 已验证
+- [x] jest 全量 387 套件 / 3486 测试通过
+- [x] E2E：device-physics 18/18；golden（全新库）24/24/0（含 v2 自建回滚）；
+      receipt 19/19/0
 
 ## 阶段三：契约自检升级为阻断门禁 —— 状态：未开始
 
