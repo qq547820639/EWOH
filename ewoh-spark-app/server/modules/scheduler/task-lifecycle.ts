@@ -42,6 +42,30 @@ export const TASK_LOCKED_STATUSES: readonly string[] = [
  * 被显式归一化到契约状态（`normalizePreDispatchStatus`），使 plan 与 task
  * 状态不会长期分叉。
  */
+/**
+ * 阶段四（死旅程产品化）：未就绪任务的**下一合法动作**恢复映射。
+ *
+ * 为什么：契约 task.yaml 规定 draft → pending_confirm → pending_approval →
+ * pending_dispatch 必须由 creator/dispatcher/approver 逐步推进，派工不得代跳。
+ * 派工遇未就绪任务 fail-closed（整波不下发）后，操作者需要知道**每条任务该由
+ * 谁做什么**。该映射即 409 recovery.actions 的权威数据源（此前只存在于
+ * E2E helper 的重复实现里——同一现场动作两个实现必然分叉）。
+ */
+export const TASK_STATE_RECOVERY_ACTIONS: Readonly<
+  Record<string, { action: string; actorRole: 'creator' | 'dispatcher' | 'approver' }>
+> = {
+  draft: { action: 'submit', actorRole: 'creator' },
+  pending_confirm: { action: 'skip_approval', actorRole: 'dispatcher' },
+  pending_approval: { action: 'approve', actorRole: 'approver' },
+};
+
+/** 未就绪任务的下一合法动作；非派发前状态（已可派发/终态）返回 null。 */
+export function nextRecoveryAction(
+  status: string,
+): { action: string; actorRole: 'creator' | 'dispatcher' | 'approver' } | null {
+  return TASK_STATE_RECOVERY_ACTIONS[status] ?? null;
+}
+
 export const TASK_PRE_DISPATCH_STATUS = 'pending_dispatch';
 
 /** 契约外历史别名（迁移期存量数据专用，非可写入状态）。 */

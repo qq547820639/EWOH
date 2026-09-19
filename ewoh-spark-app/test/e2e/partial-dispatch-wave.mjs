@@ -24,7 +24,7 @@
  */
 import http from 'node:http';
 import { approveWithReplan } from './helpers/plan-freshness.mjs';
-import { advanceTasksToPendingDispatch } from './helpers/task-readiness.mjs';
+import { advanceTasksToPendingDispatch, executeRecoveryActions, recoveryActionsOf } from './helpers/task-readiness.mjs';
 
 const BASE = process.env.EWOH_E2E_BACKEND_URL || 'http://127.0.0.1:3100';
 const ADMIN_USER = process.env.EWOH_E2E_ADMIN_USER || 'admin';
@@ -278,7 +278,18 @@ async function main() {
   step('3. 多 assignment 待派工方案', true, `planId=${planId} pending=${ids.length}`);
 
   // 4. 第一波：只派 1 条
-  const wave1 = await request('POST', `/api/scheduler/plans/${planId}/dispatch`, { assignmentIds: [ids[0]] }, opToken);
+  let wave1 = await request('POST', `/api/scheduler/plans/${planId}/dispatch`, { assignmentIds: [ids[0]] }, opToken);
+  if (wave1.status === 409 && /PLAN_TASK_NOT_DISPATCHABLE/.test(errText(wave1))) {
+    // 阶段四兜底：响应内嵌 recovery.actions（每条未就绪任务的下一合法动作），
+    // 按产品给出的端点执行后重派（正常情况下 prepareBoard 已推进，不会走到这里）。
+    const notes = await executeRecoveryActions(request, recoveryActionsOf(wave1.body), {
+      operatorToken: adminToken,
+      approverToken: opToken,
+    });
+    if (notes.length > 0) {
+      wave1 = await request('POST', `/api/scheduler/plans/${planId}/dispatch`, { assignmentIds: [ids[0]] }, opToken);
+    }
+  }
   // 派工同样有**快照新鲜度闸门**（`assertFreshForWave`）。本开发库数千待排任务 + 后台扫描，
   // 方案快照秒级失效 → 平台 409 PLAN_STALE 是**正确拒绝**（不是产品缺陷），但既然第一波
   // 没派出去，后面的"波次语义"断言全部无从验证：按诚实口径记 SKIP + 原因，不伪装成通过，

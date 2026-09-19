@@ -79,3 +79,28 @@ export function isTaskNotDispatchable(status, message) {
 export function isPlanStale(status, message) {
   return status === 409 && /PLAN_STALE/.test(String(message ?? ''));
 }
+
+
+/** 是否存在阶段四产品内嵌恢复动作（409 响应体 error.recovery.actions）。 */
+export function recoveryActionsOf(body) {
+  const actions = body?.error?.recovery?.actions ?? body?.recovery?.actions ?? [];
+  return Array.isArray(actions) ? actions : [];
+}
+
+/**
+ * 阶段四：直接执行 409 响应内嵌的结构化恢复动作（endpoint/action 由产品给出）。
+ * 与 advanceTasksToPendingDispatch 的差别：动作清单来自**产品响应**而非脚本推断——
+ * 验证的是「响应体可被消费方直接执行」这一产品契约本身。
+ */
+export async function executeRecoveryActions(request, actions, options) {
+  const notes = [];
+  for (const a of actions) {
+    if (!a?.endpoint || !a?.action) continue;
+    const actor = a.action === 'approve'
+      ? (options.approverToken || options.operatorToken)
+      : options.operatorToken;
+    const res = await request(a.method || 'POST', a.endpoint, null, actor);
+    notes.push(`${a.taskId}:${a.currentStatus}-${a.action}->${res.status}`);
+  }
+  return notes;
+}

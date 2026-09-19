@@ -10,6 +10,7 @@ import {
   isPreDispatchStatus,
   normalizePreDispatchStatus,
   requiresPreDispatchNormalization,
+  nextRecoveryAction,
 } from '../task-lifecycle';
 import { taskActionPath } from '../../task/task.service';
 
@@ -163,5 +164,21 @@ describe('TaskLifecycle（统一任务生命周期，Task 0.3）', () => {
         expect(TaskLifecycle.isDispatchable(s)).toBe(TASK_DISPATCHABLE_STATUSES.includes(s));
       }
     });
+  });
+});
+
+
+describe('nextRecoveryAction（阶段四：死旅程产品化——恢复动作映射）', () => {
+  it('派发前各状态给出下一合法动作与执行角色', () => {
+    expect(nextRecoveryAction('draft')).toEqual({ action: 'submit', actorRole: 'creator' });
+    expect(nextRecoveryAction('pending_confirm')).toEqual({ action: 'skip_approval', actorRole: 'dispatcher' });
+    expect(nextRecoveryAction('pending_approval')).toEqual({ action: 'approve', actorRole: 'approver' });
+  });
+
+  it('可派发/终态/未知状态无恢复动作（null）', () => {
+    expect(nextRecoveryAction('pending_dispatch')).toBeNull();
+    expect(nextRecoveryAction('dispatched')).toBeNull();
+    expect(nextRecoveryAction('completed')).toBeNull();
+    expect(nextRecoveryAction('unknown_status')).toBeNull();
   });
 });

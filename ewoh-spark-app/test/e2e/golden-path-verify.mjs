@@ -25,7 +25,7 @@
  */
 import http from 'node:http';
 import { approveWithReplan } from './helpers/plan-freshness.mjs';
-import { advanceTasksToPendingDispatch as advanceTasksToPendingDispatchShared } from './helpers/task-readiness.mjs';
+import { advanceTasksToPendingDispatch as advanceTasksToPendingDispatchShared, executeRecoveryActions, recoveryActionsOf } from './helpers/task-readiness.mjs';
 
 const BASE = process.env.EWOH_E2E_BACKEND_URL || 'http://127.0.0.1:3100';
 const ADMIN_USER = process.env.EWOH_E2E_ADMIN_USER || 'admin';
@@ -337,49 +337,53 @@ async function main() {
         // 而是脚本没把"等一个干净窗口"写清楚。这里：遇 PLAN_STALE 就等过冷却窗口、
         // **重新生成方案并重试一次**；仍然失败才算 FAIL（真回归不会被掩盖）。
         let dispatch = await request('POST', `/api/scheduler/plans/${plan.planId}/dispatch`, null, approverToken);
-        // 18b. 方案里有"尚未就绪"的任务（可调度但未走完确认/审批闸门）：
-        // 按契约状态机推进到待派工后重派。这是**正常现场工作流**，不是补救。
-        if (dispatch.status === 409 && /PLAN_TASK_NOT_DISPATCHABLE/.test(errText(dispatch))) {
-          const advanced = await advanceTasksToPendingDispatch(assignments);
-          const retried = advanced.length > 0
-            ? await request('POST', `/api/scheduler/plans/${plan.planId}/dispatch`, null, approverToken)
-            : null;
-          // 判定口径：这一步验证的是"未就绪任务能被按契约推进、且推进后**不再卡在
-          // PLAN_TASK_NOT_DISPATCHABLE**"。推进任务会写任务事实、从而推进世界版本，
-          // 于是紧随的重派可能返回 PLAN_STALE —— 那不是失败，而是下一个断言
-          // （18a）负责处置的状态；让 18b 因它变红会把"正确的 fail-closed"报成缺陷。
-          const retryOk = Boolean(
-            retried
-            && (retried.status === 200 || (retried.status === 409 && /PLAN_STALE/.test(errText(retried)))),
-          );
-          record(
-            retryOk ? 'PASS' : 'FAIL',
-            '18b. 任务未就绪 → 按契约状态机推进到待派工后重派（真实调度员工作流）',
-            `${advanced.join(' | ') || '无可推进任务'}；重派 status=${retried ? retried.status : 'n/a'}`
-              + `${retried && /PLAN_STALE/.test(errText(retried)) ? '（PLAN_STALE：任务写入推进了世界版本，交 18a 处置）' : ''}`
-              + `${retried && !retryOk ? ' ' + errText(retried) : ''}`,
-          );
-          if (retried) dispatch = retried;
-        }
-        // PLAN_NOT_APPROVED 与 PLAN_STALE 同族：审批通过后，后台 worker（数据质量
-        // 扫描/安灯 SLA 等）写事实触发自动重排桥，把刚批准的方案翻回 shadow
-        // （实测 2026-09-19：approve 200 → dispatch 409 PLAN_NOT_APPROVED）。
-        // 两者都是"世界在动"的环境竞态，处置同构：等冷却 → 重新生成方案并重试一次。
-        if (
-          dispatch.status === 409
-          && /PLAN_STALE|PLAN_NOT_APPROVED/.test(errText(dispatch))
-        ) {
-          record('PASS', '18a. 派工遇 PLAN_STALE/PLAN_NOT_APPROVED（世界版本被并发推进）→ 等冷却窗口后重新生成方案并重试一次',
-            `plan=${plan.planId} waitMs=${COOLDOWN_WAIT_MS}`);
-          await new Promise((resolve) => setTimeout(resolve, COOLDOWN_WAIT_MS));
-          const rerun = await request('POST', '/api/scheduler/runs', { strategy: 'scheduling_v2', trigger: 'MANUAL' }, token);
-          const freshPlans = (rerun.body?.plans ?? []) || [];
-          const reselected = freshPlans.length > 0 ? await selectApprovablePlan(freshPlans) : false;
-          if (reselected) {
+        // 18a/18b 有界恢复循环（阶段四）：派工的 409 只有两种可恢复竞态——
+        //   · PLAN_TASK_NOT_DISPATCHABLE（方案含未就绪任务）→ 执行 **409 响应体内嵌的
+        //     recovery.actions**（产品给出每条任务的下一合法动作与端点），脚本只负责
+        //     以正确身份执行——验证「响应体可被消费方直接执行」这一产品契约；
+        //   · PLAN_STALE / PLAN_NOT_APPROVED（世界版本被并发推进/方案被自动重排桥
+        //     翻回 shadow）→ 等冷却 → 重新生成方案并重选审批（selectApprovablePlan
+        //     内部含 approveWithReplan 的同一处置）。
+        // 两种状态可能交替出现（推进任务→世界版本变→PLAN_STALE），故用循环而非
+        // 单次 if。上限 4 轮；仍失败则如实 FAIL（真回归不会被掩盖）。
+        let recoveryRounds = 0;
+        while (dispatch.status === 409 && recoveryRounds < 4) {
+          const msg = errText(dispatch);
+          if (/PLAN_TASK_NOT_DISPATCHABLE/.test(msg)) {
+            const recoveryActions = recoveryActionsOf(dispatch.body);
+            if (recoveryActions.length === 0) break;
+            const advanced = await executeRecoveryActions(request, recoveryActions, {
+              operatorToken: token,
+              approverToken,
+            });
+            record(
+              'PASS',
+              `18b. 任务未就绪 → 执行内嵌 recovery.actions（第 ${recoveryRounds + 1} 轮）后重派`,
+              advanced.join(' | ') || '（无动作）',
+            );
+            recoveryRounds += 1;
             dispatch = await request('POST', `/api/scheduler/plans/${plan.planId}/dispatch`, null, approverToken);
-          } else {
-            planAttempts.push('重试轮：没有可审批的新方案');
+            continue;
           }
+          if (/PLAN_STALE|PLAN_NOT_APPROVED/.test(msg)) {
+            record(
+              'PASS',
+              `18a. 派工遇 ${/PLAN_NOT_APPROVED/.test(msg) ? 'PLAN_NOT_APPROVED' : 'PLAN_STALE'}（世界版本被并发推进）→ 等冷却窗口后重新生成方案并重试`,
+              `plan=${plan.planId} waitMs=${COOLDOWN_WAIT_MS}`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, COOLDOWN_WAIT_MS));
+            const rerun = await request('POST', '/api/scheduler/runs', { strategy: 'scheduling_v2', trigger: 'MANUAL' }, token);
+            const freshPlans = (rerun.body?.plans ?? []) || [];
+            const reselected = freshPlans.length > 0 ? await selectApprovablePlan(freshPlans) : false;
+            if (reselected) {
+              recoveryRounds += 1;
+              dispatch = await request('POST', `/api/scheduler/plans/${plan.planId}/dispatch`, null, approverToken);
+              continue;
+            }
+            planAttempts.push('重试轮：没有可审批的新方案');
+            break;
+          }
+          break;
         }
         step('18-19. Reservation + Dispatch', dispatch.status === 200,
           `status=${dispatch.status} msg=${errText(dispatch)}`);

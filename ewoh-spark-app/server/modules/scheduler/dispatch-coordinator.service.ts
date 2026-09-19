@@ -35,7 +35,7 @@ import { OutboxService } from './outbox.service';
 import { TaskService } from '../task/task.service';
 import {
   TaskLifecycle,
-  TASK_PRE_DISPATCH_STATUS,
+  TASK_PRE_DISPATCH_STATUS, nextRecoveryAction,
   requiresPreDispatchNormalization,
 } from './task-lifecycle';
 import { SchedulingFeedbackService } from './scheduling-feedback.service';
@@ -481,10 +481,32 @@ export class DispatchCoordinatorService {
           const detail = blockedTasks
             .map((t) => `${t.taskId}(${t.status} → 需先推进到 ${TASK_PRE_DISPATCH_STATUS})`)
             .join('; ');
-          throw new ConflictException(
-            `PLAN_TASK_NOT_DISPATCHABLE: ${blockedTasks.length}/${assignments.length} 条任务`
+          // 阶段四（死旅程产品化）：409 响应体内嵌**结构化恢复动作**——
+          // 每条未就绪任务的下一合法动作与端点，消费方（前端/脚本）可直接执行。
+          // message 前缀保持不变：既有调用方按 CODE 匹配（前端/脚本）不受影响。
+          const recoveryActions = blockedTasks.map((t) => {
+            const next = nextRecoveryAction(t.status);
+            return next
+              ? {
+                  taskId: t.taskId,
+                  currentStatus: t.status,
+                  action: next.action,
+                  actorRole: next.actorRole,
+                  endpoint: `/api/tasks/${t.taskId}/state?action=${next.action}`,
+                  method: 'POST',
+                }
+              : { taskId: t.taskId, currentStatus: t.status, action: null, endpoint: null, method: null };
+          });
+          throw new ConflictException({
+            message: `PLAN_TASK_NOT_DISPATCHABLE: ${blockedTasks.length}/${assignments.length} 条任务`
               + `未处于可派发状态，整波未下发（无半成品方案）——${detail}`,
-          );
+            error: {
+              code: 'PLAN_TASK_NOT_DISPATCHABLE',
+              message: `PLAN_TASK_NOT_DISPATCHABLE: ${blockedTasks.length}/${assignments.length} 条任务`
+                + `未处于可派发状态，整波未下发（无半成品方案）——${detail}`,
+              recovery: { actions: recoveryActions },
+            },
+          });
         }
 
         // 5. CAS 更新方案状态（double-dispatch 守卫）。
