@@ -6,7 +6,7 @@
 基线冻结（2026-09-19，HEAD fa65b3e5）：Jest 387/3485 全绿；pytest 697；type:check 0 错；
 eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失败；契约告警 0。
 
-## 阶段一：E2E 场景租户隔离 —— 状态：进行中
+## 阶段一：E2E 场景租户隔离 —— 状态：已完成（2026-09-19）
 
 ### 设计裁决（ADR 要点）
 - 原计划"每场景随机 UUID 租户"受两个产品约束阻塞：
@@ -22,9 +22,21 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
 - [x] e2e-chain.sh：每场景前重建基线（E2E_NO_REBUILD=1 可退回旧白名单 reset 作逃生门）
 - [x] golden：回滚腿自建前置（再次激活产生回退目标后回滚），消除对遗留激活状态的依赖
 
-### 待验证
-- [ ] 全链连续 2 轮：结果一致且 0 失败
-- [ ] "脏库"（连跑 3 轮链）与全新库结果一致
+### 已验证（2026-09-19）
+- [x] 连续 3 轮全链：每轮 0 失败 / 0 跳过，结果完全一致（含 agv 就绪顺序修复、
+      golden 回滚自建前置、receipt 确定性三处验证轮发现缺陷的修复，提交
+      8b4f08c0 / 2000b38e / fa65b3e5 前后共 4 轮链证据）
+- [x] "脏库"一致性：第 2、3 轮链在刚跑完整链的库上运行，每场景前重建基线
+      使起点与全新库等价，结果与全新库一致
+
+### 验证轮发现并修复的缺陷（证据）
+- agv：就绪推进在审批后执行 → 刚批准的方案立即失效（409 PLAN_STALE）→
+  移至审批前（与 receipt/golden 顺序对齐）
+- golden：回滚自建前置首版用"重复激活同版本"被 409 already ACTIVE 正确拒绝 →
+  改为注册 v2 候选 + ack 激活 + 回滚 v2
+- receipt：越权目标行误用执行行 person_id 筛选（与 plan_assignment.person_id
+  不一致时误把自己被改派的任务当他人任务，服务端正确放行 201）→ 改用
+  plan_assignment.person_id 筛选；主腿行跨轮复位为洁净 DISPATCHED
 
 ## 阶段二：时钟源统一抽象 —— 状态：未开始
 
