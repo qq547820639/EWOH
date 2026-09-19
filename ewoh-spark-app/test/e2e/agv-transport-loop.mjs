@@ -302,7 +302,21 @@ async function main() {
         attempts.push(`r${round}:debounced(复用既有方案)`);
       }
       for (const candidate of plans.slice(0, 10)) {
-        const detail = (await get(`/api/scheduler/plans/${candidate.planId}`, adminToken)).body;
+        let detail = (await get(`/api/scheduler/plans/${candidate.planId}`, adminToken)).body;
+        // 任务就绪推进必须在审批**之前**：推进写任务事实 → 世界版本推进 →
+        // 先审批后推进会让刚拿到的批准立刻失效（实测 dispatch 409
+        // PLAN_STALE/PLAN_NOT_APPROVED）。与 receipt/golden 的处置顺序一致。
+        const readyNotes = await advanceTasksToPendingDispatch(request, detail?.assignments ?? [], {
+          operatorToken: adminToken,
+          approverToken,
+        });
+        if (readyNotes.length > 0) {
+          attempts.push(`r${round}:任务就绪推进:${readyNotes.length}项`);
+          const refreshedAfterReady = await get(`/api/scheduler/plans/${candidate.planId}`, adminToken);
+          if (refreshedAfterReady.status === 200 && refreshedAfterReady.body) {
+            detail = refreshedAfterReady.body;
+          }
+        }
         const hitOf = (body) => (body?.assignments ?? []).find(
           (a) => String(a.taskId) === String(taskId) && a.deviceId === device.id,
         );
