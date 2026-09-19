@@ -160,9 +160,14 @@ class TestSolver(unittest.TestCase):
         self.assertEqual(len(resp.assignments), 1)
         self.assertEqual(resp.assignments[0].taskId, "T1")
 
-        # 确定性重放：相同输入两次求解结果一致
+        # 确定性重放：相同输入两次求解结果一致（solveDurationMs 是实测耗时，
+        # 不属于求解结果语义，重放对比必须剔除，否则断言随机器负载抖动）。
         resp2 = cpsat_solver.solve(self.request)
-        self.assertEqual(resp.to_dict(), resp2.to_dict())
+        d1 = resp.to_dict()
+        d2 = resp2.to_dict()
+        d1.pop("solveDurationMs", None)
+        d2.pop("solveDurationMs", None)
+        self.assertEqual(d1, d2)
 
 
 class TestTimeBasisHelpers(unittest.TestCase):

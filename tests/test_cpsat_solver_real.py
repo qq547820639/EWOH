@@ -233,8 +233,8 @@ class CpSatHorizonDueBoundsTest(unittest.TestCase):
         self.assertEqual(resp.assignments[0].taskId, "t1")
         self.assertEqual(resp.assignments[0].personId, "p1")
 
-    def test_due_cannot_be_met_unassigned(self):
-        """due 场景（同族）：时长 30min 但 due=10min → 如实未分配，不 INFEASIBLE。"""
+    def test_due_cannot_be_met_soft_deadline_assigns_with_lateness(self):
+        """P0-3 语义：dueMs 是软截止 → 仍应分配，超时部分计入 lateness 罚项。"""
         resp = solve(
             self._req(
                 [
@@ -251,7 +251,35 @@ class CpSatHorizonDueBoundsTest(unittest.TestCase):
             )
         )
         self.assertIn(resp.solverStatus, ("OPTIMAL", "FEASIBLE"))
-        self.assertEqual(resp.unassignedTaskIds, ["t1"], "无法满足 due 的任务必须如实未分配（不得 INFEASIBLE）")
+        self.assertEqual(resp.unassignedTaskIds, [], "软截止允许超时分配，不得未分配")
+        self.assertEqual(len(resp.assignments), 1)
+        self.assertEqual(resp.assignments[0].taskId, "t1")
+        self.assertGreater(
+            resp.assignments[0].endMs - 10 * 60_000,
+            0,
+            "end 超过软截止（lateness>0）",
+        )
+
+    def test_must_finish_cannot_be_met_unassigned(self):
+        """P0-3 语义：mustFinishByMs 是硬截止 → 无法满足的任务如实未分配，不 INFEASIBLE。"""
+        resp = solve(
+            self._req(
+                [
+                    {
+                        "taskId": "t1",
+                        "priority": 1.0,
+                        "earliestStartMs": 0,
+                        "dueMs": 10 * 60_000,
+                        "mustFinishByMs": 10 * 60_000,
+                        "durationMs": 30 * 60_000,
+                        "requiredSkills": [],
+                        "candidateStationIds": ["st1"],
+                    }
+                ]
+            )
+        )
+        self.assertIn(resp.solverStatus, ("OPTIMAL", "FEASIBLE"))
+        self.assertEqual(resp.unassignedTaskIds, ["t1"], "无法满足硬截止的任务必须如实未分配（不得 INFEASIBLE）")
 
 
 if __name__ == "__main__":
