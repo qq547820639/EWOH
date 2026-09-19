@@ -95,6 +95,17 @@ export class WorldStateSnapshotService {
    */
   async buildSnapshot(ctx: OrgContext): Promise<WorldStateSnapshot> {
     const state = await this.collectState(ctx);
+    // 阶段三（2026-09-19）：调度 run 路径 fail-closed——契约自检违约（如
+    // bad_entity_version_*）的快照**拒绝持久化/生成方案**，而不是告警后继续。
+    // 违约快照的 entityVersions 是不可信的（曾实测负数版本），在其上派生的一切
+    // 排产决策都不应发生。只读路径（buildSnapshotReadOnly）保持告警不阻断。
+    const contractErrors = (state as { contractCheck?: { errors?: string[] } })
+      .contractCheck?.errors ?? [];
+    if (contractErrors.length > 0) {
+      throw new ConflictException(
+        `WORLD_SNAPSHOT_CONTRACT_VIOLATION: ${contractErrors.slice(0, 6).join(', ')}`,
+      );
+    }
     const snapshot = await this.allocateAndPersistSnapshot(state, ctx);
     this.logger.log(`world state snapshot built: ${snapshot.snapshotVersion}`);
     return snapshot;

@@ -14,6 +14,7 @@ import { WorldStateSnapshotService } from '../world-state.service';
 import {
   ewohResourceReservation,
   ewohDeviceBinding,
+  ewohRouteEdge,
 } from '@server/database/schema';
 import type { OrgContext } from '../../shared/org-context.interceptor';
 
@@ -96,6 +97,47 @@ const ctx: OrgContext = {
   accessibleOrgIds: ['org-version-test'],
   isGlobalAdmin: false,
 };
+
+describe('WorldStateSnapshotService: 调度 run 路径契约 fail-closed（阶段三）', () => {
+  it('契约违约（非法实体键）的快照必须拒绝持久化/生成方案（WORLD_SNAPSHOT_CONTRACT_VIOLATION）', async () => {
+    // 构造：路由边 edgeId 含第二个冒号 → entityVersions 键 'route:a:b'
+    // → isCanonicalIdentity 失败 → contractCheck.errors 非空。
+    const reservationService = { listActive: jest.fn().mockResolvedValue([]) };
+    function makeChain(rows: unknown[]): any {
+      const p: any = Promise.resolve(rows);
+      p.where = () => p;
+      p.orderBy = () => p;
+      p.limit = () => p;
+      return p;
+    }
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn((t: unknown) => {
+          if (t === ewohRouteEdge) return makeChain([{ edgeId: 'a:b', status: 'open', riskLevel: null }]);
+          return makeChain([]);
+        }),
+      }),
+      insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
+      execute: jest.fn().mockResolvedValue([{ last_seq: 1 }]),
+    };
+    const { svc } = (() => {
+      const runInTransaction = jest.fn((_s: unknown, op: () => Promise<unknown>) => op());
+      const svc = new WorldStateSnapshotService(
+        db as never,
+        { runInTransaction } as never,
+        { projectForSnapshot: jest.fn().mockResolvedValue({ persons: [], devices: [], stations: [] }) } as never,
+      );
+      return { svc };
+    })();
+    const ctx = {
+      userId: 'u-contract-test',
+      primaryOrgId: 'org-contract-test',
+      accessibleOrgIds: ['org-contract-test'],
+      isGlobalAdmin: false,
+    };
+    await expect(svc.buildSnapshot(ctx)).rejects.toThrow('WORLD_SNAPSHOT_CONTRACT_VIOLATION');
+  });
+});
 
 describe('WorldStateSnapshotService: 实体版本哈希（fnv1a48）契约', () => {
   it('哈希必须恒为非负安全整数（世界快照契约 entityVersions 值 ≥ 0）', () => {

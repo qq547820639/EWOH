@@ -183,7 +183,7 @@ contract-envelope:  ## ADR-009：Event Envelope 契约门禁（独立仲裁 + �
 	@node scripts/audit-event-envelope.js
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_event_envelope.py -q
 
-audit-regression-gates:  ## 审计 §4 十二条主线防回归门禁（W13 十条 + 前端软底徽标对比度/设计令牌策略 + RLS 裁决清单）
+audit-regression-gates:  ## 审计 §4 防回归门禁（十三条主线：W13 十条 + 前端令牌 + RLS 裁决 + 世界快照契约）
 	@echo '── 主线1 租户隔离：org 表查询链静态扫描（audit-org-predicates）'
 	@node scripts/audit-org-predicates.js
 	@echo '── 主线2 边缘 GET 面鉴权：路由清单完整性 + production 匿名 401 TCK'
@@ -207,7 +207,8 @@ audit-regression-gates:  ## 审计 §4 十二条主线防回归门禁（W13 十�
 	@echo '── 主线11 前端软底徽标对比度：WCAG 2.2 AA ≥4.5:1 数值模型 + 软底文字令牌策略（Jest）'
 	cd ewoh-spark-app && npx jest --config client/jest.config.cjs --runInBand src/lib/softSurfaceContrast.test.ts
 	@echo '── 主线12 RLS 裁决：含 org_id 却未开 RLS 的表必须在显式裁决清单内（audit-unrls-tenant-tables）' && node scripts/audit-unrls-tenant-tables.js
-	@echo '✅ audit-regression-gates：十二条主线门禁全部通过'
+	@echo '── 主线13 世界快照契约：最近持久化快照 entityVersions/自检违约（audit-world-snapshot-contract）' && node scripts/audit-world-snapshot-contract.js
+	@echo '✅ audit-regression-gates：十三条主线门禁全部通过'
 
 production-smoke:  ## P0-EDGE-006：Production Runtime Assembly 门禁（真实装配 + no-stub + Bus 契约）
 	PYTHONPATH=src $(PYTHON) -m pytest tests/test_production_assembly.py tests/test_bus_contract.py -q
