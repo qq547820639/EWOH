@@ -426,8 +426,11 @@ async function main() {
           await sql`update ewoh_scheduling_plan_assignment
              set person_id = ${boundPerson}::uuid
              where assignment_id = ${ownCandidate.assignmentId}`;
+          // STARTED 必须带 actual_start：服务端对 STARTED/COMPLETED 有
+          // 「先有实际开始时间」的事实保护（RECEIPT_START_REQUIRED）。
+          // 直改派生事实时补齐该列，否则步骤 20 会因缺开始时间被正确拒绝。
           await sql`update ewoh_scheduling_execution
-             set person_id = ${boundPerson}::uuid, status = 'STARTED'
+             set person_id = ${boundPerson}::uuid, status = 'STARTED', actual_start_at = now()
              where assignment_id = ${ownCandidate.assignmentId}`;
         }
         // 找一条分配给"我"的可回执记录。
