@@ -750,6 +750,21 @@ export class ResourceProjectionService {
     }
   }
 
+  /**
+   * 跨系统时钟偏差容忍（2026-09-19 实测）。
+   *
+   * 写侧时间戳来自 DB 时钟（`now()` / 容器时钟），读侧比较用应用宿主机
+   * `Date.now()`——两者天然存在毫秒到秒级偏差。写后立读时 `sourceTs` 可能
+   * 比 `now` 超前几毫秒：原实现零容差判 UNKNOWN（fail-closed），实测导致
+   * 「写后立读 ⇒ 全员资源 UNKNOWN ⇒ 求解/候选全员 person_unavailable」的
+   * 瞬时翻转，且随 VM/宿主机钟差符号漂移间歇复现。
+   *
+   * 处理：允许一个小的前向钟差窗口（NTP 同步后典型的残余偏差 ≪ 5s）；
+   * 超出容忍的未来时间戳仍然 UNKNOWN（远超容忍 = 时钟确实坏了，维持
+   * fail-closed 不放松）。
+   */
+  private static readonly CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
   private classifyFreshness(
     sourceTs: number | null,
     now: number,
@@ -759,9 +774,12 @@ export class ResourceProjectionService {
     if (
       sourceTs == null ||
       !Number.isFinite(sourceTs) ||
-      !Number.isFinite(now) ||
-      sourceTs > now
+      !Number.isFinite(now)
     ) return 'UNKNOWN';
+    // 未来时间戳：容忍小的跨系统钟差；超过容忍仍视为不可信（fail-closed）。
+    if (sourceTs - now > ResourceProjectionService.CLOCK_SKEW_TOLERANCE_MS) {
+      return 'UNKNOWN';
+    }
     if (now - sourceTs > this.resolveFreshnessMs(resourceType, signalType)) {
       return 'STALE';
     }

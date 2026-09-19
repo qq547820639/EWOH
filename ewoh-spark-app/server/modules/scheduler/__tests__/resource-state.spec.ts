@@ -134,7 +134,7 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     },
   );
 
-  it('preserves the device freshness boundary', async () => {
+  it('preserves the device freshness boundary（含跨系统钟差容忍）', async () => {
     const now = Date.now();
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
@@ -142,13 +142,16 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
         deviceRow({ id: 'fresh', lastTelemetryAt: new Date(now - 60_000) }),
         deviceRow({ id: 'stale', lastTelemetryAt: new Date(now - 60_001) }),
         deviceRow({ id: 'now', lastTelemetryAt: new Date(now) }),
-        deviceRow({ id: 'future', lastTelemetryAt: new Date(now + 1) }),
+        // 1ms 未来 = DB/宿主机钟差（跨系统比较的正常残余），容忍窗口内 → FRESH
+        deviceRow({ id: 'future-small', lastTelemetryAt: new Date(now + 1) }),
+        // 远超容忍的未来时间戳 = 时钟确实坏了 → 维持 fail-closed UNKNOWN
+        deviceRow({ id: 'future-huge', lastTelemetryAt: new Date(now + 60_000) }),
       ], [], []);
       expect((await svc.project()).map((resource) => resource.dataQuality)).toEqual([
-        'FRESH', 'STALE', 'FRESH', 'UNKNOWN',
+        'FRESH', 'STALE', 'FRESH', 'FRESH', 'UNKNOWN',
       ]);
       expect((await svc.projectForSnapshot()).devices.map((device) => device.dataQuality)).toEqual([
-        'FRESH', 'STALE', 'FRESH', 'UNKNOWN',
+        'FRESH', 'STALE', 'FRESH', 'FRESH', 'UNKNOWN',
       ]);
     } finally {
       clock.mockRestore();
@@ -261,6 +264,31 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     expect(byId('P-STALE').dataQuality).toBe('STALE');
     expect(byId('P-UNKNOWN').dataQuality).toBe('UNKNOWN');
     expect(byId('P-FRESH').freshnessMs).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it('跨系统钟差容忍：写后立读（sourceTs 略超前 now）仍 FRESH，超容忍才 UNKNOWN', async () => {
+    // 2026-09-19 实测：DB 容器时钟可比应用宿主机超前几十毫秒。写侧
+    // `_updated_at = now()`（DB 钟）后立读（JS Date.now() 比较）时
+    // sourceTs > now 属正常跨系统偏差，不得判 UNKNOWN——否则写后立读窗口内
+    // 全员资源翻 UNKNOWN → 求解/候选全员 person_unavailable（实测 E2E 失败）。
+    const now = Date.now();
+    const svc = makeSvc(
+      [
+        personRow({ id: 'P-SKEW-SMALL', updatedAt: new Date(now + 3_000) }),
+        personRow({ id: 'P-SKEW-HUGE', updatedAt: new Date(now + 60_000) }),
+      ],
+      [],
+      [],
+      [],
+    );
+    const states = await svc.getUnifiedResourceState();
+    const byId = (id: string) => states.find((s) => s.id === id)!;
+    // 容忍窗口内（<5s）：FRESH + AVAILABLE（不得翻 UNKNOWN）
+    expect(byId('P-SKEW-SMALL').dataQuality).toBe('FRESH');
+    expect(byId('P-SKEW-SMALL').status).toBe('AVAILABLE');
+    // 远超容忍（60s 未来 = 时钟确实坏了）：维持 fail-closed UNKNOWN
+    expect(byId('P-SKEW-HUGE').dataQuality).toBe('UNKNOWN');
+    expect(byId('P-SKEW-HUGE').status).toBe('UNKNOWN');
   });
 
   it('数据过时（STALE/UNKNOWN）不得虚构 available：person/device/station 标 unavailable/offline', async () => {
