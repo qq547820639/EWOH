@@ -80,12 +80,27 @@ const errText = (res) =>
  * 正确地返回 NO_ROLLBACK_TARGET——这属于"无可回滚目标"，不是缺陷，
  * 因此如实记为 SKIP 并说明原因，而不是 FAIL。
  */
-async function assertRollback(activation, token, operator) {
+async function assertRollback(activation, token, operator, gateVersion) {
   if (!activation?.activationId) return;
   const hasTarget = activation.rollbackTarget != null || activation.beforeVersion != null;
   if (!hasTarget) {
-    skip('49-50. Rollback 恢复上一 ACTIVE',
-      '本次是首个激活（无 beforeVersion/rollbackTarget），服务端无回退目标属正确行为，回滚路径未验证');
+    // 首次激活无回退目标（服务端 NO_ROLLBACK_TARGET 属正确行为）。为不依赖
+    // 遗留状态，自建回退前置：再次激活同一版本（产生新激活，其回退目标即
+    // 本次激活），随后回滚新激活——真实验证"恢复上一 ACTIVE"路径。
+    const second = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
+      operator: ADMIN_USER, reason: 'golden path re-activation to enable rollback verification',
+    }, token);
+    if (second.status !== 201 && second.status !== 200) {
+      skip('49-50. Rollback 恢复上一 ACTIVE',
+        `首次激活无回退目标（服务端行为正确）；自建二次激活失败 status=${second.status} ${errText(second)}`);
+      return;
+    }
+    const secondActivation = second.body;
+    const rollback = await request('POST',
+      `/api/scheduler/policy/activations/${secondActivation.activationId}/rollback`,
+      { operator, reason: 'golden path rollback' }, token);
+    step('49-50. Rollback 恢复上一 ACTIVE', rollback.status === 201 || rollback.status === 200,
+      `status=${rollback.status} msg=${rollback.body?.status ?? errText(rollback)}`);
     return;
   }
   const rollback = await request('POST',
@@ -510,14 +525,14 @@ async function main() {
     step('47-48. 显式确认后人工激活 + 审计',
       acked.status === 201 || acked.status === 200,
       `activationId=${acked.body?.activationId ?? '-'} msg=${errText(acked)}`);
-    await assertRollback(acked.body, token, ADMIN_USER);
+    await assertRollback(acked.body, token, ADMIN_USER, gateVersion);
   } else if (gateVerifiedPass) {
     const activate = await request('POST', `/api/scheduler/policy/${gateVersion}/activate`, {
       operator: ADMIN_USER, reason: 'golden path activation',
     }, token);
     step('47-48. Human Activate + audit', activate.status === 201 || activate.status === 200,
       `activationId=${activate.body?.activationId ?? '-'}`);
-    await assertRollback(activate.body, token, ADMIN_USER);
+    await assertRollback(activate.body, token, ADMIN_USER, gateVersion);
   } else {
     skip('47-50. Activate/Rollback', 'Gate 未通过或候选不可用，激活路径未验证');
   }

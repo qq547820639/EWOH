@@ -43,11 +43,21 @@ declare -a FAILED_SCENARIOS=()
 declare -a SKIPPED_SCENARIOS=()
 
 reset_scenario_data() {
-  if [ -z "${EWOH_E2E_OWNER_DATABASE_URL:-}" ]; then
+  # 阶段一密闭基线（2026-09-19）：每场景前将库恢复到**字节级一致的原始种子态**
+  # （DROP/CREATE + 全量迁移 + 全量种子 + 运营账号）。旧白名单式 reset 无法
+  # 覆盖全部累积事实（摄入世界状态、去重台账、能力台账…），是场景跨轮状态
+  # 敏感的土壤。实测重建 ~8s/次（本地 PG），服务端 postgres-js 池自动重连
+  # （重建后 login/snapshot/plans 全部 200 已验证）。
+  # E2E_NO_REBUILD=1 可退回旧白名单式 reset（保留作逃生门）。
+  if [ "${E2E_NO_REBUILD:-0}" = "1" ]; then
+    if [ -z "${EWOH_E2E_OWNER_DATABASE_URL:-}" ]; then
+      return 0
+    fi
+    (cd "$ROOT" && EWOH_DATABASE_URL="$EWOH_E2E_OWNER_DATABASE_URL" \
+      node db/runner/reset-scenario-data.js --org-id "$ORG_ID" --yes >/dev/null 2>&1)
     return 0
   fi
-  (cd "$ROOT" && EWOH_DATABASE_URL="$EWOH_E2E_OWNER_DATABASE_URL" \
-    node db/runner/reset-scenario-data.js --org-id "$ORG_ID" --yes >/dev/null 2>&1)
+  (cd "$ROOT" && bash scripts/local-up.sh --no-server --rebuild-db >/dev/null 2>&1)
 }
 
 scenario() {
