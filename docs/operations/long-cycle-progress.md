@@ -83,7 +83,7 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
 - [x] jest 全量 387 套件 / 3489 测试通过
 - [x] E2E 全链 0 失败 / 0 跳过；golden 26/26/0；wave 全绿
 
-## 阶段五：CI 矩阵落地 —— 状态：已实现，待 Actions 首跑确认（2026-09-19）
+## 阶段五：CI 矩阵落地 —— 状态：已实现；首跑确认被外部凭据/网络阻塞（2026-09-19）
 
 ### 已完成
 - [x] .github/workflows/long-cycle-gates.yml：
@@ -94,8 +94,13 @@ eslint/ruff/bandit/truth-check/audit-regression-gates 全过；E2E 全链 0 失�
         device-physics/agv 四场景
 - [x] 已推送 origin/main（059cb19c），Actions 自动触发
 
-### 待确认（外部输入）
-- [ ] GitHub Actions 首跑绿灯确认：gh 未认证且仓库私有，需在仓库 Actions 页
-      或 `gh auth login` 后 `gh run watch` 确认。本地等价步骤（重建+启动+
-      四场景、静态门禁全组）均已在本会话实证全绿；CI 特有风险仅剩
-      pnpm 安装/服务容器/端口绑定等环境项。
+### 已完成
+- [x] actionlint v1.7.7 校验 workflow：0 问题（语法/表达式/钩子静态层面
+      已排除首跑失败的主要风险）
+
+### 待确认（外部输入，连续三轮）
+- [ ] GitHub Actions 首跑绿灯确认：gh 未认证且仓库私有（匿名 API 404），
+      需在仓库 Actions 页查看，或 `gh auth login` 后 `gh run watch` 确认。
+- [ ] 本地 act 模拟：act 0.2.89 已安装，但 runner 镜像（GB 级）拉取在当前
+      网络下不可行（实测 7.7MB 耗时 6 分钟）；网络改善后可用
+      `act -j static-gates` 本地模拟。
