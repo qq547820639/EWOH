@@ -1,0 +1,234 @@
+# EWOH 长周期工程强化（阶段五）：静态门禁矩阵 + E2E 核心场景（服务容器 PG）
+# 覆盖：truth-check / audit-regression-gates（含主线13 世界快照契约）/
+#       bandit / openapi 无漂移 / E2E golden+receipt+device-physics+agv
+name: long-cycle-gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: long-cycle-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e7f98a1a1052ef7 # v4
+        with:
+          version: 9
+
+      - name: 安装 ewoh-spark-app 依赖
+        run: pnpm install --frozen-lockfile
+        working-directory: ewoh-spark-app
+
+      - name: 安装 Python 3.12 与门禁依赖（ruff/bandit/pytest/pyyaml）
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装 Python 依赖
+        run: python -m pip install --quiet ruff bandit==1.8.6 pytest pyyaml
+
+      - name: truth-check（单一事实源证据清单，P0 门禁）
+        run: make truth-check
+
+      - name: bandit 安全扫描门禁（JSON → bandit-gate）
+        run: |
+          python -m bandit -r src/edge_platform -ll -f json -o bandit-report.json
+          python3 scripts/bandit-gate.py bandit-report.json \
+            --suppressions security/bandit-suppressions.json
+
+      - name: audit-regression-gates（十三条主线，含主线13 世界快照契约）
+        run: make audit-regression-gates
+
+      - name: OpenAPI 契约无漂移
+        run: npm run openapi:no-drift
+        working-directory: ewoh-spark-app
+
+  e2e-core-scenarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: static-gates
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ewoh_owner
+          POSTGRES_PASSWORD: devownerpw
+          POSTGRES_DB: ewoh
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U ewoh_owner -d ewoh"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_URL_OWNER: postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh
+      EWOH_API_DATABASE_PASSWORD: DevApiPassword#2026x
+      EWOH_BOOTSTRAP_ADMIN_USERNAME: admin
+      EWOH_BOOTSTRAP_ADMIN_PASSWORD: DevAdmin#2026x
+      EWOH_APPROVER_PASSWORD: Approver#2026x
+      EWOH_WORKER_PASSWORD: Worker#2026x
+      EWOH_CONTROL_FINGERPRINT_SECRET: ci-fingerprint-secret-0123456789abcdef
+      EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE: "3"
+      EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION: "3"
+      EWOH_E2E_BACKEND_URL: http://127.0.0.1:3100
+      EWOH_E2E_INGEST_ORG_ID: "00000000-0000-4000-8000-000000000001"
+      EWOH_E2E_INGEST_KEY: ci-ingest-key-0001
+      EWOH_E2E_ADMIN_USER: admin
+      EWOH_E2E_ADMIN_PASS: DevAdmin#2026x
+      EWOH_E2E_APPROVER_USER: approver.li
+      EWOH_E2E_APPROVER_PASS: Approver#2026x
+      EWOH_E2E_OPERATOR_USER: approver.li
+      EWOH_E2E_OPERATOR_PASS: Approver#2026x
+      EWOH_E2E_FIELD_USER: worker.zhangwei
+      EWOH_E2E_FIELD_PASS: Worker#2026x
+      EWOH_E2E_PERSON_ID: 63000000-0000-4000-8000-000000000001
+      EWOH_E2E_PG_URL: postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh
+      EWOH_E2E_OWNER_DATABASE_URL: postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh
+      ORG_ID: 00000000-0000-4000-8000-000000000001
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e7f98a1a1052ef7 # v4
+        with:
+          version: 9
+
+      - name: 安装 ewoh-spark-app 依赖
+        run: pnpm install --frozen-lockfile
+        working-directory: ewoh-spark-app
+
+      - name: 迁移链 + 种子 + 运营账号（与 scripts/local-up.sh 同序）
+        run: |
+          set -a
+          EWOH_ALLOW_DDL=1
+          EWOH_DATABASE_URL="$DB_URL_OWNER"
+          export EWOH_DATABASE_URL EWOH_ALLOW_DDL EWOH_API_DATABASE_PASSWORD
+          node db/runner/standalone-chain.js --apply
+          node db/runner/run_migrations.js --apply-standalone-users
+          node db/runner/run_migrations.js --apply-standalone-runtime-role
+          node db/runner/run_migrations.js --seed-standalone
+          EWOH_BOOTSTRAP_ADMIN_USERNAME="$EWOH_BOOTSTRAP_ADMIN_USERNAME" \
+          EWOH_BOOTSTRAP_ADMIN_PASSWORD="$EWOH_BOOTSTRAP_ADMIN_PASSWORD" \
+            node db/runner/run_migrations.js --seed-standalone-admin
+          node db/runner/run_migrations.js --seed-standalone-scheduling
+          node db/runner/run_migrations.js --seed-standalone-workbench-data
+          node db/runner/run_migrations.js --seed-standalone-shift
+          node db/runner/run_migrations.js --seed-standalone-material
+          EWOH_DATABASE_URL="$DB_URL_OWNER" \
+            EWOH_OPERATOR_PASSWORD="$EWOH_APPROVER_PASSWORD" \
+            node db/runner/create-operator.js \
+              --username approver.li --display-name "李审批" \
+              --roles workshop_lead,dispatcher \
+              --person-id 63000000-0000-4000-8000-000000000003
+          EWOH_DATABASE_URL="$DB_URL_OWNER" \
+            EWOH_OPERATOR_PASSWORD="$EWOH_WORKER_PASSWORD" \
+            node db/runner/create-operator.js \
+              --username worker.zhangwei --display-name "张伟" \
+              --roles worker \
+              --person-id 63000000-0000-4000-8000-000000000001
+
+      - name: 生成 standalone 环境文件（CI 值，勿用于生产）
+        run: |
+          cat > ewoh-spark-app/.env.local-standalone <<ENV
+          HOST=127.0.0.1
+          PORT=3100
+          PUBLIC_BASE_URL=http://127.0.0.1:3100
+          API_PREFIX=/api
+          CORS_ORIGINS=http://127.0.0.1:5173
+          BODY_LIMIT=1mb
+          DATABASE_URL=postgresql://ewoh_api:$EWOH_API_DATABASE_PASSWORD@127.0.0.1:55432/ewoh
+          DB_POOL_MAX=10
+          DB_SCHEMA=public
+          JWT_SECRET=ci-standalone-verification-secret-0123456789
+          JWT_EXPIRES_IN=8h
+          REFRESH_TOKEN_EXPIRES_IN=30d
+          UPLOAD_DIR=./data/uploads-ci
+          EWOH_DB_STATEMENT_TIMEOUT_MS=30000
+          EWOH_DB_SLOW_THRESHOLD_MS=1000
+          ALLOW_LOCAL_FILE_STORAGE=true
+          LOG_LEVEL=warn
+          METRICS_ENABLED=true
+          EWOH_FACTORY_ID=factory-ci-001
+          EWOH_FACTORY_NAME=CI 验证工厂
+          EWOH_RELEASE_VERSION=0.6.0-rc4-ci
+          EWOH_REGION=ci
+          EWOH_DEPLOY_TARGET=standalone
+          INGEST_API_KEYS='{"ci-ingest-key-0001":"00000000-0000-4000-8000-000000000001"}'
+          EWOH_INGEST_ORG_ID=00000000-0000-4000-8000-000000000001
+          INGEST_RATE_LIMIT=100000
+          RATE_LIMIT_MAX=5000
+          RATE_LIMIT_WINDOW_SEC=60
+          LOGIN_RATE_LIMIT_MAX=1000
+          LOGIN_RATE_LIMIT_WINDOW_SEC=60
+          EWOH_CONTROL_FINGERPRINT_SECRET=$EWOH_CONTROL_FINGERPRINT_SECRET
+          EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE=3
+          EWOH_CONTROL_DELIVERY_QUOTA_PER_MINUTE_MOTION=3
+          ENV
+      - name: 构建 server
+        run: npm run build:server
+        working-directory: ewoh-spark-app
+
+      - name: 启动 standalone API
+        run: |
+          set -a; . ./.env.local-standalone; set +a
+          PORT=3100 NODE_ENV=production node dist/server/main.js > /tmp/ewoh-ci-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/auth/login \
+              -X POST -H 'Content-Type: application/json' -d '{}' || echo 000)
+            [ "$code" != "000" ] && break
+            sleep 1
+          done
+          [ "$code" != "000" ] || { tail -40 /tmp/ewoh-ci-server.log; exit 1; }
+        working-directory: ewoh-spark-app
+
+      - name: E2E golden
+        run: npm run e2e:golden
+        working-directory: ewoh-spark-app
+
+      - name: E2E receipt
+        run: npm run e2e:receipt
+        working-directory: ewoh-spark-app
+
+      - name: E2E device-physics
+        run: npm run e2e:device-physics
+        working-directory: ewoh-spark-app
+
+      - name: E2E agv-transport
+        run: npm run e2e:agv-transport
+        working-directory: ewoh-spark-app
+
+      - name: 上传服务日志（失败时排障）
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ewoh-ci-server-log
+          path: /tmp/ewoh-ci-server.log
+          if-no-files-found: ignore
