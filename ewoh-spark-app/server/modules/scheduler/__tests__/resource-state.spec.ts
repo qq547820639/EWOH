@@ -266,6 +266,37 @@ describe('ResourceProjectionService（统一资源状态聚合器）', () => {
     expect(byId('P-FRESH').freshnessMs).toBe(24 * 60 * 60 * 1000);
   });
 
+  it('阶段二时钟统一：分类 now 取 DB 时钟（clock_timestamp），DB 超前宿主机 27ms 的写后立读仍 FRESH', async () => {
+    // ADR-084：sourceTs 与比较 now 同源（都是 DB 时钟）后，写后立读不再受
+    // DB/宿主机钟差影响。本用例模拟 DB 时钟超前宿主机 27ms 的真实 Colima 场景。
+    const dbClockAtRead = Date.now() + 27; // DB clock_timestamp（VM 可略超前宿主机）
+    const justWritten = new Date(dbClockAtRead - 27); // 写侧 now()（DB 钟）刚触碰
+    const reservationService = { listActive: jest.fn().mockResolvedValue([]) };
+    function makeChain(rows: unknown[]): any {
+      const p: any = Promise.resolve(rows);
+      p.where = () => p;
+      p.orderBy = () => p;
+      p.limit = () => p;
+      return p;
+    }
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn((t: unknown) => {
+          if (t === ewohPersonnel) return makeChain([personRow({ updatedAt: justWritten })]);
+          if (t === ewohDevice) return makeChain([deviceRow({ lastTelemetryAt: justWritten })]);
+          if (t === ewohSpatialEntity) return makeChain([stationRow({ updatedAt: justWritten })]);
+          return makeChain([]);
+        }),
+      }),
+      execute: jest.fn().mockResolvedValue([{ ts: dbClockAtRead }]),
+    };
+    const svc = new ResourceProjectionService(db as never, reservationService as never);
+    const resources = await svc.project();
+    expect(resources.map((r) => r.dataQuality)).toEqual(['FRESH', 'FRESH', 'FRESH']);
+    const snapshot = await svc.projectForSnapshot();
+    expect(snapshot.persons[0].dataQuality).toBe('FRESH');
+  });
+
   it('跨系统钟差容忍：写后立读（sourceTs 略超前 now）仍 FRESH，超容忍才 UNKNOWN', async () => {
     // 2026-09-19 实测：DB 容器时钟可比应用宿主机超前几十毫秒。写侧
     // `_updated_at = now()`（DB 钟）后立读（JS Date.now() 比较）时

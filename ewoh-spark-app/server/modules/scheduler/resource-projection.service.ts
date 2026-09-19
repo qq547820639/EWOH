@@ -183,7 +183,7 @@ export class ResourceProjectionService {
     const resFor = (type: string, id: string): ReservationResult[] =>
       reservationsByKey.get(`${type}:${id}`) ?? [];
 
-    const now = Date.now();
+    const now = await this.dbClockMs();
     const spatialByEntityId = new Map<string, (typeof spatialRows)[number]>();
     for (const se of spatialRows) spatialByEntityId.set(se.entityId, se);
     // 2026-08-21：person master 新鲜度回退——personnel._updated_at 为 seed 时间
@@ -837,6 +837,30 @@ export class ResourceProjectionService {
    * 只换来源不换形状：字段与旧快照装配一致（availableFromMs 由真实 reservation
    * 推导、dataQuality FRESH/STALE/UNKNOWN），并增加 coordinate 判别联合。
    */
+  /**
+   * ADR-084：新鲜度分类的时间原点 = 数据库时钟（clock_timestamp）。
+   * sourceTs 全部来自 DB 时钟写入，同源比较消除 DB/宿主机双钟混用导致的
+   * 写后立读翻转（实测 27ms 偏差 → 全员 UNKNOWN）。取时失败回落宿主机
+   * Date.now()（可用性优先；5s 偏差容忍仍作纵深防御）。
+   */
+  private async dbClockMs(): Promise<number> {
+    try {
+      const rows = (await this.db.execute(
+        sql`SELECT clock_timestamp() AS ts`,
+      )) as unknown;
+      const first = Array.isArray(rows)
+        ? (rows[0] as { ts?: unknown } | undefined)
+        : ((rows as { rows?: Array<{ ts?: unknown }> })?.rows ?? [])[0];
+      const raw = first?.ts;
+      const ms = raw == null
+        ? NaN
+        : (raw instanceof Date ? raw.getTime() : new Date(String(raw)).getTime());
+      return Number.isFinite(ms) ? ms : Date.now();
+    } catch {
+      return Date.now();
+    }
+  }
+
   async projectForSnapshot(ctx?: OrgContext): Promise<{
     persons: WorldStateSnapshot['persons'];
     devices: WorldStateSnapshot['devices'];
@@ -929,7 +953,7 @@ export class ResourceProjectionService {
       }
     }
 
-    const now = Date.now();
+    const now = await this.dbClockMs();
 
     // NO-05c（ADR-010）：活跃维护状态事实（person:/device:/station:<id> 索引）。
     // R2-SSV-04：ctx org 过滤（与 project() 同口径）。
