@@ -418,8 +418,18 @@ async function main() {
         // 不可控，但"本人可报 vs 他人被拒"的授权契约不依赖具体是谁。
         // （场景拥有该数据；直接改派生事实，测的是 API 授权行为本身。）
         const freshPool = await request('GET', '/api/scheduler/executions', null, adminToken);
-        const ownCandidate = (freshPool.body?.executions ?? []).find((e) => e.personId
+        let ownCandidate = (freshPool.body?.executions ?? []).find((e) => e.personId
           && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(e.status));
+        if (!ownCandidate) {
+          // 排除主腿目标行：那是步骤 6-7 的被测对象，改写它会污染主断言。
+          ownCandidate = (freshPool.body?.executions ?? [])
+            .find((e) => e.assignmentId !== target?.assignmentId) ?? null;
+          if (ownCandidate) {
+            await sql`update ewoh_scheduling_execution
+               set status = 'STARTED', actual_end_at = null, actual_start_at = now()
+               where assignment_id = ${ownCandidate.assignmentId}`;
+          }
+        }
         if (ownCandidate) {
           // 授权比较的是 **assignment.personId**（计划派工行），执行行 person_id
           // 同步改保持一致；种子行选 STARTED 态（worker 角色只能做 START→COMPLETED）。
@@ -468,6 +478,11 @@ async function main() {
           if (!others.length) {
             skip('21. 他人任务被拒', '库中没有他人未终结记录可供越权验证');
           } else {
+            // 越权目标行若已带开始事实，服务端会先按「事实不可变」409 拒绝
+            // （事实保护生效，但那是事实保护不是授权保护）。清掉开始事实后再试，
+            // 使 403 授权拒绝成为确定结果——本步测的是授权，不是事实保护。
+            await sql`update ewoh_scheduling_execution
+               set actual_start_at = null where assignment_id = ${others[0].assignmentId}`;
             const intrude = await request('POST', `/api/scheduler/executions/${encodeURIComponent(others[0].assignmentId)}/update`, {
               status: 'STARTED', actualStartAt: new Date().toISOString(), reportedSource: 'simulated',
             }, fieldToken);
