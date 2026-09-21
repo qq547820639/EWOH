@@ -57,6 +57,8 @@ export interface FlushLeaseManagerOptions {
   claimDelay?: () => number;
   /** Injectable heartbeat interval (ms). */
   heartbeatMs?: number;
+  /** Exchange window used to resolve simultaneous deterministic claims. */
+  electionWindowMs?: number;
 }
 
 function createId(): string {
@@ -99,6 +101,7 @@ export class FlushLeaseManager {
   private readonly leaseMs: number;
   private readonly claimDelay: () => number;
   private readonly heartbeatMs: number;
+  private readonly electionWindowMs: number;
   private readonly electors = new Map<string, BroadcastElector>();
 
   constructor(options: FlushLeaseManagerOptions = {}) {
@@ -112,6 +115,7 @@ export class FlushLeaseManager {
     this.leaseMs = options.leaseMs ?? 15_000;
     this.claimDelay = options.claimDelay ?? (() => 100 + Math.random() * 300);
     this.heartbeatMs = options.heartbeatMs ?? 5_000;
+    this.electionWindowMs = options.electionWindowMs ?? 500;
   }
 
   /** True when the Web Locks API is available (the preferred path). */
@@ -165,8 +169,16 @@ export class FlushLeaseManager {
     return elector.promise;
   }
 
-  /** Drop cached election state (used by tests / on logout). */
+  /** Release resolved leaders and discard cached election state (logout). */
   clear(): void {
+    for (const elector of this.electors.values()) {
+      void elector.promise
+        .then((result) => {
+          if (result.isLeader) result.release();
+        })
+        .catch(() => undefined);
+      elector.dispose?.();
+    }
     this.electors.clear();
   }
 
@@ -183,23 +195,28 @@ export class FlushLeaseManager {
       };
     }
 
-    // CLI-503 相关状态提升到 executor 外，供 isStale/dispose 闭包读取。
+    // State is hoisted so stale checks and disposal can inspect an election
+    // before its promise resolves (a follower may wait indefinitely).
     let released = false;
     let lastSeen = this.now();
+    const competingTokens = new Set<string>();
 
     const resultPromise = new Promise<LeaderResult>((resolve) => {
       let settled = false;
       let isLeader = false;
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+      let electionTimer: ReturnType<typeof setTimeout> | null = null;
 
-      const stopHeartbeat = () => {
+      const stopTimers = () => {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (electionTimer) clearTimeout(electionTimer);
         heartbeatTimer = null;
+        electionTimer = null;
       };
 
       const teardownFollower = () => {
         released = true;
-        stopHeartbeat();
+        stopTimers();
         channel.close();
         if (this.electors.get(name)?.promise === resultPromise) {
           this.electors.delete(name);
@@ -210,11 +227,11 @@ export class FlushLeaseManager {
         if (settled && !self) return { isLeader: false, release: () => undefined };
         settled = true;
         isLeader = leader;
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        stopTimers();
         return {
           isLeader,
           release: () => {
-            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            stopTimers();
             channel.postMessage({ type: 'release', name, token });
             channel.close();
             this.electors.delete(name);
@@ -228,48 +245,52 @@ export class FlushLeaseManager {
         if (msg.type === 'ping' || msg.type === 'claim') {
           lastSeen = this.now();
         }
-        if (msg.type === 'claim' && !settled) {
-          // Another tab claimed leadership first — yield.
+        if (msg.type === 'claim') {
+          competingTokens.add(msg.token);
+          if (msg.token < token) released = true; // deterministic loser
+        }
+        if (msg.type === 'claim' && !settled && released) {
           resolve(settle(false, true));
           return;
         }
         if (msg.type === 'release' && settled && !isLeader) {
-          // CLI-503：leader 主动释放 lease，本 tab 的跟随状态作废；
-          // 下一次 acquireLeader 会重新选举（本 tab 可抢主）。
+          // The winner released; allow a fresh election on next acquisition.
           teardownFollower();
         }
       };
       channel.onmessage = onMessage;
 
-      // Jittered claim so a single tab becomes leader without a broadcast storm.
-      const delay = Math.max(0, this.claimDelay());
-      setTimeout(() => {
+      // Announce first, then wait one exchange window. Deterministic token
+      // comparison resolves the case where two tabs claim in the same tick.
+      const claimDelay = Math.max(0, this.claimDelay());
+      electionTimer = setTimeout(() => {
         if (settled) return;
         channel.postMessage({ type: 'claim', name, token });
-        isLeader = true;
-        settled = true;
-        // Heartbeat lease renewal.
-        heartbeatTimer = setInterval(() => {
-          if (!settled) return;
-          channel.postMessage({ type: 'ping', name, token });
-          lastSeen = this.now();
-        }, this.heartbeatMs);
-        resolve({
-          isLeader: true,
-          release: () => {
-            if (heartbeatTimer) clearInterval(heartbeatTimer);
-            channel.postMessage({ type: 'release', name, token });
-            channel.close();
-            this.electors.delete(name);
-          },
-        });
-      }, delay);
+        electionTimer = setTimeout(() => {
+          if (settled) return;
+          const winner =
+            !released &&
+            (competingTokens.size === 0 ||
+              token < [...competingTokens].sort()[0]);
+          if (winner) {
+            isLeader = true;
+            settled = true;
+            heartbeatTimer = setInterval(() => {
+              if (!settled) return;
+              channel.postMessage({ type: 'ping', name, token });
+              lastSeen = this.now();
+            }, this.heartbeatMs);
+            resolve(settle(true, true));
+          } else {
+            resolve(settle(false, true));
+          }
+        }, Math.max(0, this.electionWindowMs));
+      }, claimDelay);
     });
 
     return {
       promise: resultPromise,
-      // CLI-503：跟随者侧 lease 超时判定——超过 leaseMs 未收到 leader
-      // 心跳（leader 崩溃且未 release）即视为过期，允许重新选举。
+      // A follower expires when its leader stops pinging or clear() disposes it.
       isStale: () => released || this.now() - lastSeen > this.leaseMs,
       dispose: () => {
         if (channel.onmessage) channel.onmessage = null;

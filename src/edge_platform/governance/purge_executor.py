@@ -41,6 +41,7 @@ class PurgeExecutor:
     def __init__(self, retention_manager: RetentionManager, audit_logger: Optional[Callable] = None):
         self.rm = retention_manager
         self._audit_logger = audit_logger
+        self._batch_size_guard = max(1, int(getattr(self, "_batch_size_guard", 1)))
 
     # ---- 工具 ----
     @staticmethod
@@ -146,7 +147,13 @@ class PurgeExecutor:
         if table_cond is None:
             return 0
         table, condition, params = table_cond
-        deleted = self._batched_delete(storage, table, condition, params, int(batch_size))
+        try:
+            normalized_batch_size = int(batch_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("batch_size 必须为正整数") from exc
+        if normalized_batch_size <= 0:
+            raise ValueError("batch_size 必须为正整数")
+        deleted = self._batched_delete(storage, table, condition, params, normalized_batch_size)
         if deleted > 0:
             self._audit(
                 storage,

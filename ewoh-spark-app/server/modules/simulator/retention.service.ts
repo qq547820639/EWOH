@@ -27,7 +27,7 @@ import postgres from 'postgres';
 export class RetentionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RetentionService.name);
   private timer: NodeJS.Timeout | null = null;
-  /** 独立系统级连接（优先 owner 串绕 RLS；缺省回落 DATABASE_URL 尽力而为）。 */
+  /** 独立系统级连接。缺少显式 owner 串时必须显式跳过，不能用运行时角色静默读空。 */
   private readonly ownerClient: postgres.Sql | null;
 
   private static readonly CLEAN_INTERVAL_MS = 60 * 60 * 1000; // 每小时
@@ -36,8 +36,10 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
   private static readonly SIM_EVENT_EXPIRY_MS = 2 * 3_600_000;
 
   constructor() {
-    const url =
-      process.env.EWOH_DATABASE_URL || process.env.DATABASE_URL || '';
+    // The owner role bypasses RLS for cross-tenant retention. Falling back to the
+    // runtime role would look like success while RLS makes every cleanup read zero
+    // rows. Keep this fail-closed and expose the configuration gap as a warning.
+    const url = process.env.EWOH_DATABASE_URL || '';
     this.ownerClient = url
       ? postgres(url, { max: 2, idle_timeout: 60_000, prepare: false })
       : null;
@@ -56,10 +58,15 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     this.timer.unref?.();
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    // Clean stops with the app; its dedicated owner pool must stop too so
+    // embedded E2E apps and graceful shutdown do not leak PostgreSQL sockets.
+    if (this.ownerClient) {
+      await this.ownerClient.end({ timeout: 5 }).catch(() => undefined);
     }
   }
 
@@ -83,17 +90,17 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
       const cutoff = new Date(now - job.keepMs).toISOString();
       let total = 0;
       for (;;) {
-        const pending = await this.ownerClient.unsafe<
-          Array<{ id: string }>
-        >(
+        const pending = await this.ownerClient.unsafe<Array<{ id: string }>>(
           `SELECT id FROM ${job.table}
-           WHERE ${job.tsColumn} < '${cutoff}'::timestamptz
-           LIMIT ${RetentionService.BATCH}`,
+           WHERE ${job.tsColumn} < $1::timestamptz
+           LIMIT $2`,
+          [cutoff, RetentionService.BATCH],
         );
         if (pending.length === 0) break;
-        const idList = pending.map((row) => `'${row.id}'`).join(',');
+        const ids = pending.map((row) => row.id);
         await this.ownerClient.unsafe(
-          `DELETE FROM ${job.table} WHERE id IN (${idList})`,
+          `DELETE FROM ${job.table} WHERE id = ANY($1)`,
+          [ids],
         );
         total += pending.length;
       }
@@ -128,15 +135,17 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
         `SELECT id FROM ewoh_event
          WHERE status = 'open'
            AND source_type = 'simulated'
-           AND created_at < '${cutoff}'::timestamptz
-         LIMIT ${RetentionService.BATCH}`,
+           AND created_at < $1::timestamptz
+         LIMIT $2`,
+        [cutoff, RetentionService.BATCH],
       );
       if (pending.length === 0) break;
-      const idList = pending.map((row) => `'${row.id}'`).join(',');
+      const ids = pending.map((row) => row.id);
       await this.ownerClient.unsafe(
         `UPDATE ewoh_event
          SET status = 'expired', _updated_at = now()
-         WHERE id IN (${idList})`,
+         WHERE id = ANY($1)`,
+        [ids],
       );
       total += pending.length;
     }

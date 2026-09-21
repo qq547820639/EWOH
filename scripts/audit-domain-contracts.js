@@ -1604,6 +1604,12 @@ function arbValidateAgent(record) {
     if (level === 'L2' || level === 'L3') return ['safety_autonomy_forbidden'];
     if (writeTokens.length > 0 || writeCommands.length > 0) return ['safety_role_write_forbidden'];
   }
+  const l3SafeCommands = new Set(['propose_plan', 'record_evidence', 'request_approval', 'run_simulation']);
+  if (level === 'L3') {
+    if (record.riskLevel !== 'low') return ['l3_risk_forbidden'];
+    if (writeCommands.some((command) => !l3SafeCommands.has(command))) return ['l3_command_forbidden'];
+    if (writeTokens.some((token) => token !== 'simulationData')) return ['l3_scope_forbidden'];
+  }
   for (const key of ['inputContract', 'outputContract']) {
     const contract = record[key];
     if (contract == null || typeof contract !== 'object' || Array.isArray(contract) || typeof contract.schemaRef !== 'string' || contract.schemaRef === '') return ['bad_contract'];

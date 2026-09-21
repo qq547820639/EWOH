@@ -427,6 +427,17 @@ class AdapterManager:
                         )
                         if isinstance(exc, FrameContractError):
                             self._record_frame_dead_letter(adapter, msg, exc)
+                        else:
+                            # 存储宕机/磁盘满/驱动异常同样是“帧未能落库”的事实。
+                            # 不转成普通日志后丢弃；死信载荷保留原始帧，恢复后可人工重放。
+                            self._record_frame_dead_letter(
+                                adapter,
+                                msg,
+                                FrameContractError(
+                                    "telemetry",
+                                    f"persistence_failed:{type(exc).__name__}: {exc}",
+                                ),
+                            )
                     else:
                         time.sleep(0.05)
             if not persisted:

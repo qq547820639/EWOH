@@ -350,6 +350,8 @@ describe('派工 · 外骨骼会话执行边界（NO-36a）', () => {
           deviceId: DEV_UUID,
           stationId: null,
           status: 'approved',
+          version: 1,
+          orgId: 'org1',
         },
       ],
       tasks: [{ id: 'TASK-EXO', status: 'pending_dispatch', version: 1, orgId: 'org1' }],

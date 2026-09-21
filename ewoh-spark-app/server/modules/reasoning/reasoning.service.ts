@@ -25,6 +25,7 @@ import {
   type ObservationEvidence,
   type SkippedObservation,
 } from '@shared/observation-facts';
+import { randomUUID } from 'node:crypto';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
 export interface EvaluateReasoningInput {
@@ -140,7 +141,7 @@ export class ReasoningService {
     // 有价值的信息，不编造一条占位事实、也不抛错。
     const base = await this.evaluate(
       {
-        traceId: `rt-live-${Math.floor(generatedAt.getTime() / 1000)}`,
+        traceId: `rt-live-${randomUUID()}`,
         snapshotVersion,
         facts,
       },
@@ -330,7 +331,11 @@ export class ReasoningService {
     }
   }
 
-  async evaluate(input: EvaluateReasoningInput, orgId: string) {
+  async evaluate(input: EvaluateReasoningInput, orgId: string): Promise<{
+    trace: Record<string, unknown>;
+    inferenceIds: Array<{ conclusionId: string; inferenceId: string }>;
+    ledgerFailures: Array<{ conclusionId: string; ruleId: string; error: string }>;
+  }> {
     if (!orgId?.trim()) {
       throw new BadRequestException('orgId 缺失：推理评估必须带租户上下文');
     }
@@ -351,7 +356,7 @@ export class ReasoningService {
     }
     const traceId = input.traceId && input.traceId !== ''
       ? input.traceId
-      : `rt-${Math.floor(Date.now() / 1000)}-${Math.random().toString(16).slice(2, 10)}`;
+      : `rt-${randomUUID()}`;
     // ADR-026 反馈腿激活面：本租户 approved 提案的阈值覆盖（人审激活，
     // 绝不隐式自动执行；无 approved 提案 = 引擎内置常量）。
     const thresholds = await this.learningProposalService.getActiveThresholds(orgId);
@@ -369,6 +374,7 @@ export class ReasoningService {
       throw new BadRequestException(`推理轨迹违反契约: ${errors.join(', ')}`);
     }
     const inferenceIds: Array<{ conclusionId: string; inferenceId: string }> = [];
+    const ledgerFailures: Array<{ conclusionId: string; ruleId: string; error: string }> = [];
     const window = input.window ?? {};
     const tsStart = window.from ?? new Date().toISOString();
     const tsEnd = window.to ?? new Date().toISOString();
@@ -394,10 +400,16 @@ export class ReasoningService {
           inferenceId: String((result.record as Record<string, unknown>).inferenceId),
         });
       } catch (error) {
-        this.logger.error(`推理结论落账失败 ${conclusion.ruleId}: ${String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`推理结论落账失败 ${conclusion.ruleId}: ${message}`);
+        ledgerFailures.push({
+          conclusionId: conclusion.conclusionId,
+          ruleId: conclusion.ruleId,
+          error: message,
+        });
       }
     }
-    return { trace, inferenceIds };
+    return { trace, inferenceIds, ledgerFailures };
   }
 
   listRules(): ReasoningRuleDefinition[] {

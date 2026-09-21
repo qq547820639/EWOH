@@ -17,6 +17,7 @@ export type FieldReminderKind =
   | 'ASSIGNMENT_OVERDUE'
   | 'STARTED_NEEDS_COMPLETION'
   | 'RECEIPT_DATA_STALE'
+  | 'FIELD_DATA_NOT_READY'
   | 'EXO_SESSION_UNBOUND'
   | 'EXO_SESSION_STALE';
 
@@ -74,8 +75,16 @@ export interface FieldReminderInput {
   exoSessions: FieldExoSession[];
   /** 判定新鲜度的当前时刻（注入以便确定性测试）。 */
   now: number;
-  /** 数据是否新鲜（来自 dataFreshness 判定）。 */
+  /**
+   * 数据是否新鲜（来自 dataFreshness 判定）。
+   * 只有请求成功且取得过数据后才进入新鲜度判定。
+   */
   dataFresh: boolean;
+  /**
+   * 数据是否可用于判断（首次加载中或请求失败为 false）。
+   * “未就绪/不可用”不得与“已过期”混为一谈。
+   */
+  dataAvailable?: boolean;
   /** 数据取得时刻（用于 source.asOf）。 */
   dataUpdatedAt: number;
   /** 现场数据视为陈旧的阈值（毫秒）。 */
@@ -136,6 +145,7 @@ export function buildFieldReminders(input: FieldReminderInput): FieldReminder[] 
   const {
     personId, executions, exoSessions, now, dataFresh, dataUpdatedAt,
     staleAfterMs = DEFAULT_FIELD_STALE_MS,
+    dataAvailable = true,
     exoDataAvailable = true,
   } = input;
   const reminders: FieldReminder[] = [];
@@ -143,6 +153,19 @@ export function buildFieldReminders(input: FieldReminderInput): FieldReminder[] 
   const baseSource = (origin: string): FieldReminderSource => ({
     origin, asOf: dataAsOf, fresh: dataFresh,
   });
+
+  // 首次加载/请求失败不是"过期"。必须区分"还没拿到事实"与"拿到的结果已旧"，
+  // 否则现场会在打开页面瞬间看到虚假的"数据已过期"结论。
+  if (dataAvailable === false) {
+    reminders.push({
+      kind: 'FIELD_DATA_NOT_READY',
+      severity: 'info',
+      title: '现场数据尚未就绪，暂不给出现场结论',
+      detail: '正在等待执行记录或上一次读取失败。系统不会把缺失数据当作已过期结论，也不会据此派生待办。',
+      source: baseSource(FIELD_EXECUTIONS_ORIGIN),
+    });
+    return reminders;
+  }
 
   // 新鲜度不足时，先给出**一条**显式的数据可信度提醒，并停止产出"待办类"提醒。
   // 理由：用过期数据渲染"你现在该做 X"正是本系统明令禁止的伪造确定性。

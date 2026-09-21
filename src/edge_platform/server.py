@@ -16,6 +16,7 @@
 import csv
 import io
 import json
+import re
 import ssl
 import threading
 import time
@@ -29,7 +30,7 @@ from . import services
 from .config import Settings
 from .rbac.permissions import action_for_request, is_allowed
 from .routes import NOT_HANDLED, ReqMeta
-from .routes._util import offline_after_sec
+from .routes._util import offline_after_sec, runtime_mode
 from .routes.registry import dispatch
 from .security import SecurityHeaders, rate_limiter
 
@@ -93,7 +94,7 @@ def get_actor_from_request(handler):
 
 def _anonymous_or_none():
     """production 未认证返回 None（fail-closed）；development/simulation 返回 anonymous。"""
-    if Settings.load().runtime_mode == "production":
+    if runtime_mode() == "production":
         return None
     return "anonymous"
 
@@ -120,7 +121,7 @@ def rbac_allowed(handler, action):
     - production 无会话/会话无效/未知角色 → False（禁止）；
     - 会话角色命中矩阵 → 按矩阵判定。
     """
-    if Settings.load().runtime_mode != "production":
+    if runtime_mode() != "production":
         return True
     sm = _get_session_manager()
     if sm is None:
@@ -280,8 +281,11 @@ def make_handler(ctx):
             # development/simulation 保留 echo 便于本地跨端口联调，但打印警告。
             origin = self.headers.get("Origin") if self.headers else None
             if origin:
-                mode = Settings.load().runtime_mode
-                allowlist = Settings.load().cors_origins
+                mode = runtime_mode()
+                try:
+                    allowlist = Settings.load().cors_origins
+                except Exception:
+                    allowlist = ()
                 if mode == "production":
                     if allowlist and origin in allowlist:
                         self.send_header("Access-Control-Allow-Origin", origin)
@@ -310,6 +314,18 @@ def make_handler(ctx):
                     result="success",
                 )
 
+        @staticmethod
+        def _safe_download_filename(name):
+            """Content-Disposition filename must stay a simple ASCII token.
+
+            device_id and timestamps can originate from request input; CR/LF or
+            quotes here would split/inject response headers.
+            """
+            text = str(name or "download")
+            sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", text)
+            sanitized = sanitized.lstrip(".")[:120] or "download"
+            return f"{sanitized}.json" if "." not in sanitized else sanitized
+
         def send_json(self, obj, status=200, download=None):
             self._flush_post_audit()
             data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -318,7 +334,8 @@ def make_handler(ctx):
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             if download:
-                self.send_header("Content-Disposition", f'attachment; filename="{download}"')
+                safe_name = self._safe_download_filename(download)
+                self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
             self.end_headers()
             self.wfile.write(data)
 
@@ -334,7 +351,8 @@ def make_handler(ctx):
             self.send_response(200)
             self.send_header("Content-Type", "text/csv; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            safe_name = self._safe_download_filename(filename)
+            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
@@ -459,7 +477,7 @@ def make_handler(ctx):
             p = urlparse(self.path).path
             # EDGE-001：production 下 GET 面强制认证 + RBAC（未映射默认拒绝）；
             # development/simulation 保持宽松（离线演示直连，不破坏既有测试）。
-            if Settings.load().runtime_mode == "production":
+            if runtime_mode() == "production":
                 guard = self._production_read_guard(p)
                 if guard is not None:
                     return guard
@@ -501,7 +519,7 @@ def make_handler(ctx):
             self._audit_target_id = None
             # P0-Edge-Security：production 下所有写操作（POST/PATCH）必须认证，
             # 公共端点白名单豁免。未认证 → 401（fail-closed，禁止 anonymous 写）。
-            if Settings.load().runtime_mode == "production":
+            if runtime_mode() == "production":
                 actor = self._actor()
                 if actor is None and p not in PUBLIC_POST_PATHS:
                     self._post_audit_pending = False
@@ -547,7 +565,7 @@ def make_handler(ctx):
             # 回退 SPA index.html 返回 200。
             p = urlparse(self.path).path
             if p.startswith("/api/") or p == "/metrics":
-                if Settings.load().runtime_mode == "production":
+                if runtime_mode() == "production":
                     action = action_for_request("GET", p)
                     sm = _get_session_manager()
                     session = _verify_bearer_session(self, sm) if sm else None
@@ -592,7 +610,7 @@ def make_handler(ctx):
                 return self.send_json({"error": "not found"}, 404)
             # P0-安全：production 下写操作必须认证（与 do_POST 对齐，fail-closed），
             # 公共端点白名单豁免；未认证 → 401，禁止 anonymous 写。
-            if Settings.load().runtime_mode == "production":
+            if runtime_mode() == "production":
                 actor = self._actor()
                 if actor is None and p not in PUBLIC_POST_PATHS:
                     return self._new_error("unauthorized", "production 写操作必须携带有效 Bearer token", 401)
@@ -658,7 +676,7 @@ def build_server(addr, ctx, tls_cert=None, tls_key=None):
     SecurityHeaders.wrap(handler_cls)
     # P0-Edge-Security：production 下接入速率限制（默认 60 req/min/IP，进程内内存）。
     # 仅 production 启用，避免开发/仿真/自检路径被限流误伤。
-    if Settings.load().runtime_mode == "production":
+    if runtime_mode() == "production":
         handler_cls = rate_limiter()(handler_cls)
     httpd = ThreadingHTTPServer(addr, handler_cls)
     # 优先使用显式参数，其次读取 Settings

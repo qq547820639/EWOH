@@ -69,9 +69,13 @@ function makeSolver(
   pools: Record<string, CandidateEvaluation[]>,
   loader?: () => Promise<never>,
 ) {
+  const calls: Array<{ taskId: string; opts: Record<string, unknown> }> = [];
   const candidateEngine = {
     buildCandidatePool: jest.fn(
-      async (t: WorldStateSnapshot['tasks'][number]) => pools[t.id] ?? [],
+      async (t: WorldStateSnapshot['tasks'][number], _snapshot: unknown, opts: Record<string, unknown>) => {
+        calls.push({ taskId: t.id, opts });
+        return pools[t.id] ?? [];
+      },
     ),
   };
   const policyService = {
@@ -84,16 +88,16 @@ function makeSolver(
     new SchedulingObjectiveEvaluator(),
     loader as never,
   );
-  return { solver };
+  return { solver, calls, policyService };
 }
 
-const OPTS = {
+const OPTS: import('../scheduling-solver.interface').SolveOptions = {
   planId: 'PLAN-MILP-1',
   triggerType: 'MANUAL',
   triggerEntityId: null,
   snapshotVersion: 'WS-TEST-0001',
   horizonMinutes: 480,
-} as never;
+};
 
 function snapshotWith(tasks: Array<Record<string, unknown>>, overrides: Record<string, unknown> = {}): WorldStateSnapshot {
   return buildSnapshot({
@@ -135,6 +139,23 @@ function bruteForceOptimum(
   recurse(0, new Map(), 0);
   return { assignments: best!.assignments, cost: best!.cost };
 }
+
+describe('MILP tenant config propagation', () => {
+  it('passes org policy/config into candidate pool once', async () => {
+    const snapshot = snapshotWith([task({ id: 'task-1' })]);
+    const { solver, calls, policyService } = makeSolver({
+      'task-1': [eligible('p1')],
+    });
+    await solver.solve(snapshot, [], {
+      ...OPTS,
+      orgId: 'orgA',
+    });
+    expect(policyService.getActivePolicy).toHaveBeenCalledWith('orgA');
+    expect(policyService.getConfig).toHaveBeenCalledWith('orgA');
+    expect(calls[0].opts.policy).toEqual(defaultPolicy());
+    expect(calls[0].opts.config).toEqual(defaultConfig());
+  });
+});
 
 describe('MilpSchedulingSolver（ADR-058 / NO-13i）', () => {
   it('真实 HiGHS 求解：单任务最优候选（成本 argmin）+ 标记如实（§33）', async () => {

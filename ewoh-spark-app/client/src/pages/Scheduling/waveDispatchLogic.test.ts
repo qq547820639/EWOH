@@ -112,7 +112,8 @@ describe('分波派工 · 确认文案（必须命名确切后果）', () => {
     expect(copy.title).toContain('1 条');
     expect(copy.consequence).toContain('仍有 2 条待派工');
     expect(copy.consequence).toContain('未进入终态');
-    expect(copy.consequence).toContain('没有取消派工的接口');
+    expect(copy.consequence).toContain('未开始项可通过方案级「取消/回滚」收回');
+    expect(copy.consequence).toContain('已开始项不可回退');
     expect(copy.confirmLabel).toBe('派发 1 条');
   });
 

@@ -86,6 +86,21 @@ function snapshot(): WorldStateSnapshot {
   });
 }
 
+describe('candidate policy tenant scoping', () => {
+  it('passes orgId into policy fallback and propagates config to the pool', async () => {
+    const { engine, policy } = makeEngine();
+    policy.getConfig.mockClear();
+
+    await engine.buildCandidatePool(snapshot().tasks[0], snapshot(), {
+      nowMs: 0,
+      orgId: 'orgA',
+    });
+
+    expect(policy.getActivePolicy).toHaveBeenCalledWith('orgA');
+    expect(policy.getConfig).toHaveBeenCalledWith('orgA');
+  });
+});
+
 describe('M02 #17 candidate-engine parity', () => {
   it('求解器注入 CandidateEngine 时消费 buildCandidatePool（不再内联自建）', async () => {
     const { engine, policy, routeCostProvider } = makeEngine();
@@ -108,8 +123,11 @@ describe('M02 #17 candidate-engine parity', () => {
       triggerEntityId: null,
       snapshotVersion: 'WS-TEST-0001',
       horizonMinutes: 480,
+      orgId: 'orgA',
     });
 
+    expect(policy.getActivePolicy).toHaveBeenCalledWith('orgA');
+    expect(policy.getConfig).toHaveBeenCalledWith('orgA');
     expect(spy).toHaveBeenCalled();
   });
 

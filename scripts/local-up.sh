@@ -54,6 +54,31 @@ done
 
 log()  { printf '\033[1;34m[local-up]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[local-up] 失败:\033[0m %s\n' "$*" >&2; exit 1; }
+service_process_alive() {
+  local pid="$1" state
+  kill -0 "$pid" 2>/dev/null || return 1
+  state="$(ps -p "$pid" -o stat= 2>/dev/null || true)"
+  case "$state" in Z*|'') return 1 ;; esac
+  return 0
+}
+
+postgres_target() {
+  node -e '
+    const value = process.argv[1];
+    let url;
+    try { url = new URL(value); } catch { process.exit(1); }
+    if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") process.exit(2);
+    if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname)) process.exit(3);
+    const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+    if (!database || ["postgres", "template0", "template1"].includes(database)) process.exit(4);
+    console.log(database);
+  ' "$1"
+}
+
+PG_DB="$(postgres_target "$DB_URL_OWNER")" || fail "数据库必须是本机回环上的专用业务库（不能是 postgres/template）"
+[[ "$PG_DB" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail "数据库名必须是受限 SQL 标识符（字母、数字、下划线，且不以数字开头）"
+[[ "$PG_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail "数据库属主必须是受限 SQL 标识符（字母、数字、下划线，且不以数字开头）"
+PID_FILE="${EWOH_LOCAL_UP_PID_FILE:-/tmp/ewoh-local-up-${SERVER_PORT}.pid}"
 
 # ---------------------------------------------------------------- 1. PostgreSQL
 log "1/6 检查 PostgreSQL（docker 容器 ${PG_CONTAINER}）"
@@ -74,13 +99,22 @@ for i in $(seq 1 30); do
   [ "$i" = 30 ] && fail "PostgreSQL 30 秒内未就绪"
   sleep 1
 done
+if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = '${PG_DB}'" | grep -q 1; then
+  log "  创建目标数据库 ${PG_DB}"
+  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d postgres \
+    -c "CREATE DATABASE ${PG_DB} OWNER ${PG_USER};" >/dev/null \
+    || fail "创建数据库失败"
+fi
 log "  PostgreSQL 就绪"
 
 if [ "$REBUILD_DB" = 1 ]; then
   log "  --rebuild-db：丢弃并重建 ${PG_DB}（仅本地开发库！）"
-  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d postgres \
+  if ! docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d postgres \
     -c "DROP DATABASE IF EXISTS ${PG_DB} WITH (FORCE);" \
-    -c "CREATE DATABASE ${PG_DB} OWNER ${PG_USER};" >/dev/null
+    -c "CREATE DATABASE ${PG_DB} OWNER ${PG_USER};" >/dev/null; then
+    fail "重建数据库失败"
+  fi
 fi
 
 # ---------------------------------------------------------------- 2. 迁移链
@@ -90,7 +124,10 @@ node "$ROOT/db/runner/standalone-chain.js" --apply >/dev/null || fail "迁移链
 node "$ROOT/db/runner/run_migrations.js" --apply-standalone-users >/dev/null || fail "users 迁移失败"
 node "$ROOT/db/runner/run_migrations.js" --apply-standalone-runtime-role >/dev/null || fail "运行角色迁移失败"
 CHAIN_VERIFY="$(node "$ROOT/db/runner/standalone-chain.js" --verify 2>&1 || true)"
-echo "$CHAIN_VERIFY" | grep -q "VERIFY FAILED" && { echo "$CHAIN_VERIFY" | grep "VERIFY FAILED"; fail "迁移校验失败"; }
+if echo "$CHAIN_VERIFY" | grep -q "VERIFY FAILED" || ! echo "$CHAIN_VERIFY" | grep -q "VERIFY OK"; then
+  echo "$CHAIN_VERIFY"
+  fail "迁移校验失败或未产出 VERIFY OK"
+fi
 log "  迁移链校验通过（$(echo "$CHAIN_VERIFY" | grep -c 'VERIFY OK') 项）"
 
 # ---------------------------------------------------------------- 3. 种子数据
@@ -120,7 +157,8 @@ export EWOH_DATABASE_URL="$DB_URL_OWNER"
 op() { # op <username> <display> <roles> <password> [person-id]
   local extra=(); [ -n "${5:-}" ] && extra=(--person-id "$5")
   EWOH_OPERATOR_PASSWORD="$4" node "$ROOT/db/runner/create-operator.js" \
-    --username "$1" --display-name "$2" --roles "$3" "${extra[@]}" >/dev/null 2>&1 || true
+    --username "$1" --display-name "$2" --roles "$3" "${extra[@]}" >/dev/null \
+    || fail "创建账号 $1 失败"
 }
 op approver.li    "李审批（车间主任）" "workshop_lead,dispatcher" "$APPROVER_PASSWORD" 63000000-0000-4000-8000-000000000003
 op worker.zhangwei "张伟（装配工）"    "worker"                   "$WORKER_PASSWORD"  63000000-0000-4000-8000-000000000001
@@ -138,22 +176,75 @@ fi
 [ "$NO_SERVER" = 1 ] && { log "6/6 不启动服务（--no-server）"; log "完成。"; exit 0; }
 
 log "6/6 启动 standalone 服务（127.0.0.1:${SERVER_PORT}）"
-# 匹配相对/绝对两种启动路径的历史实例（standalone-main 以 process.cwd() 解析
-# dist/client，因此必须在 ewoh-spark-app 目录内启动，否则 SPA 全部 404）。
-pkill -f "dist/server/main.js" 2>/dev/null || true
-sleep 1
+stop_previous_server() {
+  if [ -f "$PID_FILE" ]; then
+    local previous_pid previous_command previous_cwd
+    previous_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    case "$previous_pid" in ''|*[!0-9]*)
+      fail "服务 PID 文件损坏: $PID_FILE"
+      ;;
+    esac
+    if kill -0 "$previous_pid" 2>/dev/null; then
+      previous_command="$(ps -p "$previous_pid" -o command= 2>/dev/null || true)"
+      previous_cwd="$(lsof -a -p "$previous_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+      if [[ "$previous_command" == *"node"*"dist/server/main.js"* && "$previous_cwd" == "$APP" ]]; then
+        kill "$previous_pid"
+        for _ in $(seq 1 20); do kill -0 "$previous_pid" 2>/dev/null || break; sleep 0.1; done
+      else
+        fail "PID 文件属于其他进程，拒绝终止: PID $previous_pid"
+      fi
+    fi
+    rm -f "$PID_FILE"
+  fi
+
+  local pid server_cwd
+  for pid in $(lsof -ti tcp:"$SERVER_PORT" -sTCP:LISTEN 2>/dev/null || true); do
+    server_cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    if [ "$server_cwd" != "$APP" ]; then
+      fail "端口 ${SERVER_PORT} 被非本项目进程占用（pid=${pid}，cwd=${server_cwd:-unknown}）"
+    fi
+    kill "$pid"
+  done
+  for _ in $(seq 1 20); do
+    [ -z "$(lsof -ti tcp:"$SERVER_PORT" -sTCP:LISTEN 2>/dev/null || true)" ] && break
+    sleep 0.1
+  done
+  if [ -n "$(lsof -ti tcp:"$SERVER_PORT" -sTCP:LISTEN 2>/dev/null || true)" ]; then
+    fail "旧服务未在 2 秒内退出"
+  fi
+}
+stop_previous_server
 (
   cd "$APP" || exit 1
-  set -a; . ./.env.local-standalone; set +a
+  if [ -f ./.env.local-standalone ]; then set -a; . ./.env.local-standalone; set +a; fi
+  # 本地配置文件可提供 JWT/存储等值，但数据库目标始终以脚本校验过的运行角色为准。
+  export EWOH_API_DATABASE_PASSWORD
+  DATABASE_URL="$(EWOH_DATABASE_URL="$DB_URL_OWNER" node -e '
+    const url = new URL(process.env.EWOH_DATABASE_URL);
+    url.username = "ewoh_api";
+    url.password = process.env.EWOH_API_DATABASE_PASSWORD;
+    process.stdout.write(url.toString());
+  ')"
+  export DATABASE_URL
   PORT="$SERVER_PORT" NODE_ENV=production nohup node dist/server/main.js \
     > /tmp/ewoh-local-up.log 2>&1 &
+  echo $! > "$PID_FILE"
 )
-for i in $(seq 1 20); do
-  code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${SERVER_PORT}/api/auth/login" -X POST -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo 000)"
-  [ "$code" != "000" ] && break
-  [ "$i" = 20 ] && { tail -20 /tmp/ewoh-local-up.log; fail "服务 20 秒内未监听"; }
+service_pid="$(cat "$PID_FILE")"
+for i in $(seq 1 30); do
+  if ! service_process_alive "$service_pid"; then
+    tail -30 /tmp/ewoh-local-up.log >&2
+    fail "服务进程退出 PID $service_pid"
+  fi
+  code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${SERVER_PORT}/health/ready" 2>/dev/null || echo 000)"
+  [ "$code" = "200" ] && break
+  [ "$i" = 30 ] && { tail -30 /tmp/ewoh-local-up.log; fail "服务 30 秒内未通过 readiness 检查"; }
   sleep 1
 done
+if ! service_process_alive "$service_pid"; then
+  tail -30 /tmp/ewoh-local-up.log >&2
+  fail "服务进程退出 PID $service_pid"
+fi
 
 cat <<EOF
 
@@ -166,6 +257,7 @@ cat <<EOF
             worker.zhangwei / ${WORKER_PASSWORD}      （现场工人·张伟）
  日志       /tmp/ewoh-local-up.log
  数据库     ${DB_URL_OWNER}
+ PID        $(cat "$PID_FILE")
 
  下一步（闭环验证，见 docs/operations/main-product-closed-loop.md）:
    make demo-closed-loop   # 边缘模拟闭环（无 PG 依赖）

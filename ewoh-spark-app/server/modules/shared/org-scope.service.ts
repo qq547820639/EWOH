@@ -32,15 +32,6 @@ export interface OrgScopeResolution {
 
 export type OrgInvalidationListener = (orgId: string | null) => void;
 
-const DEFAULT_PROVIDER: OrgHierarchyProvider = {
-  async loadOrg(orgId: string): Promise<OrgNode> {
-    return { id: orgId, parentId: null, config: {} };
-  },
-  async loadChildren(): Promise<OrgNode[]> {
-    return [];
-  },
-};
-
 /**
  * DB-backed org hierarchy provider backed by ewoh_organization.
  *
@@ -102,8 +93,12 @@ export class OrgScopeService {
     @Optional() injectedProvider?: OrgHierarchyProvider,
     @Optional() @Inject(DRIZZLE_DATABASE) db?: PostgresJsDatabase,
   ) {
-    this.provider =
-      injectedProvider ?? (db ? new DatabaseOrgHierarchyProvider(db) : DEFAULT_PROVIDER);
+    if (!injectedProvider && !db) {
+      // NEST-513：缺 DB 或显式 provider 时，接受任意 orgId 的默认实现会让
+      // 租户层级校验静默失效。构造期直接失败，避免请求期扩大授权范围。
+      throw new Error('OrgScopeService requires an injected provider or database');
+    }
+    this.provider = injectedProvider ?? new DatabaseOrgHierarchyProvider(db!);
   }
 
   async resolveOrgScope(orgId: string): Promise<OrgScopeResolution> {

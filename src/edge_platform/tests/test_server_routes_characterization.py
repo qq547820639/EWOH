@@ -243,6 +243,26 @@ class RouteContractCharacterizationTest(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "body_too_large")
 
 
+class DownloadHeaderSafetyTest(unittest.TestCase):
+    """Content-Disposition filenames derive partly from request input."""
+
+    def setUp(self):
+        self.handler_cls = server.make_handler(server.Context(stubs.Storage(":memory:")))
+
+    def test_safe_filename_sanitizes_header_injection_and_path_characters(self):
+        raw = 'device=%0d%0aX-Injected: yes"/..\\evil'
+        safe = self.handler_cls._safe_download_filename(raw)
+        self.assertNotIn("\r", safe)
+        self.assertNotIn("\n", safe)
+        self.assertNotIn('"', safe)
+        self.assertNotIn("/", safe)
+        self.assertNotIn("\\", safe)
+
+    def test_empty_filename_has_stable_fallback(self):
+        self.assertEqual(self.handler_cls._safe_download_filename(""), "download.json")
+        self.assertEqual(self.handler_cls._safe_download_filename("..."), "download.json")
+
+
 class SseFramingTest(unittest.TestCase):
     """SSE /api/command-map/stream 帧契约（event_bus 未接线时：头 + retry 帧）。
 

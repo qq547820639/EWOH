@@ -156,8 +156,9 @@ export class SolverService {
     constraints: SolverConstraint[],
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2[]> {
-    const base = await this.policyService.getActivePolicy();
-    const config = await this.policyService.getConfig();
+    const orgId = opts.orgId ?? null;
+    const base = await this.policyService.getActivePolicy(orgId);
+    const config = await this.policyService.getConfig(orgId);
     // 版本化目标 Profile（配置缺省回退内置预设；profileId → 权重缩放，soft objective 专用）。
     const resolved = this.policyService.resolveProfiles(config);
     // 变体投放槽：保持公共行为（A/B/C 三变体；suffix 兼容 createRun 的 planId 后缀筛选）。
@@ -255,7 +256,7 @@ export class SolverService {
     const started = Date.now();
     // NO-13d / ADR-053：策略显式选择 rule-based-v1（差异边界 §9——策略驱动，
     // 不参与 CP-SAT 激活阶梯，亦不隐式回退）。
-    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy(opts.orgId ?? null));
     let activation: {
       state: SolverActivationState;
       canaryFraction: number;
@@ -367,7 +368,9 @@ export class SolverService {
     orgAllowlist: string[];
     orgAllowlisted: boolean;
   }> {
-    const config = await this.policyService.getConfig().catch(() => null);
+    const config = await this.policyService
+      .getConfig(opts.orgId ?? null)
+      .catch(() => null);
     const cpSat = config?.cpSat;
 
     let state: SolverActivationState = 'OFF';
@@ -616,7 +619,7 @@ export class SolverService {
     constraints: SolverConstraint[],
     opts: SolveOptions,
   ): Promise<ShadowCompareResult> {
-    const config = await this.policyService.getConfig();
+    const config = await this.policyService.getConfig(opts.orgId ?? null);
     const shadowCompare = config.cpSat?.shadowCompare ?? false;
     if (!shadowCompare) {
       // 缺省：仅生产方案（heuristic），不跑 CP-SAT 双跑（零行为变化、确定性）。

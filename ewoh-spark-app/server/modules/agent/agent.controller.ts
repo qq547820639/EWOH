@@ -7,10 +7,10 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 /**
  * Agent Runtime API（ADR-016 / NO-06b，Phase 9）。
  *
- *  - POST /api/agents/manifests         注册 Agent Manifest（契约校验 fail-closed）
+ *  - POST /api/agents/manifests         注册 Agent Manifest（global_admin；契约校验 fail-closed）
  *  - GET  /api/agents/manifests         清单列表（租户作用域）
  *  - GET  /api/agents/manifests/:agentId 单清单
- *  - POST /api/agents/execute           执行结构化 Command（审批门控 + 预算/超时/回退）
+ *  - POST /api/agents/execute           执行结构化 Command（治理角色 + 审批门控）
  *
  * 所有读写带租户上下文（userContext.primaryOrgId）+ DB 层 RLS
  * （standalone_037 agent_manifest_org_isolation）双保险。
@@ -24,6 +24,7 @@ export class AgentController {
   ) {}
 
   @Post('manifests')
+  @Roles('global_admin')
   register(
     @Body() body: RegisterAgentManifestInput,
     @Req() request?: { userContext?: OrgContext },
@@ -52,6 +53,7 @@ export class AgentController {
   }
 
   @Post('execute')
+  @Roles('dispatcher', 'workshop_lead', 'global_admin')
   execute(
     @Body() body: ExecuteAgentCommandInput & { agentId?: string },
     @Req() request?: { userContext?: OrgContext },

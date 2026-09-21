@@ -147,6 +147,7 @@ interface ReuseContext {
   stationSlotsById: Map<string, SlotIndex<StationSlot>>;
   forbiddenZoneIds: string[];
   safetyBlockedPersonIds: string[];
+  safetyBlockedDeviceIds: string[];
   /** R2-SCH-006：其他任务已锁定人员（eligibility 5 同判据）。 */
   lockedPersonIds: string[];
   /** R2-SCH-006：前置完成判定（eligibility predecessor 同判据）。 */
@@ -204,13 +205,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
   ) {}
 
   /** 暴露当前激活策略（供外层组合求解器构建请求权重时复用同一策略）。 */
-  async loadActivePolicy(): Promise<SchedulingPolicy> {
-    return this.policyService.getActivePolicy();
+  async loadActivePolicy(orgId?: string | null): Promise<SchedulingPolicy> {
+    return this.policyService.getActivePolicy(orgId ?? null);
   }
 
   /** 暴露策略配置（供外层组合求解器复用同一优先级/参数语义）。 */
-  async loadConfig(): Promise<SchedulingPolicyConfig> {
-    return this.policyService.getConfig();
+  async loadConfig(orgId?: string | null): Promise<SchedulingPolicyConfig> {
+    return this.policyService.getConfig(orgId ?? null);
   }
 
   /**
@@ -248,8 +249,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const now = Date.now();
-    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
-    const config = await this.policyService.getConfig();
+    const orgId = opts.orgId ?? null;
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy(orgId));
+    const config = await this.policyService.getConfig(orgId);
     const horizonMinutes = config.horizonMinutes ?? opts.horizonMinutes;
     const horizonEndMs = now + horizonMinutes * 60 * 1000;
     const defaultDurationMs = config.defaultTaskDurationMs;
@@ -275,8 +277,10 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // 快照可能含有类型定义尚未覆盖的字段（如下游演进），通过受限联合访问。
     const snapshotExt = snapshot as WorldStateSnapshot & {
       safetyBlockedPersonIds?: string[];
+      safetyBlockedDeviceIds?: string[];
     };
     const safetyBlockedPersonIds = snapshotExt.safetyBlockedPersonIds ?? [];
+    const safetyBlockedDeviceIds = snapshotExt.safetyBlockedDeviceIds ?? [];
 
     const violations: Array<Record<string, unknown>> = [];
 
@@ -918,6 +922,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationSlotsById,
           forbiddenZoneIds,
           safetyBlockedPersonIds,
+          safetyBlockedDeviceIds,
           lockedPersonIds,
           predecessorDone: predecessorDoneFn,
           lockedPersonByTask,
@@ -966,6 +971,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           durationMsByTask,
           // R2-SCH-002：变体策略（solveVariants 权重缩放）必须作用于 engine 候选评分。
           policy,
+          config,
           // R2-SCH-001：任务最早开始下界 + 人员/设备占用顺延（与内联分支同语义）。
           earliestStartMs,
           bookedPersonFreeAt: bookedPerson,
@@ -1212,6 +1218,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 minBatteryPct: effectiveMinBattery,
                 maxContinuousLoad: effectiveMaxLoad,
                 safetyBlockedPersonIds,
+                safetyBlockedDeviceIds,
                 predecessorDone: predecessorDoneFn,
                 candidateStartMs: startMs,
                 candidateEndMs: endMs,
@@ -1894,6 +1901,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       ) {
         return null;
       }
+      if (ctx.safetyBlockedDeviceIds.includes(device.id)) return null;
       const batteryPct = normalizeBatteryPct(device.batteryPct);
       if (!device.online || batteryPct == null || batteryPct < ctx.effectiveMinBattery) return null;
       if (device.status === 'fault' || device.status === 'maintenance') return null;
@@ -2124,6 +2132,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       return a.personId < b.personId ? -1 : 1;
     const da = a.deviceId ?? '';
     const db = b.deviceId ?? '';
-    return da < db ? -1 : da > db ? 1 : 0;
+    if (da !== db) return da < db ? -1 : 1;
+    const sa = a.stationId ?? '';
+    const sb = b.stationId ?? '';
+    return sa < sb ? -1 : sa > sb ? 1 : 0;
   }
 }

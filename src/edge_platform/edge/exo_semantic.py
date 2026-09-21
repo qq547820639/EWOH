@@ -106,7 +106,7 @@ class UnifiedExoFrame:
     entity_id: str
     worker_id: Optional[str] = None
     event_time: str = ""
-    source_type: str = "real"
+    source_type: str = "unknown"
     pose: dict[str, Any] = field(
         default_factory=lambda: {
             "trunk_pitch_deg": None,
@@ -253,7 +253,7 @@ def from_storage_dict(d):
         entity_id=d.get("entity_id", "unknown"),
         worker_id=d.get("worker_id"),
         event_time=d.get("event_time", ""),
-        source_type=d.get("source_type", "real"),
+        source_type=d.get("source_type", "unknown"),
         pose=dict(d.get("pose") or {}),
         load=dict(d.get("load") or {}),
         device=dict(d.get("device") or {}),

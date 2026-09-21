@@ -14,6 +14,7 @@ import {
   isStructuralEventType,
   coalesceEvents,
   createEventBatcher,
+  isValidSchedulingEvent,
   type EventBatch,
 } from './schedulerRealtimeCore';
 import { queryKeys } from '@client/src/hooks/queryKeys';
@@ -358,5 +359,26 @@ describe('schedulerRealtimeCore.createEventBatcher（窗口批处理 + 结构性
     expect(scheduler.hasPending()).toBe(true);
     scheduler.fire();
     expect(batches).toHaveLength(1);
+  });
+});
+
+describe('isValidSchedulingEvent', () => {
+  const valid = {
+    eventId: 'evt-1',
+    eventType: 'plan.created',
+    sequence: 1,
+    payload: {},
+  };
+
+  it('accepts a complete runtime envelope', () => {
+    expect(isValidSchedulingEvent(valid)).toBe(true);
+  });
+
+  it('rejects malformed envelopes instead of silently advancing the cursor', () => {
+    expect(isValidSchedulingEvent(null)).toBe(false);
+    expect(isValidSchedulingEvent({ ...valid, sequence: Number.NaN })).toBe(false);
+    expect(isValidSchedulingEvent({ ...valid, sequence: 1.5 })).toBe(false);
+    expect(isValidSchedulingEvent({ ...valid, eventType: '' })).toBe(false);
+    expect(isValidSchedulingEvent({ ...valid, eventId: '' })).toBe(false);
   });
 });

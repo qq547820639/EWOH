@@ -20,7 +20,7 @@ import { applyContrastClass, applyThemePreference, getThemePreference } from './
 import { toast } from 'sonner';
 import { registerServiceWorker } from './lib/swRegistration';
 import { openOfflineDb } from './lib/offlineDb';
-import { clearTokens } from './lib/auth';
+import { clearTokens, getAuthUser } from './lib/auth';
 import { flushLeaseManager } from './lib/offlineLeader';
 import { sessionLifecycle } from './lib/runtimeLifecycle';
 import { errorMessage } from '@client/src/lib/errorContract';
@@ -88,7 +88,10 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       },
       async getPendingWork() {
         try {
-          const db = await openOfflineDb();
+          const authUser = getAuthUser();
+          const db = await openOfflineDb(
+            authUser?.userId ? `${authUser.orgId || 'no-org'}:${authUser.userId}` : undefined,
+          );
           const [drafts, pending] = await Promise.all([
             db.drafts.count(),
             db.pendingActions.count(),

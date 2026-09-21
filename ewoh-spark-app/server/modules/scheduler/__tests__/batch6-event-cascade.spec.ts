@@ -69,7 +69,10 @@ describe('v0.7 Batch6.1: injectSchedulingEvent 事件驱动 + 级联', () => {
       {} as never,
       {} as never,
       {} as never,
-      { getConfig: jest.fn().mockResolvedValue({ minBatteryPct: 15 }) } as never,
+      {
+        getConfig: jest.fn().mockResolvedValue({ minBatteryPct: 15 }),
+        resolveReplanApprovalConfig: jest.fn().mockResolvedValue(null),
+      } as never,
       { deriveKpis: jest.fn() } as unknown as SchedulingFeedbackService,
       undefined,
       replanCoordinatorService as never,

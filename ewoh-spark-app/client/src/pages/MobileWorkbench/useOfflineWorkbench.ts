@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorDescription } from '../../lib/errorContract';
 import { toast } from 'sonner';
 import {
+  offlineDbNameForScope,
   buildLocalResolvePayload,
   flushOfflineQueue,
   getLastSyncAt,
@@ -32,7 +33,7 @@ import {
 } from '../../lib/storageController';
 import { uploadFile } from '../../api/files';
 import { forceResolveMobileStep, inspectMobileStep, transitionMobileStep } from '../../api/mobile';
-import { getAuthUser } from '../../lib/auth';
+import { getAuthUser, onAuthChange } from '../../lib/auth';
 import { flushLeaseManager } from '../../lib/offlineLeader';
 
 export interface QueueAttachment {
@@ -129,6 +130,14 @@ async function buildSyncOne(db: OfflineDatabase) {
   };
 }
 
+function currentOfflineOwnerKey(): string | null {
+  const user = getAuthUser();
+  const userId = user?.userId?.trim();
+  if (!userId) return null;
+  const orgId = user.orgId?.trim() || 'no-org';
+  return `${orgId}:${userId}`;
+}
+
 export function useOfflineWorkbench(
   personId: string,
   options?: { onSynced?: () => void },
@@ -137,6 +146,7 @@ export function useOfflineWorkbench(
   optionsRef.current = options;
   const dbRef = useRef<OfflineDatabase | null>(null);
   const storageControllerRef = useRef<ReturnType<typeof createStorageController> | null>(null);
+  const [ownerKey, setOwnerKey] = useState(currentOfflineOwnerKey);
   const [ready, setReady] = useState(false);
   const [isOnline, setIsOnline] = useState(
     () => (typeof navigator === 'undefined' ? true : navigator.onLine),
@@ -157,13 +167,31 @@ export function useOfflineWorkbench(
     setLastSyncAtState(await getLastSyncAt(db.syncState));
   }, []);
 
-  // Open the DB once, migrate legacy localStorage, and hydrate status.
+  // Offline vaults are identity-isolated. On login/cross-login/logout, close
+  // the prior vault and clear projections before opening the new scoped DB.
+  useEffect(() => onAuthChange(({ current }) => {
+    const userId = current?.userId?.trim();
+    setOwnerKey(userId ? `${current?.orgId?.trim() || 'no-org'}:${userId}` : null);
+  }), []);
+
+  // Open the DB per authenticated identity, migrate legacy localStorage, and hydrate status.
   useEffect(() => {
     let cancelled = false;
+    let openedDb: OfflineDatabase | null = null;
     const bootstrap = async () => {
+      if (!ownerKey) {
+        dbRef.current?.close();
+        dbRef.current = null;
+        storageControllerRef.current = null;
+        setReady(false);
+        setDrafts(null);
+        setPendingActions([]);
+        setLastSyncAtState(null);
+        return;
+      }
       let db: OfflineDatabase;
       try {
-        db = await openOfflineDb();
+        db = await openOfflineDb(ownerKey);
       } catch {
         // IndexedDB unavailable (private mode / old webview) — degrade to online-only.
         toast.error('离线存储不可用，将仅在线模式运行');
@@ -173,6 +201,7 @@ export function useOfflineWorkbench(
         await db.close();
         return;
       }
+      openedDb = db;
       dbRef.current = db;
       try {
         await migratePendingActionsFromLocalStorage(
@@ -222,8 +251,11 @@ export function useOfflineWorkbench(
     void bootstrap();
     return () => {
       cancelled = true;
+      // Close the exact identity-scoped handle; async bootstrap for a superseded
+      // identity must not leak its DB into the current ownerKey state.
+      openedDb?.close();
     };
-  }, []);
+  }, [ownerKey]);
 
   // Online/offline listeners.
   useEffect(() => {

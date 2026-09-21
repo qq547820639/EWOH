@@ -135,6 +135,27 @@ describe('canonical world state contract（共享向量，跨语言一致性）'
     }
   });
 
+  it('stateType partitions intervals; entityType is the explicit fallback', () => {
+    const base = {
+      stateId: 'STS-state-type',
+      entityId: 'person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11',
+      stateJson: {},
+      validFrom: '2026-08-14T08:00:00Z',
+      validTo: null,
+      sourceType: 'real',
+      confidence: 1,
+      version: 1,
+    };
+    expect(validateWorldIntervalSet([
+      { ...base, stateType: 'location', validTo: '2026-08-14T09:00:00Z' },
+      { ...base, stateType: 'battery', version: 2, validFrom: '2026-08-14T08:30:00Z' },
+    ])).toEqual([]);
+    expect(validateWorldIntervalSet([
+      { ...base, validTo: '2026-08-14T09:00:00Z' },
+      { ...base, entityType: 'exo', validFrom: '2026-08-14T08:30:00Z' },
+    ])).toEqual([]);
+  });
+
   it('snapshots 向量逐项一致', () => {
     for (const c of loadVectors().snapshots) {
       const errors = validateWorldSnapshot(c.snapshot);

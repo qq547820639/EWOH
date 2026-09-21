@@ -85,6 +85,7 @@ _ADAPTER_KINDS: dict[str, dict] = {
 }
 
 # 构造参数名（spec）→ 适配器构造参数名
+_IDENTITY_KEYS = ("deviceId", "cameraId", "sensorId")
 _KWARG_MAP = {
     "deviceId": "device_id",
     "cameraId": "camera_id",
@@ -126,6 +127,7 @@ def build_adapters(spec: list[dict[str, Any]]) -> list[BaseAdapter]:
     （配置错误显式失败，避免拼写错误被静默吞掉）。
     """
     adapters: list[BaseAdapter] = []
+    seen_ids: set[str] = set()
     for index, item in enumerate(spec):
         if not isinstance(item, dict):
             raise ValueError(f"EWOH_ADAPTERS[{index}] 必须是对象，实际: {type(item).__name__}")
@@ -145,6 +147,15 @@ def build_adapters(spec: list[dict[str, Any]]) -> list[BaseAdapter]:
         for field in meta.get("required", ()) + meta.get("asset_keys", ()):
             if not item.get(field):
                 raise ValueError(f"EWOH_ADAPTERS[{index}] kind={kind} 缺少必填参数: {field}")
+        identity_key = next((key for key in _IDENTITY_KEYS if item.get(key)), None)
+        identity = str(item.get(identity_key)) if identity_key else ""
+        if identity in seen_ids:
+            raise ValueError(
+                f"EWOH_ADAPTERS[{index}] 设备标识重复: {identity!r}"
+                "（Manager 按标识路由命令，重复标识会导致数据/命令归属歧义）"
+            )
+        if identity:
+            seen_ids.add(identity)
         cls = _import_factory(meta["factory"])
         kwargs = {
             _KWARG_MAP[k]: v

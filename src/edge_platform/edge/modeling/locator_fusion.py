@@ -38,6 +38,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _runtime_mode() -> str:
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 class LocatorFusion:
     """多源定位融合（UWB + Wi-Fi + 视觉）。
 
@@ -166,6 +175,9 @@ def push_location(
     org_id: str = "",
 ) -> bool:
     """推送定位坐标到 spark-app /api/ingest/location。"""
+    if ingest_key and _runtime_mode() == "production" and spark_url.lower().startswith(("http://", "//")):
+        print("[locator] production 下拒绝明文 HTTP 携带 ingest key")
+        return False
     url = f"{spark_url.rstrip('/')}/api/ingest/location"
     body = json.dumps(loc).encode("utf-8")
     headers = {"Content-Type": "application/json"}
@@ -179,6 +191,9 @@ def push_location(
             return 200 <= resp.status < 300
     except urllib_error.URLError as e:
         print(f"[locator] 推送失败: {e}")
+        return False
+    except (TimeoutError, OSError) as e:
+        print(f"[locator] 推送 IO 失败: {type(e).__name__}: {e}")
         return False
 
 

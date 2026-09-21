@@ -29,6 +29,7 @@ describe('并发 / 竞争测试', () => {
           status: 'approved',
           version: 1,
           snapshotVersion: 'WS-1',
+          orgId: 'org1',
         },
       ],
       assignments: [
@@ -41,9 +42,11 @@ describe('并发 / 竞争测试', () => {
           plannedStart: new Date(1_000_000),
           plannedEnd: new Date(2_000_000),
           status: 'approved',
+          version: 1,
+          orgId: 'org1',
         },
       ],
-      tasks: [{ id: 'TASK-1', status: 'pending_dispatch', version: 1 }],
+      tasks: [{ id: 'TASK-1', status: 'pending_dispatch', version: 1, orgId: 'org1' }],
     });
     mocks.reservationService.reserve.mockResolvedValue([]);
     mocks.outboxService.enqueue.mockResolvedValue({
@@ -64,10 +67,11 @@ describe('并发 / 竞争测试', () => {
 
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
     const rejected = results.filter((r) => r.status === 'rejected');
-    expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     const reason = (rejected[0] as PromiseRejectedResult).reason as Error;
-    expect(reason.message).toContain('PLAN_CONCURRENT_DISPATCH');
+    // Plan CAS remains the primary guard; assignment org/status/version CAS is
+    // the second guard when an external workflow changes the assignment first.
+    expect(reason.message).toMatch(/PLAN_CONCURRENT_DISPATCH|ASSIGNMENT_CONCURRENT_UPDATE/);
   });
 
   it('plan 非 approved 时 dispatch 被拒绝（PLAN_NOT_APPROVED）', async () => {

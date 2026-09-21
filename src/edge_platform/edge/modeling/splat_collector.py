@@ -35,6 +35,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _runtime_mode() -> str:
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 def plan_capture_route(entity_id: str, output_dir: str) -> dict[str, Any]:
     """规划拍摄路径，生成采集清单。
 
@@ -67,6 +76,9 @@ def register_splat(
     org_id: str = "",
 ) -> bool:
     """注册 3DGS 产物到 spark-app。"""
+    if ingest_key and _runtime_mode() == "production" and spark_url.lower().startswith(("http://", "//")):
+        print("[splat] production 下拒绝明文 HTTP 携带 ingest key")
+        return False
     payload = {
         "entity_id": entity_id,
         "source_type": "gaussian_splat",
@@ -93,6 +105,9 @@ def register_splat(
             return False
     except urllib_error.URLError as e:
         print(f"[splat] 注册失败: {e}")
+        return False
+    except (TimeoutError, OSError) as e:
+        print(f"[splat] 注册 IO 失败: {type(e).__name__}: {e}")
         return False
 
 

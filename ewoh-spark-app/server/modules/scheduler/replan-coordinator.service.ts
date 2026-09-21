@@ -737,7 +737,7 @@ export class ReplanCoordinatorService {
                 snapshotVersion: snapshot.snapshotVersion,
                 planIds: [],
               })
-              .where(eq(ewohSchedulingRun.runId, run.runId));
+              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
           },
         );
         await this.recordSuppressed(
@@ -815,7 +815,7 @@ export class ReplanCoordinatorService {
               snapshotVersion: snapshot.snapshotVersion,
               planIds: plans.map((p) => p.planId),
             })
-            .where(eq(ewohSchedulingRun.runId, run.runId));
+            .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
         },
       );
 
@@ -838,7 +838,7 @@ export class ReplanCoordinatorService {
             await this.db
               .update(ewohSchedulingRun)
               .set({ status: 'failed', failureReason: message })
-              .where(eq(ewohSchedulingRun.runId, run.runId));
+              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
           },
         );
       } catch (inner) {
@@ -995,7 +995,7 @@ export class ReplanCoordinatorService {
               snapshotVersion: snapshot.snapshotVersion,
               planIds: plans.map((p) => p.planId),
             })
-            .where(eq(ewohSchedulingRun.runId, run.runId));
+            .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
         },
       );
 
@@ -1012,7 +1012,7 @@ export class ReplanCoordinatorService {
             await this.db
               .update(ewohSchedulingRun)
               .set({ status: 'failed', failureReason: message })
-              .where(eq(ewohSchedulingRun.runId, run.runId));
+              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
           },
         );
       } catch (inner) {

@@ -24,27 +24,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 打包源码 tarball
-        # 纯标准库实现，无 wheel 第三方依赖；仅以 tar 源码包占位发布。
-        # 排除非源码目录与凭证文件。
+      - name: 从 Git HEAD 打包源码 tarball
+        # 只打包已提交的 tracked tree，避免工作区中的未提交文件、生成产物或
+        # 本地凭证混入 release source archive；同时输出 SHA256 供 provenance 核对。
         run: |
+          set -e
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME#v}"
-          tar --exclude='./dist' \
-              --exclude='./.git' \
-              --exclude='./.venv' \
-              --exclude='./venv' \
-              --exclude='./__pycache__' \
-              --exclude='./.env' \
-              --exclude='./data' \
-              --exclude='./logs' \
-              --exclude='./certs' \
-              -czf "dist/ewoh-${VERSION}.tar.gz" .
+          ARCHIVE="dist/ewoh-${VERSION}.tar.gz"
+          git archive --format=tar.gz --prefix="ewoh-${VERSION}/" -o "$ARCHIVE" HEAD
+          sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
+          sha256sum --check "${ARCHIVE}.sha256"
           ls -lh dist/
 
-      - name: 上传构建产物
+      - name: 上传构建产物与校验和
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ewoh-source-${{ github.ref_name }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
           retention-days: 30

@@ -165,7 +165,8 @@ describe('P3-T2: SSE envelope 强化（snapshotVersion/planId/occurredAt 透传�
     const e = result.events[0];
     expect(e.snapshotVersion).toBeNull();
     expect(e.planId).toBeNull();
-    expect(e.occurredAt).toEqual(expect.any(String));
+    expect(e.occurredAt).toBe('2026-08-09T10:00:01.000Z');
+    expect(e.occurredAt).not.toBe(e.serverTs);
   });
 });
 

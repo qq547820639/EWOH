@@ -176,8 +176,8 @@ const TABLE: Array<{
     name: 'L3 受限自治：白名单命令执行',
     manifest: makeManifest({
       role: 'Logistics',
-      riskLevel: 'high',
-      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: [] },
+      riskLevel: 'low',
+      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['request_approval'] },
     }),
     command: 'record_evidence',
     expect: { kind: 'executed' },
@@ -197,7 +197,7 @@ const TABLE: Array<{
     manifest: makeManifest({
       role: 'Logistics',
       writeScope: { tokens: [], commands: ['record_evidence'] },
-      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: [] },
+      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['request_approval'] },
     }),
     command: 'dispatch_task',
     expect: { kind: 'throw', match: /command_not_allowed:dispatch_task/ },
@@ -206,7 +206,8 @@ const TABLE: Array<{
     name: 'budget 超步数 fail-closed 拒绝（NEST-329 服务端累计计数）',
     manifest: makeManifest({
       role: 'Logistics',
-      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: [] },
+      riskLevel: 'low',
+      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['request_approval'] },
       budget: { maxSteps: 1, maxTokens: 1000, maxDurationSec: 60 },
     }),
     command: 'record_evidence',
@@ -218,10 +219,11 @@ const TABLE: Array<{
     name: 'fallback=delegateHuman：命令执行失败 → delegated（不静默）',
     manifest: makeManifest({
       role: 'Logistics',
-      writeScope: { tokens: [], commands: ['reserve_resource'] },
-      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: [] },
+      riskLevel: 'low',
+      writeScope: { tokens: [], commands: ['record_evidence', 'run_simulation'] },
+      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['request_approval'] },
     }),
-    command: 'reserve_resource',
+    command: 'run_simulation',
     expect: { kind: 'delegated' },
   },
 ];

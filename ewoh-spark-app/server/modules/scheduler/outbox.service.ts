@@ -113,7 +113,11 @@ export class OutboxService {
     if (opts?.planId != null) mergedPayload.planId = opts.planId;
     if (opts?.occurredAt != null) mergedPayload.occurredAt = opts.occurredAt;
     if (opts?.correlationId != null) mergedPayload.correlationId = opts.correlationId;
-    const [updated] = await this.db
+    // Throttled compensating events must honor the same explicit executor
+    // contract as enqueue; otherwise an error-path transaction can roll the
+    // merge back silently.
+    const executor = opts?.executor ?? this.db;
+    const [updated] = await executor
       .update(ewohOutbox)
       .set({
         payloadJson: mergedPayload,
@@ -127,6 +131,12 @@ export class OutboxService {
           eq(ewohOutbox.entityId, entityId),
           eq(ewohOutbox.status, 'pending'),
           gte(ewohOutbox.createdAt, cutoff),
+          // Merge scope is tenant-scoped: identical entityId values are unique
+          // only within an org for several composite-key tables. System events
+          // explicitly merge only other NULL-org events.
+          orgId == null
+            ? isNull(ewohOutbox.orgId)
+            : eq(ewohOutbox.orgId, orgId),
         ),
       )
       .returning();

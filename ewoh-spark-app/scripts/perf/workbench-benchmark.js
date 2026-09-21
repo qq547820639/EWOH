@@ -39,9 +39,9 @@ const BUDGET_FILE = path.join(__dirname, 'perf-budget.json');
 const OUT_DIR = path.join(repoRoot, 'output');
 const OUT_FILE = path.join(OUT_DIR, 'perf-workbench-report.json');
 
-const ORG_A = 'org-a';
-const ORG_B = 'org-b';
-const ORG_C = 'org-c';
+const ORG_A = '00000000-0000-4000-8000-00000000000a';
+const ORG_B = '00000000-0000-4000-8000-00000000000b';
+const ORG_C = '00000000-0000-4000-8000-00000000000c';
 const PAGE_SIZE = 20;
 const ACTIVE_TASK_STATUSES = ['draft', 'pending', 'in_progress', 'paused'];
 const ACTIVE_STEP_STATUSES = ['pending', 'in_progress', 'paused'];
@@ -124,7 +124,7 @@ function walkPlan(node, acc) {
 async function explain(sql, query, params) {
   const raw = await sql.unsafe(
     `explain (analyze, buffers, format json) ${query}`,
-    ...params,
+    params,
   );
   const plan = raw[0]['QUERY PLAN'][0];
   const nodes = [];
@@ -164,13 +164,13 @@ const LIST_SCENARIOS = {
       const params = [ORG_A, ACTIVE_TASK_STATUSES];
       const count = await sql.unsafe(
         `select count(*)::int as c from ewoh_schedule_task where ${DELAYED_ORDER_WHERE()}`,
-        ...params,
+        params,
       );
       const data = await sql.unsafe(
         `select schedule_task_id, title, status, plan_end from ewoh_schedule_task
          where ${DELAYED_ORDER_WHERE()}
          order by plan_end asc limit ${PAGE_SIZE} offset 0`,
-        ...params,
+        params,
       );
       return { rows: data.length, statements: { count: 1, data: 1 } };
     },
@@ -183,13 +183,13 @@ const LIST_SCENARIOS = {
       const params = [ORG_A, ACTIVE_STEP_STATUSES, search];
       const count = await sql.unsafe(
         `select count(*)::int as c from ewoh_schedule_task_step where ${STEP_WHERE(true)}`,
-        ...params,
+        params,
       );
       const data = await sql.unsafe(
         `select step_id, schedule_task_id, name, status from ewoh_schedule_task_step
          where ${STEP_WHERE(true)}
          order by _updated_at desc limit ${PAGE_SIZE}`,
-        ...params,
+        params,
       );
       return { rows: data.length, statements: { count: 1, data: 1 } };
     },
@@ -201,13 +201,13 @@ const LIST_SCENARIOS = {
       const params = [ORG_A, ACTIVE_TASK_STATUSES];
       const count = await sql.unsafe(
         `select count(*)::int as c from ewoh_schedule_task where ${DELAYED_ORDER_WHERE()}`,
-        ...params,
+        params,
       );
       const data = await sql.unsafe(
         `select schedule_task_id, title, status, plan_end from ewoh_schedule_task
          where ${DELAYED_ORDER_WHERE()}
          order by title asc limit ${PAGE_SIZE} offset 0`,
-        ...params,
+        params,
       );
       return { rows: data.length, statements: { count: 1, data: 1 } };
     },
@@ -227,7 +227,7 @@ const LIST_SCENARIOS = {
            and plan_end is not null and plan_end < now()
            and ((plan_end > $3) or (plan_end = $3 and schedule_task_id > $4))
          order by plan_end asc, schedule_task_id asc limit ${PAGE_SIZE}`,
-        ...params,
+        params,
       );
       return { rows: data.length, statements: { count: 1, data: 1 } };
     },
@@ -273,22 +273,49 @@ async function main() {
     // 1. dashboard-aggregates (first screen, manager role)
     // -----------------------------------------------------------------------
     const aggregateQueries = [
-      `select count(*)::int as c from ewoh_schedule_task where org_id=$1 and status <> all($2::varchar[]) and plan_end is not null and plan_end < now()`,
-      `select count(*)::int as c from ewoh_schedule_task_step where org_id=$1 and status='in_progress'`,
-      `select count(*)::int as c from ewoh_resource_binding where org_id=$1 and status='active'`,
-      `select count(*)::int as c from ewoh_event where org_id=$1 and status='open' and event_type='quality'`,
-      `select count(*)::int as c from ewoh_schedule_task_step where org_id=$1 and result_json->>'exception' is not null and result_json->>'exception' <> ''`,
-      `select count(*)::int as t, count(*) filter (where evidence_json->>'result'='pass')::int as pass, count(*) filter (where evidence_json->>'result'='fail')::int as fail from ewoh_event where org_id=$1 and event_type='quality'`,
-      `select evidence_json->>'defectCode' as defectCode, count(*)::int as c from ewoh_event where org_id=$1 and event_type='quality' group by 1 order by count(*) desc limit 20`,
-      `select status, count(*)::int as c from ewoh_spatial_entity where org_id=$1 and entity_type='device' group by status`,
-      `select count(*)::int as c from ewoh_spatial_entity where org_id=$1 and entity_type='device' and status='fault'`,
+      {
+        query: `select count(*)::int as c from ewoh_schedule_task where org_id=$1 and status <> all($2::varchar[]) and plan_end is not null and plan_end < now()`,
+        params: [ORG_A, ACTIVE_TASK_STATUSES],
+      },
+      {
+        query: `select count(*)::int as c from ewoh_schedule_task_step where org_id=$1 and status='in_progress'`,
+        params: [ORG_A],
+      },
+      {
+        query: `select count(*)::int as c from ewoh_resource_binding where org_id=$1 and status='active'`,
+        params: [ORG_A],
+      },
+      {
+        query: `select count(*)::int as c from ewoh_event where org_id=$1 and status='open' and event_type='quality'`,
+        params: [ORG_A],
+      },
+      {
+        query: `select count(*)::int as c from ewoh_schedule_task_step where org_id=$1 and result_json->>'exception' is not null and result_json->>'exception' <> ''`,
+        params: [ORG_A],
+      },
+      {
+        query: `select count(*)::int as t, count(*) filter (where evidence_json->>'result'='pass')::int as pass, count(*) filter (where evidence_json->>'result'='fail')::int as fail from ewoh_event where org_id=$1 and event_type='quality'`,
+        params: [ORG_A],
+      },
+      {
+        query: `select evidence_json->>'defectCode' as defectCode, count(*)::int as c from ewoh_event where org_id=$1 and event_type='quality' group by 1 order by count(*) desc limit 20`,
+        params: [ORG_A],
+      },
+      {
+        query: `select status, count(*)::int as c from ewoh_spatial_entity where org_id=$1 and entity_type='device' group by status`,
+        params: [ORG_A],
+      },
+      {
+        query: `select count(*)::int as c from ewoh_spatial_entity where org_id=$1 and entity_type='device' and status='fault'`,
+        params: [ORG_A],
+      },
     ];
     const dashboardSamples = [];
     for (let i = 0; i < iterations; i += 1) {
       const t0 = process.hrtime.bigint();
-      for (const q of aggregateQueries) {
+      for (const { query, params } of aggregateQueries) {
         // eslint-disable-next-line no-await-in-loop
-        await sql.unsafe(q, [ORG_A]);
+        await sql.unsafe(query, params);
       }
       const t1 = process.hrtime.bigint();
       dashboardSamples.push(Number(t1 - t0) / 1e6);
@@ -296,8 +323,8 @@ async function main() {
     results['dashboard-aggregates'] = summarize(dashboardSamples);
     explainResults['dashboard-aggregates'] = await explain(
       sql,
-      aggregateQueries[1],
-      [ORG_A],
+      aggregateQueries[1].query,
+      aggregateQueries[1].params,
     );
 
     // -----------------------------------------------------------------------
@@ -372,15 +399,15 @@ async function main() {
     // 7. saved-view-restore (DB-backed PostgresWorkbenchViewStore)
     // -----------------------------------------------------------------------
     const savedViewSamples = [];
+    const runToken = `${Date.now()}-${process.pid}`;
     for (let i = 0; i < iterations; i += 1) {
       const t0 = process.hrtime.bigint();
       await sql.unsafe(
         `insert into saved_views
            (organization_id, owner_user_id, name, workbench, list_key, schema_version,
             filter_json, sort_json, is_default, created_at, updated_at)
-         values ($1, $2, $3, 'manager', 'delayedOrders', 1, $4::jsonb, $5::jsonb, false, now(), now())
-         on conflict do nothing`,
-        [ORG_A, 'perf-user', `perf-view-${i}`, JSON.stringify({ filter: null, limit: null, shared: false }), JSON.stringify({ sortKey: 'planEnd', sortDir: 'asc' })],
+         values ($1, $2, $3, 'manager', 'delayedOrders', 1, $4::jsonb, $5::jsonb, false, now(), now())`,
+        [ORG_A, 'perf-user', `perf-view-${runToken}-${i}`, JSON.stringify({ filter: null, limit: null, shared: false }), JSON.stringify({ sortKey: 'planEnd', sortDir: 'asc' })],
       );
       await sql.unsafe(
         `select * from saved_views where organization_id=$1 and owner_user_id=$2 and deleted_at is null`,
@@ -403,7 +430,7 @@ async function main() {
         `insert into workbench_export_tasks
            (task_id, organization_id, owner_user_id, role, list_key, status, created_at, updated_at)
          values ($1, $2, $3, 'manager', 'delayedOrders', 'queued', now(), now())
-         on conflict (task_id) do update set status='queued', updated_at=now()`,
+         on conflict (organization_id, task_id) do update set status='queued', updated_at=now()`,
         [taskId, ORG_A, 'perf-user'],
       );
       const data = await sql.unsafe(

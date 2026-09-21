@@ -156,11 +156,22 @@ class StateStore:
 
     @classmethod
     def from_dict(cls, d):
+        """重建状态库；同一主键最多允许一个当前态，损坏快照必须 fail-closed。"""
         store = cls()
-        for sd in d.get("states", []):
+        current_keys: set[tuple] = set()
+        states = d.get("states", [])
+        if not isinstance(states, list):
+            raise ValueError("世界状态快照 states 必须为列表")
+        for sd in states:
             s = WorldState.from_dict(sd)
             key = (s.entity_id, s.state_type)
-            store._history.setdefault(key, []).append(s)
+            history = store._history.setdefault(key, [])
+            history.append(s)
             if s.valid_to is None:
+                if key in current_keys:
+                    raise ValueError(
+                        f"世界状态快照存在多个当前态: entity={s.entity_id!r}, type={s.state_type!r}"
+                    )
+                current_keys.add(key)
                 store._current[key] = s
         return store

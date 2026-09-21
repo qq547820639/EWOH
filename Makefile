@@ -122,32 +122,23 @@ e2e-closed-loop:  ## 主产品完整闭环（golden + receipt），真实 Postgr
 
 # DR-2~DR-6 全闭环（2026-09-11）：故障感知→数据质量确认→方案→审批→派工→回执
 # →偏差→取消回滚→复盘运行记忆→班次解析。消费可调度任务：先 scenario-reset YES=1。
-e2e-receipt-fresh:  ## NO-99a：清库后全路径复验 receipt（reset → 清执行事实 → receipt）
+e2e-receipt-fresh:  ## NO-99a：清库后全路径复验 receipt（隔离重置 → receipt）
 	@if [ ! -f /tmp/ewoh-e2e-env.sh ]; then echo "缺凭证：先准备 /tmp/ewoh-e2e-env.sh（runbook 模板）"; exit 2; fi
 	set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
-	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
-	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
-	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
-	cd ewoh-spark-app && npm run e2e:receipt
+	bash scripts/e2e-chain.sh --scenario e2e:receipt
 
-e2e-agv-fresh:  ## NO-99a：清库后全路径复验 agv-transport（reset → 清执行事实 → agv）
+e2e-agv-fresh:  ## NO-99a：清库后全路径复验 agv-transport（隔离重置 → agv）
 	@if [ ! -f /tmp/ewoh-e2e-env.sh ]; then echo "缺凭证：先准备 /tmp/ewoh-e2e-env.sh（runbook 模板）"; exit 2; fi
 	set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
-	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
-	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
-	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
-	cd ewoh-spark-app && npm run e2e:agv-transport
+	bash scripts/e2e-chain.sh --scenario e2e:agv-transport
 
-e2e-golden-fresh:  ## NO-87a：清库后全路径复验 golden（reset → gate → activate → rollback）
+e2e-golden-fresh:  ## NO-87a：清库后全路径复验 golden（隔离重置 → gate → activate → rollback）
 	@if [ -f /tmp/ewoh-e2e-env.sh ]; then \
 	  set -a && . /tmp/ewoh-e2e-env.sh && set +a; \
 	else \
 	  echo "缺凭证：请先准备 /tmp/ewoh-e2e-env.sh（模板见 runbook『E2E 凭证的角色分工』）"; exit 2; \
 	fi; \
-	EWOH_DATABASE_URL=$${EWOH_DATABASE_URL:-postgresql://ewoh_owner:devownerpw@127.0.0.1:55432/ewoh} \
-	  node db/runner/reset-scenario-data.js --org-id 00000000-0000-4000-8000-000000000001 --yes; \
-	node db/runner/clear-execution-facts.js --org-id 00000000-0000-4000-8000-000000000001; \
-	cd ewoh-spark-app && npm run e2e:golden
+	bash scripts/e2e-chain.sh --scenario e2e:golden
 
 e2e-fault-replan:  ## 全闭环验收：感知/质量/决策/授权/执行/反馈/回滚/复盘/班次
 	cd ewoh-spark-app && npm run e2e:fault-replan

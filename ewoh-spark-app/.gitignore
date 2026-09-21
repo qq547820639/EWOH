@@ -49,9 +49,8 @@ tmp/
 temp/
 .playwright-cli/
 
-# Lock files (keep package-lock.json for consistent installs)
+# Keep package-lock.json and pnpm-lock.yaml: CI has both npm and pnpm paths.
 yarn.lock
-pnpm-lock.yaml
 
 # Cache files
 .eslintcache

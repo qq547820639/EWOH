@@ -24,7 +24,6 @@ import {
   resolveAuthorizedWorkbenchRoles,
   resolveDefaultWorkbenchRole,
 } from './workbenchAccess';
-import { parseSavedView } from './workbenchListLogic';
 import {
   createWorkbenchScanner,
   inferInputMode,
@@ -34,8 +33,9 @@ import {
   type WorkbenchInputMode,
 } from './workbenchInput';
 import {
-  LEGACY_VIEW_PREFIX,
+  LEGACY_VIEW_MIGRATION_FLAG_KEY,
   PAGE_SIZE,
+  migrateLegacyWorkbenchViews,
   ROLES,
   buildClearFiltersParams,
   buildFilterParams,
@@ -44,7 +44,6 @@ import {
   buildRoleParams,
   buildSortParams,
   defaultListState,
-  parseLegacyViewKey,
   readListStates,
   readOpenedView,
   serverViewKey,
@@ -198,34 +197,14 @@ export default function RoleWorkbench(): React.ReactElement {
     [role, listStates, refreshViews],
   );
 
-  // 一次性迁移：把旧版 localStorage 视图推送到服务端后移除本地键（幂等）。
+  // 旧版 localStorage 视图没有 owner/org 绑定：共享设备换人后，自动推送会把
+  // 上一用户的偏好导入当前账号。这里 fail closed：保留原始数据、写入跳过标记。
   useEffect(() => {
-    if (typeof localStorage === 'undefined') return;
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const storageKey = localStorage.key(i);
-      if (storageKey && storageKey.startsWith(LEGACY_VIEW_PREFIX)) {
-        keys.push(storageKey);
-      }
+    if (!personId || typeof localStorage === 'undefined') return;
+    if (!localStorage.getItem(LEGACY_VIEW_MIGRATION_FLAG_KEY)) {
+      migrateLegacyWorkbenchViews(localStorage);
     }
-    for (const storageKey of keys) {
-      const parsed = parseLegacyViewKey(storageKey);
-      const legacy = parseSavedView(localStorage.getItem(storageKey));
-      if (!parsed || !legacy) continue;
-      saveWorkbenchView(serverViewKey(parsed.role, parsed.listKey), {
-        role: parsed.role,
-        listKey: parsed.listKey,
-        filter: legacy.filter,
-        sortKey: legacy.sortKey,
-        sortDir: legacy.sortDir,
-        limit: legacy.limit,
-      })
-        .then(() => localStorage.removeItem(storageKey))
-        .catch(() => {
-          // 迁移失败保留本地键，下次进入重试。
-        });
-    }
-  }, []);
+  }, [personId]);
 
   // 加载该角色已保存的视图到 URL（仅填充 URL 中未显式给出的列表参数）。
   // CLI-206：消费 savedViews state（refreshViews 单次请求的结果），
@@ -260,17 +239,30 @@ export default function RoleWorkbench(): React.ReactElement {
     exportRecordReducer,
     {} as Record<string, ExportState>,
   );
-  useEffect(() => {
-    dispatchExport({ type: 'reset-all' });
-  }, [role]);
-
   const mountedRef = useRef(true);
+  const exportPollTimersRef = useRef<Set<number>>(new Set());
+  const cancelExportPolling = useCallback(() => {
+    for (const timer of exportPollTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    exportPollTimersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    // A queued export belongs to the role/list context that created it. Reset
+    // both state and in-flight timers so a role switch cannot receive/download
+    // the previous role's export.
+    cancelExportPolling();
+    dispatchExport({ type: 'reset-all' });
+  }, [role, cancelExportPolling]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      cancelExportPolling();
     };
-  }, []);
+  }, [cancelExportPolling]);
 
   const maybeDownload = useCallback((url?: string) => {
     if (!url) return;
@@ -301,7 +293,11 @@ export default function RoleWorkbench(): React.ReactElement {
             progress: task.progress,
           });
           if (task.status === 'queued' || task.status === 'running') {
-            window.setTimeout(tick, 1500);
+            const timer = window.setTimeout(() => {
+              exportPollTimersRef.current.delete(timer);
+              void tick();
+            }, 1500);
+            exportPollTimersRef.current.add(timer);
           } else if (task.status === 'succeeded') {
             maybeDownload(task.downloadUrl);
           }
@@ -381,7 +377,7 @@ export default function RoleWorkbench(): React.ReactElement {
 
   const selectRole = useCallback(
     (next: RoleWorkbenchRole) => {
-      setSearchParams((prev) => buildRoleParams(prev, next));
+      setSearchParams((prev) => buildRoleParams(prev, next, schema.lists));
     },
     [setSearchParams],
   );

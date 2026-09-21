@@ -82,6 +82,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("EWOH_CONTROL_FINGERPRINT_SECRET", ""),
         help="授权范围指纹的 HMAC 密钥（与平台同一密钥；配置后本机验签，验不过不碰设备）",
     )
+    parser.add_argument(
+        "--receipt-journal",
+        default=os.environ.get("EWOH_CONTROL_RECEIPT_JOURNAL", ""),
+        help="失败回执持久化 JSONL 路径；设置后进程重启会继续补投",
+    )
     parser.add_argument("--source-type", default="simulated", choices=["real", "controlled_test", "simulated"])
     args = parser.parse_args(argv)
 
@@ -102,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         modbus_port=args.modbus_port,
         modbus_timeout=args.modbus_timeout_sec,
         fingerprint_secret=args.fingerprint_secret or None,
+        receipt_journal_path=args.receipt_journal or None,
     )
 
     exit_code = 0

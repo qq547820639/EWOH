@@ -11,7 +11,7 @@
 import { ConflictException } from '@nestjs/common';
 import { ResourceReservationService, type ReservationInput } from '../resource-reservation.service';
 import { ewohResourceReservation } from '@server/database/schema';
-import { testOrgContext } from './dispatch-test-harness';
+import { makeFakeDb, testOrgContext } from './dispatch-test-harness';
 
 function makeContext() {
   return {
@@ -63,6 +63,46 @@ describe('P0-5 Reservation 并发可靠性', () => {
         { resourceType: 'device', resourceId: 'D1', startMs: 1000, endMs: 2000 },
       ], testOrgContext()),
     ).rejects.toMatchObject({ response: expect.objectContaining({ statusCode: 409 }) });
+  });
+
+  it('releaseForPlan 不跨租户释放同 planId 预约', async () => {
+    const { db, state } = makeFakeDb();
+    state.reservations.push(
+      {
+        id: 'row-org1',
+        reservationId: 'RSV-ORG1',
+        resourceType: 'station',
+        resourceId: 'ST1',
+        assignmentId: 'ASG-1',
+        planId: 'PLAN-SHARED',
+        taskId: 'TASK-1',
+        startMs: 1000,
+        endMs: 2000,
+        status: 'reserved',
+        version: 1,
+        orgId: 'org1',
+      },
+      {
+        id: 'row-org2',
+        reservationId: 'RSV-ORG2',
+        resourceType: 'station',
+        resourceId: 'ST1',
+        assignmentId: 'ASG-2',
+        planId: 'PLAN-SHARED',
+        taskId: 'TASK-2',
+        startMs: 1000,
+        endMs: 2000,
+        status: 'reserved',
+        version: 1,
+        orgId: 'org2',
+      },
+    );
+    const svc = new ResourceReservationService(db as never, makeContext() as never);
+    const released = await svc.releaseForPlan('PLAN-SHARED', testOrgContext());
+
+    expect(released).toBe(1);
+    expect(state.reservations.find((r) => r.reservationId === 'RSV-ORG1')?.status).toBe('released');
+    expect(state.reservations.find((r) => r.reservationId === 'RSV-ORG2')?.status).toBe('reserved');
   });
 
   it('两个并发 reserve 同一资源重叠时间窗 → 仅一个成功（第二个 RESOURCE_CONFLICT）', async () => {

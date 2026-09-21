@@ -32,6 +32,7 @@ from edge_platform.config import Settings
 # 边缘设备 CPU 预算与测试时长折中取 200k，且显著慢于原快速 sha256）。
 _PBKDF2_ITERATIONS = 200_000
 _SALT_BYTES = 16
+_RUNTIME_MODES = frozenset({"development", "simulation", "production"})
 
 
 @dataclass
@@ -67,8 +68,9 @@ class OfflineIdentityBackend(IdentityBackend):
         ("U-OP", "operator", "operator", "操作员", "EWOH_SEED_OPERATOR_PASSWORD", "operator123"),
     )
 
-    # 进程级种子校验缓存：username -> {"user_id","role","display_name","salt","hash"}
-    _seed_verifiers: Optional[dict] = None
+    # 进程级种子校验缓存：(policy_fingerprint, username -> verifier)。缓存键绑定
+    # runtime mode 和全部种子口令来源，防止进程内配置切换后复用旧策略的凭据。
+    _seed_verifiers: Optional[tuple[str, dict]] = None
     _seed_verifiers_lock = threading.Lock()
 
     def __init__(self, settings: Optional[Settings] = None):
@@ -78,7 +80,7 @@ class OfflineIdentityBackend(IdentityBackend):
             self._users[username] = dict(entry)
 
     @classmethod
-    def _resolve_seed_passwords(cls, settings: Settings) -> dict:
+    def _resolve_seed_passwords(cls, settings: Settings, env_values: dict) -> dict:
         """种子口令解析（审计 D14，2026-08-19）。
 
         - production：强制环境变量（EWOH_SEED_*_PASSWORD）——未配置或仍等于
@@ -87,6 +89,11 @@ class OfflineIdentityBackend(IdentityBackend):
 
         环境变量以字面量逐项读取（audit-env-inventory 静态识别要求，非变量间接）。
         """
+        if settings.runtime_mode not in _RUNTIME_MODES:
+            raise RuntimeError(
+                f"未知 runtime_mode: {settings.runtime_mode!r}；"
+                "身份种子凭据策略必须 fail-closed，不得到回退为开发默认口令"
+            )
         production = settings.runtime_mode == "production"
         env_values = {
             "admin": (os.environ.get("EWOH_SEED_ADMIN_PASSWORD") or "").strip(),
@@ -111,14 +118,37 @@ class OfflineIdentityBackend(IdentityBackend):
             passwords[username] = value
         return passwords
 
+    @staticmethod
+    def _seed_policy_fingerprint(settings: Settings, env_values: dict) -> str:
+        """绑定运行模式与口令来源；指纹不存储原始口令。"""
+        digest = hashlib.sha256()
+        values = [
+            settings.runtime_mode,
+            settings.auth_backend,
+            env_values["admin"],
+            env_values["safety_officer"],
+            env_values["operator"],
+        ]
+        for value in values:
+            encoded = value.encode("utf-8")
+            digest.update(len(encoded).to_bytes(4, "big"))
+            digest.update(encoded)
+        return digest.hexdigest()
+
     @classmethod
     def _seed_verifiers_map(cls, settings: Optional[Settings] = None) -> dict:
-        """惰性派生并缓存种子账号校验器（每进程一次）。"""
-        if cls._seed_verifiers is None:
+        """按身份策略惰性派生并缓存种子校验器。"""
+        resolved = settings or Settings.load()
+        env_values = {
+            "admin": (os.environ.get("EWOH_SEED_ADMIN_PASSWORD") or "").strip(),
+            "safety_officer": (os.environ.get("EWOH_SEED_SAFETY_PASSWORD") or "").strip(),
+            "operator": (os.environ.get("EWOH_SEED_OPERATOR_PASSWORD") or "").strip(),
+        }
+        policy_key = cls._seed_policy_fingerprint(resolved, env_values)
+        if cls._seed_verifiers is None or cls._seed_verifiers[0] != policy_key:
             with cls._seed_verifiers_lock:
-                if cls._seed_verifiers is None:
-                    resolved = settings or Settings.load()
-                    passwords = cls._resolve_seed_passwords(resolved)
+                if cls._seed_verifiers is None or cls._seed_verifiers[0] != policy_key:
+                    passwords = cls._resolve_seed_passwords(resolved, env_values)
                     verifiers = {}
                     for user_id, username, role, display_name, _env_name, _default in cls._SEED_ACCOUNTS:
                         salt = secrets.token_hex(_SALT_BYTES)
@@ -129,8 +159,8 @@ class OfflineIdentityBackend(IdentityBackend):
                             "salt": salt,
                             "hash": cls._hash(salt, passwords[username]),
                         }
-                    cls._seed_verifiers = verifiers
-        return cls._seed_verifiers
+                    cls._seed_verifiers = (policy_key, verifiers)
+        return cls._seed_verifiers[1]
 
     @staticmethod
     def _hash(salt: str, password: str) -> str:

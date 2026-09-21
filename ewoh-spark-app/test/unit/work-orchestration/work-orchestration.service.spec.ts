@@ -608,6 +608,93 @@ describe('WorkOrchestrationService durable (DB-backed) paths', () => {
     expect((handoff as { persisted?: string }).persisted).toBe('postgres');
   });
 
+  it('handoff durable replays an existing idempotency response without creating again', async () => {
+    const stored = {
+      handoffId: 'HO-existing',
+      status: 'open',
+      persisted: 'postgres',
+    };
+    const creator = jest.fn();
+    const persistence = fakePersistence({
+      setIdempotencyAndCreate: jest.fn().mockResolvedValue({ created: false, result: stored }),
+    });
+    const service = new WorkOrchestrationService(persistence as never);
+
+    const result = await service.createHandoffDurable(
+      {
+        fromActor: 'AG-11',
+        toActor: 'ORCH-05',
+        scope: 'scope-x',
+        idempotencyKey: 'handoff-key',
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(persistence.setIdempotencyAndCreate).toHaveBeenCalledWith(
+      'work-handoff',
+      'handoff-key',
+      expect.any(Function),
+    );
+    expect(persistence.createHandoffWithTransfer).not.toHaveBeenCalled();
+    expect(result).toBe(stored);
+    expect(creator).not.toHaveBeenCalled();
+  });
+
+  it('handoff durable invokes its creator inside the idempotency transaction', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+
+    await service.createHandoffDurable(
+      {
+        fromActor: 'AG-11',
+        toActor: 'ORCH-05',
+        scope: 'scope-x',
+        idempotencyKey: 'handoff-key',
+      },
+      { userId: 'user-1', primaryOrgId: 'org-1' },
+    );
+
+    expect(persistence.setIdempotencyAndCreate).toHaveBeenCalledTimes(1);
+    expect(persistence.createHandoffWithTransfer).toHaveBeenCalledTimes(1);
+  });
+
+  it('git sync durable audit identity ignores a client-supplied actor', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+    jest.spyOn(service as unknown as { gitSync: () => unknown }, 'gitSync').mockReturnValue({
+      buildGitSyncPlan: () => ({}),
+      gitInfo: () => ({ branch: 'main', headSha: 'test-sha', remote: 'origin' }),
+      liveApply: () => ({ headSha: 'test-sha', created: [] }),
+    });
+    const result = await service.applyGitSyncDurable(
+      {
+        idempotencyKey: 'k-audit',
+        approved: true,
+        actor: 'spoofed-actor',
+      },
+      { userId: 'authenticated-admin' },
+    );
+
+    expect(result.status).toBe('live');
+    expect(result.actor).toBe('authenticated-admin');
+    expect(persistence.updateGitSyncWithEvidence).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ verifier: 'authenticated-admin' }),
+    );
+  });
+
+  it('git sync durable rejects an unauthenticated actor before writing', async () => {
+    const persistence = fakePersistence();
+    const service = new WorkOrchestrationService(persistence as never);
+
+    await expect(
+      service.applyGitSyncDurable(
+        { idempotencyKey: 'k-anon', approved: true, actor: 'spoofed-actor' },
+      ),
+    ).rejects.toThrow(/authenticated actor/);
+    expect(persistence.setIdempotencyAndCreate).not.toHaveBeenCalled();
+  });
+
   it('updateHandoffStatusDurable accepts a handoff within a transaction', async () => {
     const persistence = fakePersistence();
     const service = new WorkOrchestrationService(persistence as never);

@@ -14,7 +14,7 @@
  * comparePlansV2/getRoutes/calculateRouteV2/getConflictDetail）。
  */
 /// <reference types="jest" />
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SchedulerService } from '../scheduler.service';
 import { WorldStateSnapshotService } from '../world-state.service';
 import { PlanService } from '../plan.service';
@@ -34,6 +34,7 @@ import type {
   SchedulingPolicyConfig,
   TaskCandidatesResponse,
 } from '@shared/api.interface';
+import { withRequestContext } from '../../../common/request-context';
 import type { OrgContext } from '../../shared/org-context.interceptor';
 
 const ACTOR: OrgContext = {
@@ -990,6 +991,39 @@ describe('SchedulerService facade 行为表征（重构 oracle）', () => {
         planId: 'P-1',
         limit: 10,
         orgId: null,
+      });
+    });
+
+    it('HTTP worker without bound person → forbidden, not org-wide ledger', async () => {
+      const { svc } = makeSvc();
+      const worker: OrgContext = { ...ACTOR, roles: ['worker'], personId: null };
+      await expect(
+        withRequestContext({ requestId: 'exec-unbound' }, () =>
+          svc.executionList({}, worker),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('HTTP worker requesting another person → forbidden', async () => {
+      const { svc } = makeSvc();
+      const worker: OrgContext = { ...ACTOR, roles: ['worker'], personId: 'P-SELF' };
+      await expect(
+        withRequestContext({ requestId: 'exec-other' }, () =>
+          svc.executionList({ personId: 'P-OTHER' }, worker),
+        ),
+      ).rejects.toThrow('EXECUTION_PERSON_FORBIDDEN');
+    });
+
+    it('HTTP worker is forced to the token-bound person even when omitted', async () => {
+      const { svc, mocks } = makeSvc();
+      const worker: OrgContext = { ...ACTOR, roles: ['worker'], personId: 'P-SELF' };
+      await withRequestContext({ requestId: 'exec-self' }, () =>
+        svc.executionList({ limit: 10 }, worker),
+      );
+      expect(mocks.executionService.list).toHaveBeenCalledWith({
+        limit: 10,
+        personId: 'P-SELF',
+        orgId: 'org1',
       });
     });
 

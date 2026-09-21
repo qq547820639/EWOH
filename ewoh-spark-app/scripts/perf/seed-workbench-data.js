@@ -2,7 +2,7 @@
 /**
  * Task 7 — Deterministic large-data seeder for the Role Workbench.
  *
- * Inserts a reproducible dataset across org-a / org-b / org-c into the workbench
+ * Inserts a reproducible dataset across three fixed UUID tenants into the workbench
  * source tables (ewoh_schedule_task, ewoh_schedule_task_step, ewoh_event,
  * ewoh_spatial_entity, ewoh_resource_binding, ewoh_world_state) plus the
  * workbench persistence tables (saved_views, workbench_export_tasks).
@@ -51,12 +51,16 @@ function mulberry32(seed) {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const ORGS = ['org-a', 'org-b', 'org-c'];
+const ORGS = [
+  '00000000-0000-4000-8000-00000000000a',
+  '00000000-0000-4000-8000-00000000000b',
+  '00000000-0000-4000-8000-00000000000c',
+];
 // Deterministic org split: org-a 60%, org-b 30%, org-c 10%.
 const ORG_BUCKET = [];
-for (let i = 0; i < 6; i += 1) ORG_BUCKET.push('org-a');
-for (let i = 0; i < 3; i += 1) ORG_BUCKET.push('org-b');
-ORG_BUCKET.push('org-c'); // 10%
+for (let i = 0; i < 6; i += 1) ORG_BUCKET.push(ORGS[0]);
+for (let i = 0; i < 3; i += 1) ORG_BUCKET.push(ORGS[1]);
+ORG_BUCKET.push(ORGS[2]); // 10%
 
 const TASK_STATUSES = ['draft', 'pending', 'in_progress', 'paused', 'completed', 'cancelled'];
 const STEP_STATUSES = ['pending', 'in_progress', 'paused', 'completed'];

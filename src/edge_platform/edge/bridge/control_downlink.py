@@ -35,10 +35,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import deque
+import uuid
 from typing import Any
 
 from edge_platform.edge.adapters.actuator.protocol import (
@@ -158,6 +159,83 @@ class ControlDownlinkClient:
         )
 
 
+class ReceiptJournal:
+    """原子持久化的失败回执账本：进程重启后仍能按原 commandId 补投。"""
+
+    def __init__(self, path: str | None):
+        self.path = str(path) if path else ""
+        self.entries: list[dict] = self._load()
+
+    @staticmethod
+    def _entry_key(entry: dict) -> str:
+        """同一次执行事实的唯一键；重复追加在崩溃恢复时只保留一条。"""
+        material = {
+            "commandId": entry.get("commandId"),
+            "commandKey": entry.get("commandKey"),
+            "result": entry.get("result"),
+            "receiptBody": entry.get("receiptBody"),
+            "fingerprint": entry.get("fingerprint"),
+        }
+        return json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def _load(self) -> list[dict]:
+        if not self.path or not os.path.exists(self.path):
+            return []
+        entries_by_key: dict[str, dict] = {}
+        with open(self.path, encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                if not line.strip():
+                    continue
+                value = json.loads(line)
+                if not isinstance(value, dict):
+                    raise ValueError(f"invalid receipt journal entry at {self.path}:{line_number}")
+                entries_by_key[self._entry_key(value)] = value
+        return list(entries_by_key.values())
+
+    def _rewrite(self, entries: list[dict]) -> None:
+        if not self.path:
+            return
+        temporary = f"{self.path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+        with open(temporary, "w", encoding="utf-8") as stream:
+            for entry in entries:
+                stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.path)
+        directory_fd = os.open(os.path.dirname(self.path) or ".", os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    def append(self, entry: dict) -> None:
+        # 先把新事实 O_APPEND+fsync 到旧文件：即使压缩 rewrite 前崩溃，恢复也能读到它。
+        # 崩溃后可能出现一条重复，_load 按 commandId/result/body 键去重。
+        if self.path:
+            with open(self.path, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.entries = self._load()
+            return
+        self.entries.append(entry)
+        self._rewrite(self.entries)
+
+    def replace(self, entries: list[dict]) -> None:
+        self.entries = list(entries)
+        self._rewrite(self.entries)
+
+    def overflow(self, entry: dict) -> None:
+        """把超过内存上限的回执转入持久死信，而不是静默丢弃。"""
+        if not self.path:
+            raise RuntimeError("receipt journal path is required once the retry queue overflows")
+        dead_letter = f"{self.path}.dead-letter.jsonl"
+        with open(dead_letter, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+
 class ControlAgent:
     """把平台待投递命令交给执行机构适配器，并把结果回执平台（一次一轮）。"""
 
@@ -168,6 +246,7 @@ class ControlAgent:
         *,
         command_keys: tuple[str, ...] | None = None,
         fingerprint_secret: str | None = None,
+        receipt_journal_path: str | None = None,
     ):
         self.client = client
         # device_id → ActuatorAdapter（必须是执行机构适配器；本类不做类型猜测）
@@ -183,9 +262,10 @@ class ControlAgent:
         #: receipt_body, fingerprint) 记账，每轮 run_once 先重投；平台按
         #: commandId 幂等接收（重复回执无副作用）。有界（MAX=100，超出丢最旧并
         #: 计数留痕——绝不让重投队列自己变成无界内存）。
-        self._receipt_retry: deque = deque()
+        self._receipt_retry = ReceiptJournal(receipt_journal_path)
         self.receipt_retry_dropped = 0
-        self.receipt_retry_max = 100
+        self.receipt_retry_rejected = 0
+        self.receipt_retry_max = 1000
 
     def _reject(self, command: dict, reason: str, detail: str = "") -> dict:
         """投递拒绝：先 ack（delivered=false + 原因），**不碰设备**。"""
@@ -266,31 +346,36 @@ class ControlAgent:
     def _enqueue_receipt_retry(
         self, command_id: str, command_key: str, result: str, receipt_body: dict, fingerprint: Any
     ) -> None:
-        self._receipt_retry.append(
-            {
-                "commandId": command_id,
-                "commandKey": command_key,
-                "result": result,
-                "receiptBody": receipt_body,
-                "fingerprint": fingerprint,
-            }
-        )
-        if len(self._receipt_retry) > self.receipt_retry_max:
-            self._receipt_retry.popleft()
+        entry = {
+            "commandId": command_id,
+            "commandKey": command_key,
+            "result": result,
+            "receiptBody": receipt_body,
+            "fingerprint": fingerprint,
+        }
+        if len(self._receipt_retry.entries) >= self.receipt_retry_max:
+            self._receipt_retry.overflow(entry)
             self.receipt_retry_dropped += 1
             logger.warning(
-                "receipt 重投队列溢出（>=%s），丢弃最旧一条并计数留痕: commandId=%s",
+                "receipt 重投队列溢出（>=%s），转入死信并计数留痕: commandId=%s",
                 self.receipt_retry_max,
                 command_id,
             )
+            return
+        self._receipt_retry.append(entry)
+
+    @staticmethod
+    def _is_retryable_receipt_status(status: int) -> bool:
+        """只重试“结果未知或服务端暂时不可用”的回执；确定性 4xx 不盲目重放。"""
+        return status == 0 or status == 429 or status >= 500
 
     def _flush_receipt_retry(self) -> int:
-        """重投上一轮上行失败的执行结果；成功即出队，仍失败则留在队尾下轮再试。"""
+        """补投失败回执；2xx 出队，瞬时失败保留，确定性 4xx 转入可检查死信。"""
         flushed = 0
-        remaining: deque = deque()
-        while self._receipt_retry:
-            entry = self._receipt_retry.popleft()
-            status, _body = self.client.receipt(
+        remaining: list[dict] = []
+        rejected: list[dict] = []
+        for entry in list(self._receipt_retry.entries):
+            status, body = self.client.receipt(
                 entry["commandId"],
                 entry["commandKey"],
                 entry["result"],
@@ -299,9 +384,21 @@ class ControlAgent:
             )
             if status in (200, 201):
                 flushed += 1
-            else:
+            elif self._is_retryable_receipt_status(status):
                 remaining.append(entry)
-        self._receipt_retry = remaining
+            else:
+                rejected.append(entry)
+        self._receipt_retry.replace(remaining)
+        for entry in rejected:
+            self._receipt_retry.overflow(entry)
+        self.receipt_retry_rejected += len(rejected)
+        if rejected:
+            logger.error(
+                "receipt 确定性拒绝（不重放，转入死信）count=%s lastStatus=%s lastBody=%s",
+                len(rejected),
+                status,
+                body,
+            )
         return flushed
 
     def _handle(self, adapter: Any, device: str, command: dict) -> dict:
@@ -365,15 +462,13 @@ class ControlAgent:
                     verification_reason or "fingerprint_signature_invalid",
                     "授权范围签名验证失败（内容/范围与平台签发不一致）",
                 )
-        result = adapter.send_command(command_key, authorization_ref, payload)
-        accepted = bool(result.get("accepted"))
-        # 网关已收到：先落"投递确认"，再落"执行结果"（状态机 gateway_received → executed/failed）
+        # 安全顺序：授权确认和平台撤回复核必须在设备动作前完成。
+        # ack 结果未知或被拒绝时不碰设备；确认成功后的执行失败仍如实回执 failed。
         ack_status, ack_body = self.client.ack(
             command_id,
             True,
             details={
-                "adapterAccepted": accepted,
-                "adapterReason": result.get("reason"),
+                "authorizationCheckedBeforeAction": True,
                 # NO-65a：把验签结论写进投递确认（"验过"与"没验"必须可区分）。
                 "fingerprintScheme": "hmac-sha256:v2"
                 if str(fingerprint).startswith("hmac-sha256:v2:")
@@ -384,8 +479,6 @@ class ControlAgent:
             },
             authorization_fingerprint=fingerprint or None,
         )
-        # 平台若在 ack 时拒绝（NO-62a：投递瞬间复核发现授权已失效 → 409 + 命令已撤回），
-        # 本轮的 ack **没有**被接受：不能再回执"执行成功"，也不能假装投递成功。
         ack_rejected = ack_status == 409
         if ack_rejected:
             logger.warning(
@@ -399,11 +492,45 @@ class ControlAgent:
                 "requestId": request_id,
                 "commandKey": command_key,
                 "outcome": "delivery_rejected_by_platform",
-                "adapterAccepted": accepted,
-                "adapterReason": result.get("reason"),
                 "ackStatus": ack_status,
                 "ackBody": ack_body,
             }
+        if ack_status not in (200, 201):
+            logger.warning(
+                "平台授权确认未成功（不碰设备）device=%s command=%s status=%s body=%s",
+                device,
+                command_key,
+                ack_status,
+                ack_body,
+            )
+            return {
+                "commandId": command_id,
+                "requestId": request_id,
+                "commandKey": command_key,
+                "outcome": "authorization_ack_unresolved",
+                "ackStatus": ack_status,
+                "ackBody": ack_body,
+            }
+
+        try:
+            result = adapter.send_command(command_key, authorization_ref, payload)
+        except Exception as exc:
+            # 适配器契约要求返回结构化失败，但真实驱动/序列化仍可能在“已 ack、
+            # 待执行”的临界段抛错。这里不能让异常吞掉回执：把可审计的 failed
+            # 结果送回平台；若上行也失败，继续进入持久重投队列。
+            logger.exception(
+                "执行器适配器异常 device=%s command=%s reason=%s",
+                device,
+                command_key,
+                exc,
+            )
+            result = {
+                "accepted": False,
+                "reason": f"adapter_error:{type(exc).__name__}",
+                "state": {},
+                "at": None,
+            }
+        accepted = bool(result.get("accepted"))
         receipt_result = "executed" if accepted else "failed"
         receipt_body = {
             "deviceId": device,
@@ -420,8 +547,9 @@ class ControlAgent:
             receipt_body,
             authorization_fingerprint=fingerprint or None,
         )
-        if receipt_status == 0:
-            # 平台不可达：执行结果先记账，下一轮 run_once 开头重投（见 _flush_receipt_retry）。
+        if receipt_status not in (200, 201):
+            # 所有非 2xx 先持久记账：瞬时失败下轮重投；确定性拒绝由补投阶段转入死信。
+            # 不能在这里凭 HTTP 状态直接丢弃，否则边缘崩溃前连"平台为什么拒绝"都没留住。
             self._enqueue_receipt_retry(command_id, command_key, receipt_result, receipt_body, fingerprint)
         outcome = "executed" if accepted else "execution_failed"
         if not accepted:
@@ -456,6 +584,7 @@ def build_agent(
     modbus_port: int = 502,
     modbus_timeout: float = 2.0,
     fingerprint_secret: str | None = None,
+    receipt_journal_path: str | None = None,
 ) -> ControlAgent:
     """按设备号构造命令代理。
 
@@ -489,7 +618,12 @@ def build_agent(
         client = ControlDownlinkClient(
             platform_url, ingest_key, org_id=org_id, timeout=timeout
         )
-        return ControlAgent(client, adapters, fingerprint_secret=fingerprint_secret)
+        return ControlAgent(
+            client,
+            adapters,
+            fingerprint_secret=fingerprint_secret,
+            receipt_journal_path=receipt_journal_path,
+        )
 
     from edge_platform.edge.adapters.actuator.simulated import SimulatedActuatorAdapter
 
@@ -502,7 +636,12 @@ def build_agent(
     client = ControlDownlinkClient(
         platform_url, ingest_key, org_id=org_id, timeout=timeout
     )
-    return ControlAgent(client, adapters, fingerprint_secret=fingerprint_secret)
+    return ControlAgent(
+        client,
+        adapters,
+        fingerprint_secret=fingerprint_secret,
+        receipt_journal_path=receipt_journal_path,
+    )
 
 
 __all__ = [

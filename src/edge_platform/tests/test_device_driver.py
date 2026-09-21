@@ -198,7 +198,7 @@ class TcpDeviceDriverTest(unittest.TestCase):
         self.assertTrue(_wait_for(lambda: self.driver.stats()["active_sessions"] == 0))
         frames = self.adapter.drain()
         self.assertTrue(
-            all(f.entity_id == "EXO-PRI" for f in frames),
+            all(f.entity_id == "EXO-TCP1" for f in frames),
             [f.entity_id for f in frames],
         )
         stats = self.driver.stats()

@@ -66,6 +66,15 @@ export function pendingActionLabel(item: StoredPendingAction): string {
   return labels[item.action ?? ''] ?? item.action ?? '操作';
 }
 
+export function qualityResultLabel(result: string): string {
+  const labels: Record<string, string> = {
+    pass: '合格',
+    fail: '不合格',
+    rework: '返工',
+  };
+  return labels[result] ?? result;
+}
+
 export function scanTypeLabel(scanType: string): string {
   const labels: Record<string, string> = {
     device: '设备',

@@ -111,7 +111,11 @@ def validate_interval_set(records: list[dict]) -> list[str]:
     for r in records:
         if not isinstance(r, dict):
             return ["record_must_be_object"]
-        key = (r.get("entityId"), r.get("stateType"))
+        # Canonical records may omit stateType when entityType is the only state
+        # category; keep the fallback explicit so all records never collapse into
+        # one "None" bucket.
+        state_type = r.get("stateType") or r.get("entityType")
+        key = (r.get("entityId"), state_type)
         groups.setdefault(key, []).append(r)
     for group in groups.values():
         ordered = sorted(group, key=lambda r: _parse_ts(r.get("validFrom")) or float("inf"))

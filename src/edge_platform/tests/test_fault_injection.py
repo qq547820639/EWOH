@@ -234,6 +234,28 @@ class FirmwareUpgradeTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             inj.firmware_upgrade(frame_bytes=tel, new_version="2.0.0")
 
+    def test_bad_tail_is_not_accepted_even_when_crc_matches(self):
+        """CRC 不覆盖帧尾：尾字节损坏必须拒绝，不得产出遥测。"""
+        inj = WireInjector(device_id="EXO-TAIL-01", start_ts_ms=1_000_000)
+        adapter = NyExoA1Adapter("EXO-TAIL-01", source_type="controlled_test")
+        raw = bytearray(inj.telemetry())
+        raw[-2:] = b"\x00\x00"  # 只改帧尾，CRC 原值仍“匹配”
+        produced = adapter.feed(bytes(raw))
+        self.assertEqual(produced, 0)
+        self.assertEqual(adapter.drain(), [])
+        self.assertEqual(adapter.health()["malformed_frames"], 1)
+
+    def test_ident_device_id_mismatch_is_rejected(self):
+        """线上 IDENT 不能改写部署登记的设备身份。"""
+        inj = WireInjector(device_id="EXO-ROGUE", start_ts_ms=1_000_000)
+        adapter = NyExoA1Adapter("EXO-CONFIGURED", source_type="controlled_test")
+        produced = adapter.feed(inj.ident() + inj.telemetry_burst(2))
+        # IDENT 被拒，但后续遥测仍必须归属配置设备，不能因错接而丢失归属判断。
+        self.assertEqual(produced, 2)
+        self.assertEqual([f.entity_id for f in adapter.drain()], ["EXO-CONFIGURED", "EXO-CONFIGURED"])
+        self.assertEqual(adapter.device_id, "EXO-CONFIGURED")
+        self.assertEqual(adapter.health()["malformed_frames"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

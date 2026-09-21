@@ -69,6 +69,21 @@ describe('priorityTriage (UX-001 待处理事项优先)', () => {
     expect(result[3].overdue).toBe(false);
   });
 
+  it('treats malformed deadlines as last and explicit data-quality text', () => {
+    const result = triageRoleItems(
+      'manager',
+      [
+        { id: 'valid', title: 'valid', reason: 'r', priority: 'high', deadline: '2026-08-05T10:00:00Z' },
+        { id: 'invalid', title: 'invalid', reason: 'r', priority: 'high', deadline: 'not-a-date' },
+      ],
+      NOW,
+    );
+    expect(result.map((item) => item.id)).toEqual(['valid', 'invalid']);
+    const summary = summarizeItem(result[1], NOW);
+    expect(summary.deadline).toBe('时间格式无效');
+    expect(summary.deadline).not.toContain('Invalid');
+  });
+
   it('does not mutate the input array', () => {
     const input = [{ id: 'x', title: 't', reason: 'r', priority: 'low' as const }];
     triageRoleItems('operator', input);

@@ -86,6 +86,89 @@ function isWellFormedSolverResponse(r: SolverResponse): boolean {
   return true;
 }
 
+type EligibilityIndex =
+  | Map<string, { personIds: string[]; deviceIds: string[] }>
+  | undefined;
+
+/**
+ * Semantic response validation. A syntactically well-formed response can still
+ * be unusable if a buggy/compromised worker assigns an unknown task/resource,
+ * repeats a task, bypasses safety filtering, or exceeds station capacity.
+ * The platform never treats such output as an OPTIMAL plan.
+ */
+function isSemanticallyValidSolverResponse(
+  response: SolverResponse,
+  snapshot: WorldStateSnapshot,
+  eligibleByTask: EligibilityIndex,
+  blockedDeviceIds: Set<string>,
+): boolean {
+  const taskById = new Map(snapshot.tasks.map((t) => [t.id, t]));
+  const personIds = new Set(snapshot.persons.map((p) => p.id));
+  const deviceIds = new Set(snapshot.devices.map((d) => d.id));
+  const stationById = new Map(snapshot.stations.map((s) => [s.id, s]));
+  const seenTasks = new Set<string>();
+  const assigned: SolverResponse['assignments'] = [];
+
+  for (const a of response.assignments) {
+    const task = taskById.get(a.taskId);
+    if (!task || !TaskLifecycle.isSchedulable(task.status)) return false;
+    if (seenTasks.has(a.taskId)) return false;
+    seenTasks.add(a.taskId);
+    if (!a.personId || !personIds.has(a.personId)) return false;
+    if (snapshot.safetyBlockedPersonIds?.includes(a.personId)) return false;
+    if (a.deviceId != null && !deviceIds.has(a.deviceId)) return false;
+    if (a.deviceId != null && (
+      snapshot.safetyBlockedDeviceIds?.includes(a.deviceId) ||
+      blockedDeviceIds.has(a.deviceId)
+    )) return false;
+    if (a.stationId != null && !stationById.has(a.stationId)) return false;
+    if (!(a.endMs > a.startMs)) return false;
+    const eligible = eligibleByTask?.get(a.taskId);
+    if (eligible) {
+      if (!eligible.personIds.includes(a.personId)) return false;
+      if (a.deviceId != null && !eligible.deviceIds.includes(a.deviceId)) return false;
+    }
+    assigned.push(a);
+  }
+
+  const overlaps = (
+    a: SolverResponse['assignments'][number],
+    b: SolverResponse['assignments'][number],
+  ) => a.startMs < b.endMs && b.startMs < a.endMs;
+
+  for (let i = 0; i < assigned.length; i++) {
+    for (let j = i + 1; j < assigned.length; j++) {
+      const a = assigned[i];
+      const b = assigned[j];
+      if (!overlaps(a, b)) continue;
+      if (
+        (a.personId && a.personId === b.personId) ||
+        (a.deviceId && a.deviceId === b.deviceId)
+      ) return false;
+    }
+  }
+
+  const byStation = new Map<string, SolverResponse['assignments']>();
+  for (const a of assigned) {
+    if (!a.stationId) continue;
+    const list = byStation.get(a.stationId) ?? [];
+    list.push(a);
+    byStation.set(a.stationId, list);
+  }
+  for (const [stationId, list] of byStation) {
+    const capacity = stationById.get(stationId)?.capacity ?? null;
+    if (capacity == null || capacity < 0) continue;
+    for (let i = 0; i < list.length; i++) {
+      let overlappingIncludingSelf = 0;
+      for (const other of list) {
+        if (overlaps(list[i], other)) overlappingIncludingSelf += 1;
+      }
+      if (overlappingIncludingSelf > capacity) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * CP-SAT 生产激活阶梯（Task 6 / P1）：OFF → SHADOW → CANARY → PRODUCTION。
  * - OFF（当前）：worker 不可达/未部署 → solverStatus=UNAVAILABLE 回退 heuristic；
@@ -167,8 +250,9 @@ export class CpSatSchedulingSolver {
       return plan;
     }
 
-    const policy = opts.policy ?? (await this.heuristicSolver.loadActivePolicy());
-    const config = await this.heuristicSolver.loadConfig();
+    const orgId = opts.orgId ?? null;
+    const policy = opts.policy ?? (await this.heuristicSolver.loadActivePolicy(orgId));
+    const config = await this.heuristicSolver.loadConfig(orgId);
     let minBatteryPct = config.minBatteryPct;
     for (const constraint of constraints) {
       if (constraint.type === 'MIN_BATTERY' && constraint.value != null) {
@@ -249,7 +333,7 @@ export class CpSatSchedulingSolver {
               snapshot,
               task,
               candidates,
-              opts.orgId ?? null,
+              orgId,
             );
             const byKey = new Map<string, Array<{ x: number; y: number }>>();
             const costs: Array<{
@@ -314,12 +398,12 @@ export class CpSatSchedulingSolver {
     try {
       // ADR-056 消费侧：解析一次，随请求传给 buildRequest（与 heuristic/MILP 同源）。
       const durationMsByTask =
-        ((await this.heuristicSolver.loadConfig()).prediction?.durationModelMode ?? 'off') === 'advisory'
+        ((await this.heuristicSolver.loadConfig(orgId)).prediction?.durationModelMode ?? 'off') === 'advisory'
           ? await this.heuristicSolver.resolveModelDurations(
               snapshot,
-              await this.heuristicSolver.loadConfig(),
-              (await this.heuristicSolver.loadConfig()).defaultTaskDurationMs,
-              opts.orgId ?? null,
+              config,
+              config.defaultTaskDurationMs,
+              orgId,
             )
           : null;
       const request = await this.buildRequest(
@@ -410,6 +494,33 @@ export class CpSatSchedulingSolver {
       response = null;
     }
 
+    // A worker can return valid JSON with the right fields and still be unsafe.
+    // Reject unknown resources, duplicated tasks, safety bypasses and capacity
+    // conflicts before an OPTIMAL/FEASIBLE response can enter the plan lifecycle.
+    let semanticResponseRejected = false;
+    if (response && !isSemanticallyValidSolverResponse(
+      response,
+      snapshot,
+      eligibleByTask,
+      blockedBatteryDeviceIds,
+    )) {
+      this.logger.warn(
+        'CP-SAT worker returned a semantically invalid assignment set; rejecting plan',
+      );
+      if (this.metricsService) {
+        try {
+          this.metricsService.recordFallback();
+        } catch (metricsErr) {
+          this.logger.warn(
+            `semantic fallback metrics recording failed: ${metricsErr instanceof Error ? metricsErr.message : String(metricsErr)}`,
+          );
+        }
+      }
+      semanticResponseRejected = true;
+      this.circuitBreaker.recordFailure();
+      response = null;
+    }
+
     // Phase 2 / P2-T4：响应 well-formed（worker 正常应答，含 OPTIMAL/FEASIBLE/INFEASIBLE/TIMEOUT）
     // → 复位熔断（worker 健康）。
     if (response) {
@@ -439,7 +550,9 @@ export class CpSatSchedulingSolver {
 
     // 否则回退到启发式：Worker 可达但结果不可用 → FALLBACK；不可达 → UNAVAILABLE。
     const fallbackStatus: SolverStatus = reachable ? 'FALLBACK' : 'UNAVAILABLE';
-    const fallbackReason = batteryRejectedResponse
+    const fallbackReason = semanticResponseRejected
+      ? 'cpsat_response_semantic_validation_failed'
+      : batteryRejectedResponse
       ? 'cpsat_device_battery_unavailable_or_low'
       : malformedResponse
       ? `CP-SAT worker 返回畸形响应（malformed response），回退启发式`

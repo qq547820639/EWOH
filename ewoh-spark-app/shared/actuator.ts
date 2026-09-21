@@ -232,7 +232,8 @@ export function isSafetyCommand(commandKey: unknown): boolean {
 export function authorizationRefValid(ref: unknown): boolean {
   const value = String(ref ?? '').trim();
   if (value === '') return false;
-  return AUTHORIZATION_REF_PREFIXES.some((prefix) => value.toLowerCase().startsWith(prefix));
+  const lower = value.toLowerCase();
+  return AUTHORIZATION_REF_PREFIXES.some((prefix) => lower.startsWith(prefix) && value.slice(prefix.length).trim() !== '');
 }
 
 /** 中文展示名（页面/日志同源；未知状态原样透出，不猜）。 */

@@ -75,6 +75,10 @@ class RetentionPolicy:
     def __post_init__(self):
         if isinstance(self.data_class, str):
             self.data_class = DataClass(self.data_class)
+        if not isinstance(self.retention_days, int) or isinstance(self.retention_days, bool):
+            raise TypeError("retention_days 必须为整数")
+        if self.retention_days < -1 or self.retention_days == 0:
+            raise ValueError("retention_days 只允许 -1（永不自动删除）或正整数天数")
         if not self.policy_id:
             self.policy_id = new_id("RET")
         if not self.effective_from:
@@ -116,6 +120,9 @@ class RetentionManager:
         """
         if not isinstance(policy, RetentionPolicy):
             raise TypeError("只接受 RetentionPolicy 实例")
+        # Post-init 已校验类型/范围；再次检查可保护绕过 dataclass 行为的调用。
+        if policy.retention_days < -1 or policy.retention_days == 0:
+            raise ValueError("retention_days 只允许 -1（永不自动删除）或正整数天数")
         dc = policy.data_class
         history = self._history.setdefault(dc, [])
         if history:

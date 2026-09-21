@@ -69,6 +69,16 @@ export const queryKeys = {
   get factoryOperationsPlans() {
     return ['factory-operations', currentOrgScope(), 'plans'] as const;
   },
+  /** R2-CP1-2：班组长工作台缓存必须按当前组织分片。 */
+  get workbenchOverview() {
+    return tenantQueryKey('workbench-overview');
+  },
+  get workbenchOpenEvents() {
+    return tenantQueryKey('workbench-events-open');
+  },
+  get workbenchPendingPlans() {
+    return tenantQueryKey('workbench-plans-pending');
+  },
   events: (status?: string) => tenantQueryKey('events', status ?? 'all'),
   devices: (query?: DeviceSearchQuery) => tenantQueryKey('devices', query ?? {}),
   deviceBindings: (deviceId?: string) => tenantQueryKey('device-bindings', deviceId ?? 'none'),
@@ -137,6 +147,17 @@ export const queryKeys = {
    * 命中对方的缓存（班组长会看到已处置的提醒，或审批台只剩 pending）。
    */
   get notificationsPending() { return tenantQueryKey('notifications', 'pending'); },
+  /** NO-52a：接班前设备责任人覆盖核对。 */
+  get deviceResponsibilityCoverage() {
+    return tenantQueryKey('device-responsibilities', 'coverage');
+  },
+  /** NO-56a：多模态感知融合最新快照列表。 */
+  get perceptionFusion() {
+    return tenantQueryKey('perception', 'fusion');
+  },
+  /** NO-57b：预计 vs 实际对账汇总（按天数窗口分键）。 */
+  schedulerPlannedVsActual: (windowDays: number) =>
+    schedulerKey('planned-vs-actual', windowDays),
   get commandCenter() { return tenantQueryKey('command-center'); },
   get commandCenterOverview() { return tenantQueryKey('command-center', 'overview'); },
   get commandCenterEvents() { return tenantQueryKey('command-center', 'events'); },

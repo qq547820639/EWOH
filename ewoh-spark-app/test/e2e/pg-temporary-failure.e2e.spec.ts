@@ -105,14 +105,18 @@ async function startStandaloneChild(
   });
 
   const close = async (): Promise<void> => {
-    if (child.exitCode != null || child.signalCode != null) return;
+    if (child.exitCode != null || child.signalCode != null) {
+      child.stderr?.destroy();
+      return;
+    }
+    // Always await the same exit event, including after SIGKILL escalation.
+    // Closing stdio prevents Jest from waiting on a detached child's pipe handles.
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
     child.kill('SIGTERM');
-    const exited = await Promise.race([
-      new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))),
-      delay(5000).then(() => false),
-    ]);
-    if (!exited) child.kill('SIGKILL');
-    await delay(100);
+    const graceful = await Promise.race([exited.then(() => true), delay(5000).then(() => false)]);
+    if (!graceful) child.kill('SIGKILL');
+    await exited;
+    child.stderr?.destroy();
   };
 
   // 就绪等待：任意 HTTP 响应（含 404/503）即视为监听已建立。

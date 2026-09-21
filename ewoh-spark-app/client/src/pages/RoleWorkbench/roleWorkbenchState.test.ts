@@ -8,6 +8,8 @@ import {
   buildRoleParams,
   buildSortParams,
   defaultListState,
+  LEGACY_VIEW_MIGRATION_FLAG_KEY,
+  migrateLegacyWorkbenchViews,
   parseLegacyViewKey,
   readListStates,
   readOpenedView,
@@ -91,10 +93,57 @@ describe('roleWorkbenchState (页面查询状态建模)', () => {
       expect(next.get('mySteps.page')).toBe('5');
     });
 
-    it('buildRoleParams preserves other params', () => {
-      const next = buildRoleParams(new URLSearchParams({ 'mySteps.filter': 'x' }), 'manager');
+    it('buildRoleParams resets role-owned list context and view', () => {
+      const next = buildRoleParams(
+        new URLSearchParams({
+          'mySteps.filter': 'x',
+          'mySteps.sort': 'status',
+          'mySteps.dir': 'desc',
+          'mySteps.page': '3',
+          view: 'operator.mySteps',
+          keep: 'yes',
+        }),
+        'manager',
+        lists,
+      );
       expect(next.get('role')).toBe('manager');
-      expect(next.get('mySteps.filter')).toBe('x');
+      expect(next.get('keep')).toBe('yes');
+      expect(next.has('mySteps.filter')).toBe(false);
+      expect(next.has('mySteps.sort')).toBe(false);
+      expect(next.has('mySteps.dir')).toBe(false);
+      expect(next.has('mySteps.page')).toBe(false);
+      expect(next.has('view')).toBe(false);
+    });
+  });
+
+  describe('legacy view migration (shared-device safety)', () => {
+    function createStorage(initial: Record<string, string> = {}) {
+      const values = { ...initial };
+      return {
+        getItem: (key: string) => values[key] ?? null,
+        setItem: (key: string, value: string) => { values[key] = value; },
+        get length() { return Object.keys(values).length; },
+        key: (index: number) => Object.keys(values)[index] ?? null,
+        values,
+      };
+    }
+
+    it('does not import unattributed views and preserves their local data', () => {
+      const storage = createStorage({
+        [`${LEGACY_VIEW_PREFIX}operator.mySteps`]: JSON.stringify({ filter: 'fault' }),
+      });
+      const result = migrateLegacyWorkbenchViews(storage);
+      expect(result).toMatchObject({
+        skipped: true,
+        count: 1,
+        reason: 'legacy_views_have_no_owner_binding',
+      });
+      expect(storage.values[`${LEGACY_VIEW_PREFIX}operator.mySteps`]).toBe(
+        JSON.stringify({ filter: 'fault' }),
+      );
+      const marker = JSON.parse(storage.values[LEGACY_VIEW_MIGRATION_FLAG_KEY]);
+      expect(marker.reason).toBe('legacy_views_have_no_owner_binding');
+      expect(migrateLegacyWorkbenchViews(storage).count).toBe(0);
     });
   });
 

@@ -60,6 +60,114 @@ function nextId(prefix: string): string {
   return `${prefix}-${Date.now()}-${seq}`;
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizedStringList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+  const values = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 32);
+  return values.length ? values : fallback;
+}
+
+function sanitizedJsonValue(value: unknown, depth = 0): unknown {
+  if (depth > 6) return null;
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') return value.slice(0, 10_000);
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitizedJsonValue(item, depth + 1));
+  if (!isUnknownRecord(value)) return null;
+  const result: UnknownRecord = {};
+  for (const [key, nested] of Object.entries(value).slice(0, 50)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(key)) continue;
+    result[key] = sanitizedJsonValue(nested, depth + 1);
+  }
+  return result;
+}
+
+/** A3 plan content remains simulation metadata; LLM may not alter execution fields. */
+function mergeValidatedLlmPlanContent(
+  content: Record<string, unknown>,
+  rawText: string,
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return { ...content, llmNote: 'LLM 输出不是有效 JSON；已保留确定性方案内容' };
+  }
+  if (!isUnknownRecord(parsed)) return content;
+  const enriched: Record<string, unknown> = { ...content };
+  for (const key of ['shift', 'actions', 'kpis', 'note'] as const) {
+    if (key in parsed) {
+      enriched[key] = sanitizedJsonValue(parsed[key]);
+    }
+  }
+  return enriched;
+}
+
+/**
+ * LLM 只提供展示字段；不可信响应必须先通过运行时 shape 校验。
+ * 这里不采用 partial cast 后直接合并，防止 prompt 注入改写 id、快照版本或注入嵌套对象。
+ */
+function mergeValidatedLlmSuggestion(base: AiSuggestion, rawText: string): AiSuggestion {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return { ...base, suggestion: `${base.suggestion}\n（LLM 输出不是有效 JSON，已忽略增强内容。）` };
+  }
+  if (!isUnknownRecord(parsed)) {
+    return base;
+  }
+  const suggestionText = typeof parsed.suggestion === 'string' ? parsed.suggestion.trim() : '';
+  return {
+    ...base,
+    suggestion: suggestionText ? suggestionText.slice(0, 10_000) : base.suggestion,
+    basis: normalizedStringList(parsed.basis, base.basis),
+    risk: normalizedStringList(parsed.risk, base.risk),
+    uncertainty: normalizedStringList(parsed.uncertainty, base.uncertainty),
+    confirmItems: normalizedStringList(parsed.confirmItems, base.confirmItems),
+  };
+}
+
+/** Normalize caller-declared snapshot metadata before it can enter provenance. */
+function normalizeDeclaredSnapshot(input: unknown): {
+  version: number;
+  from: string;
+  to: string;
+  records: number;
+} {
+  if (!isUnknownRecord(input)) {
+    throw new BadRequestException('snapshot must be an object');
+  }
+  const version = Number(input.version);
+  const records = Number(input.records);
+  const from = typeof input.from === 'string' ? input.from.trim() : '';
+  const to = typeof input.to === 'string' ? input.to.trim() : '';
+  if (!Number.isSafeInteger(version) || version < 0) {
+    throw new BadRequestException('snapshot.version must be a non-negative integer');
+  }
+  if (!Number.isSafeInteger(records) || records < 0) {
+    throw new BadRequestException('snapshot.records must be a non-negative integer');
+  }
+  if (!from || Number.isNaN(Date.parse(from)) || !to || Number.isNaN(Date.parse(to))) {
+    throw new BadRequestException('snapshot.from and snapshot.to must be valid dates');
+  }
+  if (Date.parse(from) > Date.parse(to)) {
+    throw new BadRequestException('snapshot.from must not be after snapshot.to');
+  }
+  return { version, from, to, records };
+}
+
 function buildSuggestion(input: {
   triggeredBy: string;
   snapshot: { version: number; from: string; to: string; records: number };
@@ -76,10 +184,16 @@ function buildSuggestion(input: {
     problem: input.problem,
     dataRange: { from: input.snapshot.from, to: input.snapshot.to },
     completeness: Math.min(1, input.snapshot.records / 100),
-    basis: ['当前世界快照', `版本 ${input.snapshot.version}`],
+    basis: ['调用方声明的数据快照', `声明版本 ${input.snapshot.version}`],
     suggestion: `建议对 ${input.problem} 进行人工复核`,
-    risk: ['需人工确认后才能进入正式计划'],
-    uncertainty: ['模型未使用真实姓名字段'],
+    risk: [
+      '需人工确认后才能进入正式计划',
+      '声明的快照元数据可能与权威世界模型不一致',
+    ],
+    uncertainty: [
+      '模型未使用真实姓名字段',
+      '快照版本、时间范围和样本量由调用方声明，尚未在服务端复核',
+    ],
     confirmItems: ['确认数据范围与快照版本'],
     expiryConditions: ['快照版本变化后失效'],
   };
@@ -126,12 +240,14 @@ export class AiService {
     if (!input.triggeredBy?.trim() || !input.problem?.trim()) {
       throw new BadRequestException('triggeredBy and problem are required');
     }
+    const snapshot = normalizeDeclaredSnapshot(input.snapshot);
+    const safeInput = { ...input, snapshot };
     // 真实调用 Ark 大模型生成建议；失败时回落到规则模板，保证流程可用。
-    let suggestion = await this.generateSuggestionWithLlm(input);
+    let suggestion = await this.generateSuggestionWithLlm(safeInput);
     // NO-08a（ADR-019）：把确定性规则基础记录为 L1 InferenceResult 台账
     // （与 LLM 文本增强的 ReasoningResult 分工——统计确定 vs 文本生成）。
-    suggestion = await this.attachRuleBasisInference(suggestion, input);
-    return this.persistSuggestion(suggestion, input);
+    suggestion = await this.attachRuleBasisInference(suggestion, safeInput);
+    return this.persistSuggestion(suggestion, safeInput);
   }
 
   /** AI 接入优化（2026-08-18）：建议生成流式化——骨架先出 → LLM 打字机 → 完成落库。
@@ -149,7 +265,11 @@ export class AiService {
     void,
     undefined
   > {
-    const base = buildSuggestion(input);
+    if (!input.triggeredBy?.trim() || !input.problem?.trim()) {
+      throw new BadRequestException('triggeredBy and problem are required');
+    }
+    const safeInput = { ...input, snapshot: normalizeDeclaredSnapshot(input.snapshot) };
+    const base = buildSuggestion(safeInput);
     yield { phase: 'basis', suggestion: base };
     let final: AiSuggestion = base;
     if (this.ark) {
@@ -160,7 +280,7 @@ export class AiService {
       const userPrompt = [
         `问题：${input.problem}`,
         `触发人：${input.triggeredBy}`,
-        `数据快照：version=${input.snapshot.version}, from=${input.snapshot.from}, to=${input.snapshot.to}, records=${input.snapshot.records}`,
+        `数据快照：version=${safeInput.snapshot.version}, from=${safeInput.snapshot.from}, to=${safeInput.snapshot.to}, records=${safeInput.snapshot.records}`,
       ].join('\n');
       const parts: string[] = [];
       try {
@@ -169,7 +289,7 @@ export class AiService {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
-          { temperature: 0.4, signal: input.signal },
+          { temperature: 0.4, signal: safeInput.signal },
         )) {
           if (chunk.reasoning) {
             yield { phase: 'reasoning', delta: chunk.reasoning };
@@ -179,29 +299,22 @@ export class AiService {
             yield { phase: 'delta', delta: chunk.text };
           }
         }
-        const text = parts.join('');
-        try {
-          const parsed = JSON.parse(text) as Partial<AiSuggestion>;
-          final = {
-            ...base,
-            suggestion: parsed.suggestion || base.suggestion,
-            basis: Array.isArray(parsed.basis) && parsed.basis.length ? parsed.basis : base.basis,
-            risk: Array.isArray(parsed.risk) && parsed.risk.length ? parsed.risk : base.risk,
-            uncertainty:
-              Array.isArray(parsed.uncertainty) && parsed.uncertainty.length ? parsed.uncertainty : base.uncertainty,
-            confirmItems:
-              Array.isArray(parsed.confirmItems) && parsed.confirmItems.length ? parsed.confirmItems : base.confirmItems,
-          };
-        } catch {
-          final = { ...base, suggestion: `${base.suggestion}\n（LLM 原始输出：${text.slice(0, 500)}）` };
-        }
+        final = mergeValidatedLlmSuggestion(base, parts.join(''));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         final = { ...base, basis: [...base.basis, `LLM 不可用：${message}`] };
       }
     }
-    final = await this.attachRuleBasisInference(final, input);
-    const persisted = await this.persistSuggestion(final, input);
+    final = await this.attachRuleBasisInference(final, safeInput);
+    let persisted: AiSuggestion;
+    try {
+      persisted = await this.persistSuggestion(final, input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`AI 建议生成成功但落库失败: ${message}`);
+      yield { phase: 'done', error: 'AI 建议已生成但保存失败；内容不可作为已保存建议使用' };
+      return;
+    }
     yield { phase: 'done', suggestion: persisted };
   }
 
@@ -303,23 +416,8 @@ export class AiService {
       // NO-08d：失败路径同样留痕 ReasoningResult（ok=false + error 可审计）。
       return { ...base, reasoning: result.reasoning };
     }
-    try {
-      const parsed = JSON.parse(result.text) as Partial<AiSuggestion>;
-      return {
-        ...base,
-        suggestion: parsed.suggestion || base.suggestion,
-        basis: Array.isArray(parsed.basis) && parsed.basis.length ? parsed.basis : base.basis,
-        risk: Array.isArray(parsed.risk) && parsed.risk.length ? parsed.risk : base.risk,
-        uncertainty:
-          Array.isArray(parsed.uncertainty) && parsed.uncertainty.length ? parsed.uncertainty : base.uncertainty,
-        confirmItems:
-          Array.isArray(parsed.confirmItems) && parsed.confirmItems.length ? parsed.confirmItems : base.confirmItems,
-        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-      };
-    } catch {
-      base.suggestion = `${base.suggestion}\n（LLM 原始输出：${result.text.slice(0, 500)}）`;
-      return { ...base, reasoning: result.reasoning };
-    }
+    const enriched = mergeValidatedLlmSuggestion(base, result.text);
+    return result.reasoning ? { ...enriched, reasoning: result.reasoning } : enriched;
   }
 
   /** Manual A3 trigger only.（NEST-422：建议归属 org 校验。） */
@@ -398,21 +496,12 @@ export class AiService {
         ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       };
     }
-    try {
-      const parsed = JSON.parse(result.text) as Record<string, unknown>;
-      return {
-        ...content,
-        ...parsed,
-        llmNote: `由 Ark 模型生成（${result.model}）`,
-        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-      };
-    } catch {
-      return {
-        ...content,
-        llmNote: `LLM 原始输出：${result.text.slice(0, 500)}`,
-        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-      };
-    }
+    const enriched = mergeValidatedLlmPlanContent(content, result.text);
+    return {
+      ...enriched,
+      llmNote: `由 Ark 模型生成（${result.model}）`,
+      ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+    };
   }
 
   /** NEST-422：单条读 org 守卫（跨租户 404）。 */

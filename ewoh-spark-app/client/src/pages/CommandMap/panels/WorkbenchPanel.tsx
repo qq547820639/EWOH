@@ -93,13 +93,13 @@ export default function WorkbenchPanel({
 }: WorkbenchPanelProps) {
   const queryClient = useQueryClient();
   const { data: overview, isLoading: loadingOverview } = useQuery<OverviewStats>({
-    queryKey: ['workbench-overview'],
+    queryKey: queryKeys.workbenchOverview,
     queryFn: getOverview,
     refetchInterval: 5000,
   });
 
   const { data: openEvents } = useQuery<EventInfo[]>({
-    queryKey: ['workbench-events-open'],
+    queryKey: queryKeys.workbenchOpenEvents,
     queryFn: () => getEvents(10, 'open'),
     refetchInterval: 5000,
   });
@@ -107,7 +107,7 @@ export default function WorkbenchPanel({
   // P1-CMAP-001：正式写链仅走 Scheduler V2。V2 待审批方案 = shadow 状态
   // （createRun 生成），approve/reject 均走 V2 端点。
   const { data: proposedPlans } = useQuery<SchedulingPlanV2[]>({
-    queryKey: ['workbench-plans-pending'],
+    queryKey: queryKeys.workbenchPendingPlans,
     queryFn: () => getActivePlans(),
     refetchInterval: 10000,
     select: (plans) => plans.filter((p) => p.status === 'shadow'),
@@ -141,7 +141,7 @@ export default function WorkbenchPanel({
       toast.success('方案已批准');
       setConfirmTarget(null);
       setConfirmReason('');
-      queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workbenchPendingPlans });
       queryClient.invalidateQueries({ queryKey: queryKeys.schedulerActivePlans });
     },
     onError: () => toast.error('方案批准失败'),
@@ -154,7 +154,7 @@ export default function WorkbenchPanel({
       toast.success('方案已驳回');
       setRejectTarget(null);
       setRejectReason('');
-      queryClient.invalidateQueries({ queryKey: ['workbench-plans-pending'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workbenchPendingPlans });
       queryClient.invalidateQueries({ queryKey: queryKeys.schedulerActivePlans });
     },
     onError: () => toast.error('方案驳回失败'),
@@ -190,7 +190,7 @@ export default function WorkbenchPanel({
       }),
     onSuccess: () => {
       toast.success('事件已处置');
-      queryClient.invalidateQueries({ queryKey: ['workbench-events-open'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workbenchOpenEvents });
       queryClient.invalidateQueries({ queryKey: queryKeys.events() });
     },
     onError: () => toast.error('事件处置失败'),

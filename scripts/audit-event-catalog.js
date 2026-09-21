@@ -75,6 +75,7 @@ for (const type of messageTypes) {
   );
 }
 
+const channelMessageTypes = new Map();
 for (const [channel, value] of Object.entries(catalog.channels ?? {})) {
   const ref = value?.publish?.message?.$ref ?? value?.subscribe?.message?.$ref;
   expect(
@@ -85,6 +86,20 @@ for (const [channel, value] of Object.entries(catalog.channels ?? {})) {
   expect(
     type && messages[type],
     `channel ${channel} references missing message ${type}`,
+  );
+  if (type && messages[type]) {
+    expect(
+      !channelMessageTypes.has(type),
+      `event type ${type} must have exactly one channel (${channelMessageTypes.get(type)} and ${channel})`,
+    );
+    channelMessageTypes.set(type, channel);
+  }
+}
+
+for (const type of messageTypes) {
+  expect(
+    channelMessageTypes.has(type),
+    `event type ${type} must have exactly one channel`,
   );
 }
 

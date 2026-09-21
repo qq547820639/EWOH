@@ -23,31 +23,50 @@ const EDGE_PLATFORM_URL = (process.env.EDGE_PLATFORM_URL || 'http://127.0.0.1:87
  * session token TTL 24h，本地缓存 12h 提前续期。
  */
 const EDGE_PLATFORM_USERNAME = process.env.EDGE_PLATFORM_USERNAME || 'admin';
-const EDGE_PLATFORM_PASSWORD = process.env.EDGE_PLATFORM_PASSWORD || 'admin123';
 let edgeTokenCache: { token: string; expiresAt: number } | null = null;
+let edgeTokenRefresh: Promise<string> | null = null;
 
-async function getEdgePlatformToken(): Promise<string> {
+async function fetchEdgePlatformToken(): Promise<string> {
+  const password = process.env.EDGE_PLATFORM_PASSWORD;
+  if (!password) {
+    throw new Error('EDGE_PLATFORM_PASSWORD 未配置：拒绝使用默认服务账号凭据');
+  }
+  try {
+    const res = await fetch(`${EDGE_PLATFORM_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: EDGE_PLATFORM_USERNAME,
+        password,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      throw new Error(`边缘平台服务账号登录失败: HTTP ${res.status}`);
+    }
+    const data = (await res.json().catch(() => ({}))) as { token?: string };
+    if (!data.token) {
+      throw new Error('边缘平台服务账号登录未返回 token');
+    }
+    edgeTokenCache = { token: data.token, expiresAt: Date.now() + 12 * 3600 * 1000 };
+    return data.token;
+  } finally {
+    edgeTokenRefresh = null;
+  }
+}
+
+export async function getEdgePlatformToken(): Promise<string> {
   if (edgeTokenCache && Date.now() < edgeTokenCache.expiresAt) {
     return edgeTokenCache.token;
   }
-  const res = await fetch(`${EDGE_PLATFORM_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: EDGE_PLATFORM_USERNAME,
-      password: EDGE_PLATFORM_PASSWORD,
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    throw new Error(`边缘平台服务账号登录失败: HTTP ${res.status}`);
-  }
-  const data = (await res.json().catch(() => ({}))) as { token?: string };
-  if (!data.token) {
-    throw new Error('边缘平台服务账号登录未返回 token');
-  }
-  edgeTokenCache = { token: data.token, expiresAt: Date.now() + 12 * 3600 * 1000 };
-  return data.token;
+  edgeTokenRefresh ??= fetchEdgePlatformToken();
+  return edgeTokenRefresh;
+}
+
+/** 仅供单元测试隔离模块级缓存。 */
+export function resetEdgePlatformTokenCacheForTests(): void {
+  edgeTokenCache = null;
+  edgeTokenRefresh = null;
 }
 
 /**
@@ -55,6 +74,16 @@ async function getEdgePlatformToken(): Promise<string> {
  * fail-closed 401（与 aas/alert 读面纪律一致），杜绝无租户上下文的全租户
  * 混读进入 LLM 上下文；global_admin 允许全局视角（orgId=null）。
  */
+function requireTenantScope(ctx?: OrgContext): string {
+  const orgId = ctx?.primaryOrgId?.trim() || '';
+  if (!orgId) {
+    throw new UnauthorizedException(
+      'org 上下文缺失：AI 建议必须绑定租户，不能写入或推断全局事实',
+    );
+  }
+  return orgId;
+}
+
 function requireOrgScope(ctx?: OrgContext): string | null {
   const orgId = ctx?.primaryOrgId?.trim() || null;
   if (!orgId && !ctx?.isGlobalAdmin) {
@@ -92,9 +121,12 @@ function visionImageUrlAllowed(raw: string | undefined): boolean {
   const allowHosts = VISION_IMAGE_URL_ALLOWLIST.length
     ? VISION_IMAGE_URL_ALLOWLIST
     : [edgeHost];
-  return allowHosts.some(
-    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
-  );
+  return allowHosts.some((allowed) => {
+    if (!allowed || allowed.includes('*') || allowed !== allowed.trim()) {
+      return false;
+    }
+    return host === allowed || host.endsWith(`.${allowed}`);
+  });
 }
 
 @Controller('api/ai')
@@ -284,9 +316,12 @@ export class AiController {
     @Req() request: { userContext?: OrgContext },
   ) {
     // NO-08a（ADR-019）：推理结果台账的租户上下文（请求级 GUC 注入）。
+    // Suggestions are tenant facts; unlike global-admin chat, a missing primary
+    // org may not silently become a global/unattributed suggestion.
+    const orgId = requireTenantScope(request.userContext);
     return this.aiService.createSuggestion({
       ...body,
-      orgId: request.userContext?.primaryOrgId?.trim() || '',
+      orgId,
     });
   }
 
@@ -312,6 +347,8 @@ export class AiController {
       res.status(400).json({ phase: 'done', error: 'triggeredBy and problem are required' });
       return;
     }
+    // Validate before opening SSE so authorization failures are normal HTTP 401s.
+    const orgId = requireTenantScope(request.userContext);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
@@ -324,7 +361,7 @@ export class AiController {
     const drive = async () => {
       for await (const evt of this.aiService.streamSuggestion({
         ...body,
-        orgId: request.userContext?.primaryOrgId?.trim() || '',
+        orgId,
         signal: abort.signal,
       })) {
         if (abort.signal.aborted) break;

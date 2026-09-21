@@ -11,13 +11,16 @@ import sys
 import threading
 import time
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from edge_platform.config import Settings
 from edge_platform.edge.bridge import event_uplink
 from edge_platform.edge.bridge.event_uplink import EventUplink
 from edge_platform.edge.bus import MessageBus
+from edge_platform.runtime.protocols import STREAM_EVENTS
 
 
 def _envelope(event_type="EntityDeclared", event_id="EVT-1", occurred="2026-08-16T08:00:00Z"):
@@ -53,6 +56,50 @@ class _UplinkHandler(BaseHTTPRequestHandler):
 
     def log_message(self, *args):  # 静默访问日志
         return
+
+
+class EventUplinkSecurityLifecycleTest(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(os.environ)
+        for key in list(os.environ):
+            if key.startswith("EWOH_"):
+                os.environ.pop(key, None)
+        Settings.reset()
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved)
+        Settings.reset()
+
+    def test_unknown_runtime_mode_disables_insecure_http(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "producton"
+        os.environ["EWOH_EVENT_UPLINK_KEY"] = "secret"
+        Settings.reset()
+        uplink = EventUplink(MessageBus(), "http://127.0.0.1:1")
+        self.assertFalse(uplink.enabled)
+        self.assertEqual(uplink.health()["disabled_reason"], "insecure_http_in_production")
+
+    def test_settings_failure_disables_insecure_http(self):
+        os.environ["EWOH_EVENT_UPLINK_KEY"] = "secret"
+        with unittest.mock.patch.object(Settings, "load", side_effect=RuntimeError("config unavailable")):
+            uplink = EventUplink(MessageBus(), "http://127.0.0.1:1")
+        self.assertFalse(uplink.enabled)
+        self.assertEqual(uplink.health()["disabled_reason"], "insecure_http_in_production")
+
+    def test_stop_unsubscribes_and_restart_does_not_duplicate_subscription(self):
+        bus = MessageBus()
+        uplink = EventUplink(bus, "https://factory.example.test")
+        uplink.start()
+        try:
+            self.assertEqual(len(bus._subs[STREAM_EVENTS]), 1)
+        finally:
+            uplink.stop()
+        self.assertEqual(len(bus._subs[STREAM_EVENTS]), 0)
+        uplink.start()
+        try:
+            self.assertEqual(len(bus._subs[STREAM_EVENTS]), 1)
+        finally:
+            uplink.stop()
 
 
 class EventUplinkTest(unittest.TestCase):

@@ -195,6 +195,19 @@ export interface GateHistoryRecord extends GateDecisionRecord {
   revokedBy?: string;
 }
 
+export interface WorkHandoffDurableResponse {
+  handoffId: string;
+  fromActor: string;
+  toActor: string;
+  scope: string;
+  contextPack?: string;
+  openQuestions: string[];
+  acceptance?: string;
+  status: string;
+  createdAt: string;
+  persisted: 'postgres';
+}
+
 export interface ResourceLockRecord {
   resourceId: string;
   holder: string;
@@ -559,13 +572,23 @@ export class WorkOrchestrationService {
    * a replay returns the single recorded result rather than re-applying (2.B / 2.C /
    * 2.D). Falls back to the legacy file path when no DB persistence is available.
    */
-  async applyGitSyncDurable(body: {
-    idempotencyKey?: string;
-    approved?: boolean;
-    reason?: string;
-    actor?: string;
-  }) {
+  async applyGitSyncDurable(
+    body: {
+      idempotencyKey?: string;
+      approved?: boolean;
+      reason?: string;
+      /** Deprecated request-supplied actor is ignored; audit uses the authenticated principal. */
+      actor?: string;
+    },
+    actor?: { userId?: string },
+  ) {
     if (!this.domainPersistence) { this.assertDurableReady(); }
+    // Audit identity comes only from the authenticated request context. The client
+    // may still send legacy `actor`, but it must never become the recorded verifier.
+    const verifier = actor?.userId;
+    if (!verifier) {
+      throw new ConflictException('git-sync apply requires an authenticated actor');
+    }
     if (!this.isWritable()) {
       throw new BadRequestException('EWOH_WORK_WRITABLE is not enabled');
     }
@@ -604,7 +627,7 @@ export class WorkOrchestrationService {
         const response = {
           status: 'live',
           appliedAt: new Date().toISOString(),
-          actor: body.actor ?? 'anonymous',
+          actor: verifier,
           reason: body.reason ?? '',
           ...applied,
         };
@@ -619,7 +642,7 @@ export class WorkOrchestrationService {
             evidenceId: `EVD-git-sync-${body.idempotencyKey}`,
             workItemId: 'git-sync',
             commitSha: applied.headSha as string | undefined,
-            verifier: body.actor ?? 'anonymous',
+            verifier,
             result: 'git_sync_applied',
           },
         );
@@ -991,55 +1014,50 @@ export class WorkOrchestrationService {
       throw new BadRequestException('fromActor, toActor, and scope are required');
     }
     this.assertWritable();
-    // NO-68j：幂等重放（F61-02 契约）——同一 idempotencyKey 的重放返回**同一个**
-    // handoff 对象，不产生副本（2026-09-16 fresh-runtime 实测：重放生成了第二个
-    // HO-id）。并发重复键竞争唯一约束，先到先得，后到回放同一响应。
+    // NO-68j：幂等登记必须与业务对象创建同事务。若“先建交接、后写幂等键”，
+    // 并发重复请求可能在唯一键竞争前各自创建交接，然后只有其中一个响应入库。
     const idemKey = body.idempotencyKey?.trim();
-    if (idemKey) {
-      const stored = await this.domainPersistence.getIdempotency<
-        Record<string, unknown>
-      >('work-handoff', idemKey);
-      if (stored) return stored as never;
-    }
-    const id = `HO-${Date.now()}-${randomUUID().slice(0, 8)}`;
-    const record = await this.domainPersistence.createHandoffWithTransfer(
-      {
-        handoffId: id,
-        fromActor: body.fromActor,
-        toActor: body.toActor,
-        scope: body.scope,
-        contextPack: body.contextPack,
-        openQuestions: body.openQuestions ?? [],
-        acceptance: body.acceptance,
-      },
-      {
-        evidenceId: `EVD-${id}`,
-        workItemId: body.scope,
-        verifier: actor?.userId ?? 'anonymous',
-        result: 'handoff_created',
-      },
-    );
-    const response = {
-      handoffId: record.handoffId,
-      fromActor: record.fromActor,
-      toActor: record.toActor,
-      scope: record.scope,
-      contextPack: record.contextPack,
-      openQuestions: record.openQuestions ?? [],
-      acceptance: record.acceptance,
-      status: record.state,
-      createdAt: record.createdAt,
-      persisted: 'postgres',
+    const createResponse = async () => {
+      const id = `HO-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const record = await this.domainPersistence.createHandoffWithTransfer(
+        {
+          handoffId: id,
+          fromActor: body.fromActor,
+          toActor: body.toActor,
+          scope: body.scope,
+          contextPack: body.contextPack,
+          openQuestions: body.openQuestions ?? [],
+          acceptance: body.acceptance,
+        },
+        {
+          evidenceId: `EVD-${id}`,
+          workItemId: body.scope,
+          verifier: actor?.userId ?? 'anonymous',
+          result: 'handoff_created',
+        },
+      );
+      return {
+        handoffId: record.handoffId,
+        fromActor: record.fromActor,
+        toActor: record.toActor,
+        scope: record.scope,
+        contextPack: record.contextPack,
+        openQuestions: record.openQuestions ?? [],
+        acceptance: record.acceptance,
+        status: record.state,
+        createdAt: record.createdAt,
+        persisted: 'postgres',
+      };
     };
     if (idemKey) {
-      // 重放安全：并发重复键竞争唯一约束，先到先得，后到回放同一响应。
-      return await this.domainPersistence.setIdempotency(
+      const { result } = await this.domainPersistence.setIdempotencyAndCreate(
         'work-handoff',
         idemKey,
-        response as never,
-      ) as never;
+        createResponse,
+      );
+      return result;
     }
-    return response;
+    return await createResponse();
   }
 
   /**

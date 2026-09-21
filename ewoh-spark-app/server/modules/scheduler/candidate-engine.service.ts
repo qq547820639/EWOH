@@ -42,9 +42,11 @@ export interface CandidatePoolOptions {
   lockedAssigneeId?: string | null;
   /**
    * R2-SCH-002（2026-08-17）：显式策略覆盖（solveVariants 变体权重缩放透传）。
-   * 缺省回退 getActivePolicy()——端点等无变体上下文的调用保持旧语义。
+   * 缺省回退 getActivePolicy(opts.orgId)。
    */
   policy?: import('@shared/api.interface').SchedulingPolicy;
+  /** 显式配置覆盖（调用方已加载时避免二次读取）；缺省按 opts.orgId 读取。 */
+  config?: import('@shared/api.interface').SchedulingPolicyConfig;
   /**
    * R2-SCH-001（2026-08-17）：任务级最早开始下界（含 planStart / 前置结束时间，
    * 与 heuristic 内联分支 earliestStartMs 同源）。缺省 nowMs。
@@ -206,6 +208,7 @@ export class CandidateEngineService {
       poolOpts: {
         nowMs: now,
         policy,
+        config,
         bookedTimeSlots,
         bookedDeviceSlots,
         bookedStationSlots,
@@ -289,8 +292,9 @@ export class CandidateEngineService {
   ): Promise<CandidateEvaluation[]> {
     // R2-SCH-002：显式 policy 优先（solveVariants 变体权重缩放必须作用于候选评分，
     // 不再内部全局取用 getActivePolicy() 导致变体丢失）；缺省保持端点旧语义。
-    const policy = opts.policy ?? (await this.policyService.getActivePolicy());
-    const config = await this.policyService.getConfig();
+    const orgId = opts.orgId ?? null;
+    const policy = opts.policy ?? (await this.policyService.getActivePolicy(orgId));
+    const config = opts.config ?? (await this.policyService.getConfig(orgId));
     const nowMs = opts.nowMs ?? Date.now();
     const stationDecisionEnabled = opts.stationDecisionEnabled !== false;
     // NO-35a：任务锁定人员（佩戴中设备的合法使用前提）；缺省 null = 未锁定。
@@ -373,6 +377,7 @@ export class CandidateEngineService {
     const minBattery = opts.minBatteryPct ?? config.minBatteryPct;
     const maxLoad = opts.maxContinuousLoad ?? config.maxContinuousLoad;
     const safetyBlockedPersonIds = snapshot.safetyBlockedPersonIds ?? [];
+    const safetyBlockedDeviceIds = snapshot.safetyBlockedDeviceIds ?? [];
     // R2-SCH-003：快照禁入区 ∪ FORBIDDEN_ZONE 约束补充（与 heuristic 内联语义一致）。
     const forbiddenZones = Array.from(
       new Set([
@@ -511,6 +516,7 @@ export class CandidateEngineService {
               minBatteryPct: minBattery,
               maxContinuousLoad: maxLoad,
               safetyBlockedPersonIds,
+              safetyBlockedDeviceIds,
               predecessorDone: (id) => doneTaskIds.has(id),
               candidateStartMs: startMs,
               candidateEndMs: endMs,

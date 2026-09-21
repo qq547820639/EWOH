@@ -27,7 +27,7 @@ describe('AI manual decision flow', () => {
       frozenAt: '2026-08-03T00:00:00Z',
       snapshotVersion: 4,
       problem: '库存积压',
-      dataRange: { from: 't0', to: 't1' },
+      dataRange: { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' },
       completeness: 0.8,
       basis: ['snapshot'],
       suggestion: 'review',
@@ -66,7 +66,7 @@ describe('AI manual decision flow', () => {
     const suggestion = await service.createSuggestion({
       triggeredBy: 'user-1',
       problem: '库存积压',
-      snapshot: { version: 4, from: 't0', to: 't1', records: 80 },
+      snapshot: { version: 4, from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z', records: 80 },
     });
     expect(suggestion.id).toBe('sug-db');
     const plan = await service.createPlan(suggestion.id, { shift: 'A' });

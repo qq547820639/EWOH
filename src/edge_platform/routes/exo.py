@@ -12,12 +12,11 @@
 import json
 import uuid
 
-from edge_platform.config import Settings
 from edge_platform.contracts import envelope as envelope_contract
 from edge_platform.contracts.event_catalog import EVENT_CATALOG_TYPES
 
 from . import Route, dispatch_routes, exact
-from ._util import now_iso
+from ._util import now_iso, runtime_mode
 
 _CATALOG_TYPES = frozenset(EVENT_CATALOG_TYPES)
 
@@ -74,6 +73,20 @@ def api_exo_bind(ctx, h, req_meta):
         return h.send_json(
             {"error": "bad_person_identity", "message": "personId 必须为 person: 规范身份（ADR-006/032）"}, 400
         )
+    # production 下 manage_devices 只授权“可以管理绑定”，不授权把外骨骼指派给
+    # 任意 person。非 admin 必须能由服务端会话解析出同一 person 身份；admin 可代领用。
+    if runtime_mode() == "production":
+        session = _session(h)
+        if session is None:
+            return h.send_json(
+                {"error": "unauthorized", "message": "production 领用绑定必须携带有效 Bearer token"}, 401
+            )
+        if session.role != "admin":
+            actor_person = _session_actor_person(session)
+            if actor_person is None or actor_person != person_id:
+                return h.send_json(
+                    {"error": "binding_ownership_required", "message": "非 admin 只能领用本人的外骨骼绑定"}, 403
+                )
     storage = getattr(ctx, "storage", None)
     if storage is None or not hasattr(storage, "start_binding"):
         return h._new_error("binding_unavailable", "绑定存储未装配", 503)
@@ -125,6 +138,17 @@ def _session(h):
         return sm.verify(token)
     except Exception:
         return None
+
+
+def _canonical_session_identity(session):
+    """Return the trusted canonical actor identity stored by the identity provider."""
+    if session is None:
+        return None
+    person_id = getattr(session, "person_id", None)
+    if _is_person_identity(person_id):
+        return person_id
+    user_id = getattr(session, "user_id", None)
+    return user_id if _is_person_identity(user_id) else None
 
 
 def _session_actor_person(session):
@@ -181,15 +205,16 @@ def api_exo_unbind(ctx, h, req_meta):
         )
     # EDGE-011 + R2-ECO-001：production 下校验绑定归属——只信任 token 会话身份。
     # 客户端自报 endedBy 不得参与授权（可先经 /api/devices 读到 person_id 后伪造）。
-    if Settings.load().runtime_mode == "production":
+    trusted_ended_by = ended_by
+    if runtime_mode() == "production":
         session = _session(h)
         if session is None:
             return h.send_json(
                 {"error": "unauthorized", "message": "production 归还绑定必须携带有效 Bearer token"},
                 401,
             )
+        actor_person = _session_actor_person(session)
         if session.role != "admin":
-            actor_person = _session_actor_person(session)
             if actor_person is None or actor_person != target.get("person_id"):
                 return h.send_json(
                     {
@@ -198,8 +223,12 @@ def api_exo_unbind(ctx, h, req_meta):
                     },
                     403,
                 )
+            trusted_ended_by = actor_person
+        else:
+            # admin 代操作也必须留下服务端身份，客户端 endedBy 只能作为展示字段。
+            trusted_ended_by = _canonical_session_identity(session) or actor_person or session.user_id
     ended_at = now_iso()
-    ok_end = storage.end_binding(target["binding_id"], ended_at, ended_by, body.get("reason") or "")
+    ok_end = storage.end_binding(target["binding_id"], ended_at, trusted_ended_by, body.get("reason") or "")
     if not ok_end:
         return h.send_json({"error": "illegal_transition", "message": "并发结束冲突，请重试"}, 409)
     session_id = body.get("sessionId") or ""
@@ -209,7 +238,7 @@ def api_exo_unbind(ctx, h, req_meta):
         "exoId": target["exo_id"],
         "personId": target["person_id"],
         "status": "ended",
-        "endedBy": ended_by,
+        "endedBy": trusted_ended_by,
         "actualEndAt": ended_at,
     })
     return h.send_json({

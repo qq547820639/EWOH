@@ -264,6 +264,8 @@ export class AuthService {
         payload.type !== 'access' ||
         typeof payload.sub !== 'string' ||
         !payload.sub ||
+        typeof payload.jti !== 'string' ||
+        !payload.jti ||
         typeof payload.username !== 'string' ||
         typeof payload.orgId !== 'string' ||
         !Array.isArray(payload.roles) ||

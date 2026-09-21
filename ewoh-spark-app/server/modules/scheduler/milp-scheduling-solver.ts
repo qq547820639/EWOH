@@ -150,8 +150,9 @@ export class MilpSchedulingSolver implements SchedulingSolver {
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const now = Date.now();
-    const policy: SchedulingPolicy = opts.policy ?? (await this.policyService.getActivePolicy());
-    const config = await this.policyService.getConfig();
+    const orgId = opts.orgId ?? null;
+    const policy: SchedulingPolicy = opts.policy ?? (await this.policyService.getActivePolicy(orgId));
+    const config = await this.policyService.getConfig(orgId);
     // ADR-056 消费侧：与 heuristic 同源同判（共享解析器）——shadow 双跑对比的公平性前提。
     const durationMsByTask =
       config.prediction?.durationModelMode === 'advisory' && this.durationPrediction
@@ -227,6 +228,7 @@ export class MilpSchedulingSolver implements SchedulingSolver {
         // ADR-056 消费侧：候选阶段时间窗与指派阶段同源（同 heuristic）。
         durationMsByTask,
         policy,
+        config,
         bookedPersonFreeAt: personFreeAt,
         bookedDeviceFreeAt: deviceFreeAt,
         lockedPersonByTask,

@@ -45,6 +45,10 @@ COMMANDS: frozenset = frozenset(
 RISK_LEVELS: tuple[str, ...] = ("low", "medium", "high", "critical")
 AUTONOMOUS_LEVELS: tuple[str, ...] = ("L0", "L1", "L2", "L3")
 FALLBACK_STRATEGIES: frozenset = frozenset({"fail", "retry", "delegateHuman", "safeIdle"})
+# L3 只允许低风险、可审计或纯建议/仿真类命令（ADR-016 §Autonomous Level）。
+L3_SAFE_COMMANDS: frozenset = frozenset(
+    {"propose_plan", "record_evidence", "request_approval", "run_simulation"}
+)
 
 _REQUIRED_FIELDS = (
     "agentId", "name", "version", "role", "purpose", "allowedTools", "readScope",
@@ -124,6 +128,14 @@ def validate_agent_manifest(record: Any) -> list[str]:
             return ["safety_autonomy_forbidden"]
         if write_tokens or write_commands:
             return ["safety_role_write_forbidden"]
+    # L3 仅限低风险、可逆/可审计动作；高风险写命令必须留在 L2 审批或 L1。
+    if level == "L3":
+        if record["riskLevel"] != "low":
+            return ["l3_risk_forbidden"]
+        if any(command not in L3_SAFE_COMMANDS for command in write_commands):
+            return ["l3_command_forbidden"]
+        if any(token != "simulationData" for token in write_tokens):
+            return ["l3_scope_forbidden"]
     for key in ("inputContract", "outputContract"):
         contract = record[key]
         # R2-SHR-006：schemaRef 空串拒绝（对齐 TS agent-manifest.ts ref === '' 拒绝）。

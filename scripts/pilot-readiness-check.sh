@@ -53,7 +53,7 @@ EWOH_VERSION="${EWOH_RELEASE_VERSION:-$(node -p "require('./version.json').versi
 if [[ -z "$EWOH_VERSION" ]]; then
   record "release checksums" FAIL "无法解析当前版本（version.json 不可读且未设 EWOH_RELEASE_VERSION）"
 else
-  file_present "release checksums" "release/ewoh-${EWOH_VERSION}/SHA256SUMS.txt"
+  file_present "release checksums" "output/release-bundles/ewoh-${EWOH_VERSION}/SHA256SUMS.txt"
 fi
 file_present "acceptance evidence" "docs/delivery/acceptance-evidence.md"
 file_present "training plan" "docs/delivery/training-plan.md"

@@ -59,7 +59,7 @@ class ActuatorCommandAuthTest(unittest.TestCase):
         # 规范前缀白名单
         for good in ("control:CR-1", "approval:AP-1", "plan:PLAN-1", "task:TASK-1"):
             self.assertTrue(authorization_ref_valid(good), good)
-        for bad in ("", "  ", "CR-1", "ControlX:1"):
+        for bad in ("", "  ", "CR-1", "ControlX:1", "control:", "approval:  "):
             self.assertFalse(authorization_ref_valid(bad), bad)
 
     def test_stop_is_safety_command_without_authorization(self):

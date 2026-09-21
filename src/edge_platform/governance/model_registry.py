@@ -174,6 +174,8 @@ class ModelRegistry:
         """登记模型/规则版本；生命周期从 CANDIDATE 开始。"""
         if not isinstance(model_record, ModelRecord):
             raise TypeError("只接受 ModelRecord 实例")
+        if model_record.model_id in self._by_id:
+            raise ValueError(f"模型 ID 已注册，禁止覆盖: {model_record.model_id}")
         # 强制从候选开始，避免绕过影子运行直接生效
         model_record.status = ModelStatus.CANDIDATE
         self._by_id[model_record.model_id] = model_record
@@ -243,9 +245,17 @@ class ModelRegistry:
     def start_canary(self, model_id, canary_ratio=0.1):
         """CONTROLLED_VALIDATION → CANARY（小范围灰度启用）。
 
-        canary_ratio 记录于 ModelRecord.canary_ratio；spec Task 25.1「小范围启用」步骤。
+        canary_ratio 必须位于 (0,1]，记录于 ModelRecord.canary_ratio；
+        spec Task 25.1「小范围启用」步骤。
         """
+        try:
+            ratio = float(canary_ratio)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("canary_ratio 必须为 (0,1] 内的数值") from exc
+        if not ratio > 0 or ratio > 1:
+            raise ValueError("canary_ratio 必须为 (0,1] 内的数值")
         rec = self._require(model_id)
+        canary_ratio = ratio
         if rec.status is not ModelStatus.CONTROLLED_VALIDATION:
             raise ValueError(f"仅 CONTROLLED_VALIDATION 可进入灰度，当前状态: {rec.status.value}")
         old = rec.status

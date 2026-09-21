@@ -76,6 +76,7 @@ export async function createSuggestionStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let final: AiSuggestion | null = null;
+  let streamError: string | null = null;
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -95,11 +96,17 @@ export async function createSuggestionStream(
           continue;
         }
         onEvent(evt);
+        if (evt.phase === 'done' && evt.error) streamError = evt.error;
         if (evt.phase === 'done' && evt.suggestion) final = evt.suggestion;
       }
     }
   } finally {
     reader.releaseLock();
+  }
+  if (streamError) {
+    // A persisted suggestion is authoritative; generation-only content must not
+    // silently masquerade as a saved A2 record after a persistence failure.
+    throw new Error(streamError);
   }
   return final;
 }

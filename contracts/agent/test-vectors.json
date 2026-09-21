@@ -9,18 +9,189 @@
         "version": 1,
         "role": "FactorySupervisor",
         "purpose": "汇总工厂态势并生成运营建议（不直接执行）",
-        "allowedTools": ["tool:world-snapshot"],
-        "readScope": ["worldSnapshot", "worldReplay"],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L1", "approvalRequiredFor": ["propose_plan"] },
+        "allowedTools": [
+          "tool:world-snapshot"
+        ],
+        "readScope": [
+          "worldSnapshot",
+          "worldReplay"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L1",
+          "approvalRequiredFor": [
+            "propose_plan"
+          ]
+        },
         "riskLevel": "medium",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/supervisor-summary" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/supervisor-suggestion" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/supervisor-summary"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/supervisor-suggestion"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 8, "maxTokens": 20000, "maxDurationSec": 300 },
+        "budget": {
+          "maxSteps": 8,
+          "maxTokens": 20000,
+          "maxDurationSec": 300
+        },
         "timeoutSec": 60,
-        "fallback": { "onFailure": "delegateHuman" }
+        "fallback": {
+          "onFailure": "delegateHuman"
+        }
       }
+    },
+    {
+      "name": "valid-low-risk-l3",
+      "record": {
+        "agentId": "agent:8a2b6c1d-2222-4333-8444-9b8c7d6e5f50",
+        "name": "合法低风险 L3 Agent",
+        "version": 1,
+        "role": "Simulation",
+        "purpose": "只执行仿真、建议与证据记录",
+        "allowedTools": [
+          "tool:run-simulation",
+          "tool:record-evidence"
+        ],
+        "readScope": [
+          "simulationData"
+        ],
+        "writeScope": {
+          "tokens": [
+            "simulationData"
+          ],
+          "commands": [
+            "propose_plan",
+            "record_evidence",
+            "run_simulation"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L3",
+          "approvalRequiredFor": [
+            "record_evidence"
+          ]
+        },
+        "riskLevel": "low",
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/simulation"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/simulation"
+        },
+        "auditTrail": true,
+        "budget": {
+          "maxSteps": 5,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
+        "timeoutSec": 10,
+        "fallback": {
+          "onFailure": "safeIdle"
+        }
+      }
+    },
+    {
+      "name": "high-risk-l3-rejected",
+      "record": {
+        "agentId": "agent:8a2b6c1d-2222-4333-8444-9b8c7d6e5f50",
+        "name": "高危 L3 Agent",
+        "version": 1,
+        "role": "Simulation",
+        "purpose": "只执行仿真、建议与证据记录",
+        "allowedTools": [
+          "tool:run-simulation",
+          "tool:record-evidence"
+        ],
+        "readScope": [
+          "simulationData"
+        ],
+        "writeScope": {
+          "tokens": [
+            "simulationData"
+          ],
+          "commands": [
+            "propose_plan",
+            "record_evidence",
+            "run_simulation"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L3",
+          "approvalRequiredFor": [
+            "record_evidence"
+          ]
+        },
+        "riskLevel": "high",
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/simulation"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/simulation"
+        },
+        "auditTrail": true,
+        "budget": {
+          "maxSteps": 5,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
+        "timeoutSec": 10,
+        "fallback": {
+          "onFailure": "safeIdle"
+        }
+      },
+      "expectError": "l3_risk_forbidden"
+    },
+    {
+      "name": "unsafe-l3-command-rejected",
+      "record": {
+        "agentId": "agent:8a2b6c1d-2222-4333-8444-9b8c7d6e5f50",
+        "name": "L3 高风险写命令 Agent",
+        "version": 1,
+        "role": "Simulation",
+        "purpose": "只执行仿真、建议与证据记录",
+        "allowedTools": [
+          "tool:run-simulation",
+          "tool:record-evidence"
+        ],
+        "readScope": [
+          "simulationData"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": [
+            "dispatch_task"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L3",
+          "approvalRequiredFor": [
+            "record_evidence"
+          ]
+        },
+        "riskLevel": "low",
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/simulation"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/simulation"
+        },
+        "auditTrail": true,
+        "budget": {
+          "maxSteps": 5,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
+        "timeoutSec": 10,
+        "fallback": {
+          "onFailure": "safeIdle"
+        }
+      },
+      "expectError": "l3_command_forbidden"
     },
     {
       "name": "valid-supervised-l2-logistics",
@@ -30,17 +201,48 @@
         "version": 2,
         "role": "Logistics",
         "purpose": "受限范围内自动预约与派工（高风险动作仍需审批）",
-        "allowedTools": ["tool:world-snapshot", "tool:reserve-resource"],
-        "readScope": ["worldSnapshot", "schedulingData", "materialData"],
-        "writeScope": { "tokens": ["schedulingData"], "commands": ["reserve_resource", "dispatch_task"] },
-        "approvalRequirement": { "autonomousLevel": "L2", "approvalRequiredFor": ["dispatch_task"] },
+        "allowedTools": [
+          "tool:world-snapshot",
+          "tool:reserve-resource"
+        ],
+        "readScope": [
+          "worldSnapshot",
+          "schedulingData",
+          "materialData"
+        ],
+        "writeScope": {
+          "tokens": [
+            "schedulingData"
+          ],
+          "commands": [
+            "reserve_resource",
+            "dispatch_task"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L2",
+          "approvalRequiredFor": [
+            "dispatch_task"
+          ]
+        },
         "riskLevel": "high",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/logistics-state" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/logistics-plan" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/logistics-state"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/logistics-plan"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 20, "maxTokens": 50000, "maxDurationSec": 600 },
+        "budget": {
+          "maxSteps": 20,
+          "maxTokens": 50000,
+          "maxDurationSec": 600
+        },
         "timeoutSec": 30,
-        "fallback": { "onFailure": "safeIdle", "fallbackAgentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11" }
+        "fallback": {
+          "onFailure": "safeIdle",
+          "fallbackAgentId": "agent:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11"
+        }
       }
     },
     {
@@ -52,16 +254,34 @@
         "role": "Quality",
         "purpose": "质量分析",
         "allowedTools": [],
-        "readScope": ["qualityData"],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "readScope": [
+          "qualityData"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/q" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/q" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/q"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/q"
+        },
         "auditTrail": false,
-        "budget": { "maxSteps": 5, "maxTokens": 1000, "maxDurationSec": 60 },
+        "budget": {
+          "maxSteps": 5,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
         "timeoutSec": 10,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "audit_required"
     },
@@ -74,16 +294,38 @@
         "role": "Scheduling",
         "purpose": "自动调度",
         "allowedTools": [],
-        "readScope": ["schedulingData"],
-        "writeScope": { "tokens": ["schedulingData"], "commands": ["dispatch_task"] },
-        "approvalRequirement": { "autonomousLevel": "L2", "approvalRequiredFor": [] },
+        "readScope": [
+          "schedulingData"
+        ],
+        "writeScope": {
+          "tokens": [
+            "schedulingData"
+          ],
+          "commands": [
+            "dispatch_task"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L2",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "high",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/s" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/s" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/s"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/s"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 10, "maxTokens": 1000, "maxDurationSec": 60 },
+        "budget": {
+          "maxSteps": 10,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
         "timeoutSec": 10,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "approval_required"
     },
@@ -96,16 +338,38 @@
         "role": "Incident",
         "purpose": "事故处置",
         "allowedTools": [],
-        "readScope": ["incidentData"],
-        "writeScope": { "tokens": [], "commands": ["dispatch_task"] },
-        "approvalRequirement": { "autonomousLevel": "L2", "approvalRequiredFor": ["dispatch_task"] },
+        "readScope": [
+          "incidentData"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": [
+            "dispatch_task"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L2",
+          "approvalRequiredFor": [
+            "dispatch_task"
+          ]
+        },
         "riskLevel": "critical",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/i" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/i" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/i"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/i"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 10, "maxTokens": 1000, "maxDurationSec": 60 },
+        "budget": {
+          "maxSteps": 10,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
         "timeoutSec": 10,
-        "fallback": { "onFailure": "delegateHuman" }
+        "fallback": {
+          "onFailure": "delegateHuman"
+        }
       },
       "expectError": "level_risk_conflict"
     },
@@ -118,16 +382,36 @@
         "role": "Safety",
         "purpose": "安全监控",
         "allowedTools": [],
-        "readScope": ["incidentData"],
-        "writeScope": { "tokens": ["incidentData"], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L1", "approvalRequiredFor": [] },
+        "readScope": [
+          "incidentData"
+        ],
+        "writeScope": {
+          "tokens": [
+            "incidentData"
+          ],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L1",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "critical",
-        "inputContract": { "schemaRef": "catalog://agent/inputs/safe" },
-        "outputContract": { "schemaRef": "catalog://agent/outputs/safe" },
+        "inputContract": {
+          "schemaRef": "catalog://agent/inputs/safe"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://agent/outputs/safe"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 10, "maxTokens": 1000, "maxDurationSec": 60 },
+        "budget": {
+          "maxSteps": 10,
+          "maxTokens": 1000,
+          "maxDurationSec": 60
+        },
         "timeoutSec": 10,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "safety_role_write_forbidden"
     },
@@ -141,15 +425,31 @@
         "purpose": "魔法",
         "allowedTools": [],
         "readScope": [],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "unknown_role"
     },
@@ -163,15 +463,31 @@
         "purpose": "知识",
         "allowedTools": [],
         "readScope": [],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "bad_agent_id"
     },
@@ -183,17 +499,35 @@
         "version": 1,
         "role": "Maintenance",
         "purpose": "维修",
-        "allowedTools": ["not-canonical"],
+        "allowedTools": [
+          "not-canonical"
+        ],
         "readScope": [],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "bad_tool"
     },
@@ -206,16 +540,34 @@
         "role": "Energy",
         "purpose": "能源",
         "allowedTools": [],
-        "readScope": ["gizmo"],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "readScope": [
+          "gizmo"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "unknown_scope_token"
     },
@@ -229,15 +581,33 @@
         "purpose": "生产",
         "allowedTools": [],
         "readScope": [],
-        "writeScope": { "tokens": [], "commands": ["sudo_everything"] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "writeScope": {
+          "tokens": [],
+          "commands": [
+            "sudo_everything"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "unknown_command"
     },
@@ -250,16 +620,36 @@
         "role": "Simulation",
         "purpose": "仿真",
         "allowedTools": [],
-        "readScope": ["simulationData"],
-        "writeScope": { "tokens": [], "commands": ["run_simulation"] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "readScope": [
+          "simulationData"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": [
+            "run_simulation"
+          ]
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 0, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 0,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "bad_budget"
     },
@@ -272,16 +662,34 @@
         "role": "Material",
         "purpose": "物料",
         "allowedTools": [],
-        "readScope": ["materialData"],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "readScope": [
+          "materialData"
+        ],
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "panic" }
+        "fallback": {
+          "onFailure": "panic"
+        }
       },
       "expectError": "unknown_fallback"
     },
@@ -295,15 +703,31 @@
         "purpose": "",
         "allowedTools": [],
         "readScope": [],
-        "writeScope": { "tokens": [], "commands": [] },
-        "approvalRequirement": { "autonomousLevel": "L0", "approvalRequiredFor": [] },
+        "writeScope": {
+          "tokens": [],
+          "commands": []
+        },
+        "approvalRequirement": {
+          "autonomousLevel": "L0",
+          "approvalRequiredFor": []
+        },
         "riskLevel": "low",
-        "inputContract": { "schemaRef": "catalog://x" },
-        "outputContract": { "schemaRef": "catalog://y" },
+        "inputContract": {
+          "schemaRef": "catalog://x"
+        },
+        "outputContract": {
+          "schemaRef": "catalog://y"
+        },
         "auditTrail": true,
-        "budget": { "maxSteps": 1, "maxTokens": 1, "maxDurationSec": 1 },
+        "budget": {
+          "maxSteps": 1,
+          "maxTokens": 1,
+          "maxDurationSec": 1
+        },
         "timeoutSec": 1,
-        "fallback": { "onFailure": "fail" }
+        "fallback": {
+          "onFailure": "fail"
+        }
       },
       "expectError": "empty_purpose"
     }

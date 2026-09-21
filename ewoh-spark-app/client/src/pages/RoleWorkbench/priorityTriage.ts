@@ -78,6 +78,21 @@ export function isOverdue(deadline: string | undefined, now = Date.now()): boole
   return t < now;
 }
 
+/** Invalid deadlines sort last instead of poisoning the comparator with NaN. */
+function deadlineMs(deadline: string | undefined): number {
+  if (!deadline) return Number.POSITIVE_INFINITY;
+  const parsed = new Date(deadline).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+/** Preserve malformed values as an explicit data-quality message, not "Invalid Date". */
+function formatDeadline(deadline: string | undefined): string {
+  if (!deadline) return '';
+  const parsed = new Date(deadline).getTime();
+  if (!Number.isFinite(parsed)) return '时间格式无效';
+  return new Date(parsed).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+}
+
 /**
  * 对一组事项做优先级分诊排序并补充中文标签。
  * 排序规则：优先级降序（紧急在前），同优先级内按截止时间升序（越早越靠前）。
@@ -91,8 +106,8 @@ export function triageRoleItems(
     .sort((a, b) => {
       const byPriority = comparePriority(a.priority, b.priority);
       if (byPriority !== 0) return byPriority;
-      const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
-      const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
+      const aDeadline = deadlineMs(a.deadline);
+      const bDeadline = deadlineMs(b.deadline);
       return aDeadline - bDeadline;
     })
     .map((item) => ({
@@ -137,9 +152,7 @@ export function summarizeItem(
     .join(' ');
   return {
     reason: reason || '待处理事项',
-    deadline: item.deadline
-      ? new Date(item.deadline).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
-      : '',
+    deadline: formatDeadline(item.deadline),
     impact: item.impact ?? '',
     owner: item.owner ?? '',
     nextStep: item.nextStep ?? '',

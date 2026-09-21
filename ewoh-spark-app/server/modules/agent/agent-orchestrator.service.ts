@@ -188,7 +188,17 @@ export class AgentOrchestratorService {
           .select({ taskId: ewohAgentTask.taskId, status: ewohAgentTask.status })
           .from(ewohAgentTask)
           .where(and(eq(ewohAgentTask.orgId, orgId), inArray(ewohAgentTask.taskId, dependencies)));
-        const notCompleted = depRows.filter((d) => d.status !== 'completed').map((d) => d.taskId);
+        const completedIds = new Set(
+          depRows.filter((d) => d.status === 'completed').map((d) => d.taskId),
+        );
+        // 依赖不存在必须与“依赖未完成”一样 fail-closed。原先只过滤 status，
+        // 缺失依赖不在 depRows 中，导致任务图不完整也能派发。
+        const missing = dependencies.filter((dep) => !completedIds.has(dep) &&
+          !depRows.some((d) => d.taskId === dep));
+        if (missing.length > 0) {
+          throw new BadRequestException(`dependency_not_found:${missing.join(',')}`);
+        }
+        const notCompleted = dependencies.filter((dep) => !completedIds.has(dep));
         if (notCompleted.length > 0) {
           throw new BadRequestException(
             `dependency_not_completed:${notCompleted.join(',')}`,

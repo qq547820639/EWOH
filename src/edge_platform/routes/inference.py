@@ -51,15 +51,24 @@ def api_inference_metrics(ctx, h, req_meta):
     from ._util import bounded_limit
 
     limit = bounded_limit(h, "limit", 5000, 5000)  # R2-ECO-003：非数字回落默认+硬上限
-    # 从持久层统计 unknown 占比（按时间段）
+    if end <= start:
+        return h._new_error("invalid_params", "end 必须晚于 start", 400)
+    # 从持久层统计 unknown 占比（按时间段）。查询失败必须显式降级，
+    # 不允许把不可读存储伪装成“窗口内零推理”。
     inf_rows = []
+    query_errors = 0
     try:
-        for d in ctx.storage.list_devices():
+        devices = ctx.storage.list_devices()
+    except Exception:
+        devices = []
+        query_errors += 1
+    for d in devices:
+        try:
             inf_rows.extend(
                 ctx.storage.query_inference(d.get("device_id"), services.iso(start), services.iso(end), limit)
             )
-    except Exception:
-        inf_rows = []
+        except Exception:
+            query_errors += 1
     total = len(inf_rows)
     unknown = sum(1 for r in inf_rows if (r.get("label") == "unknown"))
     unknown_ratio = round(unknown / total, 4) if total else 0.0
@@ -109,6 +118,8 @@ def api_inference_metrics(ctx, h, req_meta):
             "unknown_ratio": unknown_ratio,
             "error_count": errors,
             "source": "metrics_collector" if ctx.metrics is not None else "pipeline",
+            "data_quality": "degraded" if query_errors else ("no_data" if not total else "ok"),
+            "window_query_errors": query_errors,
         }
     )
 
@@ -168,7 +179,12 @@ def api_profile(ctx, h, req_meta):
 def api_models(ctx, h, req_meta):
     """GET /api/models — 查询已注册模型列表。"""
     limit, offset = h._limit(), h._offset()
-    items = ctx.storage.list_models() if hasattr(ctx.storage, "list_models") else []
+    if not hasattr(ctx.storage, "list_models"):
+        return h._new_error("storage_unavailable", "模型注册存储未就绪，拒绝伪造空列表", 503)
+    try:
+        items = ctx.storage.list_models()
+    except Exception:
+        return h._new_error("storage_unavailable", "模型注册存储查询失败", 503)
     return h.send_json(
         {"items": items[offset : offset + limit], "limit": limit, "offset": offset, "now": now_iso()}
     )
@@ -177,7 +193,12 @@ def api_models(ctx, h, req_meta):
 def api_rules(ctx, h, req_meta):
     """GET /api/rules — 查询已注册规则列表。"""
     limit, offset = h._limit(), h._offset()
-    items = ctx.storage.list_rules() if hasattr(ctx.storage, "list_rules") else []
+    if not hasattr(ctx.storage, "list_rules"):
+        return h._new_error("storage_unavailable", "规则注册存储未就绪，拒绝伪造空列表", 503)
+    try:
+        items = ctx.storage.list_rules()
+    except Exception:
+        return h._new_error("storage_unavailable", "规则注册存储查询失败", 503)
     return h.send_json(
         {"items": items[offset : offset + limit], "limit": limit, "offset": offset, "now": now_iso()}
     )

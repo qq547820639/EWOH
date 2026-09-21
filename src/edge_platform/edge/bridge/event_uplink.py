@@ -45,6 +45,7 @@ from typing import Any
 
 from edge_platform.contracts import envelope as envelope_contract
 from edge_platform.contracts.event_catalog import EVENT_CATALOG_TYPES
+from edge_platform.runtime.protocols import STREAM_EVENTS
 
 logger = logging.getLogger("ewoh.bridge.event_uplink")
 
@@ -61,13 +62,14 @@ MAX_BATCH_ATTEMPTS = 10
 
 
 def _runtime_mode() -> str:
-    """读取运行时模式（EDGE-041：production 判定；读取失败按 development 宽松）。"""
+    """读取运行时模式；未知/读取失败一律按 production 处理（安全 fail-closed）。"""
     try:
         from edge_platform.config import Settings
 
-        return Settings.load().runtime_mode
+        mode = Settings.load().runtime_mode
     except Exception:
-        return "development"
+        return "production"
+    return mode if mode in {"development", "simulation"} else "production"
 
 
 class EventUplink:
@@ -128,7 +130,8 @@ class EventUplink:
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
-        self._sub_id = None
+        self._sub_id: str | None = None
+        self._thread: threading.Thread | None = None
         self._consecutive_failures = 0
         self._batch_attempts = 0
         self._stats = {
@@ -258,12 +261,21 @@ class EventUplink:
             logger.error("event uplink: 已禁用（%s），start() 不生效", self._disabled_reason)
             return
         self._running = True
-        self._sub_id = self._bus.subscribe("events", self._enqueue)
+        self._sub_id = self._bus.subscribe(STREAM_EVENTS, self._enqueue)
         self._thread = threading.Thread(target=self._loop, daemon=True, name="event-uplink")
         self._thread.start()
 
     def stop(self) -> None:
         self._running = False
+        if self._sub_id is not None:
+            try:
+                self._bus.unsubscribe(STREAM_EVENTS, self._sub_id)
+            except Exception:
+                logger.exception("event uplink: 取消事件订阅失败")
+            self._sub_id = None
+        if self._thread is not None and self._thread is not threading.current_thread():
+            self._thread.join(timeout=5)
+        self._thread = None
 
     def _enqueue(self, evt: dict) -> None:
         """STREAM_EVENTS 回调：契约校验后入缓冲（fail-closed，非法计数不发送）。"""

@@ -23,7 +23,13 @@ describe('AiService（NO-08d 建议流元数据附着）', () => {
   it('LLM 成功：suggestion 附着 ReasoningResult（L4/suggestion/无置信度）', async () => {
     const ark = makeArk({
       ok: true,
-      text: JSON.stringify({ suggestion: '调整人员排班' }),
+      text: JSON.stringify({
+        id: 'attacker-id',
+        snapshotVersion: '999',
+        triggeredBy: 'attacker',
+        suggestion: '调整人员排班',
+        basis: ['validated', 42],
+      }),
       model: 'doubao-pro',
       reasoning: {
         reasoningId: 'RS-1',
@@ -45,6 +51,10 @@ describe('AiService（NO-08d 建议流元数据附着）', () => {
     const service = new AiService(undefined, ark as unknown as ArkService);
     const suggestion = await service.createSuggestion(INPUT);
     expect(suggestion.suggestion).toBe('调整人员排班');
+    expect(suggestion.id).toMatch(/^sug-/);
+    expect(suggestion.snapshotVersion).toBe(3);
+    expect(suggestion.triggeredBy).toBe('u1');
+    expect(suggestion.basis).toEqual(['validated']);
     const r = suggestion.reasoning as Record<string, unknown>;
     expect(r.kind).toBe('suggestion');
     expect(r.level).toBe('L4_industrial_reasoning');
@@ -88,6 +98,39 @@ describe('AiService（NO-08d 建议流元数据附着）', () => {
     const suggestion = await service.createSuggestion(INPUT);
     expect(suggestion.reasoning).toBeUndefined();
     expect(suggestion.suggestion).toContain('人工复核');
+    expect(suggestion.basis).toContain('调用方声明的数据快照');
+    expect(suggestion.risk).toContain('声明的快照元数据可能与权威世界模型不一致');
+    expect(suggestion.uncertainty).toContain(
+      '快照版本、时间范围和样本量由调用方声明，尚未在服务端复核',
+    );
+  });
+
+  it('rejects malformed or contradictory caller-declared snapshot provenance', async () => {
+    const service = new AiService(undefined, undefined);
+    await expect(
+      service.createSuggestion({
+        ...INPUT,
+        snapshot: { ...INPUT.snapshot, version: 1.5 },
+      }),
+    ).rejects.toThrow('snapshot.version must be a non-negative integer');
+    await expect(
+      service.createSuggestion({
+        ...INPUT,
+        snapshot: { ...INPUT.snapshot, records: -1 },
+      }),
+    ).rejects.toThrow('snapshot.records must be a non-negative integer');
+    await expect(
+      service.createSuggestion({
+        ...INPUT,
+        snapshot: { ...INPUT.snapshot, from: 'not-a-date' },
+      }),
+    ).rejects.toThrow('snapshot.from and snapshot.to must be valid dates');
+    await expect(
+      service.createSuggestion({
+        ...INPUT,
+        snapshot: { ...INPUT.snapshot, from: '2026-08-16T10:00:00Z', to: '2026-08-16T09:00:00Z' },
+      }),
+    ).rejects.toThrow('snapshot.from must not be after snapshot.to');
   });
 
   // ── NO-08a（ADR-019）：确定性规则基础 → L1 InferenceResult 台账 ──────────
@@ -220,5 +263,66 @@ describe('AiService（NO-08d 建议流元数据附着）', () => {
     const result = await service.chatWithContext('当前设备状态？', 'org-a');
     expect(result.ok).toBe(false);
     expect(result.error).toContain('未就绪');
+  });
+});
+
+describe('AiService streamSuggestion untrusted-output and persistence boundary', () => {
+  const streamInput = {
+    triggeredBy: 'u-stream',
+    snapshot: { version: 4, from: '2026-09-20T08:00:00Z', to: '2026-09-20T09:00:00Z', records: 8 },
+    problem: '流式建议测试',
+  };
+
+  it('ignores LLM attempts to overwrite identity fields and malformed list items', async () => {
+    const payload = JSON.stringify({
+      id: 'attacker-id',
+      snapshotVersion: '999999',
+      triggeredBy: 'attacker',
+      suggestion: '  validated suggestion  ',
+      basis: ['validated basis', 42, null, ''],
+      risk: ['validated risk'],
+      uncertainty: 'not-an-array',
+      confirmItems: ['confirm'],
+      unexpectedNested: { forbidden: true },
+    });
+    const ark = {
+      chatStream: async function* () {
+        yield { text: payload.slice(0, 20) };
+        yield { text: payload.slice(20) };
+      },
+    };
+    const service = new AiService(undefined, ark as unknown as ArkService);
+
+    const events = [];
+    for await (const event of service.streamSuggestion(streamInput)) {
+      events.push(event);
+    }
+    const done = events.at(-1) as { phase: string; suggestion?: { id: string; snapshotVersion: number; triggeredBy: string; suggestion: string; basis: string[]; uncertainty: string[] } };
+
+    expect(done.phase).toBe('done');
+    expect(done.suggestion?.id).toMatch(/^sug-/);
+    expect(done.suggestion?.snapshotVersion).toBe(4);
+    expect(done.suggestion?.triggeredBy).toBe('u-stream');
+    expect(done.suggestion?.suggestion).toBe('validated suggestion');
+    expect(done.suggestion?.basis).toEqual(['validated basis']);
+    expect(done.suggestion?.uncertainty.length).toBeGreaterThan(0);
+  });
+
+  it('does not expose an unsaved suggestion when persistence fails', async () => {
+    const service = new AiService({
+      insert: () => {
+        throw new Error('db down');
+      },
+    } as never);
+
+    const events = [];
+    for await (const event of service.streamSuggestion(streamInput)) {
+      events.push(event);
+    }
+    const done = events.at(-1) as { phase: string; suggestion?: unknown; error?: string };
+
+    expect(done.phase).toBe('done');
+    expect(done.suggestion).toBeUndefined();
+    expect(done.error).toContain('保存失败');
   });
 });

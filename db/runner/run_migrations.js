@@ -246,6 +246,15 @@ const FILES = {
   standalone_control_backlog_snapshot: path.join(root, 'db/migrations/standalone_102_control_backlog_snapshot.sql'),
   standalone_control_backlog_snapshot_rollback: path.join(root, 'db/migrations/standalone_102_control_backlog_snapshot.rollback.sql'),
   standalone_control_backlog_snapshot_verify: path.join(root, 'db/verify/standalone_102_control_backlog_snapshot.verify.sql'),
+  standalone_workbench_query_indexes: path.join(root, 'db/migrations/standalone_103_workbench_query_indexes.sql'),
+  standalone_workbench_query_indexes_rollback: path.join(root, 'db/migrations/standalone_103_workbench_query_indexes.rollback.sql'),
+  standalone_workbench_query_indexes_verify: path.join(root, 'db/verify/standalone_103_workbench_query_indexes.verify.sql'),
+  standalone_event_confidence_range: path.join(root, 'db/migrations/standalone_104_event_confidence_range.sql'),
+  standalone_event_confidence_range_rollback: path.join(root, 'db/migrations/standalone_104_event_confidence_range.rollback.sql'),
+  standalone_event_confidence_range_verify: path.join(root, 'db/verify/standalone_104_event_confidence_range.verify.sql'),
+  standalone_agent_l3_policy_containment: path.join(root, 'db/migrations/standalone_105_agent_l3_policy_containment.sql'),
+  standalone_agent_l3_policy_containment_rollback: path.join(root, 'db/migrations/standalone_105_agent_l3_policy_containment.rollback.sql'),
+  standalone_agent_l3_policy_containment_verify: path.join(root, 'db/verify/standalone_105_agent_l3_policy_containment.verify.sql'),
   standalone_control_pending_orgs: path.join(root, 'db/migrations/standalone_096_control_pending_orgs.sql'),
   standalone_control_pending_orgs_rollback: path.join(root, 'db/migrations/standalone_096_control_pending_orgs.rollback.sql'),
   standalone_control_pending_orgs_verify: path.join(root, 'db/verify/standalone_096_control_pending_orgs.verify.sql'),
@@ -657,6 +666,15 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-control-backlog-snapshot',
   '--rollback-standalone-control-backlog-snapshot',
   '--verify-standalone-control-backlog-snapshot',
+  '--apply-standalone-workbench-query-indexes',
+  '--rollback-standalone-workbench-query-indexes',
+  '--verify-standalone-workbench-query-indexes',
+  '--apply-standalone-event-confidence-range',
+  '--rollback-standalone-event-confidence-range',
+  '--verify-standalone-event-confidence-range',
+  '--apply-standalone-agent-l3-policy-containment',
+  '--rollback-standalone-agent-l3-policy-containment',
+  '--verify-standalone-agent-l3-policy-containment',
   '--apply-standalone-control-pending-orgs',
   '--rollback-standalone-control-pending-orgs',
   '--verify-standalone-control-pending-orgs',
@@ -773,6 +791,9 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-handover-responsibility-snapshot': ['standalone_handover_responsibility_snapshot_verify', 'standalone_085_verified', 'standalone_085 handover responsibility snapshot (responsibility_snapshot_json jsonb 可空 + 既有列与 RLS 不变)'],
   '--verify-standalone-open-quality-alert-orgs': ['standalone_open_quality_alert_orgs_verify', 'standalone_086_verified', 'standalone_086 open quality alert orgs (SECURITY DEFINER 只返回 org_id + service_role 可执行 + PUBLIC 不可执行)'],
   '--verify-standalone-control-backlog-snapshot': ['standalone_control_backlog_snapshot_verify', 'standalone_102_verified', 'standalone_102 control backlog snapshot (历史快照表 + org/时间索引 + 插入探针)'],
+  '--verify-standalone-workbench-query-indexes': ['standalone_workbench_query_indexes_verify', 'standalone_103_verified', 'standalone_103 workbench query indexes (delayed-order composite + ILIKE trgm GIN)'],
+  '--verify-standalone-event-confidence-range': ['standalone_event_confidence_range_verify', 'standalone_104_verified', 'standalone_104 event confidence range (validated CHECK + out-of-range selfcheck)'],
+  '--verify-standalone-agent-l3-policy-containment': ['standalone_agent_l3_policy_containment_verify', 'standalone_105_verified', 'standalone_105 agent L3 policy containment (no active nonconforming manifests)'],
   '--verify-standalone-control-pending-orgs': ['standalone_control_pending_orgs_verify', 'standalone_096_verified', 'standalone_096 control pending orgs (SECURITY DEFINER 只返回 org_id + search_path 固定 + PUBLIC 不可执行 + 行为探针)'],
   '--verify-standalone-idempotency-payload-fingerprint': ['standalone_idempotency_payload_fingerprint_verify', 'standalone_097_verified', 'standalone_097 idempotency payload fingerprint (TENANT_SCOPED + RLS + 复合唯一 + 非空 CHECK + ON CONFLICT 覆盖写/重复键/空指纹行为探针)'],
   '--verify-standalone-domain-tables-org-rls': ['standalone_domain_tables_org_rls_verify', 'standalone_098_verified', 'standalone_098 domain tables org RLS (resource_locks/policy_replay/factory_replication_sessions 三表 RLS + policy 只授 service_role + 租户谓词非恒真 + 四态可见性自证)'],
@@ -1598,6 +1619,16 @@ function main() {
       return;
     }
 
+    if (command === '--apply-standalone-workbench-query-indexes' || command === '--rollback-standalone-workbench-query-indexes') {
+      const fileKey = command.startsWith('--apply')
+        ? 'standalone_workbench_query_indexes'
+        : 'standalone_workbench_query_indexes_rollback';
+      const sqlText = substitute(read(FILES[fileKey]), schema);
+      await sql.begin(async (tx) => { await tx.unsafe(sqlText); });
+      console.log(`${command} completed for schema ${schema}`);
+      return;
+    }
+
     const which = {
       '--apply': 'migration',
       '--rollback': 'rollback',
@@ -1783,6 +1814,15 @@ function main() {
       '--rollback-standalone-handover-responsibility-snapshot': 'standalone_handover_responsibility_snapshot_rollback',
       '--apply-standalone-control-backlog-snapshot': 'standalone_control_backlog_snapshot',
       '--rollback-standalone-control-backlog-snapshot': 'standalone_control_backlog_snapshot_rollback',
+      '--apply-standalone-workbench-query-indexes': 'standalone_workbench_query_indexes',
+      '--rollback-standalone-workbench-query-indexes': 'standalone_workbench_query_indexes_rollback',
+      '--verify-standalone-workbench-query-indexes': 'standalone_workbench_query_indexes_verify',
+      '--apply-standalone-event-confidence-range': 'standalone_event_confidence_range',
+      '--rollback-standalone-event-confidence-range': 'standalone_event_confidence_range_rollback',
+      '--verify-standalone-event-confidence-range': 'standalone_event_confidence_range_verify',
+      '--apply-standalone-agent-l3-policy-containment': 'standalone_agent_l3_policy_containment',
+      '--rollback-standalone-agent-l3-policy-containment': 'standalone_agent_l3_policy_containment_rollback',
+      '--verify-standalone-agent-l3-policy-containment': 'standalone_agent_l3_policy_containment_verify',
       '--apply-standalone-control-pending-orgs': 'standalone_control_pending_orgs',
       '--rollback-standalone-control-pending-orgs': 'standalone_control_pending_orgs_rollback',
       '--apply-standalone-idempotency-payload-fingerprint': 'standalone_idempotency_payload_fingerprint',

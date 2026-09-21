@@ -35,6 +35,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _runtime_mode() -> str:
+    try:
+        from edge_platform.config import Settings
+
+        return Settings.load().runtime_mode
+    except Exception:
+        return "development"
+
+
 def align_pointcloud(source_pcd: str, target_pcd: str = "") -> dict[str, Any]:
     """ICP 配准点云（需 open3d，可选依赖）。
 
@@ -54,15 +63,38 @@ def align_pointcloud(source_pcd: str, target_pcd: str = "") -> dict[str, Any]:
                 "alignment_error_mm": 0.0,
             }
         src = o3d.io.read_point_cloud(source_pcd)
-        if target_pcd and os.path.isfile(target_pcd):
-            o3d.io.read_point_cloud(target_pcd)
-        else:
-            o3d.geometry.PointCloud()
+        if not target_pcd or not os.path.isfile(target_pcd):
+            return {
+                "aligned": False,
+                "error": "target pointcloud required for verifiable ICP",
+                "transformation": np.identity(4).tolist(),
+                "alignment_error_mm": 0.0,
+            }
+        target = o3d.io.read_point_cloud(target_pcd)
         if len(src.points) == 0:
             return {"aligned": False, "error": "源点云为空"}
-        # 简化 ICP（实际需根据场景调参）
-        result = {"aligned": True, "transformation": [], "alignment_error_mm": 0.0}
-        return result
+        if len(target.points) == 0:
+            return {"aligned": False, "error": "目标点云为空"}
+        result = o3d.pipelines.registration.registration_icp(
+            src,
+            target,
+            max_correspondence_distance=100.0,
+            init=np.identity(4),
+            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        )
+        if result.fitness <= 0.0:
+            return {
+                "aligned": False,
+                "error": "ICP found no corresponding geometry",
+                "transformation": np.identity(4).tolist(),
+                "alignment_error_mm": 0.0,
+            }
+        return {
+            "aligned": True,
+            "transformation": np.asarray(result.transformation).tolist(),
+            # Open3D RMSE 是点对距离（通常为米）；对外契约使用 mm。
+            "alignment_error_mm": float(result.inlier_rmse) * 1000.0,
+        }
     except ImportError:
         return {
             "aligned": False,
@@ -82,6 +114,9 @@ def register_lidar(
     org_id: str = "",
 ) -> bool:
     """注册 LiDAR 点云产物到 spark-app。"""
+    if ingest_key and _runtime_mode() == "production" and spark_url.lower().startswith(("http://", "//")):
+        print("[lidar] production 下拒绝明文 HTTP 携带 ingest key")
+        return False
     payload = {
         "entity_id": entity_id,
         "source_type": "lidar_scan",
@@ -108,6 +143,9 @@ def register_lidar(
             return False
     except urllib_error.URLError as e:
         print(f"[lidar] 注册失败: {e}")
+        return False
+    except (TimeoutError, OSError) as e:
+        print(f"[lidar] 注册 IO 失败: {type(e).__name__}: {e}")
         return False
 
 

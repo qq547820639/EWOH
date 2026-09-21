@@ -269,10 +269,10 @@ export class SchedulerStreamService implements OnModuleDestroy {
       snapshotVersion:
         typeof payload.snapshotVersion === 'string' ? payload.snapshotVersion : null,
       planId: typeof payload.planId === 'string' ? payload.planId : null,
+      // Never invent an occurrence time. Outbox createdAt is durable source
+      // provenance; server mapping time belongs in serverTs only.
       occurredAt:
-        typeof payload.occurredAt === 'string'
-          ? payload.occurredAt
-          : new Date().toISOString(),
+        typeof payload.occurredAt === 'string' ? payload.occurredAt : e.createdAt,
       // P4-SSE：统一 envelope（orgId + correlationId；correlation 从 payload 或事件本身透传）。
       orgId: e.orgId ?? null,
       correlationId:

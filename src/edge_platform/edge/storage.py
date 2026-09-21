@@ -31,6 +31,7 @@ def _sha8(text: str) -> str:
 
 # EDGE-021：list_events 服务层硬上限（路由层另有同值钳制）
 MAX_LIST_EVENTS_LIMIT = 1000
+MAX_LIST_LIMIT = 1000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS person (
@@ -327,18 +328,12 @@ class Storage:
             self._ensure_assignment_columns()
             self._ensure_world_state_snapshot_columns()
             # EDGE-003：(exo_id, status='active') 唯一约束（partial unique index）。
-            # 旧库若已存在重复活跃绑定则创建失败——保留旧行为并告警（并发新写入
-            # 已由 self._lock 串行化 + 路由层先检后写收敛）。
-            try:
-                self._db.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_exo_binding_one_active "
-                    "ON exo_binding(exo_id) WHERE status='active'"
-                )
-            except sqlite3.IntegrityError:
-                print(
-                    "[EWOH] exo_binding 存在重复活跃绑定，唯一索引未创建（EDGE-003）："
-                    "请人工核对 exo_binding 表后重启"
-                )
+            # 旧库若已存在重复活跃绑定，这是“一人一外骨骼”安全/归属不变量已破坏。
+            # 必须启动期 fail-closed；继续运行会让新遥测/任务继续落到不可信归属上。
+            self._db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_exo_binding_one_active "
+                "ON exo_binding(exo_id) WHERE status='active'"
+            )
 
     def _ensure_assignment_columns(self):
         """为旧库的 assignment 表补齐调度扩展列（幂等，ALTER 不存在的列会报错故先查）。"""
@@ -652,6 +647,7 @@ class Storage:
         ]
 
     def upsert_person(self, **p):
+        """人员 upsert；授权状态缺省必须保持 unknown，禁止默认视为已授权。"""
         with self._lock, self._db:
             self._db.execute(
                 "INSERT OR REPLACE INTO person VALUES (?,?,?,?,?,?)",
@@ -660,7 +656,7 @@ class Storage:
                     p["display_name"],
                     p.get("team"),
                     json.dumps(p.get("skills", []), ensure_ascii=False),
-                    p.get("consent_status", "granted"),
+                    p.get("consent_status", "unknown"),
                     int(p.get("active", 1)),
                 ),
             )
@@ -745,6 +741,37 @@ class Storage:
                 (status, json.dumps(handling, ensure_ascii=False), eid),
             )
 
+    def record_event_status(
+        self,
+        eid,
+        status,
+        handling,
+        action,
+        handler_id,
+        audit_ref=None,
+    ):
+        """原子更新事件状态并追加处置事实账；事件不存在时整体回滚。
+
+        旧路径先 UPDATE 再 INSERT，第二次写入失败会留下只有状态、没有处置
+        证据的半事实。这里是状态闭环的关键写入，必须同事务提交。
+        """
+        handled_at = str(handling.get("handled_at") or _now())
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "UPDATE risk_event SET status=?, handling_json=? WHERE event_id=?",
+                (status, json.dumps(handling, ensure_ascii=False), eid),
+            )
+            if cur.rowcount != 1:
+                raise LookupError(f"event not found: {eid}")
+            cur = self._db.execute(
+                "INSERT INTO event_handling"
+                " (event_id, handler_id, action, comment, handled_at, audit_ref)"
+                " VALUES (?,?,?,?,?,?)",
+                (eid, handler_id, action, handling.get("comment"), handled_at, audit_ref),
+            )
+            row = self._db.execute("SELECT * FROM event_handling WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
     @staticmethod
     def _evt_row(row):
         if not row:
@@ -807,7 +834,7 @@ class Storage:
         return self._audit_log_row(row)
 
     def list_audit_logs(self, action=None, actor_id=None, target_type=None, limit=100, offset=0):
-        """分页查询审计日志；按 ts DESC, id DESC 排序。"""
+        """分页查询审计日志；limit 有硬上限，防止一次拉取无界审计历史。"""
         with self._lock:
             clauses, params = [], []
             if action is not None:
@@ -821,7 +848,10 @@ class Storage:
                 params.append(target_type)
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
             sql = "SELECT * FROM audit_log" + where + " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?"  # nosec B608 - fixed table, parameterized clauses
-            params.extend([int(limit), int(offset)])
+            params.extend([
+                max(0, min(int(limit), MAX_LIST_LIMIT)),
+                max(0, int(offset)),
+            ])
             rows = self._db.execute(sql, params).fetchall()
             return [self._audit_log_row(r) for r in rows]
 

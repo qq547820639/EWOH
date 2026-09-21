@@ -212,11 +212,15 @@ def verify_authorization_fingerprint(
 
 
 def authorization_ref_valid(ref: Any) -> bool:
-    """授权号形状校验：非空 + 前缀在规范白名单内（不做存在性校验——那是平台侧的事）。"""
+    """授权号形状校验：非空前缀 + 非空标识（不做存在性校验——那是平台侧的事）。"""
     value = str(ref or "").strip()
     if value == "":
         return False
-    return any(value.lower().startswith(prefix) for prefix in AUTHORIZATION_REF_PREFIXES)
+    lowered = value.lower()
+    return any(
+        lowered.startswith(prefix) and value[len(prefix):].strip() != ""
+        for prefix in AUTHORIZATION_REF_PREFIXES
+    )
 
 
 @dataclass

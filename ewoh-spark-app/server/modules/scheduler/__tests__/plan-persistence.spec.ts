@@ -14,6 +14,7 @@ import type {
   ScoreBreakdown,
 } from '@shared/api.interface';
 import { makeFakeDb, testOrgContext } from './dispatch-test-harness';
+import type { SchedulingFeedbackService } from '../scheduling-feedback.service';
 
 function scoreBreakdown(overrides: Partial<ScoreBreakdown> = {}): ScoreBreakdown {
   return {
@@ -119,6 +120,7 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
     loadForPlan: jest.fn(async (_planId: string, requestConstraints: any[]) => requestConstraints),
     hashConstraints: jest.fn().mockReturnValue('hash'),
   };
+  const feedbackService = { recordAcceptance: jest.fn(), recordBaseline: jest.fn() };
 
   const svc = new PlanService(
     db,
@@ -128,7 +130,7 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
     worldStateSnapshotService as unknown as WorldStateSnapshotService,
     dispatchCoordinator as unknown as DispatchCoordinatorService,
     schedulingPolicyService as unknown as SchedulingPolicyService,
-    { recordAcceptance: jest.fn(), recordBaseline: jest.fn() } as never,
+    feedbackService as unknown as SchedulingFeedbackService,
     constraintLoaderService as never,
     { enqueue: jest.fn().mockResolvedValue({ id: 'evt', eventType: 'stale_plan', entityId: 'x', payload: {}, status: 'pending', sequence: 1, createdAt: new Date().toISOString() }) } as never,
     { handleTrigger: jest.fn() } as never,
@@ -146,6 +148,7 @@ function makePlanServiceWith(seed: Parameters<typeof makeFakeDb>[0]) {
       dispatchCoordinator,
       schedulingPolicyService,
       constraintLoaderService,
+      feedbackService,
     },
   };
 }
@@ -505,5 +508,52 @@ describe('并发 replan：plan_id 唯一键竞态 → 409（E2E concurrency-real
     await expect(
       svc.replan('PLAN-SRC', { lockedConstraints: [] }, testOrgContext()),
     ).rejects.toBe(rawError);
+  });
+});
+describe('PlanService lifecycle CAS', () => {
+  const lifecycleSeed = () => ({
+    plans: [{
+      planId: 'PLAN-LIFE',
+      status: 'proposed',
+      version: 2,
+      snapshotVersion: 'WS-1',
+      orgId: 'org1',
+      isShadow: false,
+    }],
+    assignments: [{
+      assignmentId: 'ASG-LIFE',
+      planId: 'PLAN-LIFE',
+      taskId: 'T-1',
+      orgId: 'org1',
+      status: 'proposed',
+      version: 1,
+    }],
+  });
+
+  it('approvePlan persists an approved transition from proposed and preserves version CAS inputs', async () => {
+    const { svc, state, mocks } = makePlanServiceWith(lifecycleSeed());
+    mocks.worldStateSnapshotService.buildSnapshot.mockResolvedValue({
+      snapshotVersion: 'WS-LIVE',
+      tasks: [],
+      lockedAssignments: [],
+    });
+    mocks.feedbackService.recordAcceptance.mockResolvedValue(undefined);
+    const approved = await svc.approvePlan(
+      'PLAN-LIFE',
+      { version: 2, snapshotVersion: 'WS-1' },
+      testOrgContext(),
+    );
+    expect(approved.status).toBe('approved');
+    expect(state.plans.get('PLAN-LIFE')?.status).toBe('approved');
+    expect(state.assignments[0].status).toBe('approved');
+  });
+
+  it('rejects approval of a dispatched plan before any transactional update', async () => {
+    const seed = lifecycleSeed();
+    seed.plans[0].status = 'dispatched';
+    const { svc } = makePlanServiceWith(seed);
+    await expect(
+      svc.approvePlan('PLAN-LIFE', { version: 2, snapshotVersion: 'WS-1' }, testOrgContext()),
+    ).rejects.toThrow('PLAN_NOT_APPROVABLE');
   });
 });

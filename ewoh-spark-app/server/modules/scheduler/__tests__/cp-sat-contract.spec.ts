@@ -260,6 +260,59 @@ describe('P0-2: CP-SAT 请求契约（skillMatchMode / effectivePriorityScore）
     ]);
   });
 
+  it.each([
+    ['unknown task', { taskId: 'other', personId: 'p1', deviceId: 'd1', stationId: 'S1' }],
+    ['unknown person', { taskId: 't1', personId: 'ghost', deviceId: 'd1', stationId: 'S1' }],
+    ['unknown device', { taskId: 't1', personId: 'p1', deviceId: 'ghost', stationId: 'S1' }],
+    ['unknown station', { taskId: 't1', personId: 'p1', deviceId: 'd1', stationId: 'ghost' }],
+    ['ineligible person', { taskId: 't1', personId: 'p2', deviceId: 'd1', stationId: 'S1' }],
+  ])('rejects semantic bypass: %s', async (_label, assignmentOverride) => {
+    const fetch = stubFetchReturning({
+      ...OPTIMAL_RESPONSE,
+      assignments: [{ ...OPTIMAL_RESPONSE.assignments[0], ...assignmentOverride }],
+    });
+    const { solver } = makeCpSatSolver({ fetch });
+    const plan = await solver.solve(snapWithMode, [], opts);
+    expect(plan.solverStatus).toBe('FALLBACK');
+    expect(plan.fallbackReason).toBe('cpsat_response_semantic_validation_failed');
+    expect(plan.assignments).toHaveLength(0);
+  });
+
+  it('rejects duplicated task assignments from the worker', async () => {
+    const assignment = OPTIMAL_RESPONSE.assignments[0];
+    const fetch = stubFetchReturning({
+      ...OPTIMAL_RESPONSE,
+      assignments: [assignment, { ...assignment, personId: 'p2', deviceId: null }],
+    });
+    const { solver } = makeCpSatSolver({ fetch });
+    const plan = await solver.solve(snapWithMode, [], opts);
+    expect(plan.solverStatus).toBe('FALLBACK');
+    expect(plan.fallbackReason).toBe('cpsat_response_semantic_validation_failed');
+  });
+
+  it('rejects assignments that exceed station capacity', async () => {
+    const fetch = stubFetchReturning({
+      ...OPTIMAL_RESPONSE,
+      assignments: [
+        OPTIMAL_RESPONSE.assignments[0],
+        { ...OPTIMAL_RESPONSE.assignments[0], personId: 'p2', deviceId: null },
+      ],
+    });
+    const { solver } = makeCpSatSolver({ fetch });
+    const plan = await solver.solve(snapWithMode, [], opts);
+    expect(plan.solverStatus).toBe('FALLBACK');
+    expect(plan.fallbackReason).toBe('cpsat_response_semantic_validation_failed');
+  });
+
+  it('rejects a worker assignment for a safety-blocked person', async () => {
+    const fetch = stubFetchReturning(OPTIMAL_RESPONSE);
+    const { solver } = makeCpSatSolver({ fetch });
+    const blocked = { ...snapWithMode, safetyBlockedPersonIds: ['p1'] };
+    const plan = await solver.solve(blocked, [], opts);
+    expect(plan.solverStatus).toBe('FALLBACK');
+    expect(plan.fallbackReason).toBe('cpsat_response_semantic_validation_failed');
+  });
+
   it('缺省 skillMatchMode → ALL（向后兼容）', async () => {
     const fetch = jest.fn() as unknown as typeof globalThis.fetch;
     (fetch as unknown as jest.Mock).mockImplementation(

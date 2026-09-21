@@ -45,13 +45,14 @@ def parse_detection(raw, camera_id=None, default_source_type="real", default_mod
     if not isinstance(raw, dict):
         raise TypeError("raw 必须为 dict")
 
+    # 传入 camera_id 时它就是配置权威；厂商载荷不能把帧冒充为另一台摄像头。
     cam = camera_id or raw.get("camera_id") or raw.get("cam_id") or raw.get("device_id")
 
     raw_persons = raw.get("persons") or raw.get("detections") or raw.get("results") or []
     persons = [p for p in (_norm_person(p) for p in raw_persons) if p is not None]
 
     ts = raw.get("ts") or raw.get("timestamp") or raw.get("time") or now_iso()
-    source_type = raw.get("source_type", default_source_type)
+    source_type = default_source_type
     model_version = raw.get("model_version") or raw.get("model_ver") or default_model_version
 
     return {

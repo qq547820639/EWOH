@@ -614,8 +614,15 @@ describe('P2-T2: Solver Objective 8 权重版本化', () => {
 
   it('NO-13o：savePolicy 直接保存即激活路径 → decisionJson 落库（reason 缺省）', async () => {
     const { db, policies } = makePolicyDb(seedPolicyRows(defaultConfig(), 1));
-    const policyService = new SchedulingPolicyService(db);
+    const requestDatabaseContext = {
+      runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => cb()),
+    };
+    const policyService = new SchedulingPolicyService(
+      db,
+      requestDatabaseContext as unknown as RequestDatabaseContext,
+    );
     const saved = await policyService.savePolicy(defaultConfig(), 'org1', 'admin');
+    expect(requestDatabaseContext.runInTransaction).toHaveBeenCalledTimes(1);
     expect(saved.configVersion).toBe(2);
     const v2 = policies.find((p) => p.configVersion === 2);
     const decision = v2?.decisionJson as Record<string, unknown>;

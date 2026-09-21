@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${EWOH_RELEASE_VERSION:-0.6.0-rc1}"
-OUT="${ROOT_DIR}/release/ewoh-${VERSION}"
+# Release bundles are build artifacts: keep them outside Git-tracked release snapshots.
+VERSION="${EWOH_RELEASE_VERSION:-$(node -p "require('./version.json').version")}"
+OUT="${ROOT_DIR}/output/release-bundles/ewoh-${VERSION}"
 
 if ! command -v rsync >/dev/null 2>&1; then
   echo "rsync is required to build the release bundle" >&2
@@ -19,6 +20,8 @@ rsync -a \
   --exclude 'dist' \
   --exclude 'test-results' \
   --exclude 'logs' \
+  --exclude '__pycache__' \
+  --exclude '*.pyc' \
   --exclude '.git' \
   --exclude '.spark' \
   --exclude '.env' \

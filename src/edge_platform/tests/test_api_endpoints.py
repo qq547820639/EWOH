@@ -162,8 +162,10 @@ class AuthEndpointTest(unittest.TestCase):
         s2, _, _ = self.fx.req("/api/me", headers={"Authorization": "Bearer " + old_token})
         self.assertEqual(s2, 401)
         # 新 token 有效
-        s3, _, _ = self.fx.req("/api/me", headers={"Authorization": "Bearer " + new_token})
+        s3, _, me = self.fx.req("/api/me", headers={"Authorization": "Bearer " + new_token})
         self.assertEqual(s3, 200)
+        self.assertEqual(me["user"]["username"], "operator")
+        self.assertEqual(body["user"]["username"], "operator")
 
     def test_refresh_without_token(self):
         status, _, _ = self.fx.req("/api/auth/refresh", method="POST")
@@ -282,6 +284,28 @@ class TelemetryExportPostTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(body["error"]["code"], "invalid_params")
+    def test_export_csv_sanitizes_content_disposition(self):
+        s, e = self._window()
+        status, headers, _ = self.fx.raw(
+            "/api/telemetry/export",
+            method="POST",
+            body_bytes=json.dumps(
+                {
+                    "device_id": 'EXO-001\r\nX-Injected: yes"/..\\evil',
+                    "start": s,
+                    "end": e,
+                    "format": "csv",
+                }
+            ).encode(),
+        )
+        self.assertEqual(status, 200)
+        disposition = headers.get("Content-Disposition", "")
+        self.assertNotIn("\r", disposition)
+        self.assertNotIn("\n", disposition)
+        self.assertNotIn('"', disposition.removeprefix('attachment; filename="').removesuffix('"'))
+        self.assertNotIn("/", disposition)
+        self.assertNotIn("\\", disposition)
+
 
     def test_export_invalid_format(self):
         s, e = self._window()
@@ -361,6 +385,37 @@ class EventEndpointTest(unittest.TestCase):
         status, _, body = self.fx.req("/api/events/EVT-TEST0001/comment", method="POST", body={"comment": ""})
         self.assertEqual(status, 400)
         self.assertEqual(body["error"]["code"], "invalid_params")
+
+    def test_legacy_event_status_missing_event_does_not_report_success(self):
+        status, _, body = self.fx.req(
+            "/api/event/status", method="POST", body={"event_id": "EVT-NOPE", "status": "closed"}
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"]["code"], "not_found")
+        self.assertIsNone(self.fx.storage.get_event("EVT-NOPE"))
+
+    def test_legacy_event_status_writes_handling_and_audit_target(self):
+        before = len(self.fx.storage.list_audit_logs(target_type="risk_event"))
+        status, _, body = self.fx.req(
+            "/api/event/status",
+            method="POST",
+            body={"event_id": "EVT-TEST0001", "status": "confirmed", "handled_by": "offline-leader"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["event"]["status"], "confirmed")
+        self.assertTrue(any(h["action"] == "confirmed" for h in self.fx.storage.list_event_handlings("EVT-TEST0001")))
+        logs = self.fx.storage.list_audit_logs(target_type="risk_event")
+        self.assertGreater(len(logs), before)
+        self.assertEqual(logs[0]["target_id"], "EVT-TEST0001")
+
+    def test_reset_writes_dedicated_audit_target(self):
+        before = len(self.fx.storage.list_audit_logs(target_type="world"))
+        status, _, body = self.fx.req("/api/reset", method="POST", body={})
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        logs = self.fx.storage.list_audit_logs(target_type="world")
+        self.assertGreater(len(logs), before)
+        self.assertEqual(logs[0]["target_id"], "demo_reset")
 
 
 class RegistryEndpointTest(unittest.TestCase):

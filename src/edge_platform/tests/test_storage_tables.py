@@ -14,11 +14,13 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 # 支持 PYTHONPATH=src 与直接运行两种方式
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from edge_platform import stubs
+from edge_platform.edge.storage import Storage
 from edge_platform.migrations import list_migrations, upgrade_all
 from edge_platform.migrations.v001_add_governance_tables import upgrade as v001_upgrade
 
@@ -95,6 +97,38 @@ class AuditLogTest(_BaseStorageTest):
         ids = {r["audit_id"] for r in page1 + page2 + page3}
         self.assertEqual(len(ids), 5)
 
+    def test_limit_has_hard_upper_bound(self):
+        with mock.patch("edge_platform.edge.storage.MAX_LIST_LIMIT", 2):
+            for i in range(3):
+                self.storage.insert_audit_log("create", f"U-{i}", "device", f"EXO-{i}")
+            self.assertEqual(len(self.storage.list_audit_logs(limit=10000)), 2)
+
+    def test_duplicate_active_bindings_fail_startup(self):
+        """同一外骨骼已有两条活跃绑定时必须拒绝启动，而不是继续污染归属。"""
+        legacy_path = self.tmp + "/legacy-binding.db"
+        conn = sqlite3.connect(legacy_path)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE exo_binding (
+                  binding_id TEXT PRIMARY KEY, exo_id TEXT NOT NULL, person_id TEXT NOT NULL,
+                  status TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT,
+                  ended_by TEXT, reason TEXT
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO exo_binding VALUES ('B-1', 'EXO-DUP', 'P-1', 'active', '2026-01-01T00:00:00+00:00', NULL, NULL, NULL)"
+            )
+            conn.execute(
+                "INSERT INTO exo_binding VALUES ('B-2', 'EXO-DUP', 'P-2', 'active', '2026-01-02T00:00:00+00:00', NULL, NULL, NULL)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaises(sqlite3.IntegrityError):
+            Storage(legacy_path)
+
 
 class DeviceProtocolVersionTest(_BaseStorageTest):
     def test_insert_and_list(self):
@@ -141,6 +175,62 @@ class EventHandlingTest(_BaseStorageTest):
         self.assertEqual(evt1[0]["action"], "close")
         self.assertEqual(evt1[1]["action"], "confirm")
         self.assertEqual(self.storage.list_event_handlings("EVT-9"), [])
+
+    def test_record_event_status_is_atomic_when_fact_append_fails(self):
+        self.storage.insert_event(
+            {
+                "event_id": "EVT-ATOMIC",
+                "event_code": "LOAD_CONTINUOUS",
+                "severity": "L2",
+                "status": "open",
+                "start_time": "2026-01-01T08:00:00+08:00",
+                "source_type": "simulated",
+            }
+        )
+        handling = {"handled_by": "leader", "handled_at": "2026-01-01T08:01:00+08:00", "comment": "现场确认"}
+        original_db = self.storage._db
+
+        class FailFactAppendDB:
+            def __init__(self, db):
+                self.db = db
+
+            def execute(self, sql, *args):
+                if sql.lstrip().upper().startswith("INSERT INTO EVENT_HANDLING"):
+                    raise sqlite3.OperationalError("forced fact append failure")
+                return self.db.execute(sql, *args)
+
+            def __enter__(self):
+                return original_db.__enter__()
+
+            def __exit__(self, exc_type, exc, tb):
+                return original_db.__exit__(exc_type, exc, tb)
+
+        with mock.patch.object(self.storage, "_db", FailFactAppendDB(original_db)):
+            with self.assertRaises(sqlite3.OperationalError):
+                self.storage.record_event_status(
+                    "EVT-ATOMIC", "confirmed", handling, "confirm", "leader", audit_ref="REQ-1"
+                )
+        self.assertEqual(self.storage.get_event("EVT-ATOMIC")["status"], "open")
+        self.assertEqual(self.storage.list_event_handlings("EVT-ATOMIC"), [])
+
+    def test_record_event_status_commits_state_and_fact_together(self):
+        self.storage.insert_event(
+            {
+                "event_id": "EVT-FACT",
+                "event_code": "LOAD_CONTINUOUS",
+                "severity": "L2",
+                "status": "open",
+                "start_time": "2026-01-01T08:00:00+08:00",
+                "source_type": "simulated",
+            }
+        )
+        handling = {"handled_by": "leader", "handled_at": "2026-01-01T08:01:00+08:00", "comment": "现场确认"}
+        fact = self.storage.record_event_status(
+            "EVT-FACT", "confirmed", handling, "confirm", "leader", audit_ref="REQ-2"
+        )
+        self.assertEqual(fact["audit_ref"], "REQ-2")
+        self.assertEqual(self.storage.get_event("EVT-FACT")["status"], "confirmed")
+        self.assertEqual([h["action"] for h in self.storage.list_event_handlings("EVT-FACT")], ["confirm"])
 
 
 class AssignmentTest(_BaseStorageTest):
@@ -415,6 +505,8 @@ class MigrationTest(unittest.TestCase):
             # 旧表 CRUD 仍可用（init_db 幂等）
             storage.upsert_person(person_id="P-1", display_name="X")
             self.assertEqual(len(storage.list_people()), 1)
+            # 安全默认：未显式登记授权的人员不能被视为已授权。
+            self.assertEqual(storage.list_people()[0]["consent_status"], "unknown")
         finally:
             storage.close()
 

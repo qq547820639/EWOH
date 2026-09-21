@@ -26,9 +26,12 @@
 #   1. `set -o pipefail`：管道会吃掉失败场景的退出码（实测出现过 21 PASS/1 FAIL 仍 exit=0）；
 #   2. 每个场景保留**完整日志**（默认 /tmp/e2e-chain-<name>.log，可用 EWOH_E2E_LOG_DIR 覆盖），
 #      并打印 三态摘要（PASS/FAIL/SKIP）+ FAIL/SKIP 的具体条目——`tail -3` 排障时什么都看不到；
-#   3. 场景退出码：0=全过、1=有 FAIL、2=有 SKIP（未验证 ≠ 通过，也 ≠ 失败）。含 SKIP 只记一笔，
-#      不判失败，但链的汇总会显式列出，避免"看起来全绿"。
-set -uo pipefail
+#   3. 场景退出码：0=全过、1=有 FAIL、2=有 SKIP（未验证 ≠ 通过，也 ≠ 失败）。
+#      链的最终退出码按失败优先；只要存在 SKIP，0 不表示"全部已验证"。
+#   4. 破坏性隔离：只接受本机 PostgreSQL 的专用 E2E 库；owner/runtime 指向不同库、
+#      系统库、非回环地址或非法组织 ID 时，在任何重置/场景前失败。
+#      重置失败必须终止链路；SKIP 保留三态，不合并成 PASS。
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/ewoh-spark-app"
@@ -39,10 +42,99 @@ mkdir -p "$LOG_DIR"
 
 FAILED=0
 SKIPPED=0
+declare -a SCENARIOS=()
+declare -a ALL_SCENARIOS=(
+  e2e:golden e2e:receipt e2e:wave e2e:learning e2e:capability-explain
+  e2e:approval-expiry e2e:observation-reasoning e2e:master-data e2e:materials
+  e2e:exo-session e2e:data-quality e2e:learning-signal e2e:improvement-action
+  e2e:agv-transport e2e:control-actuator e2e:exo-simfarm e2e:device-physics
+  e2e:plan-staleness e2e:perception-fusion e2e:edge
+)
+
+contains_scenario() {
+  local wanted="$1"
+  local known
+  for known in "${ALL_SCENARIOS[@]}"; do
+    [ "$known" = "$wanted" ] && return 0
+  done
+  return 1
+}
+
+postgres_target() {
+  node -e '
+    const value = process.argv[1];
+    let url;
+    try { url = new URL(value); } catch { process.exit(1); }
+    if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") process.exit(2);
+    const host = url.hostname;
+    const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+    if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) process.exit(3);
+    if (!database || ["postgres", "template0", "template1"].includes(database)) process.exit(4);
+    console.log(database);
+  ' "$1"
+}
+
+postgres_origin() {
+  node -e '
+    const url = new URL(process.argv[1]);
+    process.stdout.write(`${url.hostname}:${url.port || 5432}`);
+  ' "$1"
+}
+
+validate_chain_target() {
+  if [ -z "${EWOH_E2E_OWNER_DATABASE_URL:-}" ] || [ -z "${EWOH_E2E_RUNTIME_DATABASE_URL:-}" ]; then
+    echo "[chain] FAIL: 必须显式提供本机隔离 EWOH_E2E_OWNER_DATABASE_URL 与 EWOH_E2E_RUNTIME_DATABASE_URL" >&2
+    return 1
+  fi
+  local owner_db runtime_db
+  owner_db="$(postgres_target "$EWOH_E2E_OWNER_DATABASE_URL")" || {
+    echo "[chain] FAIL: owner 数据库必须是本机回环上的专用业务库" >&2
+    return 1
+  }
+  runtime_db="$(postgres_target "$EWOH_E2E_RUNTIME_DATABASE_URL")" || {
+    echo "[chain] FAIL: runtime 数据库必须是本机回环上的专用业务库" >&2
+    return 1
+  }
+  if [ "$owner_db" != "$runtime_db" ]; then
+    echo "[chain] FAIL: owner/runtime 数据库不一致（$owner_db != $runtime_db）" >&2
+    return 1
+  fi
+  if [ "$(postgres_origin "$EWOH_E2E_OWNER_DATABASE_URL")" != "$(postgres_origin "$EWOH_E2E_RUNTIME_DATABASE_URL")" ]; then
+    echo "[chain] FAIL: owner/runtime PostgreSQL host:port 不一致" >&2
+    return 1
+  fi
+  case "$BACKEND_URL" in
+    http://127.0.0.1:*|http://localhost:*|http://[::1]:*) ;;
+    *) echo "[chain] FAIL: EWOH_E2E_BACKEND_URL 只允许本机 HTTP 地址: $BACKEND_URL" >&2; return 1 ;;
+  esac
+  if ! [[ "$ORG_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+    echo "[chain] FAIL: ORG_ID 必须是 UUID" >&2
+    return 1
+  fi
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --scenario)
+      [ "$#" -ge 2 ] || { echo "[chain] FAIL: --scenario 需要名称" >&2; exit 1; }
+      contains_scenario "$2" || { echo "[chain] FAIL: 未知或合并场景 $2；请分别运行基础场景" >&2; exit 1; }
+      SCENARIOS+=("$2")
+      shift 2
+      ;;
+    *) echo "[chain] FAIL: 未知参数 $1" >&2; exit 1 ;;
+  esac
+done
+
+if [ "${#SCENARIOS[@]}" -eq 0 ]; then
+  SCENARIOS=("${ALL_SCENARIOS[@]}")
+fi
+
+validate_chain_target
 declare -a FAILED_SCENARIOS=()
 declare -a SKIPPED_SCENARIOS=()
 
 reset_scenario_data() {
+  local code=0
   # 阶段一密闭基线（2026-09-19）：每场景前将库恢复到**字节级一致的原始种子态**
   # （DROP/CREATE + 全量迁移 + 全量种子 + 运营账号）。旧白名单式 reset 无法
   # 覆盖全部累积事实（摄入世界状态、去重台账、能力台账…），是场景跨轮状态
@@ -50,25 +142,29 @@ reset_scenario_data() {
   # （重建后 login/snapshot/plans 全部 200 已验证）。
   # E2E_NO_REBUILD=1 可退回旧白名单式 reset（保留作逃生门）。
   if [ "${E2E_NO_REBUILD:-0}" = "1" ]; then
-    if [ -z "${EWOH_E2E_OWNER_DATABASE_URL:-}" ]; then
-      return 0
-    fi
     (cd "$ROOT" && EWOH_DATABASE_URL="$EWOH_E2E_OWNER_DATABASE_URL" \
-      node db/runner/reset-scenario-data.js --org-id "$ORG_ID" --yes >/dev/null 2>&1)
-    return 0
+      node db/runner/reset-scenario-data.js --org-id "$ORG_ID" --yes >"$LOG_DIR/reset.log" 2>&1) || code=$?
+  else
+    (cd "$ROOT" && EWOH_DATABASE_URL="$EWOH_E2E_OWNER_DATABASE_URL" \
+      bash scripts/local-up.sh --no-server --rebuild-db >"$LOG_DIR/reset.log" 2>&1) || code=$?
   fi
-  (cd "$ROOT" && bash scripts/local-up.sh --no-server --rebuild-db >/dev/null 2>&1)
+  return "$code"
 }
 
 scenario() {
   local name="$1"; shift
   local reset="$1"; shift
-  [ "$reset" = "1" ] && reset_scenario_data
+  local code=0
+  if [ "$reset" = "1" ]; then
+    reset_scenario_data || {
+      echo "[chain] $name 重置失败（exit=$?，完整日志 $LOG_DIR/reset.log）" >&2
+      exit 1
+    }
+  fi
   echo "=== $name ==="
-  ( cd "$APP" && EWOH_E2E_BACKEND_URL="$BACKEND_URL" npm run "$name" ) >"$LOG_DIR/$name.log" 2>&1
-  local code=$?
-  grep -E "PASS / [0-9]+ FAIL" "$LOG_DIR/$name.log" | tail -1
-  grep -E "^(FAILED|SKIPPED)" "$LOG_DIR/$name.log" | head -6
+  ( cd "$APP" && EWOH_E2E_BACKEND_URL="$BACKEND_URL" npm run "$name" ) >"$LOG_DIR/$name.log" 2>&1 || code=$?
+  grep -E "PASS / [0-9]+ FAIL" "$LOG_DIR/$name.log" | tail -1 || true
+  grep -E "^(FAILED|SKIPPED)" "$LOG_DIR/$name.log" | head -6 || true
   if [ $code -eq 1 ]; then
     echo "  [chain] $name FAIL（exit=1，完整日志 $LOG_DIR/$name.log）"
     FAILED=$((FAILED+1)); FAILED_SCENARIOS+=("$name")
@@ -79,6 +175,7 @@ scenario() {
     echo "  [chain] $name 异常退出 exit=$code（完整日志 $LOG_DIR/$name.log）"
     FAILED=$((FAILED+1)); FAILED_SCENARIOS+=("$name")
   fi
+  return "$code"
 }
 
 # ── 链前预检 2（NO-73b）：E2E 凭证**角色矩阵**自检 ─────────────────────────────
@@ -128,29 +225,18 @@ let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const r=JSON.parse(d
 }
 preflight_credentials
 
-# 顺序敏感：golden 需要干净库；后续场景多数可复用当前数据（0=不重置，1=重置）
-scenario e2e:golden 1
-scenario e2e:receipt 1
-scenario e2e:wave 1
-scenario e2e:learning 0
-scenario e2e:capability-explain 1
-scenario e2e:approval-expiry 0
-scenario e2e:observation-reasoning 0
-scenario e2e:master-data 0
-scenario e2e:materials 0
-scenario e2e:exo-session 0
-scenario e2e:data-quality 0
-scenario e2e:learning-signal 0
-scenario e2e:improvement-action 0
-# AGV 搬运：审批腿需要相对干净的世界（60s 设备新鲜度 vs 数分钟求解），故 reset=1
-scenario e2e:agv-transport 1
-scenario e2e:control-actuator 0
-# 仿真对抗链（虚拟外骨骼机群 + 设备物理孪生）：自建设备/实体/会话，reset=1 保干净世界
-scenario e2e:exo-simfarm 1
-scenario e2e:device-physics 1
-scenario e2e:plan-staleness 0
-scenario e2e:perception-fusion 0
-scenario e2e:edge 0
+reset_policy() {
+  case "$1" in
+    e2e:golden|e2e:receipt|e2e:wave|e2e:capability-explain|e2e:agv-transport|e2e:exo-simfarm|e2e:device-physics) echo 1 ;;
+    *) echo 0 ;;
+  esac
+}
+
+for name in "${SCENARIOS[@]}"; do
+  set +e
+  scenario "$name" "$(reset_policy "$name")"
+  set -e
+done
 
 echo ""
 echo "[chain] 失败场景数：${FAILED} / 含 SKIP 场景数：${SKIPPED}（失败必须为 0；SKIP 表示有未验证项，需人工确认）"
@@ -160,4 +246,6 @@ fi
 if [ ${#SKIPPED_SCENARIOS[@]} -gt 0 ]; then
   echo "[chain] SKIP：${SKIPPED_SCENARIOS[*]}"
 fi
-exit $((FAILED > 0 ? 1 : 0))
+if [ "$FAILED" -gt 0 ]; then exit 1; fi
+if [ "$SKIPPED" -gt 0 ]; then exit 2; fi
+exit 0

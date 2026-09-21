@@ -111,6 +111,10 @@ jobs:
         run: npm ci
         working-directory: ewoh-spark-app
 
+      - name: 生成运行时 SBOM
+        # security job 不依赖另一个 workflow 的文件产物；同 job 生成后立即校验。
+        run: node scripts/generate-sbom.js
+
       - name: 生产依赖漏洞审计（npm audit --omit=dev）
         # 生产依赖专项审计；全量审计（含 dev）已在 test.yml 中以 audit-level=high 覆盖。
         run: npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high

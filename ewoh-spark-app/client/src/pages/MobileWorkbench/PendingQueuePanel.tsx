@@ -1,5 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@client/src/components/ui/alert-dialog';
 import { Badge } from '@client/src/components/ui/badge';
 import { Button } from '@client/src/components/ui/button';
 import { computeNextRetryAt } from '../../lib/offlineStatus';
@@ -43,6 +53,17 @@ export function PendingQueuePanel({
   onResolve,
 }: PendingQueuePanelProps): React.ReactElement {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [discardTarget, setDiscardTarget] = useState<StoredPendingAction | null>(null);
+
+  // Remove selected ids that no longer exist (for example after another retry
+  // succeeds) so stale selections cannot be replayed by “select all”.
+  useEffect(() => {
+    const ids = new Set(items.map((item) => item.id));
+    setSelected((current) => {
+      const next = new Set([...current].filter((id) => ids.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [items]);
 
   const selectableIds = useMemo(() => {
     const failed = items.filter((i) => i.status === 'failed').map((i) => i.id);
@@ -64,7 +85,9 @@ export function PendingQueuePanel({
 
   const toggleAll = () => {
     setSelected((current) =>
-      current.size === selectableIds.size ? new Set() : new Set(selectableIds),
+      selectableIds.size > 0 && current.size === selectableIds.size
+        ? new Set()
+        : new Set(selectableIds),
     );
   };
 
@@ -192,7 +215,7 @@ export function PendingQueuePanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => onDiscard(item.id)}
+                  onClick={() => setDiscardTarget(item)}
                 >
                   丢弃
                 </Button>
@@ -209,6 +232,33 @@ export function PendingQueuePanel({
           );
         })}
       </ul>
+      <AlertDialog
+        open={discardTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDiscardTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>丢弃冲突操作</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除「{discardTarget?.stepId ?? ''}」的本地离线记录；如果包含现场
+              证据，请先导出备份或联系负责人。该操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (discardTarget) onDiscard(discardTarget.id);
+                setDiscardTarget(null);
+              }}
+            >
+              确认丢弃
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

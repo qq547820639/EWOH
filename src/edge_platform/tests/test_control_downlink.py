@@ -20,9 +20,11 @@
 import json
 import os
 import sys
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -213,6 +215,32 @@ class ControlDownlinkTest(unittest.TestCase):
         finally:
             platform.stop()
 
+    def test_adapter_exception_after_ack_produces_auditable_failed_receipt(self):
+        """临界段异常不吞回执：ack 后驱动抛错也必须回到 failed 闭环。"""
+        platform = _StubPlatform([command()])
+        try:
+            adapter, transport = make_adapter()
+            adapter.send_command = lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("driver exploded after ack")
+            )
+            agent = ControlAgent(ControlDownlinkClient(platform.url, "k"), {"AGV-01": adapter})
+
+            stats = agent.run_once("AGV-01")
+
+            outcome = stats["outcomes"][0]
+            self.assertEqual(outcome["outcome"], "execution_failed")
+            self.assertEqual(outcome["adapterReason"], "adapter_error:RuntimeError")
+            self.assertEqual(platform.acks[0]["delivered"], True)
+            self.assertEqual(platform.receipts[0]["result"], "failed")
+            self.assertEqual(
+                platform.receipts[0]["receipt"]["adapterReason"],
+                "adapter_error:RuntimeError",
+            )
+            # 异常发生在适配器调用内部；没有证据表明物理动作成功，因此不断言状态迁移。
+            self.assertEqual(agent._receipt_retry.entries, [])
+        finally:
+            platform.stop()
+
     def test_platform_unreachable_does_not_lie(self):
         adapter, transport = make_adapter()
         client = ControlDownlinkClient("http://127.0.0.1:1", "k", timeout=0.5)
@@ -250,7 +278,7 @@ class ControlAgentCliTest(unittest.TestCase):
         )
         platform = _StubPlatform([command(authorizationFingerprint=valid_v1)])
         try:
-            adapter, _transport = make_adapter()
+            adapter, transport = make_adapter()
             agent = ControlAgent(ControlDownlinkClient(platform.url, "k"), {"AGV-01": adapter})
 
             stats = agent.run_once("AGV-01")
@@ -272,7 +300,7 @@ class ControlAgentCliTest(unittest.TestCase):
         """NO-62a：平台在 ack 时复核失败（409）→ 不回执"已执行"，也不重试同一命令。"""
         platform = _StubPlatform([command(), command(commandId="att-2")], ack_status=409)
         try:
-            adapter, _transport = make_adapter()
+            adapter, transport = make_adapter()
             agent = ControlAgent(ControlDownlinkClient(platform.url, "k"), {"AGV-01": adapter})
 
             stats = agent.run_once("AGV-01")
@@ -283,6 +311,192 @@ class ControlAgentCliTest(unittest.TestCase):
                 self.assertEqual(outcome["ackStatus"], 409)
             # 关键：没有回执（平台已经撤回命令，回执"执行成功"会把失效授权洗白）
             self.assertEqual(platform.receipts, [])
+            # 更强的安全边界：平台授权复核失败时，设备也必须没有动。
+            self.assertEqual(transport.state.state, "idle")
+            self.assertIsNone(transport.state.last_authorization_ref)
+
+        finally:
+            platform.stop()
+
+    def test_ack_network_failure_does_not_execute(self):
+        """授权确认结果未知 → 不碰设备；宁可下一轮重试，也不能先动作后等拒绝。"""
+        platform = _StubPlatform([command()])
+
+        class UnreachableAckClient(ControlDownlinkClient):
+            def ack(self, *args, **kwargs):
+                return 0, {"error": "platform_unreachable"}
+
+        try:
+            adapter, transport = make_adapter()
+            agent = ControlAgent(UnreachableAckClient(platform.url, "k"), {"AGV-01": adapter})
+            stats = agent.run_once("AGV-01")
+            outcome = stats["outcomes"][0]
+            self.assertEqual(outcome["outcome"], "authorization_ack_unresolved")
+            self.assertEqual(platform.receipts, [])
+            self.assertEqual(transport.state.state, "idle")
+        finally:
+            platform.stop()
+
+    def test_failed_receipt_survives_agent_restart(self):
+        """回执上行失败必须持久化；新 Agent 启动后按原 commandId 补投，不丢闭环事实。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        try:
+            adapter, transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            first_agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            original_receipt = client.receipt
+            client.receipt = lambda *args, **kwargs: (0, {"error": "receipt_unreachable"})
+            first_stats = first_agent.run_once("AGV-01")
+            self.assertEqual(first_stats["outcomes"][0]["receiptStatus"], 0)
+            self.assertNotEqual(os.path.getsize(journal.name), 0)
+
+            restarted_agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            client.receipt = original_receipt
+            platform.receipts.clear()
+            second_stats = restarted_agent.run_once("AGV-01")
+            self.assertEqual(second_stats["receiptRetryFlushed"], 1)
+            self.assertEqual(platform.receipts[0]["commandId"], "att-1")
+            self.assertEqual(platform.receipts[0]["result"], "executed")
+            self.assertEqual(os.path.getsize(journal.name), 0)
+        finally:
+            platform.stop()
+
+    def test_receipt_journal_append_crash_leaves_one_recoverable_fact(self):
+        """模拟压缩前崩溃：已执行事实已 O_APPEND 落盘，恢复去重后仍只补投一次。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        try:
+            adapter, _transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            original_receipt = client.receipt
+            client.receipt = lambda *args, **kwargs: (0, {"error": "receipt_unreachable"})
+            agent.run_once("AGV-01")
+            entry = agent._receipt_retry.entries[0]
+            # 模拟 rewrite 前崩溃后，旧文件残留了同一条事实。
+            with open(journal.name, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+
+            restarted = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            self.assertEqual(len(restarted._receipt_retry.entries), 1)
+            client.receipt = original_receipt
+            platform.commands = []
+            platform.receipts.clear()
+            stats = restarted.run_once("AGV-01")
+            self.assertEqual(stats["receiptRetryFlushed"], 1)
+            self.assertEqual(len(platform.receipts), 1)
+            self.assertEqual(platform.receipts[0]["commandId"], "att-1")
+            self.assertEqual(os.path.getsize(journal.name), 0)
+        finally:
+            platform.stop()
+
+    def test_receipt_overflow_goes_to_durable_dead_letter(self):
+        """内存重试上限不是丢数据的借口：溢出条目必须留在可检查的持久死信。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        self.addCleanup(os.unlink, f"{journal.name}.dead-letter.jsonl")
+        try:
+            adapter, _transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            original_receipt = client.receipt
+            client.receipt = lambda *args, **kwargs: (0, {"error": "receipt_unreachable"})
+            agent.receipt_retry_max = 0
+            stats = agent.run_once("AGV-01")
+            client.receipt = original_receipt
+            self.assertEqual(agent.receipt_retry_dropped, 1)
+            self.assertEqual(stats["outcomes"][0]["receiptStatus"], 0)
+            dead_letter = json.loads(Path(f"{journal.name}.dead-letter.jsonl").read_text())
+            self.assertEqual(dead_letter["commandId"], "att-1")
+            self.assertEqual(agent._receipt_retry.entries, [])
+        finally:
+            platform.stop()
+
+    def test_deterministic_receipt_rejection_is_dead_lettered_once(self):
+        """平台明确拒绝的回执不再无限重放；原始事实转入持久死信供人工处置。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        self.addCleanup(os.unlink, f"{journal.name}.dead-letter.jsonl")
+        try:
+            adapter, _transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            client.receipt = lambda *args, **kwargs: (404, {"error": "command_missing"})
+            first_stats = agent.run_once("AGV-01")
+            self.assertEqual(first_stats["receiptRetryFlushed"], 0)
+            self.assertEqual(first_stats["outcomes"][0]["outcome"], "executed")
+
+            restarted = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            platform.commands = []
+            second_stats = restarted.run_once("AGV-01")
+            self.assertEqual(second_stats["receiptRetryFlushed"], 0)
+            self.assertEqual(restarted.receipt_retry_rejected, 1)
+            self.assertEqual(restarted._receipt_retry.entries, [])
+            dead_letter = json.loads(Path(f"{journal.name}.dead-letter.jsonl").read_text())
+            self.assertEqual(dead_letter["commandId"], "att-1")
+        finally:
+            platform.stop()
+
+    def test_failed_http_receipt_survives_agent_restart(self):
+        """服务端 5xx 属于瞬时失败；已执行事实必须持久化，恢复后补投。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        try:
+            adapter, transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            first_agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            original_receipt = client.receipt
+            client.receipt = lambda *args, **kwargs: (503, {"error": "receipt_unavailable"})
+            first_stats = first_agent.run_once("AGV-01")
+            self.assertEqual(first_stats["outcomes"][0]["receiptStatus"], 503)
+            self.assertNotEqual(os.path.getsize(journal.name), 0)
+
+            restarted_agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            client.receipt = original_receipt
+            platform.receipts.clear()
+            second_stats = restarted_agent.run_once("AGV-01")
+            self.assertEqual(second_stats["receiptRetryFlushed"], 1)
+            self.assertEqual(platform.receipts[0]["commandId"], "att-1")
+            self.assertEqual(platform.receipts[0]["result"], "executed")
+            self.assertEqual(os.path.getsize(journal.name), 0)
+        finally:
+            platform.stop()
+
+    def test_deterministic_receipt_rejection_is_not_retried_forever(self):
+        """400 先持久记账；下轮转入死信，不无限重放也不静默丢失。"""
+        platform = _StubPlatform([command()])
+        journal = tempfile.NamedTemporaryFile(prefix="ewoh-receipts-", suffix=".jsonl", delete=False)
+        journal.close()
+        self.addCleanup(os.unlink, journal.name)
+        self.addCleanup(os.unlink, f"{journal.name}.dead-letter.jsonl")
+        try:
+            adapter, transport = make_adapter()
+            client = ControlDownlinkClient(platform.url, "k")
+            agent = ControlAgent(client, {"AGV-01": adapter}, receipt_journal_path=journal.name)
+            client.receipt = lambda *args, **kwargs: (400, {"error": "receipt_invalid"})
+            stats = agent.run_once("AGV-01")
+            self.assertEqual(stats["outcomes"][0]["receiptStatus"], 400)
+            self.assertNotEqual(os.path.getsize(journal.name), 0)
+            self.assertEqual(agent._receipt_retry.entries[-1]["commandId"], "att-1")
+
+            platform.commands = []
+            second = agent.run_once("AGV-01")
+            self.assertEqual(second["receiptRetryFlushed"], 0)
+            self.assertEqual(agent.receipt_retry_rejected, 1)
+            self.assertEqual(agent._receipt_retry.entries, [])
+            dead_letter = json.loads(Path(f"{journal.name}.dead-letter.jsonl").read_text())
+            self.assertEqual(dead_letter["commandId"], "att-1")
         finally:
             platform.stop()
 
@@ -538,7 +752,7 @@ class SignedFingerprintBoundaryTest(unittest.TestCase):
                         details = platform.acks[0]["details"]
                         self.assertTrue(details["fingerprintVerified"])
                         self.assertEqual(details["fingerprintScheme"], "hmac-sha256:v2")
-                        self.assertEqual(details["adapterAccepted"], True)
+                        self.assertEqual(platform.receipts[0]["receipt"]["adapterAccepted"], True)
                         self.assertEqual(transport.state.last_command_key, command_key)
                     finally:
                         platform.stop()

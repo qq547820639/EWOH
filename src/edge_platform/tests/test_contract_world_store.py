@@ -288,11 +288,38 @@ class TestContractWorldStoreEventReplayPrediction(unittest.TestCase):
         self.store.record_event(
             self.person_id, "ENTER_ZONE", {"zone_id": "zone:Z-A"}, ts="2026-08-16T08:05:00Z"
         )
-        restored = ContractWorldStore.from_dict(self.store.to_dict())
-        self.assertEqual(restored.declaration(self.person_id)["kind"], "person")
+        first_snapshot = self.store.snapshot()
+        snapshot = self.store.to_dict()
+        restored = ContractWorldStore.from_dict(snapshot)
         self.assertEqual(restored.current(self.person_id, "person").version, 1)
         self.assertEqual(len(restored.event_graph().all_nodes()), 1)
         self.assertIn(self.person_id, restored.replay("2026-08-16T08:10:00Z")["states"])
+        # 快照序号必须跨离线重启保持单调，否则旧重启后的快照会被误判为新。
+        restored_snapshot = restored.snapshot()
+        self.assertEqual(
+            int(restored_snapshot["snapshotVersion"]),
+            int(first_snapshot["snapshotVersion"]) + 1,
+        )
+
+    def test_persistence_rejects_invalid_restored_state(self):
+        self._declare_person()
+        snapshot = self.store.to_dict()
+        snapshot["store"]["states"].append(
+            {
+                "state_id": "STS-BAD",
+                "entity_id": "P-1",
+                "state_type": "person",
+                "state_json": {"zone": "Z1"},
+                "valid_from": "2026-08-16T08:06:00Z",
+                "valid_to": None,
+                "source_type": "real",
+                "confidence": 1.0,
+                "version": 1,
+            }
+        )
+        with self.assertRaises(WorldStoreContractError) as cm:
+            ContractWorldStore.from_dict(snapshot)
+        self.assertEqual(cm.exception.code, "bad_entity_id")
 
 
 if __name__ == "__main__":

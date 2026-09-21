@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -7,6 +7,8 @@ import { eq, desc, and, or, isNull } from 'drizzle-orm';
 import { ewohSchedulingPolicy } from '@server/database/schema';
 import { projectPolicyActivationDecision } from './decision-projection';
 import type { DecisionRecord } from '@shared/decision';
+import { RequestDatabaseContext } from '../../database/request-database-context';
+import { buildGucSettings } from '../shared/org-context.interceptor';
 import type {
   ObjectiveWeights,
   SchedulingPolicy,
@@ -171,7 +173,26 @@ export class SchedulingPolicyService {
 
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    // Legacy save/activate paths are transactional in production when Nest
+    // injects the global request DB context; direct construction in unit tests
+    // keeps the explicit compatibility fallback.
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {}
+
+  private async inPolicyWriteTransaction<T>(
+    orgId: string | null,
+    updatedBy: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.requestDatabaseContext) return operation();
+    if (!orgId) {
+      return this.requestDatabaseContext.systemGlobalAdminTransaction(operation);
+    }
+    return this.requestDatabaseContext.runInTransaction(
+      buildGucSettings({ userId: updatedBy, primaryOrgId: orgId }),
+      operation,
+    );
+  }
 
   /**
    * 读取当前生效策略（active=true，按 configVersion 降序取最新）。
@@ -321,45 +342,49 @@ export class SchedulingPolicyService {
     updatedBy: string,
   ): Promise<SchedulingPolicyConfig> {
     try {
-      const nextVersion = await this.computeNextVersion(orgId);
-
-      const toSave: SchedulingPolicyConfig = {
-        ...config,
-        configVersion: nextVersion,
-      };
-
-      // NO-13o / ADR-064：直接保存即激活路径的决策留痕（reason 缺省
-      // 'policy-save-activated'；缺口显式留 NULL 不阻断主流程）。
-      const decisionJson = this.projectPolicyActivationDecision(
-        nextVersion, orgId, updatedBy, 'policy-save-activated',
-      );
-
-      await this.db
-        .update(ewohSchedulingPolicy)
-        .set({ active: false })
-        .where(
-          and(
-            eq(ewohSchedulingPolicy.active, true),
-            this.orgScopeCondition(orgId),
-          ),
+      let savedConfig: SchedulingPolicyConfig;
+      await this.inPolicyWriteTransaction(orgId, updatedBy, async () => {
+        // Version allocation must share the archive/insert transaction; two
+        // concurrent saves otherwise allocate the same org-scoped version.
+        const nextVersion = await this.computeNextVersion(orgId);
+        const toSave: SchedulingPolicyConfig = {
+          ...config,
+          configVersion: nextVersion,
+        };
+        // NO-13o / ADR-064：直接保存即激活路径的决策留痕（reason 缺省
+        // 'policy-save-activated'；缺口显式留 NULL 不阻断主流程）。
+        const decisionJson = this.projectPolicyActivationDecision(
+          nextVersion, orgId, updatedBy, 'policy-save-activated',
         );
 
-      await this.db.insert(ewohSchedulingPolicy).values({
-        configVersion: nextVersion,
-        configJson: toSave as unknown as typeof toSave,
-        // Phase 2 / P2-T2：8 权重权威列（与 configJson.weights 并行，双写保持兼容）。
-        weightsJson: toSave.weights ?? null,
-        active: true,
-        orgId,
-        updatedBy,
-        ...(decisionJson ? { decisionJson } : {}),
+        await this.db
+          .update(ewohSchedulingPolicy)
+          .set({ active: false })
+          .where(
+            and(
+              eq(ewohSchedulingPolicy.active, true),
+              this.orgScopeCondition(orgId),
+            ),
+          );
+
+        await this.db.insert(ewohSchedulingPolicy).values({
+          configVersion: nextVersion,
+          configJson: toSave as unknown as typeof toSave,
+          // Phase 2 / P2-T2：8 权重权威列（与 configJson.weights 并行，双写保持兼容）。
+          weightsJson: toSave.weights ?? null,
+          active: true,
+          orgId,
+          updatedBy,
+          ...(decisionJson ? { decisionJson } : {}),
+        });
+        savedConfig = toSave;
       });
 
       this.invalidateActiveRowCache(orgId);
       this.logger.log(
-        `saved scheduling policy v${nextVersion} by ${updatedBy}`,
+        `saved scheduling policy v${savedConfig.configVersion} by ${updatedBy}`,
       );
-      return toSave;
+      return savedConfig;
     } catch (err) {
       this.logger.error(
         `failed to save scheduling policy (org=${orgId}, by=${updatedBy})`,
@@ -444,16 +469,20 @@ export class SchedulingPolicyService {
         `Scheduling policy version ${configVersion} not found`,
       );
     }
-    // 1) 解除当前生效版本（NEST-104：org 作用域，绝不归档他租户 active 行）。
-    await this.db
-      .update(ewohSchedulingPolicy)
-      .set({ active: false })
-      .where(
-        and(
-          eq(ewohSchedulingPolicy.active, true),
-          this.orgScopeCondition(orgId),
-        ),
-      );
+    // Legacy ungated activation remains atomic: archive current ACTIVE and
+    // enable the target in one transaction. The governed activation service
+    // adds its own stronger status/CAS lifecycle above this primitive.
+    await this.inPolicyWriteTransaction(orgId, updatedBy, async () => {
+      // 1) 解除当前生效版本（NEST-104：org 作用域，绝不归档他租户 active 行）。
+      await this.db
+        .update(ewohSchedulingPolicy)
+        .set({ active: false })
+        .where(
+          and(
+            eq(ewohSchedulingPolicy.active, true),
+            this.orgScopeCondition(orgId),
+          ),
+        );
     // 2) 激活目标版本（NO-13o / ADR-064：激活决策与 active 翻转同一
     // UPDATE 原子写 decisionJson；缺口显式留 NULL 不阻断主流程）。
     // R2-SSV-01：UPDATE 叠加 org 可见性条件（本 org + NULL 全局行），且
@@ -468,20 +497,21 @@ export class SchedulingPolicyService {
           isNull(ewohSchedulingPolicy.orgId),
         )
       : isNull(ewohSchedulingPolicy.orgId);
-    await this.db
-      .update(ewohSchedulingPolicy)
-      .set({
-        active: true,
-        updatedBy,
-        updatedAt: new Date(),
-        ...(decisionJson ? { decisionJson } : {}),
-      })
-      .where(
-        and(
-          eq(ewohSchedulingPolicy.configVersion, configVersion),
-          targetScope,
-        ),
-      );
+      await this.db
+        .update(ewohSchedulingPolicy)
+        .set({
+          active: true,
+          updatedBy,
+          updatedAt: new Date(),
+          ...(decisionJson ? { decisionJson } : {}),
+        })
+        .where(
+          and(
+            eq(ewohSchedulingPolicy.configVersion, configVersion),
+            targetScope,
+          ),
+        );
+    });
     this.invalidateActiveRowCache(orgId);
     this.logger.log(`activated scheduling policy v${configVersion} by ${updatedBy}`);
     const config = this.parseConfig(row.configJson);

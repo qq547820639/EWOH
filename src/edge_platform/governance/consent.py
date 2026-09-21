@@ -86,12 +86,21 @@ class ConsentRecord:
     status: str = ACTIVE
 
     def __post_init__(self):
+        if not isinstance(self.person_id, str) or not self.person_id.strip():
+            raise ValueError("person_id 必须为非空字符串")
         if not self.record_id:
             self.record_id = new_id("CONSENT")
         if not self.granted_at:
             self.granted_at = now_iso()
-        # 字符串用途 → 枚举（便于从外部数据恢复）
+        # 字符串用途 → 枚举（便于从外部数据恢复）；去重保证授权清单无歧义。
         self.purposes = [p if isinstance(p, ConsentPurpose) else ConsentPurpose(p) for p in self.purposes]
+        if not self.purposes:
+            raise ValueError("purposes 不能为空")
+        self.purposes = list(dict.fromkeys(self.purposes))
+        self.fields = [str(item) for item in self.fields]
+        if any(not item.strip() for item in self.fields):
+            raise ValueError("fields 不能包含空字符串")
+        self.fields = list(dict.fromkeys(self.fields))
         if self.status not in (ACTIVE, REVOKED, EXPIRED):
             raise ValueError(f"未知授权状态: {self.status!r}")
 
@@ -170,8 +179,14 @@ class ConsentManager:
         """授予某人员若干用途与字段范围，返回 ACTIVE 的 ConsentRecord。
 
         per spec「员工应能知道采集哪些数据、知道数据用途」：用途与字段均显式记录，
-        字段范围体现数据最小化。
+        字段范围体现数据最小化。主体、用途和授予人必须显式提供。
         """
+        if not isinstance(person_id, str) or not person_id.strip():
+            raise ValueError("person_id 必须为非空字符串")
+        if not isinstance(granted_by, str) or not granted_by.strip():
+            raise ValueError("granted_by 必须为非空字符串")
+        if not isinstance(purposes, (list, tuple)) or not purposes:
+            raise ValueError("purposes 不能为空")
         purposes = [p if isinstance(p, ConsentPurpose) else ConsentPurpose(p) for p in purposes]
         rec = ConsentRecord(
             person_id=person_id,
@@ -200,11 +215,17 @@ class ConsentManager:
         per spec 场景「授权撤回」：平台停止该人员新增采集，按既定流程执行删除/匿名化/移交，
         全过程入审计。
         """
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("撤回必须提供 reason")
+        if not isinstance(actor_id, str) or not actor_id.strip():
+            raise ValueError("撤回必须提供 actor_id")
         rec = self._by_id.get(record_id)
         if rec is None:
             raise KeyError(f"授权记录不存在: {record_id}")
         if rec.status == REVOKED:
             raise ValueError(f"授权记录已撤回: {record_id}")
+        if rec.status == EXPIRED:
+            raise ValueError(f"授权记录已过期: {record_id}")
         rec.revoked_at = now_iso()
         rec.revocation_reason = reason
         rec.status = REVOKED
@@ -242,12 +263,14 @@ class ConsentManager:
         return job
 
     # ---- 查询 ----
-    def is_allowed(self, person_id, purpose, field=None):
+    def is_allowed(self, person_id, purpose, field=None, *, actor_id):
         """判定 (person, purpose, field) 是否被当前有效授权允许。
 
-        字段级校验：若指定 field 且授权记录 fields 非空，则 field 必须在授权字段范围内；
-        授权记录 fields 为空表示不限字段。每次查询入访问审计。
+        actor_id 必填：敏感数据访问审计必须能追溯到访问发起者。字段级校验要求
+        指定 field 时授权记录 fields 非空且包含该字段；fields 为空表示不限字段。
         """
+        if not isinstance(actor_id, str) or not actor_id.strip():
+            raise ValueError("is_allowed 必须提供 actor_id（敏感数据访问需可追溯）")
         purpose = purpose if isinstance(purpose, ConsentPurpose) else ConsentPurpose(purpose)
         allowed = False
         ref = ""
@@ -265,7 +288,7 @@ class ConsentManager:
         self._log(
             ACT_CHECK,
             person_id,
-            "",
+            actor_id,
             ref,
             detail=f"purpose={purpose.value} field={field} allowed={allowed}",
         )

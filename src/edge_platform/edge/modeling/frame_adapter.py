@@ -58,11 +58,12 @@ def unified_to_telemetry_row(frame_dict: dict[str, Any]) -> dict[str, Any]:
         "device_id": frame_dict.get("entity_id", ""),
         "timestamp": frame_dict.get("event_time", ""),
         "sequence": frame_dict.get("sequence") or 0,
-        "source_type": frame_dict.get("source_type", "real"),
+        # 来源是信任标签：缺失必须显式 unknown，不能默认冒充真机数据。
+        "source_type": frame_dict.get("source_type", "unknown"),
         "person_id": frame_dict.get("worker_id"),
         "telemetry": telemetry,
         "quality": {
-            "status": quality.get("status", "good"),
+            "status": quality.get("status", "unknown"),
             "confidence": quality.get("confidence"),
             "packet_loss_pct": quality.get("packet_loss_pct"),
         },

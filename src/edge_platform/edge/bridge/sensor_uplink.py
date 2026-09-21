@@ -57,13 +57,14 @@ MAX_RECORD_ID_TRACE = 1_000
 
 
 def _runtime_mode() -> str:
-    """读取运行时模式（读取失败按 development 宽松，与 event_uplink 一致）。"""
+    """读取运行时模式；未知/读取失败一律按 production 处理（安全 fail-closed）。"""
     try:
         from edge_platform.config import Settings
 
-        return Settings.load().runtime_mode
+        mode = Settings.load().runtime_mode
     except Exception:
-        return "development"
+        return "production"
+    return mode if mode in {"development", "simulation"} else "production"
 
 
 class SensorUplinkBridge:
@@ -109,7 +110,7 @@ class SensorUplinkBridge:
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
-        self._sub_id = None
+        self._sub_id: str | None = None
         self._consecutive_failures = 0
         self._stats = {
             "received": 0,
@@ -177,9 +178,16 @@ class SensorUplinkBridge:
 
     def stop(self, timeout: float = 2.0) -> None:
         self._running = False
+        if self._sub_id is not None:
+            try:
+                self._bus.unsubscribe(STREAM_SENSOR_FRAMES, self._sub_id)
+            except Exception:
+                logger.exception("sensor uplink: 取消帧订阅失败")
+            self._sub_id = None
         thread = self._thread
-        if thread is not None and thread.is_alive():
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
             thread.join(timeout=timeout)
+        self._thread = None
 
     def retarget(self, spark_url: str) -> None:
         """切换上行目标（同一实例、同一订阅、同一队列）。
@@ -193,12 +201,13 @@ class SensorUplinkBridge:
         url = (spark_url or "").strip().rstrip("/")
         if not url or url == self._base_url:
             return
+        if _runtime_mode() == "production" and url.lower().startswith(("http://", "//")):
+            # 拒绝目标必须整体失败：不能先替换掉安全 URL，再让仍在运行的
+            # flush loop 带着机器密钥继续访问明文端点。
+            logger.error("sensor uplink: 拒绝 retarget 到明文 http（production 保留原目标）: %s", url)
+            return
         self._base_url = url
         self._disabled_reason = ""
-        # UR8：scheme 大小写不敏感（RFC 3986）——与 __init__ 同一口径。
-        if url.lower().startswith(("http://", "//")) and _runtime_mode() == "production":
-            self._disabled_reason = "insecure_http_in_production"
-            logger.error("sensor uplink: retarget 到明文 http（production 拒绝）: %s", url)
         with self._lock:
             self._consecutive_failures = 0
         logger.info("sensor uplink: 上行目标已切换 → %s", url)
@@ -355,6 +364,10 @@ class SensorUplinkBridge:
     # ---- 发送 ----
     def _loop(self) -> None:
         while self._running:
+            if not self.enabled:
+                # 防御兜底：任何路径误把运行中实例置为 disabled，也不带密钥继续 POST。
+                time.sleep(0.2)
+                continue
             try:
                 progressed = self.flush_once()
             except Exception:

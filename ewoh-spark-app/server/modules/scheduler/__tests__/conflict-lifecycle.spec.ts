@@ -47,7 +47,7 @@ function matchesEq(row: Record<string, unknown>, sqlExpr: unknown): boolean {
   return true;
 }
 
-function makeDb(seedConflicts: Array<Record<string, unknown>> = [], seedPlans: Array<Record<string, unknown>> = []) {
+function makeDb(seedConflicts: Array<Record<string, unknown>> = [], seedPlans: Array<Record<string, unknown>> = [], insertError?: Error) {
   const conflicts: Array<Record<string, unknown>> = seedConflicts.map((r) => ({ ...r }));
   const plans: Array<Record<string, unknown>> = seedPlans.map((r) => ({ ...r }));
 
@@ -90,7 +90,13 @@ function makeDb(seedConflicts: Array<Record<string, unknown>> = [], seedPlans: A
             conflicts.push({ id: `id-${conflicts.length + 1}`, ...row });
           }
         }
-        return { returning: () => Promise.resolve([]) };
+        // Error must occur after the full drizzle-shaped chain so the service
+        // fails on the actual durable INSERT, not on a malformed test double.
+        if (insertError) {
+          return { onConflictDoNothing: () => Promise.reject(insertError) };
+        }
+        const returning = () => Promise.resolve([]);
+        return { onConflictDoNothing: () => ({ returning }) };
       },
     }),
     update: (table: unknown) => ({
@@ -133,8 +139,12 @@ const OFFLINE_STATE = {
   lockedAssignments: [],
 } as unknown as WorldStateSnapshot;
 
-function makeSvc(seedConflicts: Array<Record<string, unknown>> = [], state: Record<string, unknown> = {}) {
-  const { db, conflicts, plans } = makeDb(seedConflicts);
+function makeSvc(
+  seedConflicts: Array<Record<string, unknown>> = [],
+  state: Record<string, unknown> = {},
+  insertError?: Error,
+) {
+  const { db, conflicts, plans } = makeDb(seedConflicts, [], insertError);
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
       await cb();
@@ -219,6 +229,12 @@ describe('P3-T1: ConflictService 推导 + 归并落库', () => {
     );
   });
 
+  it('批量落库失败 → reconcileNow 显式失败，不广播 detected 假成功', async () => {
+    const { svc, mocks } = makeSvc([], {}, new Error('conflict insert unavailable'));
+    await expect(svc.reconcileNow(testOrgContext())).rejects.toThrow('conflict insert unavailable');
+    expect(mocks.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('列表/详情旧字段向后兼容（status 缺省 OPEN、snapshotVersion=CURRENT）', async () => {
     const { svc } = makeSvc();
     // T04：查询纯读（listConflicts 不写）；详情读取已落库行（先 reconcileNow 落库）。
@@ -238,9 +254,9 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
     await svc.reconcileNow(testOrgContext());
     const conflictId = String(conflicts[0].conflictId);
 
-    const acked = await svc.acknowledge(conflictId, 'op1', '已知问题');
+    const acked = await svc.acknowledge(conflictId, 'op1', '已知问题', testOrgContext());
     expect(acked.status).toBe('ACKNOWLEDGED');
-    expect(acked.acknowledgedBy).toBe('op1');
+    expect(acked.acknowledgedBy).toBe('u1');
     expect(acked.acknowledgedAt).toBeTruthy();
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.acknowledge', entityId: conflictId }),
@@ -249,18 +265,26 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
       'conflict.acknowledged',
       conflictId,
       expect.objectContaining({ status: 'ACKNOWLEDGED' }),
-      // NEST-107：SSE 事件携带 orgId（人工转移路径 ctx 未传 → null 保持全局语义）。
-      null,
+      // NEST-107：SSE 事件携带人工转移路径的显式租户。
+      'org1',
       undefined,
       expect.anything(),
     );
 
-    const resolved = await svc.resolve(conflictId, 'op2', '已处理', 'manual_fix');
+    const resolved = await svc.resolve(conflictId, 'op2', '已处理', 'manual_fix', testOrgContext());
     expect(resolved.status).toBe('RESOLVED');
-    expect(resolved.resolvedBy).toBe('op2');
+    expect(resolved.resolvedBy).toBe('u1');
     expect(resolved.resolution).toBe('manual_fix');
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.resolve', entityId: conflictId }),
+    );
+    expect(mocks.outbox.enqueue).toHaveBeenCalledWith(
+      'conflict.resolved',
+      conflictId,
+      expect.objectContaining({ status: 'RESOLVED', resolution: 'manual_fix' }),
+      'org1',
+      undefined,
+      expect.anything(),
     );
     // 落库行同步。
     expect(conflicts[0].status).toBe('RESOLVED');
@@ -271,11 +295,20 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
     await svc.reconcileNow(testOrgContext());
     const conflictId = String(conflicts[0].conflictId);
 
-    const suppressed = await svc.suppress(conflictId, 'op1', '暂时忽略', Date.now() + HOUR);
+    const suppressed = await svc.suppress(conflictId, 'op1', '暂时忽略', Date.now() + HOUR, testOrgContext());
     expect(suppressed.status).toBe('SUPPRESSED');
     expect(suppressed.suppressUntil).toBeTruthy();
+    // Operator display names cannot override the authenticated audit identity.
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.suppress' }),
+    );
+    expect(mocks.outbox.enqueue).toHaveBeenCalledWith(
+      'conflict.suppressed',
+      conflictId,
+      expect.objectContaining({ status: 'SUPPRESSED' }),
+      'org1',
+      undefined,
+      expect.anything(),
     );
 
     // suppressUntil 内：reconcile 保持 SUPPRESSED，不重复推 conflict.detected。
@@ -293,6 +326,20 @@ describe('P3-T1: Conflict 生命周期状态机（02 §6.1）', () => {
     expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'conflict.reopen', reason: 'suppress_until expired' }),
     );
+  });
+
+  it('客户端 operator 不能覆盖认证主体（审计身份服务端权威）', async () => {
+    const { svc, conflicts, mocks } = makeSvc();
+    await svc.reconcileNow(testOrgContext());
+    const conflictId = String(conflicts[0].conflictId);
+    const ctx = testOrgContext();
+
+    await svc.acknowledge(conflictId, 'attacker', 'ack', ctx);
+    await svc.resolve(conflictId, 'attacker', 'done', undefined, ctx);
+    expect(mocks.audit.appendAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'u1' }),
+    );
+    expect(mocks.audit.appendAuditLog.mock.calls.some(([entry]) => entry?.actorId === 'attacker')).toBe(false);
   });
 
   it('ACKNOWLEDGED → SUPPRESSED 允许；RESOLVED 不可再 suppress', async () => {

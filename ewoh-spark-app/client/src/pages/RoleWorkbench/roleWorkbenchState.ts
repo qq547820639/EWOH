@@ -9,8 +9,46 @@ import type { ListDefinition } from './roleSchema';
  * 服务端视图键、旧版 localStorage 键迁移的纯逻辑收敛于此，便于单测与复用。
  */
 
-/** 旧版 localStorage 视图键前缀（用于一次性迁移）。 */
+/** 旧版 localStorage 视图键前缀（数据仍保留，供带外审查）。 */
 export const LEGACY_VIEW_PREFIX = 'ewoh.roleWorkbench.view.';
+export const LEGACY_VIEW_MIGRATION_FLAG_KEY = 'ewoh.roleWorkbench.legacyViewMigration.v1';
+
+export interface LegacyViewMigrationResult {
+  skipped: boolean;
+  count: number;
+  reason?: 'legacy_views_have_no_owner_binding';
+}
+
+/**
+ * Old localStorage views carry no authenticated owner binding. On a shared
+ * device they must not be silently imported into the current user's server-side
+ * account. Preserve the original local data and write a durable skip marker.
+ */
+export function migrateLegacyWorkbenchViews(
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'length' | 'key'> | null,
+): LegacyViewMigrationResult {
+  if (!storage) return { skipped: false, count: 0 };
+  if (storage.getItem(LEGACY_VIEW_MIGRATION_FLAG_KEY)) {
+    return { skipped: true, count: 0 };
+  }
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(LEGACY_VIEW_PREFIX)) keys.push(key);
+  }
+  const result: LegacyViewMigrationResult = keys.length
+    ? {
+        skipped: true,
+        count: keys.length,
+        reason: 'legacy_views_have_no_owner_binding',
+      }
+    : { skipped: true, count: 0 };
+  storage.setItem(
+    LEGACY_VIEW_MIGRATION_FLAG_KEY,
+    JSON.stringify({ ...result, updatedAt: new Date().toISOString() }),
+  );
+  return result;
+}
 
 /** 服务端分页的每页大小（服务端 clamp 上限 100），列表查询的领域常量。 */
 export const PAGE_SIZE = 50;
@@ -133,13 +171,21 @@ export function buildPageParams(
   return next;
 }
 
-/** 切换到指定角色（保留其它查询参数）。 */
+/** 切换角色时重置列表状态与旧角色视图，避免把筛选语境带入另一个角色。 */
 export function buildRoleParams(
   prev: URLSearchParams,
   next: RoleWorkbenchRole,
+  lists: Array<{ key: string }>,
 ): URLSearchParams {
   const params = new URLSearchParams(prev);
   params.set('role', next);
+  params.delete('view');
+  for (const list of lists) {
+    params.delete(`${list.key}.filter`);
+    params.delete(`${list.key}.sort`);
+    params.delete(`${list.key}.dir`);
+    params.delete(`${list.key}.page`);
+  }
   return params;
 }
 

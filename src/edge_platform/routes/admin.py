@@ -14,11 +14,14 @@ def api_audit(ctx, h, req_meta):
     action = h.arg("action") or None
     actor_id = h.arg("actor_id") or None
     limit, offset = h._limit(), h._offset()
-    items = (
-        ctx.storage.list_audit_logs(action=action, actor_id=actor_id, limit=limit, offset=offset)
-        if hasattr(ctx.storage, "list_audit_logs")
-        else []
-    )
+    if not hasattr(ctx.storage, "list_audit_logs"):
+        return h._new_error("storage_unavailable", "审计存储未就绪，拒绝伪造空审计", 503)
+    try:
+        items = ctx.storage.list_audit_logs(
+            action=action, actor_id=actor_id, limit=limit, offset=offset
+        )
+    except Exception:
+        return h._new_error("storage_unavailable", "审计存储查询失败", 503)
     return h.send_json({"items": items, "limit": limit, "offset": offset, "now": now_iso()})
 
 

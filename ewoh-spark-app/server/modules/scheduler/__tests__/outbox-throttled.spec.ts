@@ -3,6 +3,7 @@
 //   - 窗口内同 eventType+entityId 已有 pending → 覆盖 payload（不新增行）
 //   - 窗口外/无 pending → 正常 enqueue 新增
 //   - 跨实体互不影响（独立窗口）
+//   - 同形 entityId 不跨租户合并（orgId 是合并边界）
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OutboxService } from '../outbox.service';
 
@@ -81,9 +82,10 @@ describe('C4 enqueueThrottled 合并窗口节流', () => {
           createdAt: now,
           payloadJson: { state: 'busy' },
           sequence: 1,
+          orgId: 'org1',
         },
       ],
-      (r) => r.eventType === 'resource.state_changed' && r.entityId === 'res-1' && r.status === 'pending',
+      (r) => r.eventType === 'resource.state_changed' && r.entityId === 'res-1' && r.status === 'pending' && r.orgId === 'org1',
     );
     const before = rows.length;
     const out = await svc.enqueueThrottled(
@@ -95,6 +97,37 @@ describe('C4 enqueueThrottled 合并窗口节流', () => {
     );
     expect(rows.length).toBe(before); // 未新增
     expect(out.payload).toEqual({ state: 'idle', load: 0.1 }); // 最终态覆盖
+  });
+
+  it('同类型同实体但不同 org 的 pending 事件 → 不跨租户合并', async () => {
+    const now = new Date();
+    const { svc, rows } = makeOutbox(
+      [
+        {
+          id: 'r1',
+          eventType: 'resource.state_changed',
+          entityId: 'res-1',
+          status: 'pending',
+          createdAt: now,
+          payloadJson: { state: 'busy', org: 'org1' },
+          sequence: 1,
+          orgId: 'org1',
+        },
+      ],
+      (r) => r.eventType === 'resource.state_changed' && r.entityId === 'res-1' && r.status === 'pending' && r.orgId === 'org2',
+    );
+    const out = await svc.enqueueThrottled(
+      'resource.state_changed',
+      'res-1',
+      { state: 'idle', org: 'org2' },
+      'org2',
+      5000,
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].payloadJson).toEqual({ state: 'busy', org: 'org1' });
+    expect(out.orgId).toBe('org2');
+    expect(out.payload).toEqual({ state: 'idle', org: 'org2' });
   });
 
   it('无命中（窗口外/无 pending/不同实体）→ 正常 enqueue 新增行', async () => {

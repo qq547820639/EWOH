@@ -84,7 +84,7 @@ describe('执行机构契约 ↔ 边缘实现', () => {
     for (const good of ['control:CR-1', 'approval:AP-1', 'plan:PLAN-1', 'task:TASK-1']) {
       expect(authorizationRefValid(good)).toBe(true);
     }
-    for (const bad of ['', '  ', 'CR-1', 'ControlX:1']) {
+    for (const bad of ['', '  ', 'CR-1', 'ControlX:1', 'control:', 'approval:  ']) {
       expect(authorizationRefValid(bad)).toBe(false);
     }
   });

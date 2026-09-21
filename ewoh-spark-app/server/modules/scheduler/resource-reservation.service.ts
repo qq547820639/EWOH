@@ -232,7 +232,17 @@ export class ResourceReservationService {
         const rows = await this.db
           .update(ewohResourceReservation)
           .set({ status: 'released' })
-          .where(eq(ewohResourceReservation.planId, planId))
+          .where(
+            and(
+              eq(ewohResourceReservation.planId, planId),
+              // planId is not a global authorization key. Release only this
+              // caller's rows plus explicit legacy NULL-org rows.
+              or(
+                isNull(ewohResourceReservation.orgId),
+                eq(ewohResourceReservation.orgId, ctx.primaryOrgId),
+              ),
+            ),
+          )
           .returning();
         count = rows.length;
       },

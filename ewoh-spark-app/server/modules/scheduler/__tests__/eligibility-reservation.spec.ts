@@ -172,3 +172,61 @@ describe('EligibilityService reservation 冲突（Task 0.2）', () => {
     });
   });
 });
+
+describe('EligibilityService safety and availability boundaries', () => {
+  const person = {
+    id: 'p1', status: 'AVAILABLE', skills: ['work'], certifications: [],
+    stationId: null, loadLevel: 0, fatigueLevel: 0, healthStatus: 'normal',
+  };
+  const task = { id: 't1', taskType: 'work', requiredSkills: ['work'], requiredCertifications: [], stationId: null, zoneId: null, predIds: [] };
+  const device = { id: 'd1', batteryPct: 100, online: true, status: 'AVAILABLE', capabilities: [] };
+  const svc = new EligibilityService();
+
+  it('rejects a safety-blocked device (fail-closed)', () => {
+    const result = svc.check(person, task, device, makeEligibilityCtx({
+      safetyBlockedDeviceIds: ['d1'],
+      candidateStartMs: 9 * 3600_000,
+      candidateEndMs: 10 * 3600_000,
+    }));
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('safety_blocked');
+  });
+
+  it('requires the full candidate interval to fit a person availability window', () => {
+    const result = svc.check(
+      { ...person, availableWindows: [{ startMs: 9 * 3600_000, endMs: 9.5 * 3600_000 }] },
+      task,
+      null,
+      makeEligibilityCtx({ candidateStartMs: 9 * 3600_000, candidateEndMs: 10 * 3600_000 }),
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('time_conflict');
+  });
+
+  it('requires the full candidate interval to fit a device availability window', () => {
+    const result = svc.check(
+      person,
+      task,
+      { ...device, availableWindows: [{ startMs: 9 * 3600_000, endMs: 9.5 * 3600_000 }] },
+      makeEligibilityCtx({ candidateStartMs: 9 * 3600_000, candidateEndMs: 10 * 3600_000 }),
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('time_conflict');
+  });
+
+  it('requires the full candidate interval to fit a station availability window', () => {
+    const result = svc.check(
+      person,
+      { ...task, stationId: 'st1' },
+      null,
+      makeEligibilityCtx({
+        candidateStationId: 'st1',
+        stationAvailableWindowsById: new Map([['st1', [{ startMs: 9 * 3600_000, endMs: 9.5 * 3600_000 }]]]),
+        candidateStartMs: 9 * 3600_000,
+        candidateEndMs: 10 * 3600_000,
+      }),
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('time_conflict');
+  });
+});

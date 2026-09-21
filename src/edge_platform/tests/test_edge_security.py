@@ -34,6 +34,9 @@ class _ProductionServerFixture:
         self._old_env = {}
         self._set_env("EWOH_RUNTIME_MODE", runtime_mode)
         self._set_env("EWOH_CORS_ORIGINS", cors_origins)
+        self._set_env("EWOH_SEED_ADMIN_PASSWORD", "security-admin-7f2!")
+        self._set_env("EWOH_SEED_SAFETY_PASSWORD", "security-safety-9c4!")
+        self._set_env("EWOH_SEED_OPERATOR_PASSWORD", "security-operator-1d8!")
         # Settings 是单例缓存，必须重置使本次 env 生效
         from edge_platform.config import Settings
 
@@ -94,7 +97,7 @@ class _ProductionServerFixture:
         except urllib.error.HTTPError as e:
             return e.code, e.headers, e.read()
 
-    def login(self, username="admin", password="admin123"):
+    def login(self, username="admin", password="security-admin-7f2!"):
         """登录获取 Bearer token（EDGE-001 整改后 production GET 面需要认证）。"""
         status, _, body = self.req(
             "/api/auth/login", method="POST", body={"username": username, "password": password}
@@ -196,7 +199,7 @@ class ProductionAuthTest(unittest.TestCase):
         status, _, body = self.fx.req(
             "/api/auth/login",
             method="POST",
-            body={"username": "admin", "password": "admin123"},
+            body={"username": "admin", "password": "security-admin-7f2!"},
         )
         self.assertEqual(status, 200, body)
         self.assertIn("token", json.loads(body))

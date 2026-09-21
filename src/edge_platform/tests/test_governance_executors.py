@@ -209,6 +209,23 @@ class NeverPurgeTest(_BasePurgeTest):
         self.assertEqual(self.executor.dry_run(self.storage, DataClass.TRAINING_DATA), 0)
 
 
+class PurgeExecutorSafetyTest(_BasePurgeTest):
+    def test_zero_batch_size_fails_closed(self):
+        self._insert_telemetry("TS-OLD", _ts_days_ago(40))
+        with self.assertRaises(ValueError):
+            self.executor.purge_expired(self.storage, DataClass.HIGH_FREQ_TELEMETRY, batch_size=0)
+        n = self.storage._db.execute("SELECT COUNT(*) c FROM telemetry").fetchone()["c"]
+        self.assertEqual(n, 1)
+
+    def test_invalid_retention_days_rejected(self):
+        for bad_days in (-2, 0):
+            with self.assertRaises(ValueError):
+                RetentionPolicy(DataClass.HIGH_FREQ_TELEMETRY, bad_days)
+        manager = RetentionManager()
+        with self.assertRaises(ValueError):
+            manager.register(RetentionPolicy(DataClass.HIGH_FREQ_TELEMETRY, -2))
+
+
 class PurgeAllTest(_BasePurgeTest):
     def test_purge_all_returns_dict_for_every_class(self):
         self._insert_telemetry("TS-OLD", _ts_days_ago(40))

@@ -67,6 +67,16 @@ class AdapterFactoryTest(unittest.TestCase):
             build_adapters([{"kind": "mes", "sourceType": "real"}])
         self.assertIn("缺少必填参数", str(cm.exception))
 
+    def test_duplicate_device_identity_fail_closed(self):
+        with self.assertRaises(ValueError) as cm:
+            build_adapters(
+                [
+                    {"kind": "mes", "deviceId": "DUP-1"},
+                    {"kind": "agv", "deviceId": "DUP-1"},
+                ]
+            )
+        self.assertIn("设备标识重复", str(cm.exception))
+
     def test_empty_spec_is_valid_empty_manager(self):
         # 空列表 = 合法空管理器（无设备接入），不是 stub
         self.assertEqual(build_adapters([]), [])

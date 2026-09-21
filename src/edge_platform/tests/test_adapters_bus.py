@@ -140,6 +140,11 @@ class UWBSimulatedAdapterTest(unittest.TestCase):
         self.assertNotIn("vendor_internal", msg)
         self.assertNotIn("raw_rssi", msg)
 
+    def test_uwb_source_type_cannot_be_spoofed_by_payload(self):
+        raw = {"tag_id": "TAG-11", "pos_x": 1.0, "pos_y": 2.0, "source_type": "real"}
+        msg = parse_uwb_frame(raw, default_source_type="simulated")
+        self.assertEqual(msg["source_type"], "simulated")
+
     def test_base_adapter_rejects_bad_source_type(self):
         with self.assertRaises(ValueError):
             BaseAdapter("X", source_type="bogus")
@@ -201,6 +206,12 @@ class CameraSimulatedAdapterTest(unittest.TestCase):
         self.assertEqual(msg["model_version"], "mv-1")
         self.assertNotIn("vendor_meta", msg)
 
+    def test_camera_source_type_and_identity_cannot_be_spoofed(self):
+        raw = {"camera_id": "rogue-camera", "source_type": "real", "detections": []}
+        msg = parse_detection(raw, camera_id="CAM-configured", default_source_type="simulated")
+        self.assertEqual(msg["camera_id"], "CAM-configured")
+        self.assertEqual(msg["source_type"], "simulated")
+
 
 # ---------- MES ----------
 class MESSimulatedAdapterTest(unittest.TestCase):
@@ -254,6 +265,10 @@ class MESSimulatedAdapterTest(unittest.TestCase):
         self.assertEqual(msg["status"], "assigned")
         self.assertEqual(msg["assigned_person_id"], "P-5")
         self.assertNotIn("erp_internal_code", msg)
+
+    def test_mes_source_type_cannot_be_spoofed_by_payload(self):
+        msg = parse_work_order({"wo_id": "WO-SOURCE", "source_type": "real"}, default_source_type="simulated")
+        self.assertEqual(msg["source_type"], "simulated")
 
 
 # ---------- Environment ----------
@@ -314,6 +329,23 @@ class EnvSimulatedAdapterTest(unittest.TestCase):
         self.assertEqual(msg["quality_status"], "good")
         self.assertNotIn("vendor_meta", msg)
 
+    def test_env_identity_and_source_type_cannot_be_spoofed(self):
+        raw = {
+            "dev_id": "rogue-env",
+            "station": "rogue-station",
+            "source_type": "real",
+            "temp_c": 25.0,
+        }
+        msg = parse_env_reading(
+            raw,
+            default_sensor_id="ENV-configured",
+            default_station_id="STN-configured",
+            default_source_type="simulated",
+        )
+        self.assertEqual(msg["sensor_id"], "ENV-configured")
+        self.assertEqual(msg["station_id"], "STN-configured")
+        self.assertEqual(msg["source_type"], "simulated")
+
     def test_parse_env_reading_invalid_when_empty(self):
         msg = parse_env_reading({"dev_id": "ENV-3"})
         self.assertEqual(msg["quality_status"], "invalid")
@@ -350,6 +382,12 @@ class ExoSemanticTest(unittest.TestCase):
         self.assertIn("trunk_pitch", TIER_FIELDS[TIER_MOTION])
         self.assertIn("cumulative_load", TIER_FIELDS[TIER_LOAD])
         self.assertIn("current_task", TIER_FIELDS[TIER_BUSINESS])
+
+    def test_unified_and_storage_defaults_do_not_claim_real_source(self):
+        frame = UnifiedExoFrame(entity_id="EXO-1")
+        self.assertEqual(frame.source_type, "unknown")
+        restored = from_storage_dict({"entity_id": "EXO-1", "record_id": "R-1"})
+        self.assertEqual(restored.source_type, "unknown")
 
     def test_vendor_fields_not_leaked(self):
         raw = {
@@ -527,6 +565,24 @@ class MessageBusTest(unittest.TestCase):
             bus.publish("events", {"ts": ts, "seq": seq})
         r = bus.range("events", "2026-07-31T00:00:01.000+00:00", "2026-07-31T00:00:03.000+00:00")
         self.assertEqual([m["seq"] for m in r], [1, 2, 3])
+
+    def test_range_compares_instant_across_timezone_offsets(self):
+        bus = MessageBus()
+        msgs = [
+            # instant = 2026-07-30T22:00Z（ lexical 排序会错误排到最后）
+            ("2026-07-31T00:00:00.000+02:00", 0),
+            ("2026-07-31T00:00:00.000Z", 1),
+            # instant = 2026-07-30T23:00Z
+            ("2026-07-31T01:00:00.000+02:00", 2),
+        ]
+        for ts, seq in msgs:
+            bus.publish("events", {"ts": ts, "seq": seq})
+        result = bus.range(
+            "events",
+            "2026-07-30T23:30:00.000Z",
+            "2026-07-31T00:30:00.000Z",
+        )
+        self.assertEqual([m["seq"] for m in result], [1])
 
     def test_ring_buffer_cap_drops_oldest(self):
         bus = MessageBus(cap=10)

@@ -38,11 +38,13 @@ const mockQueries: Record<string, MockQueryState> = {};
 /** 按声明顺序捕获 useMutation 的 options（dqMutation 是第一个）。 */
 const mockMutationCalls: Array<Record<string, unknown>> = [];
 const mockInvalidate = jest.fn();
+let mockUseQueryCapture: ((options: { queryKey?: unknown[] }) => void) | null = null;
 
 const ok = (data?: unknown): MockQueryState => ({ data, isLoading: false, isError: false, error: null });
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: (options: { queryKey?: unknown[] }) => {
+    mockUseQueryCapture?.(options);
     const key = options.queryKey ?? [];
     // 租户分片键首段是 org（'org-under-test'），业务段在第二位。
     const lookup = key[0] === 'org-under-test' ? key[1] : key[0];
@@ -67,6 +69,15 @@ jest.mock('../../hooks/queryKeys', () => ({
         if (prop === 'dataQualityConfirmations') {
           return (eventIds: readonly string[]) =>
             ['org-under-test', 'data-quality-confirmations', [...eventIds].sort()];
+        }
+        if (prop === 'deviceResponsibilityCoverage') {
+          return ['org-under-test', 'device-responsibilities', 'coverage'];
+        }
+        if (prop === 'perceptionFusion') {
+          return ['org-under-test', 'perception', 'fusion'];
+        }
+        if (prop === 'schedulerPlannedVsActual') {
+          return (windowDays: number) => ['scheduler', 'org-under-test', 'planned-vs-actual', windowDays];
         }
         if (
           prop === 'schedulerExecutions'
@@ -119,6 +130,23 @@ function render(): string {
   );
 }
 
+describe('ShiftWorkbench 查询键租户分片', () => {
+  it('responsibility/perception/planned-vs-actual caches use tenant keys', () => {
+    const captured: Array<readonly unknown[] | undefined> = [];
+    mockUseQueryCapture = (options) => {
+      captured.push(options.queryKey);
+    };
+    try {
+      render();
+    } finally {
+      mockUseQueryCapture = null;
+    }
+    expect(captured).toContainEqual(['org-under-test', 'device-responsibilities', 'coverage']);
+    expect(captured).toContainEqual(['org-under-test', 'perception', 'fusion']);
+    expect(captured).toContainEqual(['scheduler', 'org-under-test', 'planned-vs-actual', 30]);
+  });
+});
+
 describe('ShiftWorkbench 渲染（FE-1 次级查询失败不得渲染成业务空态）', () => {
   beforeEach(() => {
     for (const key of Object.keys(mockQueries)) delete mockQueries[key];
@@ -138,9 +166,9 @@ describe('ShiftWorkbench 渲染（FE-1 次级查询失败不得渲染成业务�
     mockQueries.schedulerExecutions = ok({ executions: [] });
     mockQueries.dataQualityConfirmations = ok([]);
     mockQueries.notificationsPending = ok([]);
-    mockQueries['perception'] = ok([]);
-    mockQueries['scheduler'] = ok(undefined);
-    mockQueries['device-responsibilities'] = ok({
+    mockQueries.perceptionFusion = ok([]);
+    mockQueries.schedulerPlannedVsActual = ok(undefined);
+    mockQueries.deviceResponsibilityCoverage = ok({
       shiftId: 'S1',
       shiftUnknown: false,
       total: 0,

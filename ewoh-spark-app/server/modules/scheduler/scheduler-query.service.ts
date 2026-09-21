@@ -13,6 +13,7 @@ import {
   Injectable,
   Inject,
   Logger,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -178,6 +179,9 @@ export class SchedulerQueryService {
   }
 
   async getRun(runId: string, actor?: OrgContext): Promise<SchedulingRun | null> {
+    // getRun is also an HTTP read face; the detail path must not rely only on
+    // assertTenantVisible after a cross-tenant row has already been selected.
+    this.assertActorForHttp(actor);
     const [row] = await this.db
       .select()
       .from(ewohSchedulingRun)
@@ -197,6 +201,9 @@ export class SchedulerQueryService {
    * 复用现有 db（drizzle）与 planService.getPlan，不引入并行调度器。
    */
   async listRuns(params: ListRunsRequest = {}, actor?: OrgContext): Promise<ListRunsResponse> {
+    // Lists are the highest-volume read path: never fall back to an unscoped
+    // query when an authenticated HTTP request failed to carry its org context.
+    this.assertActorForHttp(actor);
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
 
@@ -733,9 +740,14 @@ export class SchedulerQueryService {
     return this.conflictService;
   }
 
-  /** 执行领域：查询。R2-SSV-07：HTTP 守卫。 */
+  /**
+   * 执行领域：查询。R2-SSV-07：HTTP 守卫。
+   *
+   * Person scope is enforced here, not only at the controller, so a future
+   * route cannot accidentally expose the execution ledger to worker/device_ops.
+   */
   async executionList(
-    query: {
+    input: {
       planId?: string; taskId?: string; status?: string; personId?: string;
       limit?: number; offset?: number;
     },
@@ -743,6 +755,27 @@ export class SchedulerQueryService {
   ): Promise<ExecutionListResponse> {
     this.assertActorForHttp(actor);
     if (!this.executionService) throw new Error('executionService not injected');
+    const query = { ...input };
+
+    // Non-privileged HTTP callers are constrained to the person bound in the
+    // signed token. Internal/background calls (no ALS request context) keep
+    // explicit system semantics.
+    if (actor && currentRequestContext()) {
+      const privileged = actor.isGlobalAdmin || (actor.roles ?? []).some((role) =>
+        ['global_admin', 'dispatcher', 'workshop_lead'].includes(role),
+      );
+      if (!privileged) {
+        const boundPersonId = actor.personId?.trim();
+        if (!boundPersonId) {
+          throw new ForbiddenException('EXECUTION_PERSON_UNBOUND');
+        }
+        if (query.personId && query.personId !== boundPersonId) {
+          throw new ForbiddenException('EXECUTION_PERSON_FORBIDDEN');
+        }
+        query.personId = boundPersonId;
+      }
+    }
+
     // ADR-073：execution 读面 org 接线（org 匹配或 NULL 存量）。
     return this.executionService.list({ ...query, orgId: actor?.primaryOrgId ?? null });
   }

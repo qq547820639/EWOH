@@ -98,7 +98,12 @@ function makePlanService(opts: {
     update: jest.fn(() => ({
       set: jest.fn((patch: Record<string, unknown>) => {
         updatePatches.push(patch);
-        return { where: jest.fn(async () => []) };
+        return {
+          where: jest.fn(() => ({
+            then: (resolve: (v: unknown[]) => void) => resolve([patch]),
+            returning: jest.fn(async () => [{ id: 'updated' }]),
+          })),
+        };
       }),
     })),
     insert: jest.fn((table: unknown) => ({
@@ -270,6 +275,7 @@ describe('PlanService plan_approval 决策台账追加（NO-13h / ADR-057）', (
     const ctx = makePlanService({
       planRow: {
         planId: PLAN_ID,
+        status: 'proposed',
         version: 1,
         isShadow: false,
         decisionRecordsJson: [{ decisionId: 'decision:PLAN-DEC-1:task:t-1001', kind: 'task_assignment' }],
@@ -296,7 +302,7 @@ describe('PlanService plan_approval 决策台账追加（NO-13h / ADR-057）', (
 
   it('rejectPlan：追加 rejected 决策（selected=opt:reject）', async () => {
     const ctx = makePlanService({
-      planRow: { planId: PLAN_ID, version: 1, isShadow: false, decisionRecordsJson: [] },
+      planRow: { planId: PLAN_ID, status: 'proposed', version: 1, isShadow: false, decisionRecordsJson: [] },
       assignmentRows: [makeAssignmentRow()],
     });
     await ctx.service.rejectPlan(PLAN_ID, { operator: 'tester', reason: '冲突过多' }, CTX);

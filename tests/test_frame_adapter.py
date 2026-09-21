@@ -68,7 +68,9 @@ class FrameAdapterTest(unittest.TestCase):
         row = unified_to_telemetry_row({"entity_id": "EXO-1", "event_time": "2026-01-01T00:00:00Z"})
         self.assertEqual(row["device_id"], "EXO-1")
         self.assertEqual(row["telemetry"], {})
-        self.assertEqual(row["quality"]["status"], "good")  # 缺省 good
+        # 安全默认：缺 provenance/质量时不得猜测 good 或 real。
+        self.assertEqual(row["quality"]["status"], "unknown")
+        self.assertEqual(row["source_type"], "unknown")
 
     def test_roundtrip_with_pipeline_consumer_keys(self):
         # 转换产物可被 features.extract_features 消费（关键键存在）

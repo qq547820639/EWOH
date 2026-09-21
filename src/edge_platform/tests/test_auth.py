@@ -127,6 +127,30 @@ class SeedPasswordProductionEnforcementTest(_EnvIsolatedTest):
         OfflineIdentityBackend._seed_verifiers = None
         super().tearDown()
 
+    def test_runtime_mode_typo_fails_closed_instead_of_development_defaults(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "producton"
+        Settings.reset()
+        with self.assertRaises(RuntimeError):
+            OfflineIdentityBackend()
+
+    def test_policy_cache_is_bound_to_runtime_policy(self):
+        # 先按 development 默认口令派生缓存；随后同进程切到 production。
+        # 修复前进程级缓存会复用旧凭据并让 admin123 在生产继续生效。
+        OfflineIdentityBackend._seed_verifiers = None
+        development = OfflineIdentityBackend()
+        self.assertIsNotNone(development.authenticate("admin", "admin123"))
+
+        os.environ["EWOH_RUNTIME_MODE"] = "production"
+        for key in (
+            "EWOH_SEED_ADMIN_PASSWORD",
+            "EWOH_SEED_SAFETY_PASSWORD",
+            "EWOH_SEED_OPERATOR_PASSWORD",
+        ):
+            os.environ.pop(key, None)
+        Settings.reset()
+        with self.assertRaises(RuntimeError):
+            OfflineIdentityBackend()
+
     def test_production_without_env_rejects(self):
         os.environ["EWOH_RUNTIME_MODE"] = "production"
         Settings.reset()
@@ -199,6 +223,7 @@ class SessionManagerTest(_EnvIsolatedTest):
         self.assertIsNotNone(session)
         self.assertIsInstance(session, Session)
         self.assertEqual(session.user_id, user.user_id)
+        self.assertEqual(session.username, user.username)
         self.assertEqual(session.role, user.role)
         self.assertIsInstance(session.created_at, datetime)
         self.assertIsInstance(session.expires_at, datetime)
@@ -249,6 +274,62 @@ class SessionManagerTest(_EnvIsolatedTest):
         self.assertIsNone(mgr.verify(token))
         # 过期会话已被清除
         self.assertNotIn(token, mgr._sessions)
+
+
+    def test_refresh_preserves_username_in_session_contract(self):
+        mgr = SessionManager()
+        user = User(
+            user_id="U-CUSTOM",
+            username="custom-operator",
+            role="operator",
+            display_name="自定义操作员",
+        )
+        old_token = mgr.create(user)
+        session = mgr.verify(old_token)
+        assert session is not None
+        self.assertEqual(session.username, "custom-operator")
+        mgr.revoke(old_token)
+        new_token = mgr.create(
+            User(
+                user_id=session.user_id,
+                username=session.username or session.user_id,
+                role=session.role,
+                display_name="",
+            )
+        )
+        refreshed = mgr.verify(new_token)
+        assert refreshed is not None
+        self.assertEqual(refreshed.user_id, "U-CUSTOM")
+        self.assertEqual(refreshed.username, "custom-operator")
+
+
+class RuntimeModeFailClosedTest(_EnvIsolatedTest):
+    def test_unknown_and_unreadable_runtime_mode_are_production(self):
+        from edge_platform.routes._util import resolve_actor, runtime_mode
+
+        os.environ["EWOH_RUNTIME_MODE"] = "producton"
+        Settings.reset()
+        self.assertEqual(runtime_mode(), "production")
+
+        class Handler:
+            def _actor(self):
+                return None
+
+        payload = {"actor_id": "client-forged"}
+        self.assertIsNone(resolve_actor(Handler(), payload, "actor_id"))
+
+        original_load = Settings.load
+
+        def broken_load(*args, **kwargs):
+            raise RuntimeError("config backend unavailable")
+
+        Settings.load = broken_load  # type: ignore[method-assign]
+        try:
+            self.assertEqual(runtime_mode(), "production")
+            self.assertIsNone(resolve_actor(Handler(), payload, "actor_id"))
+        finally:
+            Settings.load = original_load  # type: ignore[method-assign]
+        Settings.reset()
 
 
 # ---------- 登录失败锁定 ----------

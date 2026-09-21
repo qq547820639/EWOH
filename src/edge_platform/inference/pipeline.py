@@ -311,7 +311,11 @@ class InferencePipeline:
         if not person_id:
             return True  # 无主体信息，不阻止（保持现有行为）
         try:
-            allowed = self._consent_manager.is_allowed(person_id, CONSENT_PURPOSE_TELEMETRY)
+            allowed = self._consent_manager.is_allowed(
+                person_id,
+                CONSENT_PURPOSE_TELEMETRY,
+                actor_id="inference-pipeline",
+            )
         except Exception:
             # EDGE-107（2026-08-17 审计整改）：授权服务异常时 fail-closed——
             # 授权态不可判定即跳过该帧（隐私优先），并记录审计计数便于诊断；

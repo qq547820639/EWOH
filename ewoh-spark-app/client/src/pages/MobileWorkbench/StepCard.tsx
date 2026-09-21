@@ -3,7 +3,7 @@ import type { MobileWorkbenchStep } from '../../api/mobile';
 import { Button } from '@client/src/components/ui/button';
 import { Badge } from '@client/src/components/ui/badge';
 import { Input } from '@client/src/components/ui/input';
-import { stepStatusLabel } from './labels';
+import { qualityResultLabel, stepStatusLabel } from './labels';
 
 export const STEP_ACTIONS = [
   'start',
@@ -99,7 +99,9 @@ export function StepCard(props: StepCardProps): React.ReactElement {
               {exception.reportedAt ? `（${String(exception.reportedAt)}）` : ''}
             </p>
           )}
-          {quality && <p>质检：{String(quality.result ?? '')}</p>}
+          {quality && (
+            <p>质检：{qualityResultLabel(String(quality.result ?? ''))}</p>
+          )}
         </div>
       )}
       <div className="mt-3 flex flex-wrap gap-1">

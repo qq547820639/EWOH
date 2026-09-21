@@ -73,7 +73,7 @@ describe('offlineDb', () => {
     expect(backoffDelay(10)).toBe(10000);
   });
 
-  it('migrates legacy localStorage pending actions into IndexedDB once', async () => {
+  it('does not migrate unattributed legacy localStorage actions into an identity vault', async () => {
     const storage = createStorage({
       [PENDING_ACTIONS_STORAGE_KEY]: JSON.stringify([
         {
@@ -87,13 +87,6 @@ describe('offlineDb', () => {
             contentType: 'image/jpeg',
             dataUrl: 'data:image/jpeg;base64,aGVsbG8=',
           },
-        },
-        {
-          id: 'legacy-2',
-          type: 'inspection',
-          orderId: 'WO-1',
-          stepId: 'S2',
-          body: { result: 'pass' },
         },
       ]),
     });
@@ -109,17 +102,13 @@ describe('offlineDb', () => {
       syncState,
     );
 
-    expect(migrated).toBe(2);
-    const all = await pending.getAll();
-    expect(all).toHaveLength(2);
-    expect(all[0].idempotencyKey).toBeDefined();
-    // Attachment photo converted to a Blob and stored in the attachment store.
-    expect(all[0].attachmentId).toBeDefined();
-    expect(attachments.values.size).toBe(1);
-    const attachment = Array.from(attachments.values.values())[0];
-    expect(attachment.blob.type).toBe('image/jpeg');
-
-    // Second run is a no-op (flag set).
+    expect(migrated).toBe(0);
+    expect(await pending.count()).toBe(0);
+    expect(attachments.values.size).toBe(0);
+    // Legacy evidence is preserved for out-of-band owner review, not deleted.
+    expect(storage.getItem(PENDING_ACTIONS_STORAGE_KEY)).toBeTruthy();
+    const flag = await syncState.get(MIGRATION_FLAG_KEY);
+    expect(flag?.value).toMatchObject({ skipped: true, reason: 'legacy_queue_has_no_owner_binding' });
     const second = await migratePendingActionsFromLocalStorage(
       storage,
       pending,
@@ -127,8 +116,6 @@ describe('offlineDb', () => {
       syncState,
     );
     expect(second).toBe(0);
-    expect(await pending.count()).toBe(2);
-    expect(await syncState.get(MIGRATION_FLAG_KEY)).toBeDefined();
   });
 
   it('flushOfflineQueue retries transient failures with backoff and removes on success', async () => {
@@ -596,21 +583,11 @@ describe('offlineDb', () => {
     expect(maxActiveEntities).toBe(2);
   });
 
-  it('migrate cleans the legacy localStorage key when removeItem is available', async () => {
-    const values: Record<string, string> = {
-      [PENDING_ACTIONS_STORAGE_KEY]: JSON.stringify([
-        { id: 'legacy-clean', type: 'transition', orderId: 'WO-1', stepId: 'S1' },
-      ]),
-    };
-    const storage: StorageLike & { removeItem: (k: string) => void } = {
-      getItem: (k: string) => values[k] ?? null,
-      setItem: (k: string, v: string) => {
-        values[k] = v;
-      },
-      removeItem: (k: string) => {
-        delete values[k];
-      },
-    };
+  it('preserves unattributed legacy localStorage data and never removes it automatically', async () => {
+    const legacy = JSON.stringify([
+      { id: 'legacy-clean', type: 'transition', orderId: 'WO-1', stepId: 'S1' },
+    ]);
+    const storage = createStorage({ [PENDING_ACTIONS_STORAGE_KEY]: legacy });
 
     const pending = createMemoryStore<StoredPendingAction>();
     const attachments = createMemoryStore<OfflineAttachment>();
@@ -622,10 +599,9 @@ describe('offlineDb', () => {
       attachments,
       syncState,
     );
-    expect(migrated).toBe(1);
-    // Legacy key removed after migration.
-    expect(values[PENDING_ACTIONS_STORAGE_KEY]).toBeUndefined();
-    expect(await pending.count()).toBe(1);
+    expect(migrated).toBe(0);
+    expect(storage.getItem(PENDING_ACTIONS_STORAGE_KEY)).toBe(legacy);
+    expect(await pending.count()).toBe(0);
   });
 
   it('savePendingActionWithAttachment writes action + attachment in one transaction', async () => {

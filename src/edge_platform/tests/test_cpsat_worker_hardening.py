@@ -282,8 +282,10 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
         }
         status, payload = self._post_json("/api/scheduler/v2/solve", json.dumps(body))
         self.assertEqual(status, 200)
-        # 无 ortools → UNAVAILABLE（如实报告，未被 413 误伤）
-        self.assertEqual(payload["solverStatus"], "UNAVAILABLE")
+        # 小问题未被 413 误伤；安装 ortools 时真实求解，缺失时如实报告 UNAVAILABLE。
+        self.assertEqual(
+            payload["solverStatus"], "OPTIMAL" if cpsat_worker.is_available() else "UNAVAILABLE"
+        )
 
     # ---- 4. 关联 ID ----
 
@@ -311,7 +313,7 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
     # ---- 5. /metrics ----
 
     def test_metrics_endpoint_exposes_cpsat_series(self):
-        # 先跑一次真实求解（无 ortools → UNAVAILABLE），让计数器有数据
+        # 先跑一次真实求解，让计数器有数据；可用与不可用环境都必须可验证。
         self._post_json("/api/scheduler/v2/solve", json.dumps(_minimal_body()))
         text = self._get_text("/metrics")
         for name in [
@@ -327,7 +329,8 @@ class CpsatWorkerHardeningTest(unittest.TestCase):
         self.assertIn("# TYPE cpsat_solver_duration_ms_sum counter", text)
         self.assertIn("# TYPE cpsat_solver_concurrency_current gauge", text)
         self.assertIn("# TYPE cpsat_solver_health gauge", text)
-        self.assertIn('cpsat_solver_requests_total{status="UNAVAILABLE"}', text)
+        expected_status = "OPTIMAL" if cpsat_worker.is_available() else "UNAVAILABLE"
+        self.assertIn(f'cpsat_solver_requests_total{{status="{expected_status}"}}', text)
 
     # ---- 6. 内存守卫 ----
 

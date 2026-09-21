@@ -82,7 +82,8 @@
             "taskId": "TASK-1",
             "personId": "p1",
             "deviceId": "d1",
-            "status": "shadow"
+            "status": "shadow",
+            "version": 1
           }
         ],
         "tasks": [

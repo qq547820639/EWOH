@@ -84,6 +84,21 @@ class StateStoreTest(unittest.TestCase):
         self.assertEqual(store2.current("D-1", "battery").state_json, {"pct": 80})
 
 
+    def test_state_from_dict_rejects_multiple_current_states(self):
+        store = StateStore()
+        store.set("P-1", "load", {"v": 1}, "real", 0.9, ts(1))
+        store.set("P-1", "load", {"v": 2}, "real", 0.9, ts(2))
+        snapshot = store.to_dict()
+        for state in snapshot["states"]:
+            state["valid_to"] = None
+        snapshot["states"].append({
+            **snapshot["states"][0],
+            "state_id": "STS-corrupt",
+            "valid_from": ts(3),
+        })
+        with self.assertRaises(ValueError):
+            StateStore.from_dict(snapshot)
+
 # ---------- 事件因果图 ----------
 class EventGraphTest(unittest.TestCase):
     def _three_node_chain(self):
@@ -133,6 +148,34 @@ class EventGraphTest(unittest.TestCase):
         self.assertEqual(g.descendants(n1.node_id), [])
 
 
+    def test_add_edge_rejects_unknown_relation_or_missing_nodes(self):
+        g = EventGraph()
+        a = g.add_node("ENTER_ZONE", {}, ts(1))
+        b = g.add_node("CONFIRM", {}, ts(2))
+        with self.assertRaises(ValueError):
+            g.add_edge(a.node_id, b.node_id, " teleport ")
+        with self.assertRaises(KeyError):
+            g.add_edge(a.node_id, "EV-missing")
+
+    def test_from_dict_rejects_dangling_duplicate_or_invalid_edges(self):
+        g = EventGraph()
+        a = g.add_node("ENTER_ZONE", {}, ts(1))
+        b = g.add_node("CONFIRM", {}, ts(2))
+        g.link_causal(b.node_id, a.node_id)
+        snapshot = g.to_dict()
+
+        corrupted = {**snapshot, "edges": [{**snapshot["edges"][0], "to_node": "EV-missing"}]}
+        with self.assertRaises(ValueError):
+            EventGraph.from_dict(corrupted)
+
+        bad_relation = {**snapshot, "edges": [{**snapshot["edges"][0], "relation": "teleport"}]}
+        with self.assertRaises(ValueError):
+            EventGraph.from_dict(bad_relation)
+
+        duplicate = {**snapshot, "nodes": snapshot["nodes"] + [snapshot["nodes"][0]]}
+        with self.assertRaises(ValueError):
+            EventGraph.from_dict(duplicate)
+
 # ---------- 班次因果链 ----------
 class ShiftChainTest(unittest.TestCase):
     def _sample_events(self):
@@ -154,27 +197,21 @@ class ShiftChainTest(unittest.TestCase):
     def test_full_12_step_chain_in_order(self):
         g = EventGraph()
         nodes = build_shift_chain(g, "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", self._sample_events())
-        # 12 步且顺序与规范一致
         self.assertEqual(len(nodes), 12)
         self.assertEqual([n.node_type for n in nodes], SHIFT_CHAIN_NODE_TYPES)
-        # 每个节点载荷都带 person_id
         for n in nodes:
             self.assertEqual(n.payload_json.get("person_id"), "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11")
-        # 因果链回溯：最后一个的 chain 应为根→叶 12 步
         chain = g.chain(nodes[-1].node_id)
         self.assertEqual([n.node_type for n in chain], SHIFT_CHAIN_NODE_TYPES)
-        # 前向后代：根节点应有 11 个后代
         self.assertEqual(len(g.descendants(nodes[0].node_id)), 11)
 
-
-
     def test_non_canonical_refs_rejected(self):
-        # NO-03b：因果链实体引用必须是规范身份；裸 ID fail-closed 拒绝
         with self.assertRaises(ValueError):
             build_shift_chain(EventGraph(), "P-1", self._sample_events())
         bad_events = [{"node_type": "BIND_EXO", "ts": ts(1), "payload": {"device_id": "D-1"}}]
         with self.assertRaises(ValueError):
             build_shift_chain(EventGraph(), "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11", bad_events)
+
 
 # ---------- 预测 ----------
 class PredictorTest(unittest.TestCase):

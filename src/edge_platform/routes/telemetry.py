@@ -78,6 +78,13 @@ def api_export(ctx, h, req_meta):
         "exported_at": now_iso(),
         "slice": slice_,
     }
+    # GET 导出同样是敏感数据出站；server 只自动审计 POST/PATCH，这里必须显式落审计。
+    h._audit(
+        "GET /api/telemetry/export",
+        target_type="telemetry",
+        target_id=device_id,
+        result="success",
+    )
     fname = f"ewoh_slice_{device_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     return h.send_json(out, download=fname)
 

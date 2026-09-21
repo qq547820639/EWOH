@@ -147,6 +147,8 @@ export interface EligibilityContext {
   maxContinuousLoad: number;
   /** 因安全事件被禁止作业的人员。 */
   safetyBlockedPersonIds: string[];
+  /** 因安全事件被禁止作业的设备；缺省空集仅为存量调用方兼容。 */
+  safetyBlockedDeviceIds?: string[];
   /** 前置任务是否已完成。 */
   predecessorDone: (taskId: string) => boolean;
   /** T03 / P1-4：当前评估的候选工位（station 决策变量；缺省回退 task.stationId）。 */
@@ -429,7 +431,7 @@ export class EligibilityService {
     if (
       personAvail.length > 0 &&
       !personAvail.some((w) =>
-        this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+        w.startMs <= candidateStart && candidateEnd <= w.endMs,
       )
     ) {
       reasons.push('time_conflict');
@@ -449,7 +451,7 @@ export class EligibilityService {
       if (
         devAvail.length > 0 &&
         !devAvail.some((w) =>
-          this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+          w.startMs <= candidateStart && candidateEnd <= w.endMs,
         )
       ) {
         reasons.push('time_conflict');
@@ -461,7 +463,7 @@ export class EligibilityService {
       if (
         stationAvail.length > 0 &&
         !stationAvail.some((w) =>
-          this.intervalsOverlap(w.startMs, w.endMs, candidateStart, candidateEnd),
+          w.startMs <= candidateStart && candidateEnd <= w.endMs,
         )
       ) {
         reasons.push('time_conflict');
@@ -547,6 +549,8 @@ export class EligibilityService {
 
     // 10) 安全
     if (ctx.safetyBlockedPersonIds.includes(person.id))
+      reasons.push('safety_blocked');
+    if (device && (ctx.safetyBlockedDeviceIds ?? []).includes(device.id))
       reasons.push('safety_blocked');
 
     // 11) P1-B：safety-critical fail-close——STALE/UNKNOWN 或关键 DERIVED 事实的候选不可派。

@@ -151,4 +151,23 @@ describe('standalone JWT auth', () => {
       UnauthorizedException,
     );
   });
+
+  it('rejects a legacy access token without a revocable jti', async () => {
+    const { service } = createService();
+    const legacy = sign(
+      {
+        sub: 'admin',
+        type: 'access',
+        username: 'admin',
+        orgId: 'f3bdfae3-88d0-49f7-9088-fd7b8df80b8c',
+        roles: ['operator'],
+      },
+      JWT_SECRET,
+      { algorithm: 'HS256' },
+    );
+
+    await expect(service.verifyToken(legacy)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
 });

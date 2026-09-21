@@ -322,6 +322,11 @@ class NyExoA1Adapter(BaseAdapter):
             self._bad_crc_frames += 1
             self._remember_raw(frame, raw, note="bad_crc")
             return []  # 坏帧不进入上层（spec：CRC 失败帧拒绝）
+        if not frame["tail_ok"]:
+            # CRC 不覆盖帧尾；尾字节损坏说明链路/成帧不可信，不得产出遥测。
+            self._malformed_frames += 1
+            self._remember_raw(frame, raw, note="bad_tail")
+            return []
 
         # E-19 修复：丢包率统计仅以实时 TELEMETRY 帧的 SEQ 为准——IDENT/HEARTBEAT/
         # FAULT 状态帧与 BACKFILL 补传帧的 SEQ 语义不同，参与统计会污染期望帧数。
@@ -339,7 +344,15 @@ class NyExoA1Adapter(BaseAdapter):
         self._remember_raw(frame, raw)
 
         if frame["type"] == protocol.TYPE_IDENT:
-            self.device_id = payload.get("device_id") or self.device_id
+            wire_device_id = payload.get("device_id") or ""
+            # NXP1 IDENT 只承载 8B；配置 ID 以线上 8 字节为前缀时视为同一登记，
+            # 统一帧仍使用完整配置 ID。其它前缀属于身份伪造/错接，拒绝该 IDENT。
+            if wire_device_id and not self.device_id.startswith(wire_device_id):
+                self._malformed_frames += 1
+                self._remember_raw(frame, raw, note="device_identity_mismatch")
+                return []
+            if not self.device_id:
+                self.device_id = wire_device_id
             new_fw = payload.get("firmware_version")
             old_fw = self.firmware_version
             self.firmware_version = new_fw or self.firmware_version

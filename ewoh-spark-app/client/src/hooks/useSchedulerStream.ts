@@ -7,6 +7,7 @@ import {
   mapToV2Status,
   pollingInvalidateKeys,
   createEventBatcher,
+  isValidSchedulingEvent,
   type EventBatcher,
   type EventBatch,
   type SchedulerStreamStatusV2,
@@ -76,13 +77,15 @@ interface ParsedEvent {
 
 function parseSseBlock(block: string): ParsedEvent {
   const parsed: ParsedEvent = {};
-  for (const line of block.split('\n')) {
+  for (const rawLine of block.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
     if (line.startsWith('event:')) parsed.event = line.slice(6).trim();
     else if (line.startsWith('id:')) parsed.id = line.slice(3).trim();
     else if (line.startsWith('data:')) parsed.data = line.slice(5).trim();
   }
   return parsed;
 }
+
 
 /** 将某方案合并/更新进「活跃方案」缓存列表（按 planId 去重）。 */
 function mergePlanIntoActive(
@@ -396,8 +399,11 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
                 setResyncing(false);
               }
               if (!parsed.data) continue;
-              // 任意带 id 的事件（scheduling.event / resync）都推进续传游标。
-              if (parsed.id) lastEventIdRef.current = parsed.id;
+              // Resync/heartbeat ids are authoritative envelopes. Scheduling
+              // events advance only after their runtime contract is validated.
+              if (parsed.id && parsed.event !== 'scheduling.event') {
+                lastEventIdRef.current = parsed.id;
+              }
               if (parsed.event === 'heartbeat') {
                 continue;
               }
@@ -416,10 +422,19 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
               }
               if (parsed.event === 'scheduling.event') {
                 try {
-                  const event = JSON.parse(parsed.data) as SchedulingEvent;
+                  const event: unknown = JSON.parse(parsed.data);
+                  if (!isValidSchedulingEvent(event)) {
+                    handleStreamEnd('malformed scheduling event envelope');
+                    abort.abort();
+                    return;
+                  }
+                  if (parsed.id) lastEventIdRef.current = parsed.id;
                   handleEvent(event);
                 } catch {
-                  // 忽略无法解析的事件。
+                  // A malformed frame is not silently consumable state.
+                  handleStreamEnd('malformed scheduling event JSON');
+                  abort.abort();
+                  return;
                 }
               }
             }

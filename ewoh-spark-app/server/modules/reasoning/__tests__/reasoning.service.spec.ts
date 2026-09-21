@@ -144,6 +144,7 @@ describe('ReasoningService（NO-08b 独立工业推理层）', () => {
     expect(firstCall[0].inputVersion).toBe('snapshot-v3');
     expect((firstCall[0].evidence as { isRule: boolean }).isRule).toBe(true);
     expect(result.inferenceIds).toHaveLength(6);
+    expect(result.ledgerFailures).toEqual([]);
     expect(result.inferenceIds[0]?.conclusionId).toContain('worker-overload');
   });
 
@@ -180,6 +181,31 @@ describe('ReasoningService（NO-08b 独立工业推理层）', () => {
     const conclusions = (result.trace as Record<string, unknown>).conclusions as unknown[];
     expect(conclusions).toHaveLength(6);
     expect(result.inferenceIds).toEqual([]);
+    expect(result.ledgerFailures).toHaveLength(6);
+    expect(result.ledgerFailures[0]).toMatchObject({
+      ruleId: 'rule:worker-overload',
+      error: 'ledger down',
+    });
+  });
+
+  it('traceId 缺省时生成唯一 ID（同秒多次评估不碰撞）', async () => {
+    const inference = makeInference();
+    const service = new ReasoningService(
+      inference as never,
+      makeProposals() as never,
+      makeUnusedSnapshots() as never,
+      makeUnusedDb() as never,
+    );
+    const input = {
+      snapshotVersion: 0,
+      facts: [fact(PERSON, 'person', { workload: 0.1, fatigue: 0.1, ergonomicRisk: 0.1 })],
+    };
+    const first = await service.evaluate(input, ORG_A);
+    const second = await service.evaluate(input, ORG_A);
+    const firstTrace = first.trace as Record<string, unknown>;
+    const secondTrace = second.trace as Record<string, unknown>;
+    expect(firstTrace.traceId).not.toBe(secondTrace.traceId);
+    expect(String(firstTrace.traceId)).toMatch(/^rt-[0-9a-f-]{36}$/);
   });
 
   it('listRules 返回六条注册表（可解释面：trigger/severity）', () => {

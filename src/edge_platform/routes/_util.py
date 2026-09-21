@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from edge_platform import services
 from edge_platform.config import Settings
 
+_RUNTIME_MODES = frozenset({"development", "simulation", "production"})
+
 # 离线判定 / 证据窗口 / 来源标识（原 server.py 模块级常量）
 # EDGE-045（2026-08-17 审计整改）：OFFLINE_AFTER_SEC/EVIDENCE_WINDOW_SEC 原为
 # import 时求值固化，Settings.reset()/force_reload 后不生效；改为运行时读取函数。
@@ -24,6 +26,19 @@ def offline_after_sec() -> int:
 def evidence_window_sec() -> int:
     """证据窗口秒数（运行时读取 Settings）。"""
     return int(Settings.load().evidence_window_sec)
+
+
+def runtime_mode() -> str:
+    """运行模式安全判定。
+
+    production 安全门禁必须 fail-closed：配置读取失败或值不在已知模式枚举内时，
+    按 production 处理，禁止拼写错误把未知模式静默降级为 development。
+    """
+    try:
+        mode = Settings.load().runtime_mode
+    except Exception:
+        return "production"
+    return mode if mode in _RUNTIME_MODES else "production"
 
 
 parse_ts = services.parse_ts
@@ -43,6 +58,9 @@ def resolve_actor(h, payload, *client_keys):
       （离线演示便利），production 下返回 None（由写保护门禁拒绝）。
     """
     token_actor = h._actor() if hasattr(h, "_actor") else None
+    production = runtime_mode() == "production"
+    if production:
+        return token_actor if token_actor and token_actor != "anonymous" else None
     if token_actor and token_actor != "anonymous":
         return token_actor
     for key in client_keys:

@@ -8,6 +8,7 @@
  */
 
 import { queryKeys } from '@client/src/hooks/queryKeys';
+import type { SchedulingEvent } from '@shared/api.interface';
 
 export type RealtimeSource = 'sse' | 'resync' | 'poll';
 
@@ -48,6 +49,23 @@ export function pollingInvalidateKeys(): Array<readonly unknown[]> {
     queryKeys.schedulerConflicts(),
     ['scheduler-routes'],
   ];
+}
+
+/** Runtime contract for events accepted into the monotonic cursor/batcher. */
+export function isValidSchedulingEvent(
+  value: unknown,
+): value is SchedulingEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<SchedulingEvent>;
+  return (
+    typeof event.sequence === 'number' &&
+    Number.isSafeInteger(event.sequence) &&
+    event.sequence >= 0 &&
+    typeof event.eventType === 'string' &&
+    event.eventType.length > 0 &&
+    typeof event.eventId === 'string' &&
+    event.eventId.length > 0
+  );
 }
 
 export interface SequenceDecision {

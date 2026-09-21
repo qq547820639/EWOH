@@ -208,6 +208,19 @@ class FakeStorage:
         self.events[eid]["status"] = status
         self.events[eid]["handling"] = handling
 
+    def record_event_status(self, eid, status, handling, action, handler_id, audit_ref=None):
+        if eid not in self.events:
+            raise LookupError(f"event not found: {eid}")
+        self.update_event_status(eid, status, handling)
+        return {
+            "event_id": eid,
+            "handler_id": handler_id,
+            "action": action,
+            "comment": handling.get("comment"),
+            "handled_at": handling.get("handled_at"),
+            "audit_ref": audit_ref,
+        }
+
 
 class FakeBus:
     """内存消息总线伪实现（订阅队列 + 发布记录）。"""

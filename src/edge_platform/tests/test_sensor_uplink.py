@@ -18,13 +18,16 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import urllib.error
 from io import BytesIO
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from edge_platform.config import Settings
 from edge_platform.edge.bridge.sensor_uplink import MAX_BUFFER, SensorUplinkBridge
 from edge_platform.edge.bus import MessageBus
+from edge_platform.runtime.protocols import STREAM_SENSOR_FRAMES
 
 
 class _FakeResponse:
@@ -340,6 +343,51 @@ class SensorUplinkOfflineBufferTest(unittest.TestCase):
             "并发入队帧必须落盘（崩溃安全：在快照里或在 replace 后写入新文件）",
         )
         self.assertIn("rec-base", {r["record_id"] for r in persisted})
+        bridge.stop()
+
+
+class SensorUplinkSecurityLifecycleTest(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(os.environ)
+        for key in list(os.environ):
+            if key.startswith("EWOH_"):
+                os.environ.pop(key, None)
+        Settings.reset()
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved)
+        Settings.reset()
+
+    def test_unknown_runtime_mode_disables_insecure_http(self):
+        os.environ["EWOH_RUNTIME_MODE"] = "producton"
+        os.environ["EWOH_SENSOR_UPLINK_KEY"] = "secret"
+        Settings.reset()
+        bridge = SensorUplinkBridge(
+            MessageBus(), "http://127.0.0.1:3100", ingest_key="secret", opener=_FakeOpener(),
+        )
+        self.assertFalse(bridge.enabled)
+        self.assertEqual(bridge.health()["disabled_reason"], "insecure_http_in_production")
+
+    def test_settings_failure_disables_insecure_http(self):
+        with unittest.mock.patch.object(Settings, "load", side_effect=RuntimeError("config unavailable")):
+            bridge = SensorUplinkBridge(
+                MessageBus(), "http://127.0.0.1:3100", ingest_key="secret", opener=_FakeOpener(),
+            )
+        self.assertFalse(bridge.enabled)
+        self.assertEqual(bridge.health()["disabled_reason"], "insecure_http_in_production")
+
+    def test_stop_unsubscribes_and_restart_does_not_duplicate_subscription(self):
+        bus = MessageBus()
+        bridge = SensorUplinkBridge(
+            bus=bus, spark_url="http://127.0.0.1:3100", opener=_FakeOpener(),
+        )
+        bridge.start()
+        self.assertEqual(len(bus._subs[STREAM_SENSOR_FRAMES]), 1)
+        bridge.stop()
+        self.assertEqual(len(bus._subs[STREAM_SENSOR_FRAMES]), 0)
+        bridge.start()
+        self.assertEqual(len(bus._subs[STREAM_SENSOR_FRAMES]), 1)
         bridge.stop()
 
 

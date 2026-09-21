@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { logger } from '@/lib/logger';
 import { openOfflineDb } from '@/lib/offlineDb';
+import { getAuthUser } from '@/lib/auth';
 import { readOfflineStatus, type OfflineStatusSnapshot } from '@/lib/offlineStatus';
 
 /**
@@ -15,7 +16,11 @@ export function useOfflineSnapshot(): OfflineStatusSnapshot | null {
 
   const refresh = useCallback(async () => {
     try {
-      const db = await openOfflineDb();
+      const authUser = getAuthUser();
+      const scope = authUser?.userId
+        ? `${authUser.orgId || 'no-org'}:${authUser.userId}`
+        : null;
+      const db = await openOfflineDb(scope);
       try {
         return await readOfflineStatus(db.pendingActions, db.syncState);
       } finally {

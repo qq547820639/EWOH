@@ -14,6 +14,9 @@ describe('queryKeys', () => {
     expect(queryKeys.operationsSummary).toEqual(['no-org', 'operations-summary']);
     expect(queryKeys.operationsAssets).toEqual(['no-org', 'operations-assets']);
     expect(queryKeys.operationsWorkCenters).toEqual(['no-org', 'operations-work-centers']);
+    expect(queryKeys.workbenchOverview).toEqual(['no-org', 'workbench-overview']);
+    expect(queryKeys.workbenchOpenEvents).toEqual(['no-org', 'workbench-events-open']);
+    expect(queryKeys.workbenchPendingPlans).toEqual(['no-org', 'workbench-plans-pending']);
   });
 
   it('embeds filters into personnel keys', () => {

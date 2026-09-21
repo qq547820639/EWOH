@@ -47,5 +47,6 @@ def parse_work_order(raw, default_source_type="real"):
         "status": pick("status", "state", default="unknown"),
         "assigned_person_id": pick("assigned_person_id", "person_id", "worker_id"),
         "ts": pick("ts", "timestamp", "time", default=now_iso()),
-        "source_type": pick("source_type", default=default_source_type),
+        # 来源隔离：source_type 由适配器部署配置权威决定，MES 载荷不得自报。
+        "source_type": default_source_type,
     }

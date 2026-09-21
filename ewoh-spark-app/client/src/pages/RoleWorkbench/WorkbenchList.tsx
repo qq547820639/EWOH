@@ -510,24 +510,31 @@ export function WorkbenchListSection({
     enabled: !availability,
   });
 
-  // 跨页累积：加载更多时把新一页追加到已加载行中。
+  // Cross-page accumulation is keyed by page number. A refetch of page 2 must
+  // replace only page 2 while retaining page 1; a query-context change resets
+  // from page 1. This prevents "load more" data loss without concat duplicates.
   const [loaded, setLoaded] = useState<Array<Record<string, unknown>>>([]);
+  const loadedPagesRef = useRef(new Map<number, Array<Record<string, unknown>>>());
   const prevPageRef = useRef(1);
   useEffect(() => {
     if (!listQuery.data) return;
     const items = toSchemaRows(list, listQuery.data.items ?? []);
     const dataPage = listQuery.data.page ?? state.page;
-    if (dataPage === 1) {
-      setLoaded(items);
-    } else if (dataPage === prevPageRef.current + 1) {
-      setLoaded((current) => [...current, ...items]);
-    } else {
-      // CLI-207：跳页（非顺序下一页，如深链直达 page>1）→ 清空并以
-      // 当前页为基准重建（原实现不更新 loaded，列表停留在旧数据）。
-      setLoaded(items);
+    if (
+      dataPage === 1 ||
+      (!loadedPagesRef.current.has(dataPage) &&
+        dataPage !== prevPageRef.current + 1)
+    ) {
+      loadedPagesRef.current.clear();
     }
+    loadedPagesRef.current.set(dataPage, items);
     prevPageRef.current = dataPage;
-  }, [listQuery.data, list, state.page]);
+    setLoaded(
+      [...loadedPagesRef.current.entries()]
+        .sort(([left], [right]) => left - right)
+        .flatMap(([, pageItems]) => pageItems),
+    );
+  }, [listQuery.data, list, state.filter, state.sort?.key, state.sort?.dir, state.page]);
 
   const total = listQuery.data?.total ?? 0;
   const hasMore = listQuery.data?.hasMore ?? false;

@@ -39,14 +39,16 @@ def parse_env_reading(raw, default_sensor_id=None, default_station_id=None, defa
                 return raw[k]
         return default
 
-    sensor_id = pick("sensor_id", "dev_id", default=default_sensor_id)
-    station_id = pick("station_id", "station", default=default_station_id)
+    # 身份与来源信任边界由适配器配置决定；厂商载荷可描述读数，但不能改写
+    # source_type 或冒充另一台设备/工位。缺少配置时才允许解析器回退到原始 ID。
+    sensor_id = default_sensor_id or pick("sensor_id", "dev_id")
+    station_id = default_station_id if default_station_id is not None else pick("station_id", "station")
     temperature_c = _f(pick("temperature_c", "temp", "temp_c"))
     vibration_mm_s = _f(pick("vibration_mm_s", "vibration", "vib"))
     noise_db = _f(pick("noise_db", "noise"))
     air_quality_pm25 = _f(pick("air_quality_pm25", "pm25", "pm2_5"))
     ts = pick("ts", "timestamp", "time", default=now_iso())
-    source_type = pick("source_type", default=default_source_type)
+    source_type = default_source_type
     quality_status = pick("quality_status", "quality", default="unknown")
 
     has_measure = any(v is not None for v in (temperature_c, vibration_mm_s, noise_db, air_quality_pm25))

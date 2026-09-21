@@ -101,7 +101,23 @@ def api_event_status(ctx, h, payload):
                     ctx.metrics.record_event_close(hours)
                 except Exception as e:  # L3：埋点失败不阻断事件关闭，但记录
                     print(f"[EWOH] metrics.record_event_close failed: {e!r}")
-    ctx.storage.update_event_status(eid, status, handling)
+    before = ctx.storage.get_event(eid)
+    if not before:
+        return h._new_error("not_found", "事件不存在", 404)
+    # 与 v2 相同的关键状态写入走原子事实账，避免旧端点绕过处置记录。
+    if hasattr(ctx.storage, "record_event_status"):
+        ctx.storage.record_event_status(
+            eid,
+            status,
+            handling,
+            action=status,
+            handler_id=handling.get("handled_by"),
+            audit_ref=getattr(h, "_request_id", None),
+        )
+    else:
+        ctx.storage.update_event_status(eid, status, handling)
+    h._audit_target_type = "risk_event"
+    h._audit_target_id = eid
     return h.send_json({"ok": True, "event": services.norm_event(ctx.storage.get_event(eid))})
 
 
@@ -113,6 +129,8 @@ def api_reset(ctx, h, req_meta):
     """一键重置（Task 19）：清空演示派工与模拟态数据；真实数据必须保留。"""
     with ctx.lock:
         ctx.assignments.clear()
+    h._audit_target_type = "world"
+    h._audit_target_id = "demo_reset"
     note = "已清空人工确认记录。"
     if hasattr(ctx.storage, "reset_demo"):
         ctx.storage.reset_demo()
@@ -254,11 +272,22 @@ def api_event_status_v2(ctx, h, event_id, payload):
     action = payload.get("action") or status
     comment = payload.get("comment")
     handling = {"handled_by": handler_id, "handled_at": now_iso(), "action": action, "comment": comment}
-    ctx.storage.update_event_status(event_id, status, handling)
-    if hasattr(ctx.storage, "insert_event_handling"):
-        ctx.storage.insert_event_handling(
-            event_id, handler_id, action, comment=comment, audit_ref=getattr(h, "_request_id", None)
+    if hasattr(ctx.storage, "record_event_status"):
+        ctx.storage.record_event_status(
+            event_id,
+            status,
+            handling,
+            action,
+            handler_id,
+            audit_ref=getattr(h, "_request_id", None),
         )
+    else:
+        # 兼容最小测试替身；生产 SQLite 必须使用上面的原子写入。
+        ctx.storage.update_event_status(event_id, status, handling)
+        if hasattr(ctx.storage, "insert_event_handling"):
+            ctx.storage.insert_event_handling(
+                event_id, handler_id, action, comment=comment, audit_ref=getattr(h, "_request_id", None)
+            )
     h._audit_target_type = "risk_event"
     h._audit_target_id = event_id
     return h.send_json({"ok": True, "event": services.norm_event(ctx.storage.get_event(event_id))})

@@ -339,8 +339,9 @@ class ContractWorldStore:
     # ── 持久化（离线重启恢复 / 可审计）───────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
-        """状态 + 实体声明 + 因果事件整体序列化。"""
+        """状态、实体声明、因果事件和快照单调计数整体序列化。"""
         return {
+            "snapshotVersion": self._snapshot_seq,
             "declarations": self.declarations(),
             "store": self._store.to_dict(),
             "events": self._events.to_dict(),
@@ -348,10 +349,61 @@ class ContractWorldStore:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ContractWorldStore:
-        """从 to_dict 输出恢复；声明恢复前逐条重校验（fail-closed）。"""
+        """从 to_dict 输出恢复；声明与状态逐条重校验（fail-closed）。"""
         store = cls()
         for decl in d.get("declarations", []):
             store.declare_entity(decl)
-        store._store = StateStore.from_dict(d.get("store") or {"states": []})
+
+        raw_store = d.get("store") or {"states": []}
+        raw_states = raw_store.get("states", [])
+        if not isinstance(raw_states, list):
+            raise WorldStoreContractError(
+                "bad_restored_states", "恢复的世界状态 states 必须为列表"
+            )
+        for raw in raw_states:
+            # StateStore 序列化为 snake_case；契约快照使用 camelCase。恢复时两者都接受。
+            record = {
+                "stateId": raw.get("stateId", raw.get("state_id")),
+                "entityId": raw.get("entityId", raw.get("entity_id")),
+                "entityType": raw.get("entityType", raw.get("state_type")),
+                "stateJson": raw.get("stateJson", raw.get("state_json")) or {},
+                "validFrom": raw.get("validFrom", raw.get("valid_from")),
+                "validTo": raw.get("validTo", raw.get("valid_to")),
+                "sourceType": raw.get("sourceType", raw.get("source_type")),
+                "confidence": raw.get("confidence"),
+                "version": raw.get("version"),
+            }
+            errors = world_contract.validate_state_record(record)
+            if errors:
+                raise WorldStoreContractError(
+                    errors[0], f"恢复状态契约校验失败: {errors}"
+                )
+            entity_id = record["entityId"]
+            decl = store._declarations.get(entity_id)
+            if decl is not None:
+                if record["entityType"] != decl["kind"]:
+                    raise WorldStoreContractError(
+                        "entity_type_mismatch",
+                        f"恢复状态 entityType {record['entityType']} 与声明 kind {decl['kind']} 不一致",
+                    )
+                restored_from = entity_model.parse_iso(record["validFrom"])
+                declared_from = entity_model.parse_iso(decl["timeSemantics"]["validFrom"])
+                if restored_from is not None and declared_from is not None and restored_from < declared_from:
+                    raise WorldStoreContractError(
+                        "state_precedes_declaration",
+                        f"恢复状态生效时间早于实体声明: {entity_id}",
+                    )
+
+        raw_snapshot_version = d.get("snapshotVersion", store._snapshot_seq)
+        if (
+            not isinstance(raw_snapshot_version, int)
+            or isinstance(raw_snapshot_version, bool)
+            or raw_snapshot_version < 0
+        ):
+            raise WorldStoreContractError(
+                "bad_snapshot_version", "恢复的 snapshotVersion 必须是非负整数"
+            )
+        store._snapshot_seq = raw_snapshot_version
+        store._store = StateStore.from_dict(raw_store)
         store._events = EventGraph.from_dict(d.get("events") or {"nodes": [], "edges": []})
         return store

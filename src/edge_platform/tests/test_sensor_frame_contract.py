@@ -405,6 +405,36 @@ class ManagerMultiSourceTest(unittest.TestCase):
         self.assertEqual(health["BROKEN-1"]["status"], "degraded", "有帧被拒的设备不得显示为健康")
         self.assertGreaterEqual(self.manager.dead_lettered_total, 1)
 
+    def test_non_contract_storage_failure_goes_to_dead_letter(self):
+        """存储宕机/磁盘满等非契约异常也不得丢帧；失败载荷必须进死信。"""
+
+        class FailingInsertStorage:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def insert_telemetry(self, row):
+                raise OSError("disk full")
+
+        self.manager.storage = FailingInsertStorage(self.storage)
+        self.manager.register(_ScriptedAdapter("STORAGE-FAIL-1", [dict(ENV_FRAME)]))
+        self.manager.start()
+
+        self.assertTrue(
+            self._run_until(lambda: self.storage.count_frame_dead_letters() >= 1),
+            "非契约存储失败也必须留痕，不得静默丢帧",
+        )
+        row = self.storage.list_frame_dead_letters()[0]
+        self.assertEqual(row["device_id"], "STORAGE-FAIL-1")
+        self.assertIn("persistence_failed", row["reason"])
+        self.assertIn("disk full", row["reason"])
+        self.assertIn("temperature_c", row["payload_json"])
+        health = {h["device_id"]: h for h in self.manager.health()}
+        self.assertGreaterEqual(health["STORAGE-FAIL-1"]["dead_lettered"], 1)
+        self.assertEqual(health["STORAGE-FAIL-1"]["status"], "degraded")
+
 
 if __name__ == "__main__":
     unittest.main()

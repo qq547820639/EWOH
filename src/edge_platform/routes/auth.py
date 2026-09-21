@@ -14,7 +14,7 @@ from edge_platform.config import Settings
 from edge_platform.rbac import check_export_role
 
 from . import Route, dispatch_routes, exact
-from ._util import now_iso, session_manager
+from ._util import now_iso, runtime_mode, session_manager
 
 # EDGE-024：同 token 并发 refresh 的原子段锁（verify+revoke+create），
 # 防止两个并发请求均 verify 成功后各自 revoke+create 造成会话翻倍。
@@ -36,7 +36,7 @@ def enforce_export_role(ctx, h):
     非 production（development/simulation）保留演示兼容：无 token 或会话无效时放行。
     返回 True 表示已发送错误响应（调用方应直接 return），False 表示放行。
     """
-    is_prod = Settings.load().runtime_mode == "production"
+    is_prod = runtime_mode() == "production"
     token = bearer_token(h)
     if not token:
         if is_prod:
@@ -90,7 +90,7 @@ def api_auth_login(ctx, h, payload, client_ip=None):
         user = {"user_id": session.user_id, "username": username, "role": session.role}
         return h.send_json({"token": token, "user": user})
     # auth 模块未就绪：production 必须 fail-closed（不生成任何演示 token）
-    if Settings.load().runtime_mode == "production":
+    if runtime_mode() == "production":
         return h._new_error(
             "auth_unavailable", "认证服务未就绪，拒绝登录（production 不提供演示凭据）", 503
         )
@@ -110,7 +110,11 @@ def api_auth_refresh(ctx, h, req_meta):
     if not token:
         return h._new_error("unauthorized", "缺少 Authorization Bearer token", 401)
     sm = session_manager()
-    if sm is not None:
+    if sm is None:
+        # 认证不可用时绝不落入演示 token 旋转：production 必须显式拒绝。
+        if runtime_mode() == "production":
+            return h._new_error("auth_unavailable", "认证服务未就绪，拒绝刷新会话", 503)
+    else:
         # EDGE-024：verify+revoke+create 原子段——并发刷新只有一个成功。
         with _refresh_lock:
             session = sm.verify(token)
@@ -121,9 +125,14 @@ def api_auth_refresh(ctx, h, req_meta):
             from edge_platform.auth import User  # noqa: F401
 
             new_token = sm.create(
-                User(user_id=session.user_id, username=session.user_id, role=session.role, display_name="")
+                User(
+                    user_id=session.user_id,
+                    username=session.username or session.user_id,
+                    role=session.role,
+                    display_name="",
+                )
             )
-        user = {"user_id": session.user_id, "role": session.role}
+        user = {"user_id": session.user_id, "username": session.username or session.user_id, "role": session.role}
         h._audit_target_type = "auth"
         h._audit_target_id = session.user_id
         return h.send_json({"token": new_token, "user": user})
@@ -151,10 +160,18 @@ def api_me(ctx, h, req_meta):
         session = sm.verify(token)
         if session is None:
             return h._new_error("unauthorized", "token 无效或已过期", 401)
-        return h.send_json({"user": {"user_id": session.user_id, "role": session.role}})
+        return h.send_json(
+            {
+                "user": {
+                    "user_id": session.user_id,
+                    "username": session.username or session.user_id,
+                    "role": session.role,
+                }
+            }
+        )
     # EDGE-052：production 下认证服务未就绪必须 fail-closed（503），
     # 不落演示 token 分支（生产环境不提供演示凭据）。
-    if Settings.load().runtime_mode == "production":
+    if runtime_mode() == "production":
         return h._new_error("auth_unavailable", "认证服务未就绪，拒绝身份查询", 503)
     # fallback：演示用 token（L2：校验过期；仅 development/simulation）
     with h._tokens_lock:

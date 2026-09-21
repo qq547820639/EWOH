@@ -32,6 +32,7 @@ interface MockQueryState {
 }
 
 const mockQueries: Record<string, MockQueryState> = {};
+const mockQueryOptions: Array<{ queryKey?: unknown[] }> = [];
 
 const ok = (data?: unknown): MockQueryState => ({ data, isLoading: false, isError: false, error: null });
 
@@ -43,6 +44,7 @@ function mockStateFor(key: string): MockQueryState {
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: (options: { queryKey?: unknown[] }) => {
+    mockQueryOptions.push(options);
     const key = (options.queryKey ?? []).join('|');
     const state = mockStateFor(key);
     return { ...state, isFetching: false, dataUpdatedAt: 0, refetch: jest.fn() };
@@ -89,9 +91,22 @@ function render(): string {
   );
 }
 
+describe('ApprovalConsole 查询键租户分片', () => {
+  it('approval/detail and governance caches use tenant-scoped prefixes', () => {
+    render();
+    const keys = mockQueryOptions.map((options) => options.queryKey);
+    expect(keys).toContainEqual(['approvals', 'agent']);
+    expect(keys).toContainEqual(['approvals', 'scheduler']);
+    expect(keys).toContainEqual(['approvals', 'authorizations']);
+    expect(keys).toContainEqual(['notifications', 'governance']);
+    expect(keys).toContainEqual(['approvals', 'detail', null]);
+  });
+});
+
 describe('ApprovalConsole 渲染（FE-1 次级查询失败不得渲染成业务空态）', () => {
   beforeEach(() => {
     for (const key of Object.keys(mockQueries)) delete mockQueries[key];
+    mockQueryOptions.length = 0;
     mockQueries['approvals|agent'] = ok([]);
     mockQueries['approvals|scheduler'] = ok([]);
     mockQueries['approvals|authorizations'] = ok([]);

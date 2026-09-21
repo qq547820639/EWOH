@@ -35,7 +35,7 @@ import { Button } from '@client/src/components/ui/button';
 import ErrorState from '@client/src/components/ErrorState';
 import { track } from '../../lib/telemetry';
 import { toast } from 'sonner';
-import { errorMessage } from '@client/src/lib/errorContract';
+import { parseError } from '@client/src/lib/errorContract';
 
 /**
  * 审批控制台（ADR-030 / NO-12f，§17 操作台"是否批准？"）。
@@ -84,19 +84,21 @@ const ApprovalConsole = (): React.ReactElement => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Approval caches must use the tenant-scoped approvals prefix. Bare keys can
+  // hit the previous account's cache after an org switch (CLI-715 class bug).
   const agentQuery = useQuery({
-    queryKey: ['approvals', 'agent'],
+    queryKey: [...queryKeys.approvals, 'agent'],
     queryFn: listAgentPendingApprovals,
     refetchInterval: 30000,
   });
   const schedulerQuery = useQuery({
-    queryKey: ['approvals', 'scheduler'],
+    queryKey: [...queryKeys.approvals, 'scheduler'],
     queryFn: listSchedulerPendingApprovals,
     refetchInterval: 30000,
   });
   // NO-24a：执行边界授权（已授权 + 时效 + 消耗）——与待批清单互补
   const authorizationQuery = useQuery({
-    queryKey: ['approvals', 'authorizations'],
+    queryKey: [...queryKeys.approvals, 'authorizations'],
     queryFn: listCapabilityAuthorizations,
     refetchInterval: 30000,
   });
@@ -110,7 +112,7 @@ const ApprovalConsole = (): React.ReactElement => {
    * 只读聚合；样本不足时服务端返回 null，页面显示"证据不足"。
    */
   const governanceQuery = useQuery({
-    queryKey: ['notifications', 'governance'],
+    queryKey: [...queryKeys.notifications, 'governance'],
     queryFn: () => getNotificationMetrics(30),
     refetchInterval: 60000,
   });
@@ -120,7 +122,7 @@ const ApprovalConsole = (): React.ReactElement => {
     refetchInterval: 30000,
   });
   const detailQuery = useQuery({
-    queryKey: ['approvals', 'detail', expanded],
+    queryKey: [...queryKeys.approvals, 'detail', expanded],
     queryFn: () => getApprovalDetail(expanded!),
     enabled: expanded != null,
   });
@@ -133,6 +135,9 @@ const ApprovalConsole = (): React.ReactElement => {
   const resolveAgent = useMutation({
     mutationFn: ({ approvalId, approved }: { approvalId: string; approved: boolean }) =>
       resolveAgentApproval(approvalId, approved),
+    onError: (err) => {
+      toast.error('Agent 审批失败', { description: parseError(err).message });
+    },
     onSuccess: invalidateAll,
   });
   const stepAction = useMutation({
@@ -145,6 +150,9 @@ const ApprovalConsole = (): React.ReactElement => {
       stepId: string;
       action: 'approve' | 'reject';
     }) => stepApprovalAction(approvalId, stepId, action),
+    onError: (err) => {
+      toast.error('调度审批失败', { description: parseError(err).message });
+    },
     onSuccess: invalidateAll,
   });
   const markRead = useMutation({
@@ -155,7 +163,7 @@ const ApprovalConsole = (): React.ReactElement => {
     // CLI-002：失败不再静默，toast 透传后端错误信息。
     onError: (err) => {
       toast.error('标记已读失败', {
-        description: errorMessage(err),
+        description: parseError(err).message,
       });
     },
   });
@@ -167,7 +175,7 @@ const ApprovalConsole = (): React.ReactElement => {
     // CLI-002：重试失败显式反馈（§33 失败不静默）。
     onError: (err) => {
       toast.error('推送重试失败', {
-        description: errorMessage(err),
+        description: parseError(err).message,
       });
     },
   });
@@ -186,12 +194,11 @@ const ApprovalConsole = (): React.ReactElement => {
   const busy = resolveAgent.isPending || stepAction.isPending || markRead.isPending;
   // R-08：本地横幅状态改名 bannerErrorMessage，避免与 errorContract 导入的
   // errorMessage() 工具函数同名遮蔽（原同名导致 mutation onError 处 TDZ 不可调用）。
-  const bannerErrorMessage =
-    resolveAgent.error instanceof Error
-      ? resolveAgent.error.message
-      : stepAction.error instanceof Error
-        ? stepAction.error.message
-        : null;
+  const bannerErrorMessage = resolveAgent.error
+    ? parseError(resolveAgent.error).message
+    : stepAction.error
+      ? parseError(stepAction.error).message
+      : null;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">

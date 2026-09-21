@@ -71,22 +71,26 @@ ON CONFLICT (org_id, entity_id) DO UPDATE
 UPDATE public.ewoh_spatial_entity
   SET yaw = 45, extra = jsonb_build_object('fov_deg', 90, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
-WHERE entity_id = 'CAM-01' AND entity_type = 'camera';
+WHERE entity_id = 'CAM-01' AND entity_type = 'camera'
+  AND org_id = '00000000-0000-4000-8000-000000000001';
 
 UPDATE public.ewoh_spatial_entity
   SET yaw = 45, extra = jsonb_build_object('fov_deg', 90, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
-WHERE entity_id = 'CAM-02' AND entity_type = 'camera';
+WHERE entity_id = 'CAM-02' AND entity_type = 'camera'
+  AND org_id = '00000000-0000-4000-8000-000000000001';
 
 UPDATE public.ewoh_spatial_entity
   SET yaw = 45, extra = jsonb_build_object('fov_deg', 90, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
-WHERE entity_id = 'CAM-03' AND entity_type = 'camera';
+WHERE entity_id = 'CAM-03' AND entity_type = 'camera'
+  AND org_id = '00000000-0000-4000-8000-000000000001';
 
 UPDATE public.ewoh_spatial_entity
   SET yaw = 45, extra = jsonb_build_object('fov_deg', 90, 'range', 300, 'height_m', 3.5, 'floor', 1),
       _updated_at = now()
-WHERE entity_id = 'CAM-04' AND entity_type = 'camera';
+WHERE entity_id = 'CAM-04' AND entity_type = 'camera'
+  AND org_id = '00000000-0000-4000-8000-000000000001';
 
 -- 质检车间补装 CAM-05（车间左上角，与其它车间摄像头同构）
 INSERT INTO public.ewoh_spatial_entity

@@ -605,13 +605,24 @@ class TestStatusFrameContract(unittest.TestCase):
 
     def test_ident_frame_populates_device_info(self):
         entry = self.entries["ident_normal"]
-        adapter = NyExoA1Adapter("PLACEHOLDER")
+        # 线上 ID 只有 8B，配置登记使用完整 ID；前缀匹配时不改写部署身份。
+        adapter = NyExoA1Adapter(entry["device_id"])
         adapter.feed(_load_fixture(entry["file"]))
         info = adapter.device_info()
         # 线协议 device_id 为 8B ASCII，超长 ID 截断（见 index.json 的 wire_device_id_note）
-        self.assertEqual(info["device_id"], entry["device_id"][:8])
+        self.assertEqual(info["device_id"], entry["device_id"])
         self.assertEqual(info["firmware_version"], entry["fields"]["fw"])
         self.assertEqual(info["protocol_version"], protocol.PROTOCOL_VERSION)
+
+    def test_ident_frame_cannot_rewrite_registered_device_identity(self):
+        entry = self.entries["ident_normal"]
+        adapter = NyExoA1Adapter("PLACEHOLDER")
+        adapter.feed(_load_fixture(entry["file"]))
+        info = adapter.device_info()
+        self.assertEqual(info["device_id"], "PLACEHOLDER")
+        # 身份不匹配的整帧被拒绝，不能借 IDENT 回填固件等元信息。
+        self.assertEqual(info["firmware_version"], "")
+        self.assertEqual(adapter.health()["malformed_frames"], 1)
 
     def test_ident_frame_produces_no_telemetry(self):
         entry = self.entries["ident_normal"]

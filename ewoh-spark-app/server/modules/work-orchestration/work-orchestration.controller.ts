@@ -110,10 +110,12 @@ export class WorkOrchestrationController {
       idempotencyKey?: string;
       approved?: boolean;
       reason?: string;
+      /** Deprecated and ignored; the authenticated principal is authoritative. */
       actor?: string;
     },
+    @Req() request: { userContext?: OrgContext },
   ) {
-    return this.workService.applyGitSyncDurable(body);
+    return this.workService.applyGitSyncDurable(body, request.userContext);
   }
 
   @Get('site-readiness')

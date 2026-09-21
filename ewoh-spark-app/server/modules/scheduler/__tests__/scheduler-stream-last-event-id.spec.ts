@@ -35,6 +35,7 @@ interface ControllerHarness {
     start: jest.Mock;
     events: jest.Mock;
     replaySince: jest.Mock;
+    currentSequence: jest.Mock;
   };
   subject: Subject<SchedulingEvent>;
 }
@@ -132,6 +133,27 @@ describe('SchedulerController SSE Last-Event-ID 增量续传（P2 收尾）', ()
     // resync 事件本身带 id = currentSequence（客户端可据此重置游标）。
     expect(resync?.id).toBe('42');
     // 缺口下不发送增量重放事件。
+    expect(schedulingEvents(collected)).toHaveLength(0);
+    sub.unsubscribe();
+  });
+
+  it('b1) replaySince 查询失败 → 发权威 resync，不得静默丢失重放窗口', async () => {
+    const { controller, streamSvc } = makeHarness();
+    streamSvc.replaySince.mockRejectedValue(new Error('outbox unavailable'));
+    streamSvc.currentSequence.mockResolvedValue(77);
+
+    const collected: MessageEvent[] = [];
+    const sub = controller
+      .stream('5', { userContext: { userId: 'u1', primaryOrgId: 'org1' } })
+      .subscribe((m) => collected.push(m));
+    await flush();
+
+    const resync = collected.find((m) => m.type === 'resync');
+    expect(resync).toBeDefined();
+    expect(resync?.id).toBe('77');
+    const data = JSON.parse(String(resync?.data)) as { currentSequence: number; reason: string };
+    expect(data.currentSequence).toBe(77);
+    expect(data.reason).toContain('replay unavailable');
     expect(schedulingEvents(collected)).toHaveLength(0);
     sub.unsubscribe();
   });

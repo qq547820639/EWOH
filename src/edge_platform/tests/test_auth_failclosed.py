@@ -82,6 +82,22 @@ class AuthFailClosedProductionTest(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "auth_unavailable")
         self.assertNotIn("token", payload)
 
+    def test_production_refresh_rejected_when_auth_unavailable(self):
+        req = urllib.request.Request(
+            self.fx.base + "/api/auth/refresh",
+            data=b"{}",
+            headers={"Content-Type": "application/json", "Authorization": "Bearer stale-token"},
+            method="POST",
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=5)  # nosec B310 - 本地测试桩
+            status, payload = resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            status, payload = e.code, json.loads(e.read().decode("utf-8"))
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["error"]["code"], "auth_unavailable")
+        self.assertNotIn("token", payload)
+
 
 class AuthDemoTokenDevTest(unittest.TestCase):
     @classmethod

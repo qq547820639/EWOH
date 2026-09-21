@@ -1,3 +1,5 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { ExecutionService } from '../execution.service';
 
 describe('ExecutionService（P4-EXEC：正式执行领域）', () => {
@@ -253,5 +255,51 @@ describe('ExecutionService（P4-EXEC：正式执行领域）', () => {
       expect(taskTitles.get(result.executions[0].taskId) ?? null).toBeNull();
       expect(personNames.get(result.executions[0].personId ?? '') ?? null).toBeNull();
     });
+  });
+});
+
+describe('ExecutionService cancel tenant guard', () => {
+  const outbox = { enqueue: jest.fn().mockResolvedValue({}) } as never;
+  const metrics = { recordExecutionTransition: jest.fn() } as never;
+
+  function makeCancelDb(returnRows: unknown[] = []) {
+    const captured: { where?: SQL } = {};
+    const db = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn((cond: SQL) => {
+            captured.where = cond;
+            return { returning: jest.fn(() => Promise.resolve(returnRows)) };
+          }),
+        })),
+      })),
+    } as never;
+    return { db, captured, dialect: new PgDialect() };
+  }
+
+  it('cancellation is constrained to the authenticated tenant', async () => {
+    const { db, captured, dialect } = makeCancelDb([{ executionId: 'EXEC-1' }]);
+    const svc = new ExecutionService(db, outbox, metrics);
+
+    const count = await svc.cancelForAssignments(['ASG-1'], {
+      userId: 'u1',
+      primaryOrgId: 'ORG-A',
+      roles: [],
+    });
+
+    expect(count).toBe(1);
+    const query = dialect.sqlToQuery(captured.where!);
+    expect(query.sql).toContain('"org_id"');
+    expect(query.params).toContain('ORG-A');
+  });
+
+  it('system cancellation without actor context reaches only legacy NULL-org rows', async () => {
+    const { db, captured, dialect } = makeCancelDb([]);
+    const svc = new ExecutionService(db, outbox, metrics);
+
+    await svc.cancelForAssignments(['ASG-1']);
+
+    const query = dialect.sqlToQuery(captured.where!);
+    expect(query.sql).toContain('is null');
   });
 });

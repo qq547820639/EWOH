@@ -182,6 +182,17 @@ export class DispatchCoordinatorService {
     // 的 assignment 统一使用同一 nowMs（此前逐 assignment 取 Date.now()，
     // 重试/慢事务下预占时间窗漂移）。
     const dispatchNowMs = Date.now();
+    // Preflight and transactional queries must inherit the selected plan's tenant.
+    // planId alone is not an authorization key, and legacy plans may be NULL-org.
+    const planOrgId = plan.orgId ?? null;
+    const assignmentOrgCond = planOrgId == null
+      ? isNull(ewohSchedulingPlanAssignment.orgId)
+      : eq(ewohSchedulingPlanAssignment.orgId, planOrgId);
+    // Production tasks may contain legacy NULL-org rows; allow those for system
+    // migration but never permit a different tenant's task to be dispatched.
+    const taskOrgCond = planOrgId == null
+      ? isNull(ewohProductionTask.orgId)
+      : or(isNull(ewohProductionTask.orgId), eq(ewohProductionTask.orgId, planOrgId));
 
     // 波次感知（自查修正 2026-09-13）：下方四个事务前 fail-fast 预检（安全熔断/
     // 外骨骼会话/ADVISORY 降级路由/工位容量）原按**全方案** approved 集合判定，
@@ -210,6 +221,7 @@ export class DispatchCoordinatorService {
           .where(
             and(
               eq(ewohSchedulingPlanAssignment.planId, planId),
+              assignmentOrgCond,
               eq(ewohSchedulingPlanAssignment.status, 'approved'),
             ),
           );
@@ -268,6 +280,7 @@ export class DispatchCoordinatorService {
           .where(
             and(
               eq(ewohSchedulingPlanAssignment.planId, planId),
+              assignmentOrgCond,
               eq(ewohSchedulingPlanAssignment.status, 'approved'),
             ),
           );
@@ -276,7 +289,7 @@ export class DispatchCoordinatorService {
           const [task] = await this.db
             .select({ safetyCritical: ewohProductionTask.safetyCritical })
             .from(ewohProductionTask)
-            .where(eq(ewohProductionTask.id, a.taskId))
+            .where(and(eq(ewohProductionTask.id, a.taskId), taskOrgCond))
             .limit(1);
           if (!task || !task.safetyCritical) continue;
           // R-6（2026-09-13）：透传本方案租户 ctx.primaryOrgId——路由图按租户
@@ -353,7 +366,7 @@ export class DispatchCoordinatorService {
         const planAssignments = await this.db
           .select()
           .from(ewohSchedulingPlanAssignment)
-          .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+          .where(and(eq(ewohSchedulingPlanAssignment.planId, planId), assignmentOrgCond));
         const proposed = planAssignments.filter((a) => a.status === 'approved');
         // 波次选择（波内全有或全无）：请求的 ID 必须都还在 approved 待派工集合里。
         const requested = wave?.assignmentIds?.length ? new Set(wave.assignmentIds) : null;
@@ -637,12 +650,29 @@ export class DispatchCoordinatorService {
           }
         }
 
-        // 8. 更新分配状态。
+        // 8. 更新分配状态（org + status + version CAS）。
+        // 派工前读取的 approved/version 是整波“全有或全无”的边界；若任何一条
+        // 在提交前被并发取消/变更，本波必须整体失败，而不是把新状态覆盖回去。
         for (const a of assignments) {
-          await this.db
+          const assignmentVersion = a.version ?? 1;
+          const [updatedAssignment] = await this.db
             .update(ewohSchedulingPlanAssignment)
-            .set({ status: 'dispatched' })
-            .where(eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId));
+            .set({
+              status: 'dispatched',
+              version: assignmentVersion + 1,
+            })
+            .where(and(
+              eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId),
+              assignmentOrgCond,
+              eq(ewohSchedulingPlanAssignment.status, a.status),
+              eq(ewohSchedulingPlanAssignment.version, assignmentVersion),
+            ))
+            .returning({ id: ewohSchedulingPlanAssignment.id });
+          if (!updatedAssignment) {
+            throw new ConflictException(
+              `ASSIGNMENT_CONCURRENT_UPDATE: assignment=${a.assignmentId} changed during dispatch`,
+            );
+          }
         }
 
         // 9. 写入分配事件。

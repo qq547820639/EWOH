@@ -38,6 +38,7 @@ class Session:
     role: str
     created_at: datetime
     expires_at: datetime
+    username: str = ""
 
 
 class SessionManager:
@@ -98,6 +99,7 @@ class SessionManager:
             role=user.role,
             created_at=now,
             expires_at=now + timedelta(seconds=self._settings.session_timeout_sec),
+            username=getattr(user, "username", "") or user.user_id,
         )
         with self._lock:
             self._sweep_if_due()

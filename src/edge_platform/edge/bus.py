@@ -30,6 +30,7 @@ import logging
 import threading
 import uuid
 from collections import deque
+from datetime import datetime, timezone
 from typing import Callable
 
 from edge_platform.runtime.protocols import ALL_STREAMS
@@ -152,7 +153,7 @@ class MessageBus:
         return buf[-n:] if n < len(buf) else buf
 
     def range(self, stream, start_ts, end_ts):
-        """返回流中 ts ∈ [start_ts, end_ts] 的消息（按写入顺序）。"""
+        """返回流中 ts ∈ [start_ts, end_ts] 的消息（instant 语义；按写入顺序）。"""
         self._check_stream(stream)
         with self._lock:
             buf = list(self._buffers[stream])
@@ -175,17 +176,31 @@ class MessageBus:
 def _in_range(ts, start_ts, end_ts):
     """判断 ts 是否落在 [start_ts, end_ts]。"""
 
-    def _key(v):
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            return ("n", float(v))
-        return ("s", str(v))
+    ts_key = _temporal_key(ts)
+    start_key = _temporal_key(start_ts)
+    end_key = _temporal_key(end_ts)
+    if all(kind == "n" for kind, _ in (ts_key, start_key, end_key)):
+        return start_key[1] <= ts_key[1] <= end_key[1]
+    # 非时间戳的调用方保留旧字符串语义；可解析时间戳绝不按文本字典序误判。
+    return str(start_ts) <= str(ts) <= str(end_ts)
 
-    k = _key(ts)
-    ks = _key(start_ts)
-    ke = _key(end_ts)
-    if k[0] != ks[0] or k[0] != ke[0]:
-        # 类型不一致：统一降级为字符串比较
-        return str(start_ts) <= str(ts) <= str(end_ts)
-    if k[0] == "n":
-        return ks[1] <= k[1] <= ke[1]
-    return ks[1] <= k[1] <= ke[1]
+
+def _temporal_key(value):
+    """数值 epoch 或 ISO 8601（含任意时区偏移）→ 可比较的 instant key。"""
+
+    def _key(v):
+        if isinstance(v, bool):
+            return "s", str(v)
+        if isinstance(v, (int, float)):
+            return "n", float(v)
+        text = str(v).strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                # 与边缘存储一致：naive 时间按 UTC instant 解释。
+                dt = dt.replace(tzinfo=timezone.utc)
+            return "n", dt.timestamp()
+        except ValueError:
+            return "s", text
+
+    return _key(value)

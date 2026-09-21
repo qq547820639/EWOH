@@ -76,7 +76,9 @@ function makeSolver(pools: Record<string, CandidateEvaluation[]>) {
     candidateEngine as never,
     new SchedulingObjectiveEvaluator(),
   );
-  return { solver, calls };
+  const result = { solver, calls, policyService };
+  (makeSolver as any)._latest = result;
+  return result;
 }
 
 const OPTS = {
@@ -85,7 +87,7 @@ const OPTS = {
   triggerEntityId: null,
   snapshotVersion: 'WS-TEST-0001',
   horizonMinutes: 480,
-} as never;
+};
 
 function snapshotWith(tasks: Array<Record<string, unknown>>, overrides: Record<string, unknown> = {}): WorldStateSnapshot {
   return buildSnapshot({
@@ -97,6 +99,19 @@ function snapshotWith(tasks: Array<Record<string, unknown>>, overrides: Record<s
     ...overrides,
   });
 }
+
+describe('RuleBasedSchedulingSolver tenant config propagation', () => {
+  it('passes org policy/config into candidate pool once', async () => {
+    const snapshot = snapshotWith([task({ id: 'task-1' })]);
+    const { solver, calls, policyService } = makeSolver({ 'task-1': [eligible('p1')] });
+    const orgOpts = { ...OPTS, orgId: 'orgA' } as typeof OPTS;
+    await solver.solve(snapshot, [], orgOpts);
+    expect(policyService.getActivePolicy).toHaveBeenCalledWith('orgA');
+    expect(policyService.getConfig).toHaveBeenCalledWith('orgA');
+    expect(calls[0].opts.policy).toEqual(defaultPolicy());
+    expect(calls[0].opts.config).toEqual(defaultConfig());
+  });
+});
 
 describe('RuleBasedSchedulingSolver（ADR-053 / NO-13d）', () => {
   it('确定性重放：同输入两轮 deep-equal（幂等可重放，§9）', async () => {

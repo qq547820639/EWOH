@@ -61,7 +61,7 @@
         },
         "approvalContract": {
           "type": "string",
-          "const": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；Safety 角色仅 L0/L1 且 writeScope 为空"
+          "const": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；L3 仅 low 风险且命令/作用域限于安全白名单；Safety 角色仅 L0/L1 且 writeScope 为空"
         },
         "auditContract": {
           "type": "string",
@@ -102,7 +102,7 @@
     "roleRegistry": "role ∈ agentRoleRegistry（15 类封闭注册表，ADR-016）",
     "toolContract": "allowedTools 为 tool:<value> 规范身份数组；未注册 Tool 运行时拒绝（Tool 注册表另行契约）",
     "scopeContract": "readScope/writeScope ∈ scopeTokenRegistry；writeScope.commands ⊆ commandRegistry（写能力显式最小化）",
-    "approvalContract": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；Safety 角色仅 L0/L1 且 writeScope 为空",
+    "approvalContract": "autonomousLevel ∈ L0..L3（L4 永不允许，§2）；L2/L3 必须显式非空 approvalRequiredFor；riskLevel=critical 仅 L0/L1；L3 仅 low 风险且命令/作用域限于安全白名单；Safety 角色仅 L0/L1 且 writeScope 为空",
     "auditContract": "auditTrail 必须 true（false 拒绝注册）",
     "budgetContract": "budget.maxSteps/maxTokens/maxDurationSec ≥ 1；timeoutSec ≥ 1",
     "fallbackContract": "fallback.onFailure ∈ {fail, retry, delegateHuman, safeIdle}；失败显式语义，无静默吞"

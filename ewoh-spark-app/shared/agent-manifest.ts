@@ -35,6 +35,10 @@ const COMMAND_SET: ReadonlySet<string> = new Set(AGENT_COMMANDS);
 const RISK_SET: ReadonlySet<string> = new Set(AGENT_RISK_LEVELS);
 const LEVEL_SET: ReadonlySet<string> = new Set(AUTONOMOUS_LEVELS);
 const FALLBACK_SET: ReadonlySet<string> = new Set(FALLBACK_STRATEGIES);
+/** L3 只允许低风险、可审计或纯建议/仿真类命令（ADR-016 §Autonomous Level）。 */
+const L3_SAFE_COMMANDS: ReadonlySet<string> = new Set([
+  'propose_plan', 'record_evidence', 'request_approval', 'run_simulation',
+]);
 
 const REQUIRED_FIELDS = [
   'agentId', 'name', 'version', 'role', 'purpose', 'allowedTools', 'readScope',
@@ -110,6 +114,15 @@ export function validateAgentManifest(record: unknown): string[] {
     if (level === 'L2' || level === 'L3') return ['safety_autonomy_forbidden'];
     if (writeTokens.length > 0 || writeCommands.length > 0) {
       return ['safety_role_write_forbidden'];
+    }
+  }
+  if (level === 'L3') {
+    if (r.riskLevel !== 'low') return ['l3_risk_forbidden'];
+    if (writeCommands.some((command) => !L3_SAFE_COMMANDS.has(command))) {
+      return ['l3_command_forbidden'];
+    }
+    if (writeTokens.some((token) => token !== 'simulationData')) {
+      return ['l3_scope_forbidden'];
     }
   }
   for (const key of ['inputContract', 'outputContract']) {

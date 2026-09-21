@@ -106,7 +106,8 @@ def parse_uwb_frame(raw, beacons=None, tags=None, default_source_type="real"):
         confidence = 0.5
 
     ts = pick("ts", "timestamp", "time", default=now_iso())
-    source_type = pick("source_type", default=default_source_type)
+    # source_type 是部署/设备登记的信任标签，不接受厂商载荷自报覆盖。
+    source_type = default_source_type
 
     beacon_ids = pick("beacon_ids", "anchors")
     if beacon_ids is None and isinstance(raw.get("anchor_distances"), dict):

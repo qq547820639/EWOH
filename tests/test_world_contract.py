@@ -68,6 +68,26 @@ class TestWorldVectors:
             else:
                 assert case["expect"]["reason"] in errors, (case["name"], errors)
 
+    def test_state_type_partitions_intervals(self):
+        base = {
+            "stateId": "STS-state-type",
+            "entityId": "person:9f1c4a0e-5d0b-4f3a-9c1e-7d3b9a6f0a11",
+            "stateJson": {},
+            "validFrom": "2026-08-14T08:00:00Z",
+            "validTo": None,
+            "sourceType": "real",
+            "confidence": 1.0,
+            "version": 1,
+        }
+        assert wm.validate_interval_set([
+            {**base, "stateType": "location", "validTo": "2026-08-14T09:00:00Z"},
+            {**base, "stateType": "battery", "version": 2, "validFrom": "2026-08-14T08:30:00Z"},
+        ]) == []
+        assert wm.validate_interval_set([
+            {**base, "validTo": "2026-08-14T09:00:00Z"},
+            {**base, "entityType": "exo", "validFrom": "2026-08-14T08:30:00Z"},
+        ]) == []
+
     def test_snapshots(self):
         for case in _load(VECTORS_PATH)["snapshots"]:
             errors = wm.validate_snapshot(case["snapshot"])

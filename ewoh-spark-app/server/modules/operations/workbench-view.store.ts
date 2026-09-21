@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import { ewohSavedViews } from '@server/database/schema';
 import type {
   WorkbenchView,
@@ -124,6 +124,29 @@ export class PostgresWorkbenchViewStore implements WorkbenchViewStore {
           eq(ewohSavedViews.ownerUserId, ownerId),
           eq(ewohSavedViews.name, key),
           isNull(ewohSavedViews.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0] ? toDomain(rows[0]) : undefined;
+  }
+
+  async getVisible(
+    orgId: string,
+    requesterId: string,
+    key: string,
+  ): Promise<WorkbenchView | undefined> {
+    const rows = await this.db
+      .select()
+      .from(ewohSavedViews)
+      .where(
+        and(
+          eq(ewohSavedViews.organizationId, orgId),
+          eq(ewohSavedViews.name, key),
+          isNull(ewohSavedViews.deletedAt),
+          or(
+            eq(ewohSavedViews.ownerUserId, requesterId),
+            sql`(${ewohSavedViews.filterJson} ->> 'shared') = 'true'`,
+          ),
         ),
       )
       .limit(1);

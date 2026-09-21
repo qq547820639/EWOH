@@ -419,7 +419,8 @@ node db/runner/run_migrations.js --seed-standalone-admin
 
 ```bash
 python3 tools/edge_control_agent.py --device AGV-01 --interval-sec 2 \
-  --platform-url http://<平台>:3100 --ingest-key "$INGEST_KEY" --org-id <org>
+  --platform-url http://<平台>:3100 --ingest-key "$INGEST_KEY" --org-id <org> \
+  --receipt-journal /var/lib/ewoh/control-receipts.jsonl
 ```
 
 **平台侧读面**：`GET /api/control/requests/{requestId}` 给出 `{request, status}`——`attempts[]`
@@ -435,6 +436,9 @@ python3 tools/edge_control_agent.py --device AGV-01 --interval-sec 2 \
 
 **授权边界**：授权号由平台按 `control:<requestId>` 签发，边缘**不接受**任何其它形状；
 高危命令（`dispatch_task`/`resume`/`clear_fault`）在平台必须先过审批（与边缘同一份词表）。
+边缘的安全顺序是：本地校验 → 平台 ack 复核接受 → 设备动作 → 执行回执。
+ack 返回 409 或结果未知时**不碰设备**。`--receipt-journal` 指向本地可写持久卷；
+进程重启后用原 `commandId` 重投回执（平台幂等），不能放在容器可丢缓存层。
 
 ## 搬运任务派给执行机构（NO-61a）
 

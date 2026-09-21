@@ -14,6 +14,16 @@ import { parseConflictPayload } from './offlineConflict';
 export const OFFLINE_DB_NAME = 'ewoh-offline';
 export const OFFLINE_DB_VERSION = 1;
 
+/**
+ * Offline vaults contain worker-entered facts and photos, so they must never be
+ * shared across login identities. Scope the database name by authenticated
+ * org/user. A null scope is reserved for non-identity system probes only.
+ */
+export function offlineDbNameForScope(scopeKey?: string | null): string {
+  const scope = scopeKey?.trim();
+  return scope ? `${OFFLINE_DB_NAME}:${scope}` : OFFLINE_DB_NAME;
+}
+
 export const STORE_NAMES = {
   pendingActions: 'pendingActions',
   drafts: 'drafts',
@@ -184,12 +194,13 @@ function createStore<T extends { key: string }>(
  * Opens (creates if needed) the offline IndexedDB database and returns typed
  * stores. Falls back to a drive-based database only when IndexedDB is missing.
  */
-export async function openOfflineDb(): Promise<OfflineDatabase> {
+export async function openOfflineDb(scopeKey?: string | null): Promise<OfflineDatabase> {
   if (typeof indexedDB === 'undefined') {
     throw new Error('IndexedDB is not available in this environment');
   }
+  const databaseName = offlineDbNameForScope(scopeKey);
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+    const request = indexedDB.open(databaseName, OFFLINE_DB_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
       const stores: Array<[string, string]> = [
@@ -451,16 +462,23 @@ async function toStoredPendingAction(
 }
 
 /**
- * Migrates the legacy localStorage pending-action queue (`ewoh.mobile.pending-actions.v1`)
- * into IndexedDB. The legacy data is left intact for backward compatibility. Runs at most
- * once (guarded by a flag in syncState).
+ * Legacy localStorage pending actions have no authenticated owner/org binding.
+ * After offline vaults became identity-scoped, silently importing them into the
+ * current user's vault would let worker A's queued facts/photos be flushed under
+ * worker B's login. We therefore fail closed: preserve the legacy data, mark the
+ * migration skipped, and never auto-delete evidence that may belong to someone
+ * else. Recovery requires an explicit out-of-band owner review.
  */
+export const LEGACY_MIGRATION_SKIPPED_KEY = 'legacy-migration-skipped-unattributed';
+
 export async function migratePendingActionsFromLocalStorage(
   storage: StorageLike | null,
   pendingStore: SimpleStore<StoredPendingAction>,
   attachmentStore: SimpleStore<OfflineAttachment>,
   syncStateStore: SimpleStore<SyncState>,
 ): Promise<number> {
+  void pendingStore;
+  void attachmentStore;
   if (!storage) {
     return 0;
   }
@@ -468,39 +486,20 @@ export async function migratePendingActionsFromLocalStorage(
   if (existing) {
     return 0;
   }
-  const legacy = readPendingActions(storage);
-  // CLI-509：迁移前按 action.id 查重。迁移中途失败时 flag 未写入，重跑会
-  // 再次进入；若不查重，已完成行会以新 attachmentId 重复写入、旧附件残留
-  // 成为孤儿。查重后重跑只补写缺失行。
-  const existingIds = new Set((await pendingStore.getAll()).map((row) => row.id));
-  let migrated = 0;
-  for (const action of legacy) {
-    if (existingIds.has(action.id)) {
-      continue;
-    }
-    const stored = await toStoredPendingAction(action, attachmentStore);
-    await pendingStore.put(stored);
-    existingIds.add(action.id);
-    migrated += 1;
-  }
+  // Read once only to establish whether unattributed evidence exists; do not
+  // parse/convert it into the current identity's queue.
+  const legacyCount = readPendingActions(storage).length;
   await syncStateStore.put({
     key: MIGRATION_FLAG_KEY,
-    value: true,
+    value: {
+      skipped: true,
+      reason: 'legacy_queue_has_no_owner_binding',
+      legacyCount,
+      updatedAt: new Date().toISOString(),
+    },
     updatedAt: new Date().toISOString(),
   });
-  // 迁移完成后安全清理遗留 localStorage（若存储支持 removeItem）。
-  // 数据已进入 IndexedDB，遗留键不再被读取，避免陈旧数据长期占用存储。
-  const legacyStore = storage as StorageLike & {
-    removeItem?: (key: string) => void;
-  };
-  if (typeof legacyStore.removeItem === 'function') {
-    try {
-      legacyStore.removeItem(PENDING_ACTIONS_STORAGE_KEY);
-    } catch {
-      // 清理失败不影响迁移结果（数据已在 IndexedDB 中）。
-    }
-  }
-  return migrated;
+  return 0;
 }
 
 export async function getLastSyncAt(
@@ -772,3 +771,16 @@ export async function exportOfflineData(
 
 /** Convenience: drop legacy localStorage key (kept for compatibility tests). */
 export { PENDING_ACTIONS_STORAGE_KEY };
+
+describe('offlineDbNameForScope', () => {
+  it('scopes the offline database by authenticated identity', () => {
+    expect(offlineDbNameForScope('org-a:user-1')).toBe('ewoh-offline:org-a:user-1');
+    expect(offlineDbNameForScope('org-b:user-1')).toBe('ewoh-offline:org-b:user-1');
+  });
+
+  it('keeps the legacy name only for unscoped system probes', () => {
+    expect(offlineDbNameForScope(undefined)).toBe('ewoh-offline');
+    expect(offlineDbNameForScope(null)).toBe('ewoh-offline');
+    expect(offlineDbNameForScope('')).toBe('ewoh-offline');
+  });
+});

@@ -26,7 +26,7 @@ function approvedPlan() {
     plans: [{
       id: 'plan-row-1',
       planId: 'PLAN-WAVE',
-      orgId: 'org-1',
+      orgId: 'org1',
       status: 'approved',
       isShadow: false,
       snapshotVersion: 'WS-1',
@@ -41,7 +41,7 @@ function assignment(n: number, over: Record<string, unknown> = {}) {
     assignmentId: `ASG-${n}`,
     planId: 'PLAN-WAVE',
     taskId: `TASK-${n}`,
-    orgId: 'org-1',
+    orgId: 'org1',
     personId: `p${n}`,
     deviceId: null,
     stationId: `s${n}`,
@@ -59,9 +59,9 @@ function seedThree() {
     ...approvedPlan(),
     assignments: [assignment(1), assignment(2), assignment(3)],
     tasks: [
-      { id: 'TASK-1', status: 'pending_dispatch', version: 1 },
-      { id: 'TASK-2', status: 'pending_dispatch', version: 1 },
-      { id: 'TASK-3', status: 'pending_dispatch', version: 1 },
+      { id: 'TASK-1', status: 'pending_dispatch', version: 1, orgId: 'org1' },
+      { id: 'TASK-2', status: 'pending_dispatch', version: 1, orgId: 'org1' },
+      { id: 'TASK-3', status: 'pending_dispatch', version: 1, orgId: 'org1' },
     ],
   };
 }
@@ -76,8 +76,9 @@ describe('分波次派工（部分执行）', () => {
     expect(result.remainingAssignments).toBe(0);
     // 计划行确实落到终态
     expect(state.plans.get('PLAN-WAVE')?.status).toBe('dispatched');
-    // 全部 assignment 已派工
+    // 全部 assignment 已派工，且乐观锁版本推进
     expect(state.assignments.every((a) => a.status === 'dispatched')).toBe(true);
+    expect(state.assignments.every((a) => a.version === 2)).toBe(true);
   });
 
   it('只派一波：计划保持 approved（不得伪装成终态），剩余显式回传', async () => {
@@ -150,7 +151,7 @@ describe('分波次派工（部分执行）', () => {
     const { svc } = makeDispatchCoordinator({
       ...approvedPlan(),
       assignments: [assignment(1, { status: 'dispatched' })],
-      tasks: [{ id: 'TASK-1', status: 'dispatched', version: 1 }],
+      tasks: [{ id: 'TASK-1', status: 'dispatched', version: 1, orgId: 'org1' }],
     });
     await expect(
       svc.dispatch('PLAN-WAVE', testOrgContext(), { assignmentIds: ['ASG-1'] }),

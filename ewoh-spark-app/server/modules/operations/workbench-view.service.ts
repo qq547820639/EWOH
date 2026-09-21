@@ -51,6 +51,12 @@ export interface WorkbenchViewInput {
 export interface WorkbenchViewStore {
   save(view: WorkbenchView): Promise<WorkbenchView>;
   get(orgId: string, ownerId: string, key: string): Promise<WorkbenchView | undefined>;
+  /** Resolve an own or same-org shared view for an authorization check. */
+  getVisible(
+    orgId: string,
+    requesterId: string,
+    key: string,
+  ): Promise<WorkbenchView | undefined>;
   list(ownerId: string, orgId: string): Promise<WorkbenchView[]>;
   remove(orgId: string, ownerId: string, key: string): Promise<void>;
 }
@@ -71,6 +77,19 @@ export class InMemoryWorkbenchViewStore implements WorkbenchViewStore {
 
   async get(orgId: string, ownerId: string, key: string): Promise<WorkbenchView | undefined> {
     return this.views.get(this.scopedKey(orgId, ownerId, key));
+  }
+
+  async getVisible(
+    orgId: string,
+    requesterId: string,
+    key: string,
+  ): Promise<WorkbenchView | undefined> {
+    return [...this.views.values()].find(
+      (view) =>
+        view.orgId === orgId &&
+        view.key === key &&
+        (view.ownerId === requesterId || view.shared),
+    );
   }
 
   async list(ownerId: string, orgId: string): Promise<WorkbenchView[]> {
@@ -151,14 +170,17 @@ export class WorkbenchViewService {
 
   /** Removes a view; only the owner (or a global admin) may delete it. */
   async deleteView(actor: WorkbenchViewActor, key: string): Promise<void> {
-    const existing = await this.store.get(actor.primaryOrgId, actor.userId, key);
+    // list() exposes own + shared views, so authorization must resolve the same
+    // visibility; looking up only actor-owned rows made shared views impossible
+    // to delete (even for global admins).
+    const existing = await this.store.getVisible(actor.primaryOrgId, actor.userId, key);
     if (!existing) {
       throw new NotFoundException('view not found');
     }
     if (existing.ownerId !== actor.userId && !this.isAdmin(actor)) {
       throw new ForbiddenException('You may only delete your own saved views');
     }
-    await this.store.remove(actor.primaryOrgId, actor.userId, key);
+    await this.store.remove(actor.primaryOrgId, existing.ownerId, key);
     await this.auditService?.appendAuditLog({
       actorId: actor.userId,
       orgId: actor.primaryOrgId,

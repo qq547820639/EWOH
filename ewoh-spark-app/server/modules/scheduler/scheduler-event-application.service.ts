@@ -108,9 +108,11 @@ export class SchedulerEventApplicationService {
         ctx,
       );
       if (approval && approval.decision === 'HUMAN_APPROVAL_REQUIRED') {
-        const preview = await this.replanPreviewService
-          .previewReplan(body.trigger, body.entityId ? [body.entityId] : [], ctx)
-          .catch(() => null);
+        const preview = this.replanPreviewService
+          ? await this.replanPreviewService
+              .previewReplan(body.trigger, body.entityId ? [body.entityId] : [], ctx)
+              .catch(() => null)
+          : null;
         if (this.outboxService) {
           // NEST-137（2026-08-17）：审批事件（人工介入触发）属关键事件——
           // await 落库（失败留痕但不阻断返回；此前 fire-and-forget 可能静默丢失）。
@@ -180,16 +182,18 @@ export class SchedulerEventApplicationService {
     return { ...primary, cascaded };
   }
 
-  /** M03：consult replanApproval policy；未配置 replanApproval 或 consult 失败 → null（保持现状）。 */
+  /**
+   * M03 approval-policy consult. No configured policy means the legacy
+   * AUTO_REPLAN contract stays intact. But an unavailable policy/impact/snapshot
+   * is unknown risk, not a reason to auto-execute: fail closed to approval.
+   */
   private async maybeConsultApproval(
     triggerType: string,
     entityId: string | null,
     ctx: OrgContext,
   ): Promise<ReplanApprovalDecision | null> {
     try {
-      const config = await this.policyService
-        .resolveReplanApprovalConfig()
-        .catch(() => null);
+      const config = await this.policyService.resolveReplanApprovalConfig();
       if (!config) return null;
       if (!this.replanCoordinatorService) return null;
       const impact = await this.replanCoordinatorService.analyzeImpactV2(
@@ -197,7 +201,7 @@ export class SchedulerEventApplicationService {
         entityId ? [entityId] : [],
         ctx,
       );
-      return this.planService.consultReplanApproval({
+      return await this.planService.consultReplanApproval({
         triggerType,
         impact,
         preview: null,
@@ -205,9 +209,12 @@ export class SchedulerEventApplicationService {
       });
     } catch (err) {
       this.logger.warn(
-        `replan approval consult failed: ${err instanceof Error ? err.message : String(err)}`,
+        `replan approval consult failed; requiring human approval: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return null;
+      return {
+        decision: 'HUMAN_APPROVAL_REQUIRED',
+        reasons: ['approval_policy_unavailable'],
+      };
     }
   }
 

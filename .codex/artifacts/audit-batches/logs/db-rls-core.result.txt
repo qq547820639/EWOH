@@ -1,0 +1,14 @@
+Reviewed 13/13 complete files, 7,373 input lines. Generated 13 valid output rows with all hashes/ranges verified.
+
+**P0 findings:** 0  
+**P1 findings:** 7
+
+- `db/runner/run_migrations.js:338-393,1046-1053,1745-1839` — R2-DBM-ROLLBACK-GATE: newer standalone rollback commands bypass the destructive-rollback gate when run directly.
+- `db/migrations/standalone_025_scheduler_rls.sql:18-20,51-70,80-239` — SCHED-RLS-025-REGRESSION-REPLAY: direct replay restores NULL-permissive RLS policies later removed by 057.
+- `db/migrations/standalone_067_scheduling_org_rls.sql:19-23,47-125,130-139` — RLS067-NULL-BRANCH-REGRESSION: reintroduces fail-open NULL branches inconsistent with 057.
+- `db/migrations/standalone_067_scheduling_org_rls.sql` / `db/verify/standalone_067_scheduling_org_rls.verify.sql:23-51` — RLS067-VERIFY-NO-SEMANTICS: verification checks policy names/roles but not tenant predicates.
+- `db/verify/standalone_057_rls_null_reject.verify.sql:23-94` — V057-RLS-FLAG-NOT-CHECKED: policy existence is checked, but `relrowsecurity` is not.
+- `db/verify/standalone_067_scheduling_org_rls.verify.sql:35-51` — V067-NO-POLICY-SEMANTICS: policy USING/WITH CHECK expressions are never validated.
+- `ewoh-spark-app/server/modules/shared/org-scope.service.ts:35-42,101-116` — ORGSCOPE-DEFAULT-FAIL-OPEN: missing DB/provider silently accepts arbitrary org IDs through the default provider.
+
+**Blocker:** The required destination `.codex/artifacts/audit-batches/outputs/reviewed-db-rls-core.jsonl` cannot be created—every write attempt returns `EPERM: Operation not permitted`, despite `.codex/artifacts` being under the workspace. The completed, validated 13-row JSONL is staged at `/private/tmp/reviewed-db-rls-core.jsonl` (SHA-256 `d89cba0a4f21de9c5be62767c3281019b47b96e304a593fe6d6c869015da2a0b`). Source, tests, docs, and the ledger were not modified.

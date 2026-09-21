@@ -650,6 +650,22 @@ export class WorldStateSnapshotService {
     const row = await this.loadSnapshotRow(snapshotVersion);
     if (!row) throw new ConflictException('PLAN_STALE');
     const currentState = await this.collectState(this.comparisonContext(ctx, row.orgId));
+    // planId is not globally unique for all scheduling tables. Scope self-effects
+    // to the snapshot tenant (caller org wins for defense-in-depth); legacy rows
+    // remain explicitly represented by NULL.
+    const scopeOrgId = ctx?.primaryOrgId || row.orgId || null;
+    const planOrgCondition = scopeOrgId
+      ? or(
+          isNull(ewohSchedulingPlanAssignment.orgId),
+          eq(ewohSchedulingPlanAssignment.orgId, scopeOrgId),
+        )
+      : isNull(ewohSchedulingPlanAssignment.orgId);
+    const reservationOrgCondition = scopeOrgId
+      ? or(
+          isNull(ewohResourceReservation.orgId),
+          eq(ewohResourceReservation.orgId, scopeOrgId),
+        )
+      : isNull(ewohResourceReservation.orgId);
 
     const dispatched = await this.db
       .select({ taskId: ewohSchedulingPlanAssignment.taskId })
@@ -657,6 +673,7 @@ export class WorldStateSnapshotService {
       .where(and(
         eq(ewohSchedulingPlanAssignment.planId, planId),
         eq(ewohSchedulingPlanAssignment.status, 'dispatched'),
+        planOrgCondition,
       ));
     const ownEntityKeys = new Set(
       dispatched.map((r) => r.taskId).filter((id): id is string => Boolean(id)).map((id) => `task:${id}`),
@@ -668,7 +685,10 @@ export class WorldStateSnapshotService {
         resourceId: ewohResourceReservation.resourceId,
       })
       .from(ewohResourceReservation)
-      .where(eq(ewohResourceReservation.planId, planId));
+      .where(and(
+        eq(ewohResourceReservation.planId, planId),
+        reservationOrgCondition,
+      ));
     const ownReservationIds = new Set(ownReservations.map((r) => r.reservationId));
     // entityVersions 除了 `task:<id>` 还包含预占派生的 `reservation:<type>~<id>` 键
     // （实测：只剔除 task 键时，本波新建的两条预占仍导致 diff → 第二波恒 PLAN_STALE）。

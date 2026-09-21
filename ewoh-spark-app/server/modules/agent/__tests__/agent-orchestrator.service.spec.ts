@@ -152,3 +152,62 @@ describe('AgentOrchestratorService completeTask（taskJson 合并回归）', () 
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('AgentOrchestratorService dispatchTask（依赖图 fail-closed）', () => {
+  function dispatchDb(options: {
+    task: Record<string, unknown>;
+    dependencies?: Array<Record<string, unknown>>;
+  }) {
+    const dependencies = options.dependencies ?? [];
+    const auditService = { appendAuditLog: jest.fn(async () => ({})) };
+    let selectCall = 0;
+    const db = {
+      select: jest.fn(() => {
+        selectCall += 1;
+        return {
+          from: jest.fn(() => ({
+            where: jest.fn(async () => (selectCall === 1 ? [options.task] : dependencies)),
+          })),
+        };
+      }),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(async () => [{ taskId: options.task.taskId }]),
+        })),
+      })),
+    };
+    const service = new AgentOrchestratorService(db as never, auditService as never);
+    return { db, service };
+  }
+
+  it('missing dependency prevents dispatch', async () => {
+    const task = taskRow({
+      taskId: 'task:child',
+      status: 'created',
+      dependencies: ['task:missing'],
+    });
+    const { service } = dispatchDb({ task });
+    await expect(
+      service.dispatchTask(ORG_A, 'task:child', {
+        userId: 'orchestrator',
+        roles: ['orchestrator'],
+      }),
+    ).rejects.toThrow('dependency_not_found:task:missing');
+  });
+
+  it('existing incomplete dependency still prevents dispatch', async () => {
+    const task = taskRow({
+      taskId: 'task:child',
+      status: 'created',
+      dependencies: ['task:dep'],
+    });
+    const dependency = taskRow({ taskId: 'task:dep', status: 'created' });
+    const { service } = dispatchDb({ task, dependencies: [dependency] });
+    await expect(
+      service.dispatchTask(ORG_A, 'task:child', {
+        userId: 'orchestrator',
+        roles: ['orchestrator'],
+      }),
+    ).rejects.toThrow('dependency_not_completed:task:dep');
+  });
+});

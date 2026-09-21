@@ -306,7 +306,8 @@ class InsecureHttpGuardCaseTest(unittest.TestCase):
         with mock.patch.object(sensor_uplink, "_runtime_mode", return_value="production"):
             s = sensor_uplink.SensorUplinkBridge(MessageBus(), "https://ok.example")
             s.retarget("HTTP://insecure.example")
-        self.assertEqual(s._disabled_reason, "insecure_http_in_production")
+        self.assertEqual(s._base_url, "https://ok.example")
+        self.assertTrue(s.enabled)
 
     def test_metrics_uplink_uppercase_scheme_rejected_in_production(self):
         from edge_platform.edge.bridge import metrics_uplink

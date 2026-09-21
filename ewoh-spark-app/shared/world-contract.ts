@@ -31,6 +31,8 @@ export interface WorldStateRecord {
   stateId: string;
   entityId: string;
   entityType: WorldEntityType;
+  /** Optional state category; snapshots without it fall back to entityType. */
+  stateType?: string;
   stateJson: Record<string, unknown>;
   validFrom: string;
   validTo?: string | null;
@@ -93,7 +95,13 @@ export function validateWorldIntervalSet(records: unknown[]): string[] {
   for (const raw of records) {
     if (raw == null || typeof raw !== 'object') return ['record_must_be_object'];
     const r = raw as Record<string, unknown>;
-    const key = `${String(r.entityId)}|${String(r.stateType)}`;
+        // Canonical records may omit stateType when entityType is the only state
+        // category. The fallback keeps grouping explicit instead of collapsing
+        // every entity into the literal "undefined" state bucket.
+        const stateType = typeof r.stateType === 'string' && r.stateType.trim() !== ''
+          ? r.stateType
+          : r.entityType;
+        const key = `${String(r.entityId)}|${String(stateType)}`;
     const list = groups.get(key) ?? [];
     list.push(r);
     groups.set(key, list);

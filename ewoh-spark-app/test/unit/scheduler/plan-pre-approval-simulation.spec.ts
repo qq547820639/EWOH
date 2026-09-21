@@ -80,7 +80,11 @@ function makePlanService(opts: {
       })),
     })),
     update: jest.fn(() => ({
-      set: jest.fn(() => ({ where: jest.fn(async () => []) })),
+      set: jest.fn(() => ({
+        where: jest.fn(() => ({
+          returning: jest.fn(async () => [{ id: 'updated' }]),
+        })),
+      })),
     })),
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: Record<string, unknown>) => {

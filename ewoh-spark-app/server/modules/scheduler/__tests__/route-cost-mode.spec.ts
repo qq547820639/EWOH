@@ -180,9 +180,9 @@ describe('§5.4 DispatchCoordinatorService ADVISORY fail-closed', () => {
 
   it('ADVISORY + safety-critical + route_graph → 正常派工（放行）', async () => {
     const { svc, mocks } = makeDispatchCoordinator({
-      plans: [{ planId: 'PLAN-ADV-2', status: 'approved', snapshotVersion: 'WS-ADV-2' }],
+      plans: [{ planId: 'PLAN-ADV-2', status: 'approved', snapshotVersion: 'WS-ADV-2', orgId: 'org1' }],
       assignments: [
-        { assignmentId: 'ASG-ADV-2', planId: 'PLAN-ADV-2', taskId: 'T-SAFE', personId: 'p1', status: 'approved' },
+        { assignmentId: 'ASG-ADV-2', planId: 'PLAN-ADV-2', taskId: 'T-SAFE', personId: 'p1', status: 'approved', version: 1, orgId: 'org1' },
       ],
       tasks: [{ id: 'T-SAFE', status: 'pending_dispatch', safetyCritical: true }],
     });
@@ -197,9 +197,9 @@ describe('§5.4 DispatchCoordinatorService ADVISORY fail-closed', () => {
 
   it('ADVISORY + 非 safety-critical + euclidean_fallback → 正常派工（放行）', async () => {
     const { svc, mocks } = makeDispatchCoordinator({
-      plans: [{ planId: 'PLAN-ADV-3', status: 'approved', snapshotVersion: 'WS-ADV-3' }],
+      plans: [{ planId: 'PLAN-ADV-3', status: 'approved', snapshotVersion: 'WS-ADV-3', orgId: 'org1' }],
       assignments: [
-        { assignmentId: 'ASG-ADV-3', planId: 'PLAN-ADV-3', taskId: 'T-NORM', personId: 'p1', status: 'approved' },
+        { assignmentId: 'ASG-ADV-3', planId: 'PLAN-ADV-3', taskId: 'T-NORM', personId: 'p1', status: 'approved', version: 1, orgId: 'org1' },
       ],
       tasks: [{ id: 'T-NORM', status: 'pending_dispatch', safetyCritical: false }],
     });
@@ -214,9 +214,9 @@ describe('§5.4 DispatchCoordinatorService ADVISORY fail-closed', () => {
 
   it('DEGRADED（缺省 routeCostMode）+ safety-critical + euclidean_fallback → 正常派工（回归）', async () => {
     const { svc, mocks } = makeDispatchCoordinator({
-      plans: [{ planId: 'PLAN-DEG-1', status: 'approved', snapshotVersion: 'WS-DEG-1' }],
+      plans: [{ planId: 'PLAN-DEG-1', status: 'approved', snapshotVersion: 'WS-DEG-1', orgId: 'org1' }],
       assignments: [
-        { assignmentId: 'ASG-DEG-1', planId: 'PLAN-DEG-1', taskId: 'T-SAFE', personId: 'p1', status: 'approved' },
+        { assignmentId: 'ASG-DEG-1', planId: 'PLAN-DEG-1', taskId: 'T-SAFE', personId: 'p1', status: 'approved', version: 1, orgId: 'org1' },
       ],
       tasks: [{ id: 'T-SAFE', status: 'pending_dispatch', safetyCritical: true }],
     });

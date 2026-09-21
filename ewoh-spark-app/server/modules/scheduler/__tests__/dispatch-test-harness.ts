@@ -234,6 +234,11 @@ export function makeFakeDb(seed: FakeDbSeed = {}) {
             for (const c of hit) Object.assign(c, patch);
             return { returning: () => Promise.resolve([...hit]) };
           }
+          if (table === ewohResourceReservation) {
+            const hit = state.reservations.filter((r) => matchesEq(r, pred));
+            for (const r of hit) Object.assign(r, patch);
+            return { returning: () => Promise.resolve([...hit]) };
+          }
           return { returning: () => Promise.resolve([]) };
         },
       }),
@@ -250,9 +255,17 @@ export function testOrgContext(): OrgContext {
 /** 构造 DispatchCoordinatorService 及其全部 mock 依赖。 */
 export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
   const { db, state } = makeFakeDb(seed);
+  // 内存替身必须模拟 PostgreSQL 事务隔离的串行提交语义；否则并发测试会
+  // 允许两个事务同时读到同一 version，掩盖生产库中真实存在的 CAS 行为。
+  let transactionTail: Promise<unknown> = Promise.resolve();
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
-      await cb();
+      const run = transactionTail.then(() => cb());
+      transactionTail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     }),
   };
   const worldStateSnapshotService = {
@@ -337,9 +350,17 @@ export function makeDispatchCoordinator(seed: FakeDbSeed = {}) {
 /** 构造 PlanService 及其 mock 依赖（含 DispatchCoordinator）。 */
 export function makePlanService(seed: FakeDbSeed = {}) {
   const { db, state } = makeFakeDb(seed);
+  // 内存替身必须模拟 PostgreSQL 事务隔离的串行提交语义；否则并发测试会
+  // 允许两个事务同时读到同一 version，掩盖生产库中真实存在的 CAS 行为。
+  let transactionTail: Promise<unknown> = Promise.resolve();
   const requestDatabaseContext = {
     runInTransaction: jest.fn(async (_guc: unknown, cb: () => Promise<void>) => {
-      await cb();
+      const run = transactionTail.then(() => cb());
+      transactionTail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     }),
   };
   const auditService = {

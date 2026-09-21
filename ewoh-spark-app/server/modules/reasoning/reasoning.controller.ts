@@ -6,7 +6,7 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 /**
  * 工业推理 API（ADR-020 / NO-08b，Level 4 独立工业推理层）。
  *
- *  - POST /api/reasoning/evaluate  确定性规则评估 → 轨迹契约自检 →
+ *  - POST /api/reasoning/evaluate  受治理的手供事实评估（global_admin）→
  *    结论逐条 L4 台账落账（InferenceResultRecorded 事件）→ trace + inferenceIds
  *  - GET  /api/reasoning/rules     规则注册表（可解释面：触发条件/严重度）
  *
@@ -18,6 +18,7 @@ export class ReasoningController {
   constructor(private readonly reasoningService: ReasoningService) {}
 
   @Post('evaluate')
+  @Roles('global_admin')
   evaluate(
     @Body() body: EvaluateReasoningInput,
     @Req() request: { userContext?: OrgContext },

@@ -566,6 +566,11 @@ export class SchedulerController {
     @Body() body: { operator?: string; reason?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
+    // Conflict lifecycle writes are audit-bearing; a human reason is mandatory.
+    // body.operator is accepted for API compatibility but never trusted.
+    if (!body?.reason?.trim()) {
+      throw new BadRequestException('reason 必填：冲突处置必须可解释、可审计');
+    }
     return this.conflictService.acknowledge(
       id,
       body?.operator ?? '',
@@ -581,6 +586,9 @@ export class SchedulerController {
     @Body() body: { operator?: string; reason?: string; resolution?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
+    if (!body?.reason?.trim()) {
+      throw new BadRequestException('reason 必填：冲突处置必须可解释、可审计');
+    }
     return this.conflictService.resolve(
       id,
       body?.operator ?? '',
@@ -597,6 +605,9 @@ export class SchedulerController {
     @Body() body: { operator?: string; reason?: string; suppressUntilMs?: number },
     @Req() request: { userContext?: OrgContext },
   ) {
+    if (!body?.reason?.trim()) {
+      throw new BadRequestException('reason 必填：抑制冲突必须可解释、可审计');
+    }
     return this.conflictService.suppress(
       id,
       body?.operator ?? '',
@@ -654,6 +665,12 @@ export class SchedulerController {
     @Body() body: { approver?: string; reason?: string },
     @Req() request: { userContext?: OrgContext },
   ) {
+    if (!request.userContext?.userId) {
+      throw new BadRequestException('authenticated user context is required');
+    }
+    // The authenticated principal, not a client-supplied display name, owns the
+    // approval audit identity. body.approver remains API-compatible only.
+    body.approver = request.userContext.userId;
     return this.schedulerService.activatePolicyVersion(
       this.parsePolicyVersion(version),
       body ?? {},
@@ -774,12 +791,31 @@ export class SchedulerController {
           for (const message of pending) subscriber.next(message);
           pending.length = 0;
         })
-        .catch((err: unknown) => {
-          // 重放查询失败：降级为纯实时订阅，不阻断 SSE 连接。
+        .catch(async (err: unknown) => {
+          // Replay failure must not silently drop the missed window. Emit an
+          // authoritative resync (using current sequence when available) and
+          // then continue with the live stream.
           this.logger.error(
-            'SSE replaySince failed, fallback to live stream',
+            'SSE replaySince failed; issuing resync before live stream',
             err instanceof Error ? err.stack : String(err),
           );
+          let currentSequence = 0;
+          try {
+            currentSequence = await this.schedulerStreamService.currentSequence();
+          } catch (sequenceError) {
+            this.logger.error(
+              'SSE currentSequence failed during replay fallback',
+              sequenceError instanceof Error ? sequenceError.stack : String(sequenceError),
+            );
+          }
+          subscriber.next({
+            type: 'resync',
+            id: String(currentSequence),
+            data: JSON.stringify({
+              currentSequence,
+              reason: 'replay unavailable',
+            }),
+          });
           preludeDone = true;
           for (const message of pending) subscriber.next(message);
           pending.length = 0;
@@ -1046,7 +1082,7 @@ export class SchedulerController {
   async activatePolicy(
     @Param('version') version: string,
     @Body() body: {
-      operator: string;
+      operator?: string;
       reason?: string;
       replayId?: string;
       /**
@@ -1059,8 +1095,11 @@ export class SchedulerController {
     },
     @Req() request: { userContext?: OrgContext },
   ) {
+    if (!request.userContext?.userId) {
+      throw new BadRequestException('authenticated user context is required');
+    }
     return this.policyActivationService.activate(Number(version), {
-      operator: body.operator ?? request.userContext?.userId ?? 'system',
+      operator: request.userContext.userId,
       reason: body.reason,
       replayId: body.replayId,
       // 服务端权威评估：不读取任何调用方提供的 Gate 结果。
@@ -1078,9 +1117,12 @@ export class SchedulerController {
   ) {
     // NEST-112（2026-08-17）：透传认证上下文（rollback 按 org 校验归属，
     // 跨租户 activationId 404，NEST-032）。
+    if (!request?.userContext?.userId) {
+      throw new BadRequestException('authenticated user context is required');
+    }
     return this.policyActivationService.rollback(
       activationId,
-      body.operator ?? request?.userContext?.userId ?? 'system',
+      request.userContext.userId,
       body.reason,
       request?.userContext,
     );

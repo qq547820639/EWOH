@@ -6,6 +6,8 @@
  * 遵循 dispatch-test-harness / plan-persistence.spec 的 mock 风格。
  */
 /// <reference types="jest" />
+import { UnauthorizedException } from '@nestjs/common';
+import { withRequestContext } from '../../../common/request-context';
 import { SchedulerService } from '../scheduler.service';
 import { WorldStateSnapshotService } from '../world-state.service';
 import { PlanService } from '../plan.service';
@@ -335,7 +337,27 @@ describe('v0.7 Batch8 RLS 缓解: listRuns org 过滤', () => {
     expect(res.total).toBeGreaterThanOrEqual(0);
   });
 
-  it('无 actor（缺省）→ 查询照常执行（向后兼容，不抛错）', async () => {
+  it('HTTP 请求上下文缺失 actor → listRuns 显式 401，不全量回退', async () => {
+    const { svc } = makeSvc({
+      runs: [runRow({ runId: 'RUN-1', orgId: 'org1' }), runRow({ runId: 'RUN-2', orgId: 'org2' })],
+      plans: [],
+    });
+    await expect(
+      withRequestContext({ requestId: 'req-list-runs' }, () => svc.listRuns({ page: 1, pageSize: 10 })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('HTTP 请求上下文缺失 actor → getRun 显式 401，不按未认证行读取', async () => {
+    const { svc } = makeSvc({
+      runs: [runRow({ runId: 'RUN-1', orgId: 'org1' })],
+      plans: [],
+    });
+    await expect(
+      withRequestContext({ requestId: 'req-get-run' }, () => svc.getRun('RUN-1')),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('无 actor 且无 HTTP 请求上下文（内部函数式调用）→ 查询照常执行', async () => {
     const { svc } = makeSvc({
       runs: [runRow({ runId: 'RUN-1', orgId: 'org1' }), runRow({ runId: 'RUN-2', orgId: 'org2' })],
       plans: [],

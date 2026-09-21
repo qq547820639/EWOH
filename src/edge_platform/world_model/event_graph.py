@@ -127,7 +127,13 @@ class EventGraph:
         return node
 
     def add_edge(self, from_id, to_id, relation="caused"):
-        """新增因果边。"""
+        """新增因果边；两端节点必须存在，关系必须在封闭词表内。"""
+        if from_id not in self._nodes:
+            raise KeyError(f"边起点节点不存在: {from_id}")
+        if to_id not in self._nodes:
+            raise KeyError(f"边终点节点不存在: {to_id}")
+        if relation not in EDGE_RELATIONS:
+            raise ValueError(f"未知事件关系: {relation!r}")
         edge = EventEdge(
             edge_id=new_id("EDGE"),
             from_node=from_id,
@@ -211,12 +217,22 @@ class EventGraph:
 
     @classmethod
     def from_dict(cls, d):
+        """重建事件图；悬空边或非法关系必须 fail-closed，不得静默丢弃。"""
         g = cls()
         for nd in d.get("nodes", []):
             n = EventNode.from_dict(nd)
+            if n.node_id in g._nodes:
+                raise ValueError(f"事件图存在重复节点: {n.node_id}")
             g._nodes[n.node_id] = n
         for ed in d.get("edges", []):
-            g._edges.append(EventEdge.from_dict(ed))
+            edge = EventEdge.from_dict(ed)
+            if edge.from_node not in g._nodes:
+                raise ValueError(f"事件边起点悬空: {edge.from_node}")
+            if edge.to_node not in g._nodes:
+                raise ValueError(f"事件边终点悬空: {edge.to_node}")
+            if edge.relation not in EDGE_RELATIONS:
+                raise ValueError(f"未知事件关系: {edge.relation!r}")
+            g._edges.append(edge)
         return g
 
 

@@ -72,13 +72,13 @@ class ConsentManagerTest(unittest.TestCase):
         self.assertEqual(rec.granted_by, "leader1")
         self.assertEqual(rec.retention_rule, "telemetry-30d")
         # 已授权用途 → True
-        self.assertTrue(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY))
+        self.assertTrue(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, actor_id="checker-1"))
         # 未授权用途 → False
-        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.VIDEO))
+        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.VIDEO, actor_id="checker-1"))
         # 字段级：未授权字段 → False
-        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "video.frame"))
+        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "video.frame", actor_id="checker-1"))
         # 授权字段 → True
-        self.assertTrue(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "load.torque"))
+        self.assertTrue(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "load.torque", actor_id="checker-1"))
 
         # 撤回后 → False
         job = mgr.revoke(rec.record_id, "员工离职", "admin1")
@@ -86,8 +86,8 @@ class ConsentManagerTest(unittest.TestCase):
         self.assertEqual(rec.status, "REVOKED")
         self.assertIsNotNone(rec.revoked_at)
         self.assertEqual(rec.revocation_reason, "员工离职")
-        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY))
-        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "load.torque"))
+        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, actor_id="checker-1"))
+        self.assertFalse(mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, "load.torque", actor_id="checker-1"))
 
     def test_revoke_produces_revocation_job_with_delete_and_anonymize(self):
         mgr = ConsentManager()
@@ -132,11 +132,51 @@ class ConsentManagerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             mgr.revoke(rec.record_id, "第二次", "admin1")
 
+    def test_grant_and_revoke_inputs_fail_closed(self):
+        mgr = ConsentManager()
+        with self.assertRaises(ValueError):
+            mgr.grant("", [ConsentPurpose.TELEMETRY], [], "leader1")
+        with self.assertRaises(ValueError):
+            mgr.grant("p1", [], [], "leader1")
+        with self.assertRaises(ValueError):
+            mgr.grant("p1", [ConsentPurpose.TELEMETRY], [], "")
+        rec = mgr.grant("p1", [ConsentPurpose.TELEMETRY], ["load.torque"], "leader1")
+        with self.assertRaises(ValueError):
+            mgr.revoke(rec.record_id, "", "admin1")
+        with self.assertRaises(ValueError):
+            mgr.revoke(rec.record_id, "reason", "")
+
+    def test_is_allowed_requires_attributable_actor(self):
+        mgr = ConsentManager()
+        mgr.grant("p1", [ConsentPurpose.TELEMETRY], [], "leader1")
+        for bad_actor in ("", None):
+            with self.assertRaises(ValueError):
+                mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, actor_id=bad_actor)
+        self.assertTrue(
+            mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, actor_id="inference-pipeline")
+        )
+        check = [
+            e for e in mgr.access_log
+            if e["action"] == "check" and e["actor_id"] == "inference-pipeline"
+        ][-1]
+        self.assertEqual(check["actor_id"], "inference-pipeline")
+
+    def test_duplicate_purposes_and_fields_are_normalized(self):
+        mgr = ConsentManager()
+        rec = mgr.grant(
+            "p1",
+            [ConsentPurpose.TELEMETRY, ConsentPurpose.TELEMETRY],
+            ["load.torque", "load.torque", "video.frame"],
+            "leader1",
+        )
+        self.assertEqual(rec.purposes, [ConsentPurpose.TELEMETRY])
+        self.assertEqual(rec.fields, ["load.torque", "video.frame"])
+
     def test_access_log_records_check_grant_revoke(self):
         mgr = ConsentManager()
         rec = mgr.grant("p1", [ConsentPurpose.TELEMETRY], ["load.torque"], "leader1")
-        mgr.is_allowed("p1", ConsentPurpose.TELEMETRY)
-        mgr.is_allowed("p1", ConsentPurpose.VIDEO)
+        mgr.is_allowed("p1", ConsentPurpose.TELEMETRY, actor_id="checker-1")
+        mgr.is_allowed("p1", ConsentPurpose.VIDEO, actor_id="checker-1")
         mgr.revoke(rec.record_id, "撤回", "admin1")
 
         actions = [e["action"] for e in mgr.access_log]
@@ -175,7 +215,7 @@ class ConsentManagerTest(unittest.TestCase):
         # 字符串用途也可授权与查询（便于从外部数据恢复）
         mgr = ConsentManager()
         mgr.grant("p1", ["TELEMETRY"], [], "leader1")
-        self.assertTrue(mgr.is_allowed("p1", "TELEMETRY"))
+        self.assertTrue(mgr.is_allowed("p1", "TELEMETRY", actor_id="checker-1"))
 
 
 # ---------- 分层保留 ----------
@@ -297,6 +337,27 @@ class ModelRegistryTest(unittest.TestCase):
     def test_register_unknown_model_type_rejected(self):
         with self.assertRaises(ValueError):
             ModelRecord(model_type="not_a_type", version="1.0.0")
+
+    def test_canary_ratio_outside_unit_interval_refused(self):
+        reg = ModelRegistry()
+        rec = reg.register(ModelRecord(model_type=ACTION_CLASSIFIER, version="1.0.0"))
+        reg.submit_for_review(rec.model_id, "submitter-1")
+        reg.approve_review(rec.model_id, "reviewer-1")
+        reg.start_controlled_validation(rec.model_id)
+        for bad_ratio in (0, -0.1, 1.1):
+            with self.assertRaises(ValueError):
+                reg.start_canary(rec.model_id, canary_ratio=bad_ratio)
+        reg.start_canary(rec.model_id, canary_ratio=1)
+        self.assertEqual(rec.canary_ratio, 1)
+
+    def test_register_never_overwrites_existing_model_id(self):
+        reg = ModelRegistry()
+        first = reg.register(ModelRecord(model_id="m-duplicate", model_type=ACTION_CLASSIFIER, version="1.0.0"))
+        second = ModelRecord(model_id="m-duplicate", model_type=ACTION_CLASSIFIER, version="2.0.0")
+        with self.assertRaises(ValueError):
+            reg.register(second)
+        self.assertIs(reg.get("m-duplicate"), first)
+        self.assertEqual(first.version, "1.0.0")
 
     def test_activate_without_canary_refused(self):
         # Task 25：激活必须先经 CANARY（人工批准）；CANDIDATE 直接 activate → 拒绝

@@ -52,6 +52,20 @@ describe('buildFieldReminders（现场提醒派生）', () => {
     expect(reminders.map((r) => r.kind)).not.toContain('ASSIGNMENT_OVERDUE');
   });
 
+  it('首次加载或请求失败时显示“尚未就绪”，不冒充“数据已过期”', () => {
+    const reminders = buildFieldReminders(baseInput({
+      dataAvailable: false,
+      dataFresh: false,
+      dataUpdatedAt: 0,
+      executions: [execution({ plannedStartAt: '2026-09-10T08:00:00.000Z' })],
+    }));
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0].kind).toBe('FIELD_DATA_NOT_READY');
+    expect(reminders[0].title).toContain('尚未就绪');
+    expect(reminders[0].detail).not.toContain('数据已过期');
+    expect(reminders.map((r) => r.kind)).not.toContain('ASSIGNMENT_OVERDUE');
+  });
+
   it('已派工且超过计划开工 → overdue，并给出迟到分钟数与关联对象', () => {
     const reminders = buildFieldReminders(baseInput({
       executions: [execution({ plannedStartAt: '2026-09-10T09:00:00.000Z' })],

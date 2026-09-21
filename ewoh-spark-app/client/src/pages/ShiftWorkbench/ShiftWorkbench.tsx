@@ -74,7 +74,7 @@ const ShiftWorkbench = (): React.ReactElement => {
    * 交接时先看这个，缺口可以直接写进交接遗留事项（由人决定，平台不代填）。
    */
   const readinessQuery = useQuery({
-    queryKey: ['device-responsibilities', 'coverage'],
+    queryKey: queryKeys.deviceResponsibilityCoverage,
     queryFn: () => getResponsibilityCoverage(undefined),
     refetchInterval: 60000,
   });
@@ -182,7 +182,7 @@ const ShiftWorkbench = (): React.ReactElement => {
    * 低置信度/有冲突时页面必须说清"不得据此生成强建议"（§5 规则 5）。
    */
   const fusionQuery = useQuery({
-    queryKey: ['perception', 'fusion'],
+    queryKey: queryKeys.perceptionFusion,
     queryFn: () => listPerceptionFusion({ limit: 20 }),
     staleTime: QUERY_STALE_TIME_MS,
     refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,
@@ -192,7 +192,7 @@ const ShiftWorkbench = (): React.ReactElement => {
     mutationFn: () => sweepPerceptionFusion({ windowMinutes: 5, bucketMinutes: 5 }),
     onSuccess: (result) => {
       setFusionNote(perceptionSweepLabel(result));
-      void qc.invalidateQueries({ queryKey: ['perception', 'fusion'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.perceptionFusion });
     },
   });
   const fusionViews = (fusionQuery.data ?? []).map((item) => ({
@@ -205,7 +205,7 @@ const ShiftWorkbench = (): React.ReactElement => {
    * 样本不足时页面必须写"证据不足、不给比率"（不显示 0%）。
    */
   const pvaQuery = useQuery({
-    queryKey: ['scheduler', 'planned-vs-actual', 30],
+    queryKey: queryKeys.schedulerPlannedVsActual(30),
     queryFn: () => getPlannedVsActual(30),
     staleTime: QUERY_STALE_TIME_MS,
     refetchInterval: OPERATIONAL_REFETCH_INTERVAL_MS,

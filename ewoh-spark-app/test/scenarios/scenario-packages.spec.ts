@@ -57,7 +57,7 @@ describe('EWOH scenario packages (unit smoke)', () => {
     const suggestion = await ai.createSuggestion({
       triggeredBy: 'user-1',
       problem: '积压',
-      snapshot: { version: 1, from: 't0', to: 't1', records: 80 },
+      snapshot: { version: 1, from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z', records: 80 },
     });
     expect(suggestion.confirmItems.length).toBeGreaterThan(0);
     const plan = await ai.createPlan(suggestion.id, { shift: 'A' });
@@ -183,10 +183,15 @@ describe('EWOH scenario packages (unit smoke)', () => {
       { cwd: repoRoot, encoding: 'utf8', timeout: 30000 },
     );
     expect(standaloneRollback).toContain('DESTRUCTIVE');
-    // Standalone 001 owns the schema in an independent empty database, so its
-    // rollback removes every table created by standalone_001_schema.sql.
+    // Standalone 001 rollback now protects B-type pre-existing tables
+    // (SQL-038 fix): ewoh_ai_suggestion is an altered baseline, not a newly
+    // created table. Only A-type tables (e.g. ewoh_audit_log) get DROP CASCADE.
+    // The
+
     expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_audit_log CASCADE');
-    expect(standaloneRollback).toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion CASCADE');
+    expect(standaloneRollback).not.toContain('DROP TABLE IF EXISTS public.ewoh_ai_suggestion CASCADE');
+    expect(standaloneRollback).toContain("'ewoh_ai_suggestion'");
+    expect(standaloneRollback).toContain('DISABLE ROW LEVEL SECURITY');
 
     // The managed legacy package has the separate existing-table protection.
     const managedRollback = execFileSync(

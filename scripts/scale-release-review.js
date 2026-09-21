@@ -7,8 +7,11 @@ const { execFileSync } = require('child_process');
 const { createRequire } = require('module');
 
 const root = path.resolve(__dirname, '..');
-const version = process.env.EWOH_RELEASE_VERSION || '0.6.0-rc4';
-const bundleDir = path.join(root, 'release', `ewoh-${version}`);
+const version = process.env.EWOH_RELEASE_VERSION
+  || JSON.parse(fs.readFileSync(path.join(root, 'version.json'), 'utf8')).version;
+const bundleDir = process.env.EWOH_BUNDLE_DIR
+  ? path.resolve(process.env.EWOH_BUNDLE_DIR)
+  : path.join(root, 'output', 'release-bundles', `ewoh-${version}`);
 const requireFromApp = createRequire(path.join(root, 'ewoh-spark-app', 'package.json'));
 const yaml = requireFromApp('js-yaml');
 

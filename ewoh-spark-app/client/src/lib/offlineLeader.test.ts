@@ -131,6 +131,50 @@ describe('offlineLeader — BroadcastChannel fallback (multi-tab)', () => {
     expect(flushed).toBe(1);
   });
 
+  it('resolves simultaneous claims to exactly one deterministic leader', async () => {
+    const makeFactory = (): BroadcastChannelFactory => () => new FakeChannel('same-tick');
+    const options = {
+      locks: null as null,
+      claimDelay: () => 0,
+      heartbeatMs: 5,
+      electionWindowMs: 10,
+    };
+    const managerA = new FlushLeaseManager({ ...options, createBroadcast: makeFactory() });
+    const managerB = new FlushLeaseManager({ ...options, createBroadcast: makeFactory() });
+    const [a, b] = await Promise.all([
+      managerA.acquireLeader('same'),
+      managerB.acquireLeader('same'),
+    ]);
+    expect([a.isLeader, b.isLeader].filter(Boolean)).toHaveLength(1);
+    a.release();
+    b.release();
+  });
+
+  it('clear() releases a resolved leader lease instead of leaving it cached', async () => {
+    const messages: unknown[] = [];
+    let channel: BroadcastLike | null = null;
+    const manager = new FlushLeaseManager({
+      locks: null,
+      claimDelay: () => 0,
+      heartbeatMs: 5,
+      electionWindowMs: 0,
+      createBroadcast: () => {
+        channel = {
+          postMessage: (data) => messages.push(data),
+          close: () => undefined,
+          onmessage: null,
+        };
+        return channel;
+      },
+    });
+    const leader = await manager.acquireLeader('logout');
+    expect(leader.isLeader).toBe(true);
+    messages.length = 0;
+    manager.clear();
+    await Promise.resolve();
+    expect(messages).toContainEqual({ type: 'release', name: 'logout', token: expect.any(String) });
+  });
+
   it('single-tab environment (no BroadcastChannel) is always the leader', async () => {
     const manager = new FlushLeaseManager({
       locks: null,

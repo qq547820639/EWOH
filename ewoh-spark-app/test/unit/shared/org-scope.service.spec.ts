@@ -6,6 +6,12 @@ import {
 } from '../../../server/modules/shared/org-scope.service';
 
 describe('OrgScopeService', () => {
+  it('fails construction instead of accepting an arbitrary org when DB and provider are absent', () => {
+    expect(() => new OrgScopeService()).toThrow(
+      'OrgScopeService requires an injected provider or database',
+    );
+  });
+
   const nodes = {
     a: { id: 'a', parentId: null, config: { theme: 'light', rate: 1 } },
     b: { id: 'b', parentId: 'a', config: { rate: 2 } },

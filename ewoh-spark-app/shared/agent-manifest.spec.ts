@@ -105,6 +105,35 @@ describe('agent-manifest contract', () => {
     ).toEqual(['level_risk_conflict']);
   });
 
+  it('L3 仅允许 low 风险和安全命令白名单', () => {
+    const safe = {
+      ...BASE,
+      role: 'Simulation' as const,
+      riskLevel: 'low' as const,
+      writeScope: {
+        tokens: ['simulationData'],
+        commands: ['propose_plan', 'record_evidence', 'run_simulation'],
+      },
+      approvalRequirement: { autonomousLevel: 'L3', approvalRequiredFor: ['record_evidence'] },
+    };
+    expect(validateAgentManifest(safe)).toEqual([]);
+    expect(
+      validateAgentManifest({ ...safe, riskLevel: 'high' }),
+    ).toEqual(['l3_risk_forbidden']);
+    expect(
+      validateAgentManifest({
+        ...safe,
+        writeScope: { tokens: [], commands: ['dispatch_task'] },
+      }),
+    ).toEqual(['l3_command_forbidden']);
+    expect(
+      validateAgentManifest({
+        ...safe,
+        writeScope: { tokens: ['schedulingData'], commands: ['run_simulation'] },
+      }),
+    ).toEqual(['l3_scope_forbidden']);
+  });
+
   it('auditTrail 强制 true；budget/timeout 下界；fallback 封闭', () => {
     expect(validateAgentManifest({ ...BASE, auditTrail: false })).toEqual(['audit_required']);
     expect(

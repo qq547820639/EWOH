@@ -359,6 +359,13 @@ export class PlanService {
       throw new ConflictException('SHADOW_PLAN_GUARD: shadow plan cannot be approved');
     }
 
+    const approvablePlanStatuses = new Set(['draft', 'shadow', 'proposed']);
+    if (!approvablePlanStatuses.has(plan.status ?? '')) {
+      throw new ConflictException(
+        `PLAN_NOT_APPROVABLE: 当前状态 ${plan.status}（仅 draft/shadow/proposed 可审批）`,
+      );
+    }
+
     // B5 审批独立性（standalone_069 / 决策单 D-3 核实）：生成人回避——
     // 比较用服务端权威口径 actor.userId（body.operator 可伪造，不参与）。
     // createdBy 为 NULL（存量/legacy 行）时放行，避免历史方案被永久锁死。
@@ -437,7 +444,7 @@ export class PlanService {
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
-        await this.db
+        const [updatedPlan] = await this.db
           .update(ewohSchedulePlan)
           .set({
             status: 'approved',
@@ -445,12 +452,27 @@ export class PlanService {
             confirmedAt: now,
             confirmReason: approvalReason,
           })
-          .where(eq(ewohSchedulePlan.planId, planId));
+          .where(and(
+            eq(ewohSchedulePlan.planId, planId),
+            eq(ewohSchedulePlan.version, plan.version),
+            eq(ewohSchedulePlan.status, plan.status),
+          ))
+          .returning({ id: ewohSchedulePlan.id });
+        if (!updatedPlan) {
+          throw new ConflictException('PLAN_CONCURRENT_TRANSITION');
+        }
 
         await this.db
           .update(ewohSchedulingPlanAssignment)
           .set({ status: 'approved' })
-          .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+          .where(
+            plan.orgId == null
+              ? eq(ewohSchedulingPlanAssignment.planId, planId)
+              : and(
+                eq(ewohSchedulingPlanAssignment.planId, planId),
+                eq(ewohSchedulingPlanAssignment.orgId, plan.orgId),
+              ),
+          );
 
         await this.insertAudit(planId, 'approve', op, approvalReason, now, ctx.primaryOrgId);
       },
@@ -758,6 +780,13 @@ export class PlanService {
     // ADR-071：变面租户守卫（反枚举 404；与 RLS 语义等价）。
     assertPlanTenantVisible(plan.orgId, ctx, planId);
 
+    const rejectablePlanStatuses = new Set(['draft', 'shadow', 'proposed']);
+    if (!rejectablePlanStatuses.has(plan.status ?? '')) {
+      throw new ConflictException(
+        `PLAN_NOT_REJECTABLE: 当前状态 ${plan.status}（仅 draft/shadow/proposed 可拒绝）`,
+      );
+    }
+
     // 同上：确认人 = 认证主体（自报操作者只进审计声明）。
     const op = ctx.userId;
     const claimedOperator = body.operator?.trim() || null;
@@ -768,7 +797,7 @@ export class PlanService {
     await this.requestDatabaseContext.runInTransaction(
       buildGucSettings(ctx),
       async () => {
-        await this.db
+        const [updatedPlan] = await this.db
           .update(ewohSchedulePlan)
           .set({
             status: 'rejected',
@@ -776,12 +805,27 @@ export class PlanService {
             confirmedAt: now,
             confirmReason: rejectReason,
           })
-          .where(eq(ewohSchedulePlan.planId, planId));
+          .where(and(
+            eq(ewohSchedulePlan.planId, planId),
+            eq(ewohSchedulePlan.version, plan.version),
+            eq(ewohSchedulePlan.status, plan.status),
+          ))
+          .returning({ id: ewohSchedulePlan.id });
+        if (!updatedPlan) {
+          throw new ConflictException('PLAN_CONCURRENT_TRANSITION');
+        }
 
         await this.db
           .update(ewohSchedulingPlanAssignment)
           .set({ status: 'cancelled' })
-          .where(eq(ewohSchedulingPlanAssignment.planId, planId));
+          .where(
+            plan.orgId == null
+              ? eq(ewohSchedulingPlanAssignment.planId, planId)
+              : and(
+                eq(ewohSchedulingPlanAssignment.planId, planId),
+                eq(ewohSchedulingPlanAssignment.orgId, plan.orgId),
+              ),
+          );
 
         await this.insertAudit(planId, 'reject', op, rejectReason, now, ctx.primaryOrgId);
       },
@@ -1675,9 +1719,10 @@ export class PlanService {
     ctx: OrgContext;
   }): Promise<import('@shared/api.interface').ReplanApprovalDecision> {
     const { triggerType, impact, preview, ctx } = input;
-    const config = await this.schedulingPolicyService
-      .resolveReplanApprovalConfig()
-      .catch(() => null);
+    // Unknown approval configuration is unknown risk. A DB/read failure must
+    // surface to callers so they fail closed; only a real "no config" contract
+    // preserves legacy AUTO_REPLAN behavior.
+    const config = await this.schedulingPolicyService.resolveReplanApprovalConfig();
     if (!config) {
       return { decision: 'AUTO_REPLAN', reasons: [] };
     }

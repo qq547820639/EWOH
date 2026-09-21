@@ -56,6 +56,10 @@ export class ExecutionService {
    */
   async cancelForAssignments(assignmentIds: string[], actor?: OrgContext): Promise<number> {
     if (assignmentIds.length === 0) return 0;
+    // Assignment IDs are domain-facing and must never be trusted as globally unique
+    // for authorization. Constrain cancellation to the caller's tenant; legacy NULL
+    // rows stay reachable only for explicit system callers without an actor context.
+    const orgId = actor?.primaryOrgId?.trim();
     const rows = await this.db
       .update(ewohSchedulingExecution)
       .set({ status: 'CANCELLED' })
@@ -63,6 +67,9 @@ export class ExecutionService {
         and(
           inArray(ewohSchedulingExecution.assignmentId, assignmentIds),
           inArray(ewohSchedulingExecution.status, ['PLANNED', 'DISPATCHED']),
+          orgId
+            ? eq(ewohSchedulingExecution.orgId, orgId)
+            : isNull(ewohSchedulingExecution.orgId),
         ),
       )
       .returning({ executionId: ewohSchedulingExecution.executionId });

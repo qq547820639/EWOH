@@ -136,9 +136,8 @@ export default function FieldOperations(): React.ReactElement {
   const exoSessions = (exoQuery.data ?? []) as unknown as FieldExoSession[];
   const dataUpdatedAt = executionsQuery.dataUpdatedAt;
   // 未绑定人员时不发请求——没有数据不等于数据过期，单独区分（下方按 personId 分支呈现）。
-  const dataFresh = personId
-    ? (!executionsQuery.isError && isFactoryDataCurrent(dataUpdatedAt, Math.max(now, Date.now())))
-    : true;
+  const dataAvailable = Boolean(personId && !executionsQuery.isLoading && !executionsQuery.isError);
+  const dataFresh = Boolean(personId && dataAvailable && isFactoryDataCurrent(dataUpdatedAt, Math.max(now, Date.now())));
 
   const reminders = useMemo(() => buildFieldReminders({
     personId: effectivePersonId,
@@ -146,6 +145,7 @@ export default function FieldOperations(): React.ReactElement {
     exoSessions,
     now,
     dataFresh,
+    dataAvailable,
     dataUpdatedAt,
     staleAfterMs: FACTORY_DATA_STALE_AFTER_MS,
     // 会话请求失败 → 绑定状态未知，逻辑层不得据此断言"未绑定"。

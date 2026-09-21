@@ -87,8 +87,9 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
     opts: SolveOptions,
   ): Promise<SchedulingPlanV2> {
     const now = Date.now();
-    const policy: SchedulingPolicy = opts.policy ?? (await this.policyService.getActivePolicy());
-    const config = await this.policyService.getConfig();
+    const orgId = opts.orgId ?? null;
+    const policy: SchedulingPolicy = opts.policy ?? (await this.policyService.getActivePolicy(orgId));
+    const config = await this.policyService.getConfig(orgId);
     const horizonMinutes = config.horizonMinutes ?? opts.horizonMinutes;
     const doneTaskIds = new Set<string>(
       snapshot.tasks.filter((t) => TaskLifecycle.isTerminal(t.status)).map((t) => t.id),
@@ -175,6 +176,9 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
           orgId: opts.orgId ?? null,
           // R2-SCH-002：变体策略透传（候选评分消费变体权重缩放）。
           policy,
+          // Same tenant config must drive the primary pool and constraints; a
+          // second read could observe a concurrent policy activation.
+          config,
           // R2-SCH-001：人员/设备占用顺延（booked 槽位推得的资源空闲时刻）。
           bookedPersonFreeAt: this.freeAtByResource(bookedTimeSlots, (s) => s.personId),
           bookedDeviceFreeAt: this.freeAtByResource(bookedDeviceSlots, (s) => s.deviceId),

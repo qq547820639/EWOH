@@ -79,7 +79,8 @@ function makeService(seedConflicts: Array<Record<string, unknown>> = []) {
             conflicts.push({ id: `id-${conflicts.length + 1}`, ...row });
           }
         }
-        return { returning: () => Promise.resolve([]) };
+        const returning = () => Promise.resolve([]);
+        return { onConflictDoNothing: () => ({ returning }) };
       },
     }),
     update: (table: unknown) => ({

@@ -222,7 +222,7 @@ export class ConflictService {
   /** OPEN → ACKNOWLEDGED（已 ACK 幂等保持；RESOLVED/SUPPRESSED 拒绝）。 */
   async acknowledge(
     conflictId: string,
-    operator: string,
+    _operator: string,
     reason?: string,
     ctx?: OrgContext,
   ): Promise<SchedulingConflict> {
@@ -242,7 +242,7 @@ export class ConflictService {
       );
     }
     const now = new Date();
-    const actor = operator || ctx?.userId || SYSTEM_ACTOR;
+    const actor = ctx?.userId || SYSTEM_ACTOR;
     // R2-SSV-11（2026-08-17）：人工生命周期转移 CAS——UPDATE 携带当前 status
     // 期望值谓词并校验命中行数；0 行 = 并发转移（双 acknowledge / reconcile
     // 竞争），幂等命中返回视图，非法并发抛 409（不再双事件双审计）。
@@ -282,7 +282,7 @@ export class ConflictService {
   /** OPEN/ACKNOWLEDGED/SUPPRESSED → RESOLVED（人工 resolve；自动 auto_cleared 走 reconcile）。 */
   async resolve(
     conflictId: string,
-    operator: string,
+    _operator: string,
     reason?: string,
     resolution?: string,
     ctx?: OrgContext,
@@ -292,7 +292,7 @@ export class ConflictService {
     if (!fresh) throw new NotFoundException(`Conflict ${conflictId} not found`);
     if (fresh.status === 'RESOLVED') return this.rowToConflict(fresh);
     const now = new Date();
-    const actor = operator || ctx?.userId || SYSTEM_ACTOR;
+    const actor = ctx?.userId || SYSTEM_ACTOR;
     // R2-SSV-11：resolve CAS（源集 OPEN/ACKNOWLEDGED/SUPPRESSED；并发转移 409）。
     const resolveHits = await this.updateRow(
       fresh.id,
@@ -324,14 +324,14 @@ export class ConflictService {
       reason ?? '',
       ctx ?? SYSTEM_CTX,
     );
-    await this.emitSse('conflict.resolved', view);
+    await this.emitSse('conflict.resolved', view, ctx?.primaryOrgId || null);
     return view;
   }
 
   /** OPEN/ACKNOWLEDGED → SUPPRESSED（suppressUntil 到期由 reconcile 自动回 OPEN）。 */
   async suppress(
     conflictId: string,
-    operator: string,
+    _operator: string,
     reason?: string,
     suppressUntilMs?: number,
     ctx?: OrgContext,
@@ -346,7 +346,7 @@ export class ConflictService {
       );
     }
     const now = new Date();
-    const actor = operator || ctx?.userId || SYSTEM_ACTOR;
+    const actor = ctx?.userId || SYSTEM_ACTOR;
     const suppressUntil =
       typeof suppressUntilMs === 'number' && Number.isFinite(suppressUntilMs)
         ? new Date(suppressUntilMs)
@@ -380,7 +380,7 @@ export class ConflictService {
       reason ?? '',
       ctx ?? SYSTEM_CTX,
     );
-    await this.emitSse('conflict.suppressed', view);
+    await this.emitSse('conflict.suppressed', view, ctx?.primaryOrgId || null);
     return view;
   }
 
@@ -893,6 +893,9 @@ export class ConflictService {
    * 跳过，与归并语义一致）；SSE/audit 由逐条串行 await（3N 次顺序往返）改
    * 并发扇出单点汇合（事件数不变、互不依赖——emitSse/writeAudit 各自容错，
    * 单条失败不影响其余）。CAS 状态转移更新保持逐行（源状态谓词语义要求）。
+   * NEST-CONFLICT-DURABLE（2026-09-20）：批量 INSERT 失败必须让 reconcile
+   * 显式失败；否则服务会继续广播 detected 并返回成功，制造“事件存在但事实
+   * 未落库”的假成功。
    */
   async reconcile(
     derived: SchedulingConflict[],
@@ -989,7 +992,7 @@ export class ConflictService {
       result.push(merged);
     }
 
-    // 新冲突批量落库（单语句；与逐条 insertRow 同款容错——失败留痕不阻断归并）。
+    // 新冲突批量落库；失败必须中止，不能先广播后丢事实。
     if (pendingInserts.length > 0) {
       await this.insertRows(pendingInserts, ctx.primaryOrgId || null, now);
     }
@@ -1095,40 +1098,34 @@ export class ConflictService {
     orgId: string | null,
     detectedAt: Date,
   ): Promise<void> {
-    try {
-      await this.db
-        .insert(ewohSchedulingConflict)
-        .values(
-          conflicts.map((c) => ({
-            conflictId: c.conflictId,
-            type: c.type,
-            severity: c.severity,
-            scope: c.scope,
-            status: 'OPEN',
-            taskIds: c.taskIds,
-            resourceIds: c.resourceId ? [c.resourceId] : [],
-            resourceId: c.resourceId,
-            resourceType: c.resourceType,
-            planId: c.planId ?? null,
-            snapshotVersion: c.snapshotVersion,
-            message: c.message,
-            resolution: c.resolution,
-            data: c.data ?? null,
-            detectedAt,
-            orgId,
-          })),
-        )
-        .onConflictDoNothing({
-          target: [
-            ewohSchedulingConflict.orgId,
-            ewohSchedulingConflict.conflictId,
-          ],
-        });
-    } catch (err) {
-      this.logger.warn(
-        `conflict batch insert failed (${conflicts.length} rows): ${(err as Error)?.message ?? err}`,
-      );
-    }
+    await this.db
+      .insert(ewohSchedulingConflict)
+      .values(
+        conflicts.map((c) => ({
+          conflictId: c.conflictId,
+          type: c.type,
+          severity: c.severity,
+          scope: c.scope,
+          status: 'OPEN',
+          taskIds: c.taskIds,
+          resourceIds: c.resourceId ? [c.resourceId] : [],
+          resourceId: c.resourceId,
+          resourceType: c.resourceType,
+          planId: c.planId ?? null,
+          snapshotVersion: c.snapshotVersion,
+          message: c.message,
+          resolution: c.resolution,
+          data: c.data ?? null,
+          detectedAt,
+          orgId,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          ewohSchedulingConflict.orgId,
+          ewohSchedulingConflict.conflictId,
+        ],
+      });
   }
 
   /**
