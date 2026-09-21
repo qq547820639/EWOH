@@ -15,7 +15,7 @@
       "Do not claim simulation as field evidence"
     ]
   },
-  "current_status": "Recursive audit and hardening continues: edge HTTP response header injection and production identity fixtures fixed; ledger honestly incomplete at 599 of 2721",
+  "current_status": "Recursive audit and hardening continues: telemetry export audit and world event fact atomicity fixed; ledger honestly incomplete at 600 of 2722",
   "source_refs": [
     "Current user request and active goal",
     "git HEAD af60895f and current worktree",
@@ -191,19 +191,22 @@
     "governance_core_batch": "PASS: governance tests 64 tests after retention, purge batch, duplicate model ID and canary ratio fail-closed fixes; ruff PASS",
     "consent_governance_batch": "PASS: governance and inference tests 126 tests after consent actor attribution, input validation and dedup fixes; ruff PASS",
     "small_ci_workflows_batch": "PASS: feishu/package/tests/test workflows fully reviewed; Git-HEAD source archive and SHA256 provenance locally verified, all four workflow YAML parse PASS",
-    "edge_server_batch": "PASS: edge server/security/monitoring/auth-failclosed batch 65 tests after Content-Disposition hardening and production seed fixture alignment; ruff PASS"
+    "edge_server_batch": "PASS: edge server/security/monitoring/auth-failclosed batch 65 tests after Content-Disposition hardening and production seed fixture alignment; ruff PASS",
+    "edge_world_telemetry_batch": "PASS: 173 targeted tests, ruff, Bandit critical+high=0, ledger integrity and diff whitespace checks PASS"
   },
   "subagent_state": {
     "ledger_integrity": "completed",
     "e2e_chain_integrity": "completed",
     "edge_execution_boundary": "completed"
   },
-  "next_entrypoint": "Review world/scheduler/exo/actuators route domains, then database RLS/migrations and client workbench batches; recursive fixes and 7x24 virtual soak",
-  "reviewed_files": 600,
-  "active_unread_files": 2122,
+  "next_entrypoint": "Review scheduler/actuators/health/inference/replay/admin route domains, then database RLS/migrations and client workbench batches; recursive fixes and 7x24 virtual soak",
+  "reviewed_files": 612,
+  "active_unread_files": 2110,
   "checks": {
     "edge_auth_router_batch": "PASS: auth/router/session/server fail-closed batch; 178 targeted tests, ruff, YAML parse, ledger integrity and diff whitespace checks PASS",
-    "audit_ledger_integrity": "PASS: 600/2722 reviewed; 0 stale / 0 partial / 0 missing; four unverifiable legacy review claims were not restored after hash inventory rebuild",
-    "telemetry_export_batch": "PASS: telemetry/server CSV Content-Disposition fail-safe batch; 121 targeted tests, ruff, ledger integrity and diff whitespace checks PASS"
+    "audit_ledger_integrity": "PASS: 612/2722 reviewed; 0 stale / 0 partial / 0 missing",
+    "telemetry_export_batch": "PASS: telemetry/server CSV Content-Disposition fail-safe batch; 121 targeted tests, ruff, ledger integrity and diff whitespace checks PASS",
+    "edge_world_telemetry_batch": "PASS: telemetry/world route batch after GET export audit, missing-event rejection, atomic status fact writes and reset audit target fixes",
+    "exo_binding_batch": "PASS: production bind ownership, trusted unbind actor and fail-closed runtime mode; 53 targeted tests, ruff, ledger integrity and diff whitespace checks PASS"
   }
 }

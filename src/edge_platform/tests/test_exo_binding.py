@@ -12,6 +12,9 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -31,6 +34,7 @@ class _FakeBus:
 class _FakeHandler:
     def __init__(self):
         self.responses = []
+        self.headers = {}
 
     def send_json(self, payload, status=200):
         self.responses.append((status, payload))
@@ -47,11 +51,15 @@ class _FakeCtx:
         self.bus = bus
 
 
-def _req(body):
+def _req(body, headers=None):
     return ReqMeta(
         method="POST", path="/api/exo/bind", path_parts=["api", "exo", "bind"],
-        query={}, body=json.dumps(body), headers={}, client=("127.0.0.1", 12345),
+        query={}, body=json.dumps(body), headers=headers or {}, client=("127.0.0.1", 12345),
     )
+
+
+def _auth():
+    return {"Authorization": "Bearer trusted-session-token"}
 
 
 class ExoBindingRouteTest(unittest.TestCase):
@@ -122,6 +130,52 @@ class ExoBindingRouteTest(unittest.TestCase):
         status, payload = self.h.responses[1]
         self.assertEqual(status, 400)
         self.assertEqual(payload["error"], "ended_by_required")
+
+    @contextmanager
+    def _production_session(self, *, role="supervisor", person_id="person:p-1", user_id=None, authenticated=True):
+        session = SimpleNamespace(
+            user_id=user_id or person_id,
+            person_id=person_id,
+            role=role,
+        )
+        route_module = api_exo_bind.__module__
+        with mock.patch(f"{route_module}.runtime_mode", return_value="production"), mock.patch(
+            f"{route_module}._session", return_value=session if authenticated else None
+        ):
+            yield
+
+    def test_production_bind_requires_matching_session_person(self):
+        with self._production_session(authenticated=False):
+            api_exo_bind(self.ctx, self.h, _req({"exoId": "device:exo-p1", "personId": "person:p-1"}))
+        self.assertEqual(self.h.responses[0][0], 401)
+
+        self.h.responses.clear()
+        with self._production_session(person_id="person:p-2"):
+            api_exo_bind(self.ctx, self.h, _req({"exoId": "device:exo-p1", "personId": "person:p-1"}, _auth()))
+        self.assertEqual(self.h.responses[0][0], 403)
+        self.assertIsNone(self.storage.list_active_binding_for_exo("device:exo-p1"))
+
+        self.h.responses.clear()
+        with self._production_session(person_id="person:p-1"):
+            api_exo_bind(self.ctx, self.h, _req({"exoId": "device:exo-p1", "personId": "person:p-1"}, _auth()))
+        self.assertEqual(self.h.responses[0][0], 200)
+
+    def test_production_admin_bind_and_trusted_unbind_actor(self):
+        with self._production_session(role="admin", person_id=None, user_id="person:admin-1"):
+            api_exo_bind(self.ctx, self.h, _req({
+                "exoId": "device:exo-a", "personId": "person:p-1",
+                "bindingId": "exo-bind:b-admin", "sessionId": "exo-session:s-admin",
+            }, _auth()))
+            self.assertEqual(self.h.responses[0][0], 200)
+            api_exo_unbind(self.ctx, self.h, _req({
+                "bindingId": "exo-bind:b-admin", "sessionId": "exo-session:s-admin",
+                "endedBy": "person:spoofed",
+            }, _auth()))
+        status, payload = self.h.responses[1]
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["binding"]["ended_by"], "person:admin-1")
+        ended = self.bus.published[1][1]["envelope"]["payload"]
+        self.assertEqual(ended["endedBy"], "person:admin-1")
 
     def test_unbind_not_found_and_terminal_conflict(self):
         api_exo_unbind(self.ctx, self.h, _req({"bindingId": "exo-bind:ghost", "endedBy": "person:op1"}))

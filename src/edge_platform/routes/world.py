@@ -82,6 +82,9 @@ def api_event_status(ctx, h, payload):
     eid, status = payload.get("event_id"), payload.get("status")
     if status not in ("open", "confirmed", "closed", "dismissed"):
         return h.send_json({"error": "非法状态"}, 400)
+    before = services.norm_event(ctx.storage.get_event(eid))
+    if not before:
+        return h._new_error("not_found", "事件不存在", 404)
     handling = payload.get("handling") or {}
     # R2-ECO-002：legacy 端点与 v2 对齐——处置人身份由服务端 token 会话优先
     # 解析（resolve_actor），客户端自报 handled_by 仅在未认证的演示模式下降级采用。
@@ -89,7 +92,6 @@ def api_event_status(ctx, h, payload):
     handling.setdefault("handled_at", now_iso())
     # Task 33：业务级指标——事件开/闭计数与关闭时长
     if ctx.metrics is not None:
-        before = services.norm_event(ctx.storage.get_event(eid)) or {}
         if status == "open" and before.get("status") != "open":
             ctx.metrics.record_event_open()
         elif status in ("closed", "dismissed") and before.get("status") not in ("closed", "dismissed"):
@@ -101,9 +103,6 @@ def api_event_status(ctx, h, payload):
                     ctx.metrics.record_event_close(hours)
                 except Exception as e:  # L3：埋点失败不阻断事件关闭，但记录
                     print(f"[EWOH] metrics.record_event_close failed: {e!r}")
-    before = ctx.storage.get_event(eid)
-    if not before:
-        return h._new_error("not_found", "事件不存在", 404)
     # 与 v2 相同的关键状态写入走原子事实账，避免旧端点绕过处置记录。
     if hasattr(ctx.storage, "record_event_status"):
         ctx.storage.record_event_status(

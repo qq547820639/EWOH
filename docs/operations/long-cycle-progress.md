@@ -1386,3 +1386,84 @@ top-K 候选剪枝前移到候选引擎（按工位距离预剪 + 路由成本�
 - [x] `ruff check src/edge_platform/routes src/edge_platform/server.py` PASS。
 - [x] `git diff --check` PASS。
 - [x] audit ledger report：600/2722 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段五十六：遥测与世界路由批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] telemetry.py、world.py 和 routes/__init__.py 当前版本全量审阅；auth/_util/registry/server 沿用阶段 55 当前哈希证据。
+- [x] 本批为既有 HTTP 路由边界的局部缺陷修复，未引入新技术栈，按约定跳过外部选型调研。
+
+### 发现与修复
+- [x] P1：GET `/api/telemetry/export` 是敏感数据出站，但 server 只自动审计 POST/PATCH；
+      现在导出成功前显式写入 `telemetry/{device_id}` 审计。
+- [x] P2：legacy `/api/event/status` 对不存在事件先更新再返回 `ok`；现在统一 404，
+      且按 v2 相同语义写入处置事实账和 `risk_event` 审计目标。
+- [x] P2：事件状态与处置事实原先分两次写入，第二段失败会留下无证据的状态半事实；
+      新增 SQLite `record_event_status` 原子提交，失败整体回滚。
+- [x] P2：`/api/reset` 属破坏性动作，现在审计目标明确为 `world/demo_reset`。
+- [x] P3：自查发现不存在事件的 legacy 请求会在 404 前污染开/闭事件指标；
+      存在性检查已提前，所有 rejected 请求不再进入指标。
+- [x] 测试替身补齐 `record_event_status` 契约，避免生产路径与测试语义分叉。
+
+### 账本
+- [x] telemetry.py、world.py、routes/__init__.py 以当前 SHA256 全文合并。
+- [x] 权威账本：600/2722 reviewed；0 stale / 0 partial / 0 missing。
+
+### 验证
+- [x] ruff：routes、storage 和相关测试 PASS。
+- [x] targeted Python：API/storage/server safety/security/RBAC/monitoring/P0/write matrix
+      共 173 tests PASS（3 个既有 scheduler deprecation warnings，无失败）。
+- [x] Bandit 安全门禁 PASS：critical+high=0。
+- [x] `git diff --check` PASS；delivery state JSON 解析 PASS。
+
+## 阶段五十七：外骨骼绑定归属批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] exo.py 当前 261 行全量审阅；绑定、归还、服务端会话解析、Catalog 事件
+      和唯一活跃绑定冲突路径均已检查。
+- [x] 本批为既有边缘归属边界的局部安全修复，未引入新技术栈，按约定跳过外部选型调研。
+
+### 发现与修复
+- [x] P1：production 领用此前只依赖 `manage_devices` RBAC，任何可管理设备的
+      会话都能把外骨骼指派给任意 person。现在非 admin 必须由服务端会话解析出
+      相同 `person:` 身份；admin 可代领用；未知/不可读运行模式按 production fail closed。
+- [x] P2：production 归还此前接受客户端 `endedBy` 并写入存储和事件，审计可被伪造。
+      现在绑定本人记录服务端解析的 `person:` 身份，admin 代归还记录服务端 actor。
+- [x] 回归覆盖：无 token 401、person 不匹配 403 且不落账、本人领用成功、
+      admin 代领用与可信 `endedBy` 上行事件。
+
+### 账本
+- [x] exo.py 当前 SHA256 全文合并；权威账本推进到 612/2722；
+      0 stale / 0 partial / 0 missing。
+
+### 验证
+- [x] exo/andon/RBAC/write matrix/edge security/auth fail-closed targeted：53 tests PASS。
+- [x] `ruff check` routes/storage/exo regression PASS。
+- [x] `git diff --check` PASS。
+
+## 阶段五十六：租户隔离与调度器基础服务批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] org-scope/org-sentinels/ingest guard+controller/identity/policy 完整审阅。
+- [x] control controller + inference controller/service + exo-assignment-guard 完整审阅。
+- [x] alert/task/resource/scale/world/dashboard service 完整审阅。
+- [x] scheduler pre-approval/dispatch-app/replan-app/metrics/plan-compare/replan-preview/
+      policy-activation/shadow-policy/policy-replay/kpi/plan-application 完整审阅。
+- [x] 全仓逐行账本推进到 629/2722；0 stale / 0 partial / 0 missing。
+
+### 发现与修复
+- [x] P3 登记：OrgScopeService.loadEffectiveConfig 层级环检测静默返回空配置而非
+      报错（seen 集合阻断无限循环但可能截断配置继承）；后续应改为 fail-closed。
+- [x] 复核确认：world.service.ts / resource-projection.service.ts 的 sql.raw ARRAY
+      构造使用单引号转义，不可注入（实体 ID 来自 DB）。
+- [x] 复核确认：scale.service.ts writeJsonPath 阻断 __proto__/constructor/prototype
+      段（CWE-1321 原型污染）。
+- [x] 复核确认：policy-activation CAS（R2-SSV-10）、shadow plan 原子标记（R2-SSV-03）、
+      gate 证据不足显式确认（2026-09-10 治理修复）均生效。
+
+### 验证
+- [x] Server Jest: 394 suites / 3548 tests 全绿（测试修复后）。
+- [x] Python: 1293 passed / 2 skipped。
+- [x] type:check server+client 0 错。
+- [x] truth-check 24/24 + GEN-CONTRACT-REGISTRIES OK。
+- [x] 账本 report：629/2722 reviewed；0 stale / 0 partial / 0 missing。

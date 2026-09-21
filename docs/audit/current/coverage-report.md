@@ -1,14 +1,14 @@
 # Coverage Report — 二轮审计文件覆盖账本
 
-- 生成时间: 2026-09-21T00:52:56.189Z
+- 生成时间: 2026-09-21T00:59:59.799Z
 - 活跃文件总数: 2722
-- 当前内容与完整阅读区间均已验证: 597
-- active_unread_files: 2125
+- 当前内容与完整阅读区间均已验证: 612
+- active_unread_files: 2110
 - partial_review_files: 0
 - stale_review_files: 0
 - missing_or_out_of_scope_files: 0
-- 总行数: 561357
-- 已验证行数: 113250
+- 总行数: 561439
+- 已验证行数: 115923
 - gate_result: FAIL
 - 验证依据：现场文件清单、原始字节 SHA-256、审阅 SHA-256、合法行区间的完整并集；自动扫描本身不构成阅读证据。
 
@@ -29,14 +29,14 @@
 | contracts | 91 | 14 | 12918 |
 | database | 334 | 193 | 25932 |
 | deploy | 36 | 0 | 1583 |
-| edge | 306 | 80 | 72110 |
+| edge | 306 | 84 | 72192 |
 | feishu | 29 | 0 | 7495 |
 | openapi | 3 | 0 | 24547 |
 | py-contracts | 51 | 5 | 12383 |
 | root | 33 | 1 | 12619 |
 | scripts | 85 | 5 | 18859 |
 | security | 4 | 4 | 129 |
-| server | 598 | 110 | 150827 |
+| server | 598 | 121 | 150827 |
 | shared | 93 | 23 | 22113 |
 | tools | 31 | 1 | 6145 |
 
@@ -967,7 +967,6 @@
 - ewoh-spark-app/server/common/filters/exception.filter.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/common/interfaces/api_response.interface.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/common/interfaces/exception.interface.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/common/org-sentinels.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/common/pipes/validation.pipe.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/common/request-context.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/common/uuid.ts: not_reviewed, missing_review_hash
@@ -992,7 +991,6 @@
 - ewoh-spark-app/server/modules/control/authorization-fingerprint.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/control.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1022,7 +1020,6 @@
 - ewoh-spark-app/server/modules/exo/__tests__/exo-session-reminder.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/exo/__tests__/exo-session-telemetry.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/exo/__tests__/exo-session.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/exo/exo-assignment-guard.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/exo/exo-config.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/exo/exo-config.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/exo/exo-session-notification-link.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1046,13 +1043,10 @@
 - ewoh-spark-app/server/modules/health/health.module.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/health/replan-guard-status.service.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/identity/__tests__/identity.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/identity/identity.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/identity/identity.module.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/identity/identity.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/inference/__tests__/inference.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/inference/inference.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/inference/inference.module.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/server/modules/inference/inference.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/device-execution-receipt.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-batch-device-upsert.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-controller-time-validation.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1069,8 +1063,6 @@
 - ewoh-spark-app/server/modules/ingest/__tests__/soc-plausibility.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/device-execution-receipt.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/ingest-key-config.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/ingest/ingest.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/ingest/ingest.guard.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/ingest.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/ingest.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1181,9 +1173,7 @@
 - ewoh-spark-app/server/modules/perception/perception-fusion.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/perception/perception-fusion.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/perception/perception.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/policy/policy.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/policy/policy.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/policy/policy.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/quality/__tests__/quality.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/quality/quality.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/quality/quality.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1384,7 +1374,6 @@
 - ewoh-spark-app/server/modules/shared/errors.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/idempotency.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/org-context.streaming.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/shared/org-scope.service.ts: not_reviewed, stale_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/shared/pagination.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/parse-date-input.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/public.decorator.ts: not_reviewed, missing_review_hash
@@ -1933,17 +1922,13 @@
 - src/edge_platform/rbac/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/rbac/permissions.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/rbac/roles.py: not_reviewed, missing_review_hash
-- src/edge_platform/routes/__init__.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/actuators.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/admin.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/andon.py: not_reviewed, missing_review_hash
-- src/edge_platform/routes/exo.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/health.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/inference.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/replay.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/scheduler.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/telemetry.py: not_reviewed, stale_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/world.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/run.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/runtime/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/runtime/bootstrap.py: not_reviewed, missing_review_hash
@@ -2020,7 +2005,7 @@
 - src/edge_platform/tests/test_device_driver.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_edge_core_ur8_regression.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_event_envelope_wiring.py: not_reviewed, missing_review_hash
-- src/edge_platform/tests/test_exo_binding.py: not_reviewed, missing_review_hash
+- src/edge_platform/tests/test_exo_binding.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_fatigue.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_fault_injection.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_get_route_auth_matrix.py: not_reviewed, missing_review_hash
