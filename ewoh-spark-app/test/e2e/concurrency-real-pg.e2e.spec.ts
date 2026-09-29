@@ -204,8 +204,20 @@ const config = resolveE2EConfig();
     it('J4: CP-SAT worker 不可达 → 显式 UNAVAILABLE + fallback 原因 + 真实 assignment', async () => {
       // This tenant's legitimate canary policy selects CP-SAT; it cannot pass by
       // exercising the default heuristic-only OFF path.
+      const canaryConfig = { cpSat: { activation: 'CANARY', canaryFraction: 1, orgAllowlist: [fixture.orgA.id] } };
       await owner`INSERT INTO ewoh_scheduling_policy (org_id, config_version, config_json, active, status)
-      VALUES (${fixture.orgA.id}, 1, ${JSON.stringify({ cpSat: { activation: 'CANARY', canaryFraction: 1, orgAllowlist: [fixture.orgA.id] } })}::jsonb, true, 'ACTIVE')`;
+      VALUES (${fixture.orgA.id}, 1, ${owner.json(canaryConfig)}, true, 'ACTIVE')`;
+      /**
+       * 前提自己也要证（V277）：这一支的意图是"canary 命中"，所以回读必须证明库里是 **jsonb 对象**
+       * 且 `config_json->'cpSat'->>'activation'='CANARY'`。原先写的是 `${JSON.stringify(...)}::jsonb`
+       * ——postgres.js 会把"长得像 JSON 的字符串参数"再编码一次，落库成 `jsonb_typeof='string'` 的标量，
+       * 实现按字段读永远是 null ⇒ canary 从没被喂给实现，而本例当时照样绿（探针 tmp/v277-j4.mjs 实测）。
+       */
+      const seeded = await owner<{ t: string; activation: string | null }[]>`
+        select jsonb_typeof(config_json) as t, (config_json -> 'cpSat' ->> 'activation') as activation
+        from ewoh_scheduling_policy where org_id = ${fixture.orgA.id} and config_version = 1`;
+      expect(String(seeded[0]?.t)).toBe('object');
+      expect(String(seeded[0]?.activation)).toBe('CANARY');
       process.env.EWOH_SOLVER_ACTIVATION = 'CANARY';
       const plan = await createPlan();
       expect(plan.solverStatus).toBe('UNAVAILABLE');

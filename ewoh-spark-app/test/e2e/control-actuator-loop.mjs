@@ -592,6 +592,35 @@ async function main() {
       humanNoAuth.status === 401 || humanNoAuth.status === 403,
       `status=${humanNoAuth.status}`);
 
+    // ── 17d. NO-65b 的另一半：在飞那条落到终态后，被暂缓的必须照常放行（暂缓不是死胡同）──
+    // 上面 17/17b 只钉住"暂缓发生了"（commands=0、deferred=1、人面看得见排队原因），
+    // 那一格此前只到"形状"。这里补的是**收敛**：把在飞命令用网关回执推到 executed，
+    // 再轮一次同一个网关端点 ⇒ 第二条必须出现在 commands、deferred 清空。
+    // 17 与 17d 是同一端点在一先一后两个时刻的相反结果 ⇒ 本断言不是恒真。
+    const busyReceipt = firstCmd
+      ? await post(
+          `/api/control/commands/${firstCmd.commandId}/receipt`,
+          { result: 'executed', receipt: { e2e: 'NO-65b 释放' } },
+          null,
+          { 'X-Ingest-Key': INGEST_KEY, 'X-Org-Id': ORG_ID },
+        )
+      : { status: 0 };
+    const busyPending3 = await get(
+      `/api/control/commands/pending?deviceId=${encodeURIComponent(busyDevice)}`,
+      null,
+      { 'X-Ingest-Key': INGEST_KEY, 'X-Org-Id': ORG_ID },
+    );
+    const released = (busyPending3.body?.commands ?? []).filter(
+      (c) => String(c.commandId) !== String(firstCmd?.commandId ?? ''),
+    );
+    step('17d. NO-65b 暂缓会释放：在飞命令执行完毕后的下一次轮询里，第二条进入投递队列且 deferred 清空',
+      (busyReceipt.status === 200 || busyReceipt.status === 201)
+        && released.length === 1
+        && String(released[0]?.commandKey ?? '') === 'dispatch_task'
+        && (busyPending3.body?.deferred ?? []).length === 0,
+      `receipt=${busyReceipt.status} released=${released.map((c) => c.commandId).join(',')} `
+        + `deferred=${JSON.stringify(busyPending3.body?.deferred ?? [])}`);
+
     // ══ NO-62a：投递前授权复核（故障注入）════════════════════════════
     // 说明：这里用 owner 连接**直接改状态**注入"授权在投递窗口内失效"。
     // 真实流程里这段窗口由审批撤销/到期与人工重排触发；本场景要验证的是

@@ -298,36 +298,7 @@
       }
     }
   },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "transform": {
-      "^.+\\.tsx?$": [
-        "ts-jest",
-        {
-          "tsconfig": "tsconfig.spec.json"
-        }
-      ]
-    },
-    "moduleNameMapper": {
-      "^@server/(.*)$": "<rootDir>/server/$1",
-      "^@shared/(.*)$": "<rootDir>/shared/$1"
-    },
-    "modulePathIgnorePatterns": [
-      "<rootDir>/dist/"
-    ],
-    "testPathIgnorePatterns": [
-      "/node_modules/",
-      "/dist/",
-      "<rootDir>/test/e2e/",
-      "<rootDir>/test/browser/"
-    ],
-    "testMatch": [
-      "<rootDir>/server/**/*.spec.ts",
-      "<rootDir>/shared/**/*.spec.ts",
-      "<rootDir>/test/**/*.spec.ts"
-    ]
-  },
+
   "engines": {
     "node": ">=22.0.0",
     "npm": ">=10.0.0"

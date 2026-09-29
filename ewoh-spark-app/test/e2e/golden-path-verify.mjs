@@ -75,6 +75,26 @@ const errText = (res) =>
   String(res.body?.error?.message ?? res.body?.message ?? '').slice(0, 160);
 
 /**
+ * 读回权威面「当前哪个策略版本是 ACTIVE」。
+ * V203 补这一手的理由：回滚格此前只断 POST 的 HTTP 码（2xx＝"调用被接受"），
+ * ACTIVE 指针到底落回哪个版本、有没有同时出现两个 ACTIVE，全都没有被读过
+ * （V167 给它的 R-a 依据只存在于注释里）。
+ */
+async function readActiveVersions(token) {
+  const res = await request('GET', '/api/scheduler/policy/versions', null, token);
+  const list = Array.isArray(res.body) ? res.body : [];
+  return { http: res.status, actives: list.filter((v) => v.active === true).map((v) => v.configVersion) };
+}
+
+/** 回滚之后必须独立重读到：ACTIVE 唯一，且就是期望的那个版本。 */
+async function stepActiveAfterRollback(token, expectVersion, label) {
+  const { http, actives } = await readActiveVersions(token);
+  step(label,
+    http === 200 && actives.length === 1 && String(actives[0]) === String(expectVersion),
+    `http=${http} activeCount=${actives.length} active=${JSON.stringify(actives)} expected=${expectVersion}`);
+}
+
+/**
  * 回滚断言：只有存在"上一 ACTIVE 版本"时才可回滚。
  * 首次激活的 activation 记录 rollbackTarget/beforeVersion 均为 null，服务端
  * 正确地返回 NO_ROLLBACK_TARGET——这属于"无可回滚目标"，不是缺陷，
@@ -91,6 +111,8 @@ async function assertRollback(activation, token, operator, gateVersion) {
     // 不能用"再激活一次"来造回退目标（实测）。
     const current = await request('GET', '/api/scheduler/policy', null, token);
     const config = current.body?.config;
+    // 回滚之前先记下"谁是 ACTIVE"，回滚之后要求它原样回来（V203）。
+    const beforeRollback = await readActiveVersions(token);
     if (!config) {
       skip('49-50. Rollback 恢复上一 ACTIVE', '首次激活无回退目标；且无法取得策略配置以注册 v2（HTTP ' + current.status + '）');
       return;
@@ -119,6 +141,8 @@ async function assertRollback(activation, token, operator, gateVersion) {
       { operator, reason: 'golden path rollback' }, token);
     step('49-50. Rollback 恢复上一 ACTIVE', rollback.status === 201 || rollback.status === 200,
       `status=${rollback.status} msg=${rollback.body?.status ?? errText(rollback)}`);
+    await stepActiveAfterRollback(token, beforeRollback.actives[0],
+      '50b. 回滚后独立重读：ACTIVE 唯一且落回回滚前的版本');
     return;
   }
   const rollback = await request('POST',
@@ -126,6 +150,8 @@ async function assertRollback(activation, token, operator, gateVersion) {
     { operator, reason: 'golden path rollback' }, token);
   step('49-50. Rollback 恢复上一 ACTIVE', rollback.status === 201 || rollback.status === 200,
     `status=${rollback.status} msg=${rollback.body?.status ?? errText(rollback)}`);
+  await stepActiveAfterRollback(token, activation.rollbackTarget ?? activation.beforeVersion,
+    '50c. 回滚后独立重读：ACTIVE 唯一且等于该激活记录的回退目标');
 }
 
 /** 三态汇总；SKIP 不等于 PASS（未验证必须以退出码 2 区分于失败 1）。 */
@@ -193,6 +219,7 @@ async function main() {
   let approveResult = null;
   const planAttempts = [];
   let runOk = false;
+  let selfApprovalChecked = false;
 
   const selectApprovablePlan = async (plans) => {
     for (const candidate of plans.slice(0, 8)) {
@@ -205,6 +232,26 @@ async function main() {
       // 审批尝试放进候选循环：历史方案的快照会过期（PLAN_STALE），换下一个候选即可；
       // NO-66c：过期时**先用 NO-62c 的诊断 + 重排**处置（有界 2 轮），仍不行才换候选——
       // 把"世界变化快"这件环境事实交给产品已有的处置路径，而不是直接放弃。
+      if (approverToken && !selfApprovalChecked) {
+        // B5 反向断言必须在方案仍可审批时执行。若放到合法审批后，产品会先因
+        // PLAN_NOT_APPROVABLE 拒绝，测到的只是状态机，而不是生成人回避。
+        selfApprovalChecked = true;
+        const selfApprove = await request(
+          'POST',
+          `/api/scheduler/plans/${candidate.planId}/approve`,
+          {
+            version: detail.body?.version ?? candidate.version,
+            snapshotVersion: detail.body?.snapshotVersion ?? candidate.snapshotVersion,
+            operator: ADMIN_USER,
+          },
+          token,
+        );
+        step('19b. 生成人自审批前置拒绝（B5）', selfApprove.status === 403, `status=${selfApprove.status}`);
+        if (selfApprove.status !== 403) {
+          planAttempts.push(`${candidate.planId}: self-approval guard=${selfApprove.status}`);
+          continue;
+        }
+      }
       if (approverToken) {
         // 本场景的 `request(method, path, body, token)` 与助手约定的
         // `post(url, body, token) / get(url, token)` 形状不同 → 显式适配。
@@ -387,14 +434,6 @@ async function main() {
         }
         step('18-19. Reservation + Dispatch', dispatch.status === 200,
           `status=${dispatch.status} msg=${errText(dispatch)}`);
-        // B5 反向断言：生成人自己审批必须被拒（403 SELF_APPROVAL_FORBIDDEN）。
-        const selfApprove = await request('POST', `/api/scheduler/plans/${plan.planId}/approve`, {
-          version: planDetail.body?.version ?? plan.version,
-          snapshotVersion: planDetail.body?.snapshotVersion ?? plan.snapshotVersion,
-          operator: ADMIN_USER,
-        }, token);
-        step('19b. 生成人自审批被拒（B5）', selfApprove.status === 403,
-          `status=${selfApprove.status}`);
       }
     }
 

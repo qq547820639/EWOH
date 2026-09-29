@@ -996,19 +996,24 @@ if (!e2eConfig) {
       // 重复读不再膨胀 ewoh_world_snapshot。版本递增必须由真实 delta 驱动，
       // 这里显式追加一条 upsert delta（org 作用域）后再取快照。
       const deltaEntityId = `E2E-WS-${runId}`;
-      await owner!.unsafe(
-        `insert into public.ewoh_world_delta_log
-           (org_id, snapshot_version, entity_type, entity_id, delta_type, payload, source_type)
-         values ($1::uuid,
-                 coalesce((select max(snapshot_version) from public.ewoh_world_snapshot
-                           where org_id = $1::uuid), 0),
-                 'device', $2, 'upsert', $3::jsonb, 'service')`,
-        [
-          fixture!.orgA.id,
-          deltaEntityId,
-          JSON.stringify({ id: deltaEntityId, type: 'device', name: deltaEntityId }),
-        ],
-      );
+      // V277：postgres.js 会把「长得像 JSON 的字符串参数」再编码成 jsonb 标量（`$3::jsonb`
+      // 也救不回），原 `unsafe` + `JSON.stringify` 形态已实测降级为 string。改走模板标签
+      // + `json()`（实测真对象 → array），并在下面回读 `jsonb_typeof` 钉死前提形状。
+      await owner!`
+        insert into public.ewoh_world_delta_log
+          (org_id, snapshot_version, entity_type, entity_id, delta_type, payload, source_type)
+        values (${fixture!.orgA.id}::uuid,
+                coalesce((select max(snapshot_version) from public.ewoh_world_snapshot
+                          where org_id = ${fixture!.orgA.id}::uuid), 0),
+                'device', ${deltaEntityId}, 'upsert',
+                ${owner!.json({ id: deltaEntityId, type: 'device', name: deltaEntityId })},
+                'service')`;
+
+      const [deltaShape] = await owner!<{ t: string }[]>`
+        select jsonb_typeof(payload) as t from public.ewoh_world_delta_log
+        where org_id = ${fixture!.orgA.id}::uuid and entity_id = ${deltaEntityId}
+        order by snapshot_version desc limit 1`;
+      expect(String(deltaShape!.t)).toBe('object');
 
       const secondSnapshot = await apiRequest<{
         snapshotVersion: number;

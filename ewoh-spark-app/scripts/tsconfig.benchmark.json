@@ -11,9 +11,12 @@
     "baseUrl": ".",
     "paths": {
       "@server/*": ["../server/*"],
-      "@shared/*": ["../shared/*"],
-      "@client/*": ["../client/*"]
+      "@shared/*": ["../shared/*"]
     }
   },
-  "include": ["scripts/**/*", "server/**/*", "shared/**/*"]
+  // TSCINC-01（V344）：原先三条 glob 按包根写（scripts/**/server/**/shared/**），而本文件住在
+  // `ewoh-spark-app/scripts/` 下 ⇒ 相对自身目录整批落空，`tsc -p` 报 TS18003「No inputs were found」。
+  // 现在只纳本目录（实测 0 类型错误）；server／shared 的类型检查归 `../tsconfig.node.json`，
+  // 本档只作 ts-node／tsconfig-paths 的 compilerOptions 载体（target 停在 ES2021，纳 server 文件会多出 TS2550）。
+  "include": ["**/*.ts", "**/*.tsx"]
 }
