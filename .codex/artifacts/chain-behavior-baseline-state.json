@@ -4286,7 +4286,8 @@
     "v351_attestation": "带服务全量重放 REPLAY_RC=0、chain-specs 139 passed；4 处 MTIME_OK（尺子·自测脚本·纯形状件·新 spec）；mint rc=0、freshness rc=0、down rc=0 且 LISTEN=0",
     "v351_limit": "判据核的是\"点名的那一份与三个数相符\"，不核\"点名的是被点名者中最新的一份\"——两份归档读数相同属合法，不判红；产物集为空只能判不可判（无证据），跨环境比对仍要人看 mtime",
     "v351_sec6_span": "判据自测的 §六 注入原本整篇首处命中：本轮 §5.3n60 ① 引了一句 V349 旧读数（含「后端单测 3694/3694 通过」），它在 §六 之前 ⇒ R10d 改的是引文、§六 未动，判据报 0 项而「注入必须改变输入」的守卫仍放行；把切片边界改成子串搜 §六 也不够（会撞上 §5.3 正文里把那两个字当行内引用的句子）。修法＝`_sec6_span()` 逐字照尺子的按行锚取 §六／§七 行界并断言两端，四支注入走 `_repl_in_sec6()`：段内搜索、段内替换、替换后重算段界并断言新串在段内恰好一次。当期读数：尺子可红，V97 的\"干净\"读数有效（48/48 抓到；对照 0 项），R10a..R10d 四支逐条开火（现算 4 支）。",
-    "v351b_attestation": "两遍背书链都要报：第一遍 D2 遍红 1 条「AV-05 决定性对照：批准时刻在库里另有其行，授权视图没用它」（`authorization-validity-anchor.e2e.spec.ts:278` 的 1_500ms 常数上界，实测 5123ms；尺子自报复现分布 带开关 0/3·对照 0/3）⇒ 按口径记 FAILED 并拒 mint，证据 tmp/v351b-red-detail.log；第二遍同一棵树重放 D 与 D2 各 139 passed，判据自测 尺子可红，V97 的\"干净\"读数有效（48/48 抓到；对照 0 项）（R10a..R10d 四支逐条开火），mint rc=0、freshness rc=0、down rc=0 且 LISTEN=0，证据 tmp/v351c-steps.log ⇒ 本轮引用第二遍读数"
+    "v351b_attestation": "两遍背书链都要报：第一遍 D2 遍红 1 条「AV-05 决定性对照：批准时刻在库里另有其行，授权视图没用它」（`authorization-validity-anchor.e2e.spec.ts:278` 的 1_500ms 常数上界，实测 5123ms；尺子自报复现分布 带开关 0/3·对照 0/3）⇒ 按口径记 FAILED 并拒 mint，证据 tmp/v351b-red-detail.log；第二遍同一棵树重放 D 与 D2 各 139 passed，判据自测 尺子可红，V97 的\"干净\"读数有效（48/48 抓到；对照 0 项）（R10a..R10d 四支逐条开火），mint rc=0、freshness rc=0、down rc=0 且 LISTEN=0，证据 tmp/v351c-steps.log ⇒ 本轮引用第二遍读数",
+    "v351_delivery": "交付：量具面（`scripts/chain-baseline/` 70 件）＋常驻用例面＋《基线》《裁决包》＋状态件已提交并推送 main（cc58772f，130 个文件，提交统计 130 files changed, 58732 insertions(+), 6 deletions(-)）；远端核对＝refs/remotes/origin/main 与本仓 HEAD 同为 cc58772f；提交后复跑 freshness rc=0、consistency「无漂移」＋判据自测 48/48、audit-regression-gates rc=0。排除面（现算）：已跟踪且仍脏 162 项（server/、client/、contracts/、db/、CI workflow、file-ledger.jsonl、coverage-report.md 等），未跟踪且未纳入 31 项（standalone_106/107 迁移与 runner 注册需同批、边缘侧新增测试、以及服务端 lifecycle 新文件——它们的已跟踪搭档正被并发会话改动）"
   },
   "findings": {
     "fixed": [
