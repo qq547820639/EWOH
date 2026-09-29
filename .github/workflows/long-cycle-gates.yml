@@ -19,6 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Mask CI-only credentials
+        run: |
+          for value in \
+            "$EWOH_API_DATABASE_PASSWORD" \
+            "$EWOH_BOOTSTRAP_ADMIN_PASSWORD" \
+            "$EWOH_APPROVER_PASSWORD" \
+            "$EWOH_WORKER_PASSWORD" \
+            "$EWOH_CONTROL_FINGERPRINT_SECRET" \
+            "$EWOH_E2E_INGEST_KEY" \
+            "$EWOH_E2E_ADMIN_PASS" \
+            "$EWOH_E2E_APPROVER_PASS" \
+            "$EWOH_E2E_FIELD_PASS"; do
+            [ -z "$value" ] || echo "::add-mask::$value"
+          done
+
       - name: 检出代码
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -55,7 +70,7 @@ jobs:
           python3 scripts/bandit-gate.py bandit-report.json \
             --suppressions security/bandit-suppressions.json
 
-      - name: audit-regression-gates（十三条主线，含主线13 世界快照契约）
+      - name: audit-regression-gates（条数由 Makefile 唯一持有，见作业日志「主线总数（Makefile 现抽）」；含主线13 世界快照契约）
         run: make audit-regression-gates
 
       - name: OpenAPI 契约无漂移

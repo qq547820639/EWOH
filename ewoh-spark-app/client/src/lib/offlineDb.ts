@@ -771,16 +771,3 @@ export async function exportOfflineData(
 
 /** Convenience: drop legacy localStorage key (kept for compatibility tests). */
 export { PENDING_ACTIONS_STORAGE_KEY };
-
-describe('offlineDbNameForScope', () => {
-  it('scopes the offline database by authenticated identity', () => {
-    expect(offlineDbNameForScope('org-a:user-1')).toBe('ewoh-offline:org-a:user-1');
-    expect(offlineDbNameForScope('org-b:user-1')).toBe('ewoh-offline:org-b:user-1');
-  });
-
-  it('keeps the legacy name only for unscoped system probes', () => {
-    expect(offlineDbNameForScope(undefined)).toBe('ewoh-offline');
-    expect(offlineDbNameForScope(null)).toBe('ewoh-offline');
-    expect(offlineDbNameForScope('')).toBe('ewoh-offline');
-  });
-});

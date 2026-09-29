@@ -14,16 +14,19 @@ function pngBuffer(width: number, height: number): Buffer {
   return buffer;
 }
 
+const ORG_A = '11111111-1111-4111-8111-111111111111';
+const ORG_B = '22222222-2222-4222-8222-222222222222';
+
 describe('file service local storage', () => {
-  const orgA = { orgId: 'org-a', userId: 'user-a' };
-  const admin = { orgId: 'org-a', userId: 'admin', isGlobalAdmin: true };
+  const orgA = { orgId: ORG_A, userId: 'user-a' };
+  const admin = { orgId: ORG_A, userId: 'admin', isGlobalAdmin: true };
 
   it('saves, lists, downloads, and removes', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ewoh-files-'));
     const service = new FileService(new LocalStorageDriver(dir));
     const record = await service.save(Buffer.from('hello'), 'a.txt', 'text/plain', orgA, 'demo');
     expect(record.size).toBe(5);
-    expect(record).toMatchObject({ orgId: 'org-a', uploadedBy: 'user-a', scanStatus: 'pending' });
+    expect(record).toMatchObject({ orgId: ORG_A, uploadedBy: 'user-a', scanStatus: 'pending' });
     expect((await service.list(orgA))[0].id).toBe(record.id);
     // A freshly uploaded file is quarantined until scanned.
     await expect(service.download(record.id, orgA)).rejects.toThrow();
@@ -64,7 +67,7 @@ describe('file service local storage', () => {
     const service = new FileService(new LocalStorageDriver(dir));
     const record = await service.save(Buffer.from('private'), 'a.txt', 'text/plain', orgA);
     await service.markScanned(record.id, admin, 'clean');
-    const orgB = { orgId: 'org-b', userId: 'user-b' };
+    const orgB = { orgId: ORG_B, userId: 'user-b' };
 
     expect(await service.list(orgB)).toEqual([]);
     await expect(service.get(record.id, orgB)).rejects.toThrow();
@@ -72,6 +75,21 @@ describe('file service local storage', () => {
     await expect(
       service.get(record.id, { ...orgB, isGlobalAdmin: true }),
     ).resolves.toMatchObject({ id: record.id });
+  });
+
+  it('rejects non-uuid organization scopes before touching storage', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ewoh-files-invalid-org-'));
+    const driver = new LocalStorageDriver(dir);
+    const service = new FileService(driver);
+    const attack = { orgId: '../escape', userId: 'user-a' };
+
+    await expect(
+      service.save(pngBuffer(1, 1), 'photo.png', 'image/png', attack),
+    ).rejects.toThrow(/invalid org id/);
+    await expect(service.list(attack)).rejects.toThrow(/invalid org id/);
+    await expect(driver.list('../escape')).rejects.toThrow(/invalid org id/);
+    const valid = await service.save(Buffer.from('x'), 'a.txt', 'text/plain', orgA);
+    expect(valid.orgId).toBe(ORG_A);
   });
 
   it('rejects non-uuid ids before touching storage', async () => {

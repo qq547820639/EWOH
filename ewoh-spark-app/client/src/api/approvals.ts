@@ -113,11 +113,12 @@ export async function getApprovalDetail(approvalId: string): Promise<ApprovalDet
 export async function resolveAgentApproval(
   approvalId: string,
   approved: boolean,
+  reason?: string,
 ): Promise<Record<string, unknown>> {
   const res = await axiosForBackend({
     url: `/api/agents/approvals/${encodeURIComponent(approvalId)}/resolve`,
     method: 'POST',
-    data: { approved },
+    data: { approved, ...(approved ? {} : { reason }) },
   });
   return res.data;
 }

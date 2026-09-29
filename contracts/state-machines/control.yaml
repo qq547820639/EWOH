@@ -12,16 +12,22 @@ states:
   - timeout
   - revoked
 transitions:
-  - { from: created, to: pending_approval, condition: approval_required }
-  - { from: created, to: pending_gateway, condition: no_approval_required }
-  - { from: pending_approval, to: approved, role: approver, condition: approve }
-  - { from: approved, to: pending_gateway, condition: logical_command_sent }
-  - { from: pending_gateway, to: gateway_received, condition: current_attempts_received }
-  - { from: gateway_received, to: executed, condition: latest_attempts_all_success }
-  - { from: gateway_received, to: partial_success, condition: mixed_results }
-  - { from: gateway_received, to: failed, condition: latest_attempts_all_failed }
-  - { from: [pending_gateway, gateway_received], to: timeout, condition: business_deadline }
-  - { from: non_executing, to: revoked, condition: gateway_not_executed_or_pre_approval }
+  - { from: created, to: pending_approval, condition: approval_required, kind: guard }
+  - { from: created, to: pending_gateway, condition: no_approval_required, kind: guard }
+  - { from: pending_approval, to: approved, role: approver, condition: approve, kind: action }
+  - { from: approved, to: pending_gateway, condition: logical_command_sent, kind: guard }
+  - { from: pending_gateway, to: gateway_received, condition: current_attempts_received, kind: guard }
+  - { from: gateway_received, to: executed, condition: latest_attempts_all_success, kind: guard }
+  - { from: gateway_received, to: partial_success, condition: mixed_results, kind: guard }
+  - { from: gateway_received, to: failed, condition: latest_attempts_all_failed, kind: guard }
+  # F-02（2026-09-21）：business_deadline 有了唯一 writer —— 投递积压巡检
+  # （`ControlService.sweepDeliveryBacklog` → `expireBacklogCommands`）把在飞 attempt
+  # CAS 成 `expired`，聚合按 `latest_attempt_only` 产出本请求级 `timeout`。
+  # 判据两条、优先级明确：① 本请求 `deadline` 已过（business_deadline 的字面载体）；
+  # ② 无显式期限时按 `EWOH_CONTROL_COMMAND_EXPIRY_MS`（缺省=授权有效期 24h）兜底。
+  # 迟到回执仍作为事实登记（`command_receipt` 结果行），但不复活已过期 attempt。
+  - { from: [pending_gateway, gateway_received], to: timeout, condition: business_deadline, kind: guard }
+  - { from: non_executing, to: revoked, condition: gateway_not_executed_or_pre_approval, kind: guard }
 terminal: [executed, partial_success, failed, timeout, revoked]
 aggregation:
   one_request_one_device: true
@@ -29,3 +35,136 @@ aggregation:
   root_command_id_attempt_no: true
   latest_attempt_only: true
   idempotency_key_returns_original: true
+# ── 投递积压窗口（V229·PROJ-03②）───────────────────────────────────────────
+# 这一块的唯一职责：定义「一条 attempt 在什么时刻算投递积压」。上面 `states/transitions`
+# 管的是**请求级**状态（created…executed），而积压投影读的是 **attempt 级** `status`
+# 列（`sent`／`gateway_received` 是 attempt 态，不在请求级词表内，别按上面那张表读）。
+# 消费方两类，且必须同源：
+#   实现 `ControlService.collectBacklogRows` + `backlogPredicate`——窗口只有一份，两处产生点都走它；
+#   常驻对账 `ewoh-spark-app/test/e2e/backlog-snapshot-failure-boundary.e2e.spec.ts` 的 BS-05
+#   （看板 HTTP 那份 `totals`）与 BS-06（巡检落进 `ewoh_control_backlog_snapshot` 的那一行），
+#   各自从本块解析取数条件后**自己组一条 SQL**去读权威表，再与实现逐项比。
+#   判据因此是「契约 vs 实现」两算，不是「测试重抄实现的 WHERE」（PROJ-03② 的原话）。
+# 本块只定义**窗口**（哪一行算积压）；窗口之后各处怎么聚合成 totals 见下面的
+# `read_side_totals`／`write_side_totals`——那才是 PROJ-03① 还没收口的地方。
+# 改这里=改口径：必须同轮跑 BS-05、BS-06 与全量重放。
+delivery_backlog_window:
+  version: 1
+  command_source: ewoh_control_command
+  device_source: ewoh_control_request
+  # 下面所有 SQL 片段都按这两个别名书写，消费方按同名别名建表引用即可原样拼接
+  # （BS-05 与 BS-06 就是这么组的：片段不出现在实现里，出自本块）。
+  # 拼接纪律：片段之间用 AND 连接时**必须各自加括号**——`undelivered_filter` 顶层是 OR，
+  # 裸拼会被 SQL  precedence 拆成 `(…∧…) ∨ (…)`，两支各自丢掉另一半条件（V229 实测过）。
+  sql_aliases: command=ewoh_control_command, request=ewoh_control_request
+  join_kind: inner
+  join: command.request_id = request.request_id
+  # inner join 的推论：没有对应请求行的命令在窗口里**不存在**（总数与明细都看不见它）。
+  status_filter:
+    - sent
+    - gateway_received
+  aging_column: command.sent_at
+  aging_operator: <
+  sla_env: EWOH_CONTROL_DELIVERY_SLA_MS
+  sla_default_ms: 300000
+  # 未交付侧只算「确实没投出去」：`sent` 且 `delivered_at` 为空才算积压，
+  # 已 `gateway_received` 的整条都算（它是"设备已收、尚未执行"的另一类滞留）。
+  undelivered_filter: (command.status = 'sent' AND command.delivered_at IS NULL) OR (command.status = 'gateway_received')
+  # `IS NULL` 那一支在当前 DDL 下取不到行（`ewoh_control_command.org_id` 自 standalone_001
+  # 起 NOT NULL），留着是为了"命令没有租户归属时不许被任意租户看见"这条兜底语义。
+  org_scope: (command.org_id = :actor_org OR command.org_id IS NULL)
+  # 明细受行上限约束，但 `totals` 在触顶时改取**同谓词的全量聚合**（PROJ-06 的修法）：
+  # 读满即视为"还有没看见的"，于是总量来自一次不截断的聚合。
+  scan_cap: 500
+  truncated_rule: 命中行数 >= scan_cap 即 truncated=true，此时 totals 取同谓词全量聚合
+  command_measure: count(*)
+  undelivered_measure: count(*) FILTER (WHERE command.delivered_at IS NULL)
+  device_measure: count(DISTINCT request.device_id)
+  # 看板侧还有一层 TTL 缓存：同租户窗口内的第二次读拿到的是上一份快照（对账必须先越过它，
+  # 否则测的是缓存而不是库）。
+  read_cache_env: EWOH_CONTROL_BACKLOG_SNAPSHOT_TTL_MS
+  read_cache_default_ms: 5000
+  # 设备维度只服务 `devices[]` 明细：按 `device_id` 分组，空串行不进任何分组。
+  device_grouping: devices[] 按 device_id 分组，空 device_id 的行不出现在任何分组
+  # `totals.commands` 这个字段有两处**产生点**，两句话并不等价（BS-05 对看板那处、BS-06 对落表那处各钉一条；
+  # 下面两个键名里的 read/write 就分别指这两处：read＝看板 HTTP，write＝巡检落表）。
+  # 先说清楚"两处产生点"不是"这张表有两个写者"：该表的 INSERT 全仓只有 1 处（`control.service.ts:1639`，
+  # 在巡检里），第二处产生点是看板 HTTP 的那份 `totals`——同一形状、另一套算法，不落表。
+  #   看板侧 `ControlService.getDeliveryBacklogSnapshot`＝触顶取全量聚合，否则取 devices[] 分组求和；
+  #   落表侧 `ControlService.sweepDeliveryBacklog`（写进 `ewoh_control_backlog_snapshot` 的那一行）
+  #   ＝触顶取全量聚合，否则取"本轮检视为积压的全部行数"，于是它既含空 device_id 的行、
+  #   也含同一轮刚被 `expireBacklogCommands` 收敛成 expired 的行——而同一行的 devices/undelivered
+  #   是按过期之后的子集算的。V229 实测：一行里 commands=6 而明细求和=2（差=2 空设备＋2 本轮过期）。
+  read_side_totals: 触顶取 command_measure 的全量聚合，否则取 devices[] 分组求和
+  write_side_totals: 触顶取 command_measure 的全量聚合，否则取本轮检视为积压的全部行数（含空 device_id 与同轮已收敛为 expired 的行）
+  # 未裁决（PROJ-03①）：上面那两句话要不要收成一句、以及空 device_id 的命令在明细里怎么归属。
+  # BS-05/BS-06 钉的是**现状**（落表那条在收成一句后必须反转），裁决前不把任一侧写成应然。
+  open_question: PROJ-03① 两侧 totals.commands 的集合统一与空 device_id 命令的明细归属
+
+# ── 控制提醒的身份（V273：NOTIFICATION_FANOUT 格里 CTRL 族的**零时钟两桶**）──────────
+# 为什么要单独一块：`NTF-CTRL-` 这一族有四个桶，其中 `delivery_backlog`／`delivery_backlog_escalated`
+# 的桶名取决于 `ageMs = now − sent_at` 与 SLA 倍数的比较（窗口定义就是上面那块 `delivery_backlog_window`），
+# 事后重算会翻档；另两桶（`delivery_revoked`／`unauthorized_execution`）的收件人是**写死的角色清单**，
+# 不读班次、不读 `now` ⇒ 期望集合可以从本块纯算出来，值得钉成一条真实库上的集合等式。
+# 既有覆盖到底钉到哪一层（按断言语义搜过 `NTF-CTRL`／两个桶名／`ewoh_notification`，不是按登记位点查）：
+#   · `test/e2e/control-actuator-loop.mjs:783-802` 在真实库里查提醒行，但只查 backlog 两桶；
+#   · `server/modules/control/control.service.spec.ts:702-713／1452-1470` 断过这两桶的 id，
+#     用的是 `makeControlDb` 假 db ⇒ "被唯一键静默吞掉"这个**后果**在 mock 里结构上不可表示；
+#   · `test/e2e/control-receipt-boundary.e2e.spec.ts:154-187` 真实走到了 `unauthorized_execution` 那条写，
+#     但从不读 `ewoh_notification`。
+# ⇒ 零时钟两桶的**提醒身份**此前没有任何真实库位点；本块 + 下面这个消费方补这一格。
+# 消费方：`ewoh-spark-app/test/e2e/ctrl-notification-identity.e2e.spec.ts`（CC 系列）。
+# 改本块＝改口径：必须同轮跑 CC 系列与全量重放。
+control_notification_identity:
+  version: 1
+  projection_table: ewoh_notification
+  authority_table: ewoh_control_command      # 主事实＝那条命令行：被撤回（revoked）／撤回后仍被执行（违规回执）
+  scope: 只覆盖零时钟两桶；backlog 两桶挂在 now 上，见下面 not_recomputable
+  prefix_shape: 'NTF-CTRL-<sanitize(command_id, 80)>-'
+  id_shape: '<prefix><bucket>-<recipient_type>-<sanitize(recipient_id, 40)>-<channel>'
+  id_slice_chars: 250                    # 整号截断长度
+  sanitize: '去掉 [^A-Za-z0-9_.-] 之外的字符后再截断'
+  uniqueness: >-
+    (org_id, notification_id) 唯一（standalone_100）＋ ON CONFLICT DO NOTHING
+    ⇒ 同租户下同「桶 × 收件人 × 渠道」只会落一行；同一事实被重复触发只累加 duplicates。
+  external_ref: command_id               # 两桶都写 command.commandId（control.service.ts:2252／:2830）
+  buckets:
+    delivery_revoked:
+      emitted_by: "投递前授权复核不通过（listPendingCommands :2525／ackCommand :2946 两条 drain）⇒ revokeUndeliveredCommandWrites 的 :2247-2266"
+      authority_fact: "同一命令行 status='revoked' 且 revoked_reason 非空（chk_ewoh_control_command_revocation 强制成对）"
+      recipients:
+        - { type: role, id: workshop_lead }
+        - { type: role, id: dispatcher }
+      severity: high
+    unauthorized_execution:
+      emitted_by: "result='executed' 的回执落在已 revoked/expired（或授权复核不通过）的命令上 ⇒ recordUnauthorizedExecution 的 :2825-2843"
+      authority_fact: "同一命令行：状态已是 revoked/expired，而执行事实被迟到回执写进来（authorization_violation 审计同批落）"
+      recipients:
+        - { type: role, id: safety_admin }
+        - { type: role, id: workshop_lead }
+      severity: critical
+  channels:
+    - name: app
+      enabled_when: always
+    - name: lark
+      enabled_when: 'EWOH_LARK_WEBHOOK_URL 非空'
+    - name: email
+      enabled_when: 'EWOH_SMTP_HOST 非空 且 EWOH_SMTP_FROM 非空 且 EWOH_SMTP_TO 至少一个地址 且 EWOH_SMTP_PORT（缺省 587）是 1..65535 的整数'
+  not_recomputable:
+    backlog_buckets: >-
+      delivery_backlog／delivery_backlog_escalated 的**桶名**取决于 ageMs vs escalationMultiplier*slaMs，
+      收件人还随 escalated 加发 production_manager ⇒ 事后重算会翻档；那两桶的一致性由 `delivery_backlog_window`
+      ＋ BS-05/BS-06 ＋ `control-actuator-loop.mjs` 的提醒查询覆盖，不进本块等式。
+    prose_only: 提醒正文（原因码中文标签、命令号、请求号）随 CONTROL_REVOKE_REASON_LABELS 措辞变 ⇒ 等式只核 id 集合与 severity 列，不核正文。
+  reconciliation:
+    equation: >-
+      对一条命令：`ewoh_notification` 里 notification_id LIKE '<本块 prefix_shape 实值>%' 的行集合
+      ＝ 由 buckets × recipients × channels 重算出的期望 id 集合（**集合相等**，同时核条数），
+      且每条提醒行的 external_ref 等于该 command_id、authority_table 里确实存在它声称的那条主事实。
+    no_phantom: >-
+      对照组：一条正常投递、未被撤回、无违规回执的命令 ⇒ 它的 `NTF-CTRL-<它>-` 前缀下必须 0 行。
+      （没有这一支，"两边都有行"的等式可以恒真。）
+    teeth:
+      - "契约侧：把 delivery_revoked 的收件人摘掉 dispatcher（或加一个角色）而不动实现 ⇒ 等式红"
+      - "实现侧：把 control.service.ts 该桶的收件人清单加一个角色 ⇒ 等式红"
+      - "实现侧：把该桶的 insert 整段摘掉（提醒不写）⇒ 必须红，不得静默通过（证明断言读的是真实行而不是自算集合）"

@@ -499,8 +499,17 @@ describe('ImprovementActionService 复发度量（NO-58a）', () => {
       dueAt: '2026-09-13T00:00:00.000Z',
       acceptanceCriteria: '交接清单含备用设备状态',
     }, ACTOR);
-    await service.complete(lesson.actionId, { outcomeNote: '已加入模板' }, ACTOR);
-    return { service, actionId: lesson.actionId };
+    const completed = await service.complete(
+      lesson.actionId,
+      { outcomeNote: '已加入模板' },
+      ACTOR,
+      { now: new Date(COMPLETED_AT) },
+    );
+    return {
+      service,
+      actionId: lesson.actionId,
+      completedAt: completed.completedAt,
+    };
   }
 
   it('scan 时派生对象归属：incident 复盘的 targetId → device 对象', async () => {
@@ -522,8 +531,8 @@ describe('ImprovementActionService 复发度量（NO-58a）', () => {
     expect(effect.reason).toContain('不可度量');
   });
 
-  it('完成后复发计数下降 → recurrence_dropped，但明确"不等于这条改进有效"', async () => {
-    const { service, actionId } = await withCompletedAction({
+  it('完成后复发计数下降 → recurrence_dropped，但明确"不等于这条改进有效"（TEST-05/TEST-07 常驻位点：完成时刻取注入时钟，不取墙钟）', async () => {
+    const { service, actionId, completedAt } = await withCompletedAction({
       executions: [
         // 完成前（前 30 天）3 次偏差
         { orgId: ORG, deviceId: 'DEV-04', deviationType: 'late_start', createdAt: new Date(Date.parse(COMPLETED_AT) - 20 * 86_400_000) },
@@ -532,6 +541,8 @@ describe('ImprovementActionService 复发度量（NO-58a）', () => {
       ],
     });
     const effect = await service.effect(actionId, ACTOR, { now: new Date(Date.parse(COMPLETED_AT) + 86_400_000) });
+    // 回看窗口的锚点必须是注入的那个完成时刻：跑一次就把"今天"焊死，才不会隔天少算一条样本（TEST-07）
+    expect(completedAt).toBe(COMPLETED_AT);
     expect(effect.before.deviations).toBe(3);
     expect(effect.after.deviations).toBe(0);
     expect(effect.conclusion).toBe('recurrence_dropped');

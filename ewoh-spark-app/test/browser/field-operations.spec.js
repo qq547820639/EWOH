@@ -136,14 +136,14 @@ test.describe('FieldOperations 现场作业台', () => {
     expect(await collectA11yIssues(page)).toEqual([]);
   });
 
-  test('执行记录不可用：不伪造待办，显式告警并说明无法判断', async ({ page }) => {
+  test('执行记录不可用：不当作过期，显式告警并暂停待办推断', async ({ page }) => {
     await openField(page, server.baseUrl, ROLES.worker, {
       ...baseMock,
       'GET /api/scheduler/field/my-work': { status: 503, body: { message: '执行记录服务暂不可用' } },
     }, 'person-1');
 
     await expect(page.getByRole('alert').filter({ hasText: '执行记录获取失败' })).toBeVisible();
-    await expect(page.getByTestId('field-reminder-RECEIPT_DATA_STALE')).toBeVisible();
+    await expect(page.getByTestId('field-reminder-FIELD_DATA_NOT_READY')).toBeVisible();
     await expect(page.getByTestId('field-reminder-ASSIGNMENT_OVERDUE')).toHaveCount(0);
   });
 

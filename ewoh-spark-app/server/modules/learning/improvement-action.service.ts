@@ -430,7 +430,13 @@ export class ImprovementActionService {
   }
 
   /** 人完成：必须带结果说明（对着判据说清楚做了什么）。 */
-  async complete(actionId: string, input: { outcomeNote?: string }, actor?: OrgContext): Promise<ImprovementActionRecord> {
+  async complete(
+    actionId: string,
+    input: { outcomeNote?: string },
+    actor?: OrgContext,
+    // options.now 只给内部调用与用例：控制器不把请求体转成它，完成时刻因此不可被外部伪造。
+    options: { now?: Date } = {},
+  ): Promise<ImprovementActionRecord> {
     const ctx = this.requireActor(actor);
     const orgId = ctx.primaryOrgId;
     const current = await this.mustGet(orgId, actionId);
@@ -441,7 +447,7 @@ export class ImprovementActionService {
     if (outcomeNote === '') {
       throw new BadRequestException('完成必须写结果说明（对着验收判据说清楚做了什么、结果如何）');
     }
-    const completedAt = new Date();
+    const completedAt = options.now ?? new Date();
     const next: ImprovementActionRecord = {
       ...current,
       status: 'completed',

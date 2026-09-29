@@ -5,6 +5,7 @@ import {
   exportOfflineData,
   flushOfflineQueue,
   generateTraceKey,
+  offlineDbNameForScope,
   isAuthError,
   migratePendingActionsFromLocalStorage,
   MIGRATION_FLAG_KEY,
@@ -820,5 +821,18 @@ describe('offlineDb', () => {
     // Both stores were addressed in the same tx; neither is committed since
     // the tx aborted (the caller's writes are rolled back atomically).
     expect(writes).toEqual(['attachments', 'pendingActions']);
+  });
+});
+
+describe('offlineDbNameForScope', () => {
+  it('scopes the offline database by authenticated identity', () => {
+    expect(offlineDbNameForScope('org-a:user-1')).toBe('ewoh-offline:org-a:user-1');
+    expect(offlineDbNameForScope('org-b:user-1')).toBe('ewoh-offline:org-b:user-1');
+  });
+
+  it('keeps the legacy name only for unscoped system probes', () => {
+    expect(offlineDbNameForScope(undefined)).toBe('ewoh-offline');
+    expect(offlineDbNameForScope(null)).toBe('ewoh-offline');
+    expect(offlineDbNameForScope('')).toBe('ewoh-offline');
   });
 });

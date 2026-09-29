@@ -11,15 +11,24 @@
 - 授权缺失 → 403（``authorization_required``）；授权号形状非法 → 400（``authorization_ref_invalid``）
   ——"没给授权"与"给错授权"是两件事，页面要能区分；
 - 高位命令让设备动起来/解除安全停机；``stop`` 是安全动作，不要求授权（安全停机不被审批链卡住）；
+- production 下高危命令还必须携带与 control downlink 同契约的 HMAC 授权范围指纹；
+  范围签名绑定 request/device/command/payload，同签名重放显式拒绝，审计预写失败不下发；
 - 传输未就绪 → 503；设备故障态 → 409；
 - 无论接受还是拒绝，都写一条**审计**（``actuator.command``，含命令/授权号/结果/原因）——
   命令面绝不能"悄悄没发出去"。
 """
 
 import json
+import os
+
+from edge_platform.edge.adapters.actuator.protocol import (
+    ACTUATOR_HIGH_RISK_COMMANDS,
+    is_signed_authorization_fingerprint,
+    verify_authorization_fingerprint,
+)
 
 from . import Route, dispatch_routes, exact, sub_path
-from ._util import now_iso, resolve_actor
+from ._util import now_iso, resolve_actor, runtime_mode
 
 
 def _actuator_adapters(ctx):
@@ -89,6 +98,47 @@ def _audit(ctx, actor, device_id, payload, result, ok):
         result.setdefault("audit_error", f"{type(exc).__name__}: {exc}")
 
 
+def _verify_production_authorization(body, device_id, command_key, payload):
+    """Require a platform-signed scope before a production high-risk actuation.
+
+    The adapter's shape check remains as defense in depth, but a syntactically
+    valid ``control:*`` reference is not an approval. Production HTTP callers
+    must present the same signed fingerprint contract used by the control
+    downlink, with the request id, device, command and payload bound together.
+    """
+    request_id = str(body.get("requestId") or "").strip()
+    authorization_ref = str(body.get("authorizationRef") or "").strip()
+    fingerprint = body.get("authorizationFingerprint")
+    scope = body.get("authorizationScope") if isinstance(body.get("authorizationScope"), dict) else None
+    if not request_id or authorization_ref != f"control:{request_id}" or not scope:
+        return None, ("authorization_proof_invalid", 403)
+    if not is_signed_authorization_fingerprint(fingerprint):
+        return None, ("authorization_proof_invalid", 403)
+    secret = os.environ.get("EWOH_CONTROL_FINGERPRINT_SECRET", "").strip()
+    if not secret:
+        return None, ("authorization_secret_unconfigured", 503)
+    scope_ok = (
+        str(scope.get("requestId") or "") == request_id
+        and str(scope.get("deviceId") or "") == device_id
+        and str(scope.get("commandKey") or "") == command_key
+    )
+    if not scope_ok:
+        return None, ("authorization_scope_mismatch", 403)
+    valid, reason = verify_authorization_fingerprint(
+        fingerprint,
+        request_id=request_id,
+        device_id=device_id,
+        command_key=command_key,
+        approval_instance_id=scope.get("approvalInstanceId"),
+        payload=payload,
+        secret=secret,
+        scope_present=True,
+    )
+    if not valid:
+        return None, (reason or "authorization_proof_invalid", 403)
+    return fingerprint, None
+
+
 def api_actuator_command(ctx, h, req_meta):
     device_id = req_meta.path[len("/api/actuators/") :].split("/")[0]
     raw = getattr(req_meta, "body", None)
@@ -118,7 +168,75 @@ def api_actuator_command(ctx, h, req_meta):
 
     # 操作人取 token 身份（客户端自报的 actor 只在无 token 的本地模式兜底，见 _util.resolve_actor）
     actor = resolve_actor(h, body)
+    proof_fingerprint = None
+    if runtime_mode() == "production" and command_key in ACTUATOR_HIGH_RISK_COMMANDS:
+        proof_fingerprint, proof_error = _verify_production_authorization(
+            body, device_id, command_key, payload
+        )
+        if proof_error:
+            reason, status = proof_error
+            result = {
+                "accepted": False,
+                "reason": reason,
+                "device_id": device_id,
+                "command_key": command_key,
+                "at": now_iso(),
+            }
+            _audit(
+                ctx,
+                actor,
+                device_id,
+                {"commandKey": command_key, "authorizationRef": authorization_ref, "payload": payload},
+                result,
+                False,
+            )
+            return h.send_json(result, status)
+        seen = getattr(ctx, "actuator_command_fingerprints", None)
+        if seen is None:
+            seen = set()
+            ctx.actuator_command_fingerprints = seen
+        if proof_fingerprint in seen:
+            result = {
+                "accepted": False,
+                "reason": "duplicate_command",
+                "device_id": device_id,
+                "command_key": command_key,
+                "at": now_iso(),
+            }
+            _audit(
+                ctx,
+                actor,
+                device_id,
+                {"commandKey": command_key, "authorizationRef": authorization_ref, "payload": payload},
+                result,
+                False,
+            )
+            return h.send_json(result, 409)
+        try:
+            ctx.storage.insert_audit_log(
+                action="actuator.command.intent",
+                actor_id=actor or "anonymous",
+                target_type="device",
+                target_id=device_id,
+                before=None,
+                after={"request": body, "proof_fingerprint": proof_fingerprint},
+                result="pending",
+            )
+        except Exception as exc:
+            return h.send_json(
+                {
+                    "accepted": False,
+                    "reason": "audit_unavailable",
+                    "audit_error": f"{type(exc).__name__}: {exc}",
+                    "device_id": device_id,
+                    "command_key": command_key,
+                    "at": now_iso(),
+                },
+                503,
+            )
     result = sender(command_key, authorization_ref, payload)
+    if proof_fingerprint and result.get("accepted"):
+        ctx.actuator_command_fingerprints.add(proof_fingerprint)
     reason = result.get("reason")
     status = 202 if result.get("accepted") else _status_for_reason(reason)
     result["decided_at"] = now_iso()

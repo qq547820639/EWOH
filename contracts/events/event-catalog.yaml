@@ -1325,6 +1325,15 @@ components:
           triggerEntityId:
             type: string
             nullable: true
+          # F-10（V58）：抑制成因必须可判别——「政策说不必重排」与「另一个重排正占着
+          # 租户级守卫锁」结论相反（前者不补投，后者该补投）。此前两者共用一个字面量。
+          reason:
+            type: string
+            enum:
+              - storm_guard_lock_busy
+              - replan_interval_window_quota
+              - storm_guard_suppressed
+              - minimum_objective_improvement
           occurredAt: { type: string, format: date-time }
         required:
           - orgId

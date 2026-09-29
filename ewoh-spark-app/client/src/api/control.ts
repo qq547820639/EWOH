@@ -100,6 +100,8 @@ export interface DeliveryBacklogStatus {
     oldestWaitingMs: number;
     escalated: boolean;
   }>;
+  /** PROJ-06：积压超过单轮检视上限 ⇒ true（totals 是真总量，devices 只覆盖最久的那一批）。 */
+  truncated: boolean;
   checkedAt: string;
 }
 

@@ -308,19 +308,28 @@ class Storage:
 
     def __init__(self, db_path):
         self.db_path = str(db_path)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._db = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         self._db.row_factory = sqlite3.Row
         # WAL 模式 + busy_timeout 解决模拟器线程与 HTTP 请求线程并发写导致的 "database is locked"
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA busy_timeout=30000")
-        # EDGE-026：库文件含遥测/审计/绑定等敏感数据，显式收紧为 0600
-        # （默认 umask 022 会产生 world-readable 文件；:memory: 等无文件场景忽略）。
-        try:
-            os.chmod(self.db_path, 0o600)
-        except OSError:
-            pass
         self.init_db()
+        self._enforce_sensitive_file_permissions()
+
+    def _enforce_sensitive_file_permissions(self):
+        """收紧主库和 WAL/SHM 伴生文件权限。
+
+        EDGE-026 只覆盖主库不够：WAL 可能缓存尚未 checkpoint 的遥测、审计和
+        绑定事实；SHM 也会暴露共享存储元数据。这里在每次启动时显式收敛，
+        修复旧库或异常 umask 下残留的 0644 权限。:memory: 没有伴生文件，忽略
+        OSError 即可。
+        """
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.chmod(self.db_path + suffix, 0o600)
+            except OSError:
+                pass
 
     def init_db(self):
         with self._lock, self._db:
@@ -359,7 +368,9 @@ class Storage:
             self._db.execute("ALTER TABLE world_state_snapshot ADD COLUMN metadata_json TEXT")
 
     def close(self):
-        self._db.close()
+        # 关闭也会触发 SQLite 资源释放；与写入共用进程内锁，避免关闭竞争。
+        with self._lock:
+            self._db.close()
 
     # -- 遥测 --
     def ensure_device(self, device_id, device_type, source_type, model=None, firmware_version=None):
@@ -977,6 +988,19 @@ class Storage:
             )
             row = self._db.execute("SELECT * FROM assignment WHERE assignment_id=?", (assignment_id,)).fetchone()
         return self._assignment_row(row)
+
+    def delete_dispatched_assignment(self, assignment_id, plan_id):
+        """补偿删除“已派工但方案未推进”的派工（execute 幂等/回滚专用）。
+
+        只删除仍为 dispatched 且属于同一 plan 的行；如果现场已推进到
+        received/executing/completed，说明事实已越过补偿边界，拒绝删除。
+        """
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "DELETE FROM assignment WHERE assignment_id=? AND plan_id=? AND status='dispatched'",
+                (assignment_id, plan_id),
+            )
+            return cur.rowcount > 0
 
     def list_assignments(self, person_id=None, status=None):
         """查询派工记录；可选按 person_id / status 过滤，按 id DESC。"""

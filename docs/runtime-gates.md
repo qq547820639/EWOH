@@ -25,7 +25,7 @@ Owner: 平台/交付负责人
 | 4 | Docker image startup + health check | ⚠️ CI 自动化 / 本地 BLOCKED | `standalone.yml`（新增步骤） | `/health/live`、`/health/ready` 200 |
 | 5 | Helm install/upgrade/rollback + smoke | ✅ CI 自动化（kind）/ 本地 BLOCKED | `runtime-gates.yml` job `helm-kind-gate`（ephemeral kind v0.23 + 集群内 PG17，真实 install/upgrade/rollback） | 见 §3.4 |
 | 6 | backup/restore + version compatibility drill | ⚠️ CI 自动化 / 本地 BLOCKED | `standalone.yml` + `verify-backup-restore.mjs`（空库恢复/行数/不变量/组织隔离/跨版本） | backup/restore/verify + identity smoke |
-| 7 | edge node disconnect/backlog/replay/duplicate | ✅ CI 自动化 | `test.yml`（`make test-contract` + 显式步骤） | Python 测试通过 |
+| 7 | edge node disconnect/backlog/replay/duplicate | ✅ CI 自动化 | `test.yml`（`make test-contract` + 显式步骤 `make test-gated PYTEST_GATED_TARGETS=…`） | Python 测试通过；且每一次 skip 都必须在 `tests/ci-skip-baseline.txt` 登记（skip≠pass） |
 | 8 | canary upgrade + failed rollback | ✅ CI 自动化（kind）/ 本地 BLOCKED | `runtime-gates.yml` job `helm-kind-gate`（canary 阶段，`canary-deploy.sh`，坏版本自动回滚） | 见 §3.5 |
 | 9 | long soak/load test | ✅ CI 自动化 / 本地 BLOCKED | `runtime-gates.yml` job `soak-load-gate`（`soak-load.js` 2000/25 + `soak-scheduler-events.js` 500 事件+SSE） | 见 §3.6 |
 | 10 | PostgreSQL 生产迁移门禁（空库/跨版本/幂等/回滚/权限） | ⚠️ CI 自动化 / 本地 BLOCKED | `runtime-gates.yml` + `verify-migration-prod.mjs` | 见 §4.10 |

@@ -5,7 +5,13 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { AuditService } from '../shared/audit.service';
+import {
+  canAccessWorkbenchRole,
+  WORKBENCH_ROLES,
+  type WorkbenchRole,
+} from './workbench-access';
 
 /**
  * Server-side saved-view persistence for the Role Workbench.
@@ -47,6 +53,15 @@ export interface WorkbenchViewInput {
   limit?: number;
   shared?: boolean;
 }
+
+/** Supported (role, list) pairs mirror the server-backed Role Workbench schema. */
+const WORKBENCH_ROLE_LIST_KEYS: Readonly<Record<WorkbenchRole, ReadonlySet<string>>> = {
+  operator: new Set(['mySteps']),
+  team_lead: new Set(['delayedOrders']),
+  quality: new Set(['duplicateDefects', 'defectPareto']),
+  equipment: new Set(['abnormalDevices', 'downtimeReasons', 'maintenanceTasks', 'capacityDegradation']),
+  manager: new Set(['riskTrend']),
+};
 
 export interface WorkbenchViewStore {
   save(view: WorkbenchView): Promise<WorkbenchView>;
@@ -132,21 +147,49 @@ export class WorkbenchViewService {
     actor: WorkbenchViewActor,
     input: WorkbenchViewInput,
   ): Promise<WorkbenchView> {
-    if (!input.key || !input.role || !input.listKey) {
-      throw new NotFoundException('view requires key, role and listKey');
+    const key = (input.key ?? '').trim();
+    const role = (input.role ?? '').trim() as WorkbenchRole;
+    const listKey = (input.listKey ?? '').trim();
+    if (!key || !role || !listKey) {
+      throw new BadRequestException('view requires key, role and listKey');
+    }
+    if (key.length > 200 || listKey.length > 100) {
+      throw new BadRequestException('view key or listKey is too long');
+    }
+    if (!WORKBENCH_ROLES.includes(role)) {
+      throw new BadRequestException('view role is invalid');
+    }
+    if (!canAccessWorkbenchRole(actor.roles ?? [], role)) {
+      throw new ForbiddenException(
+        `You are not authorized to save the '${role}' workbench view`,
+      );
+    }
+    if (!WORKBENCH_ROLE_LIST_KEYS[role]?.has(listKey)) {
+      throw new BadRequestException('view listKey is invalid for this workbench role');
+    }
+    // The client's serverViewKey contract is `${role}.${listKey}`. Enforce it so
+    // a stored view can never advertise one role/list while applying another.
+    if (key !== `${role}.${listKey}`) {
+      throw new BadRequestException('view key must match role and listKey');
+    }
+    if (
+      input.limit !== undefined &&
+      (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)
+    ) {
+      throw new BadRequestException('view limit must be between 1 and 100');
     }
     const now = new Date().toISOString();
-    const existing = await this.store.get(actor.primaryOrgId, actor.userId, input.key);
+    const existing = await this.store.get(actor.primaryOrgId, actor.userId, key);
     const view: WorkbenchView = {
-      key: input.key,
-      role: input.role,
-      listKey: input.listKey,
+      key,
+      role,
+      listKey,
       ownerId: actor.userId,
       orgId: actor.primaryOrgId,
-      filter: input.filter ?? existing?.filter,
-      sortKey: input.sortKey ?? existing?.sortKey,
-      sortDir: input.sortDir ?? existing?.sortDir,
-      limit: input.limit ?? existing?.limit,
+      filter: input.filter?.trim() || undefined,
+      sortKey: input.sortKey?.trim() || undefined,
+      sortDir: input.sortDir,
+      limit: input.limit,
       shared: input.shared ?? existing?.shared ?? false,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,

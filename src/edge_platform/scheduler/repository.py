@@ -284,6 +284,14 @@ class SchedulingRepository:
             version=d.get("version"),
         )
 
+    def discard_dispatched_assignment(self, assignment_id, plan_id):
+        """补偿删除 execute 半提交中仍未推进的 dispatched assignment。"""
+        self._assert_writable()
+        fn = getattr(self.storage, "delete_dispatched_assignment", None)
+        if fn is None:
+            return False
+        return bool(fn(assignment_id, plan_id))
+
     # ---- 乐观锁 ----
 
     def update_task(self, task_id, expected_version, **fields):

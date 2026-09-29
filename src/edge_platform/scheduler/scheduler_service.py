@@ -664,22 +664,65 @@ class SchedulerService:
         # EDGE-110：先做状态机校验再创建/持久化 assignments——
         # 原实现先生成派工落库后校验，验证失败时派工已泄露到存储。
         validate_plan_transition(plan.status, PLAN_DISPATCHED)
+        # 幂等恢复：若上次 execute 已创建派工但在方案状态推进前失败/崩溃，
+        # 重试必须复用同一批派工，而不是生成第二批正式派工。
+        existing = [
+            a for a in self._assignments.values() if getattr(a, "plan_id", "") == plan_id
+        ]
+        if existing:
+            plan.status = PLAN_DISPATCHED
+            plan.executed_at = plan.executed_at or now_iso()
+            self._persist_plan(plan)
+            self._audit(
+                actor_id,
+                "execute_plan_resumed",
+                "plan",
+                plan_id,
+                {"status": PLAN_APPROVED},
+                plan.to_dict(),
+                "approval existed and dispatched assignments were recovered",
+            )
+            return existing
+
+        # 先完整构造派工对象；随后逐条落库。任一条失败时回滚本批仍处于
+        # dispatched 的派工，避免“前几条已派、后几条缺失”的半提交。
         assignments = []
         for ca in plan.assignments:
-            assignment = Assignment(
-                assignment_id=new_id("ASN"),
-                task_id=ca.task_id,
-                plan_id=plan_id,
-                person_id=ca.person_id,
-                device_id=ca.device_id,
-                station_id=ca.station_id,
-                route=dict(ca.route),
-                planned_start=ca.planned_start,
-                planned_end=ca.planned_end,
-                status=TASK_DISPATCHED,
+            assignments.append(
+                Assignment(
+                    assignment_id=new_id("ASN"),
+                    task_id=ca.task_id,
+                    plan_id=plan_id,
+                    person_id=ca.person_id,
+                    device_id=ca.device_id,
+                    station_id=ca.station_id,
+                    route=dict(ca.route),
+                    planned_start=ca.planned_start,
+                    planned_end=ca.planned_end,
+                    status=TASK_DISPATCHED,
+                )
             )
-            self._assignments[assignment.assignment_id] = assignment
-            self._persist_assignment(assignment)
+        persisted = []
+        try:
+            for assignment in assignments:
+                self._persist_assignment(assignment)
+                persisted.append(assignment)
+                self._assignments[assignment.assignment_id] = assignment
+        except Exception:
+            for assignment in reversed(persisted):
+                self._assignments.pop(assignment.assignment_id, None)
+                discard = getattr(self.repository, "discard_dispatched_assignment", None)
+                if discard is not None:
+                    try:
+                        discard(assignment.assignment_id, plan_id)
+                    except Exception as exc:  # noqa: BLE001 - 补偿失败必须留痕
+                        logger.error(
+                            "execute 补偿删除派工 %s 失败: %s",
+                            assignment.assignment_id,
+                            exc,
+                        )
+            raise
+        for assignment in assignments:
             self._sync_task_status_on_dispatch(assignment)
             self._publish(
                 "assignment.updated",
@@ -687,7 +730,6 @@ class SchedulerService:
                 version=assignment.version,
                 payload={"task_id": assignment.task_id, "plan_id": plan_id, "status": assignment.status},
             )
-            assignments.append(assignment)
         before = plan.to_dict()
         plan.status = PLAN_DISPATCHED
         plan.executed_at = now_iso()

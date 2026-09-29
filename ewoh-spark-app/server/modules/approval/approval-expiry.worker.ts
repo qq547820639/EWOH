@@ -1,5 +1,7 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { ApprovalExpiryService } from './approval-expiry.service';
+import { RequestDatabaseContext } from '../../database/request-database-context';
+import { buildGucSettings } from '../shared/org-context.interceptor';
 
 /**
  * 授权到期提醒 worker（NO-30a）。
@@ -18,7 +20,10 @@ export class ApprovalExpiryWorkerService implements OnApplicationBootstrap {
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
 
-  constructor(private readonly expiryService: ApprovalExpiryService) {}
+  constructor(
+    private readonly expiryService: ApprovalExpiryService,
+    private readonly requestDatabaseContext: RequestDatabaseContext,
+  ) {}
 
   onApplicationBootstrap(): void {
     const disabled = String(process.env.APPROVAL_EXPIRY_WORKER_DISABLED ?? '').toLowerCase() === 'true';
@@ -36,15 +41,43 @@ export class ApprovalExpiryWorkerService implements OnApplicationBootstrap {
     this.logger.log(`授权到期提醒 worker 已启动（interval=${intervalMs}ms）`);
   }
 
-  /** 单次扫描（也可被测试直接调用）。 */
+  /**
+   * 单次扫描：逐租户（GUC 事务）跑同一实现。
+   *
+   * 为什么必须自己开上下文：后台 tick 没有请求上下文，而 `ewoh_event` 开着 RLS——
+   * 不带 GUC 的跨租户读**返回 0 行而不是报错**（V207 实测：owner 看到 1 个租户，
+   * `ewoh_api` 无上下文看到 0；同一前提经 HTTP 带上下文扫描落 2 条提醒）。
+   * 本文件此前直接调 `sweepAllActiveOrgs()`（内部自己列租户、自己循环），
+   * 于是"到点自己扫"这条生产恢复路径**从未产出过任何提醒**，且日志上一片干净。
+   * 修法照抄仓内已经存在的两个同形 worker（投递积压、改进行动项逾期）。
+   */
   async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      const result = await this.expiryService.sweepAllActiveOrgs();
-      if (result.created > 0 || result.failures.length > 0) {
+      const orgIds = await this.requestDatabaseContext.systemGlobalAdminTransaction(
+        () => this.expiryService.listOrgsWithRecentApprovalInstances(),
+      );
+      let created = 0;
+      let failures = 0;
+      for (const orgId of orgIds) {
+        try {
+          const result = await this.requestDatabaseContext.runInTransaction(
+            buildGucSettings({ userId: 'system:approval-expiry', primaryOrgId: orgId }),
+            async () => this.expiryService.sweep({
+              userId: 'system:approval-expiry',
+              primaryOrgId: orgId,
+            } as never),
+          );
+          created += result.created;
+        } catch (error) {
+          failures += 1;
+          this.logger.warn(`授权到期扫描 org=${orgId} 失败（不中断其它租户）：${String(error)}`);
+        }
+      }
+      if (created > 0 || failures > 0) {
         this.logger.log(
-          `授权到期扫描：租户 ${result.orgs} 个，新增提醒 ${result.created} 条，重复跳过 ${result.duplicates} 条，失败 ${result.failures.length} 个`,
+          `授权到期扫描：租户 ${orgIds.length} 个，新增提醒 ${created} 条，失败 ${failures} 个`,
         );
       }
     } catch (error) {

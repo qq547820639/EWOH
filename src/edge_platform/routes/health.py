@@ -195,11 +195,20 @@ def send_metrics(ctx, h, req_meta):
 
 
 def route_solver_health(ctx, h, req_meta):
+    """求解器健康契约。
+
+    ``ok`` 表示健康探针本身可用；``available`` 与 ``status`` 才是求解器事实。
+    ortools 缺失时端点仍然 200，但响应必须显式标记 unavailable，不把探针
+    正常误写成求解器可用。
+    """
+    available = cpsat_solver.is_available()
     return h.send_json(
         {
             "ok": True,
-            "available": cpsat_solver.is_available(),
-            "solverVersion": "cpsat-v1",
+            "available": available,
+            "status": "available" if available else "unavailable",
+            "solverVersion": cpsat_solver.SOLVER_VERSION,
+            "note": "ortools installed" if available else "ortools missing - solve returns UNAVAILABLE",
         }
     )
 

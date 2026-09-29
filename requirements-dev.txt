@@ -11,5 +11,8 @@ bandit==1.8.6  # Python AST 静态安全扫描，CI 中以 -ll（低噪音）级
 #   支持的 Python（3.9–3.13）下运行该门禁。不要仅为消除该提示而放宽 bandit 版本：
 #   版本固定是审计决定，换版会改变扫描行为，需单独评估。
 pytest    # 可选集成测试框架；主测试仍使用标准库 unittest，pytest 仅在需要时启用
+PyYAML    # 契约 YAML 读取依赖：tests/test_event_envelope.py、tests/test_golden_contract_scenarios.py
+          #   与 scripts/connector-tck.py 直接 `import yaml`。此前未登记，缺它时两个测试模块在
+          #   **收集期** ImportError（整个 run 变 `Interrupted: 2 errors`）——本机已实测到该形态。
 coverage  # 代码覆盖率测量（行覆盖/分支覆盖/函数覆盖）
 pytest-cov  # pytest 覆盖率插件，与 pytest 集成

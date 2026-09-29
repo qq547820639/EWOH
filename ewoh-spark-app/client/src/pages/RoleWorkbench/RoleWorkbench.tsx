@@ -72,7 +72,9 @@ import { WorkbenchChrome } from './WorkbenchChrome';
  */
 export default function RoleWorkbench(): React.ReactElement {
   const authRoles = useMemo(() => getAuthUser()?.roles ?? [], []);
-  const personId = useMemo(() => getAuthUser()?.userId ?? undefined, []);
+  const authUserId = useMemo(() => getAuthUser()?.userId ?? undefined, []);
+  // Tasks are keyed by personnel-domain personId, not the auth subject.
+  const personId = useMemo(() => getAuthUser()?.personId ?? undefined, []);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const searchParamsRef = useRef(searchParams);
@@ -91,8 +93,8 @@ export default function RoleWorkbench(): React.ReactElement {
   const [debugMode, setDebugMode] = useState(false);
   // 角色化 Quick Start：新用户（当前版本未跳过/未完成）展示入口，点击展开引导。
   const [showQuickStart, setShowQuickStart] = useState(false);
-  const showQuickStartEntry = personId
-    ? shouldShowOnboarding(personId, ONBOARDING_VERSION)
+  const showQuickStartEntry = authUserId
+    ? shouldShowOnboarding(authUserId, ONBOARDING_VERSION)
     : false;
   // 多输入方式：默认由平台能力推断（触摸/键盘），管理员可切换单手/手套以放大触控目标。
   const [inputMode, setInputMode] = useState<WorkbenchInputMode>(() =>
@@ -525,7 +527,7 @@ export default function RoleWorkbench(): React.ReactElement {
           {showQuickStart && personId && (
             <div className="mt-3">
               <OnboardingQuickStart
-                userId={personId}
+                userId={authUserId}
                 roles={authRoles}
                 onClose={() => setShowQuickStart(false)}
               />

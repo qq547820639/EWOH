@@ -71,6 +71,17 @@ export class FileController {
   constructor(private readonly fileService: FileService) {}
 
   @Post()
+  // Field workers attach exception evidence through this endpoint. Method-level
+  // roles override the conservative controller default without opening listing,
+  // deletion, presigned URLs or malware scan transitions.
+  @Roles(
+    'worker',
+    'workshop_lead',
+    'dispatcher',
+    'safety_admin',
+    'device_ops',
+    'global_admin',
+  )
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {

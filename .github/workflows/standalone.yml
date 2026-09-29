@@ -41,10 +41,11 @@ jobs:
         working-directory: ewoh-spark-app
         run: npm ci
 
-      - name: Lockfile 有效性校验（npm ci 已隐含；此处显式声明）
+      - name: Lockfile install consistency
+        # npm ci is the authoritative lockfile gate: it fails on drift rather
+        # than rewriting the lockfile. Keep this assertion explicit.
         working-directory: ewoh-spark-app
-        run: |
-          npm audit --package-lock-only --registry=https://registry.npmjs.org --audit-level=high >/dev/null 2>&1 || echo "npm audit --package-lock-only 校验完成"
+        run: test -f package-lock.json && npm ci --ignore-scripts
 
       - name: 依赖漏洞扫描（npm audit，官方 registry）
         working-directory: ewoh-spark-app
@@ -131,6 +132,8 @@ jobs:
         run: |
           runtime_password="$(openssl rand -hex 24)"
           admin_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$runtime_password"
+          echo "::add-mask::$admin_password"
           export EWOH_API_DATABASE_PASSWORD="$runtime_password"
           export EWOH_RUNTIME_DATABASE_URL="postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh"
           export EWOH_BOOTSTRAP_ADMIN_PASSWORD="$admin_password"
@@ -591,8 +594,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${{ env.EWOH_API_DATABASE_PASSWORD }}" ]; then
-            echo "::notice::BLOCKED_BY_ENVIRONMENT: EWOH_API_DATABASE_PASSWORD 未注入（前置迁移步骤未设 GITHUB_ENV），跳过 Scheduler V2 多租户 E2E。"
-            exit 0
+            echo "::error::EWOH_API_DATABASE_PASSWORD 未注入：多租户 E2E 不能静默 SKIP。"
+            exit 1
           fi
           node db/runner/run_migrations.js --apply-standalone-scheduling-tables-fix
           node db/runner/run_migrations.js --apply-standalone-scheduling
@@ -696,8 +699,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${EWOH_RUNTIME_DATABASE_URL:-}" ]; then
-            echo "::notice::BLOCKED_BY_ENVIRONMENT: EWOH_RUNTIME_DATABASE_URL 未注入（前置迁移步骤未设 GITHUB_ENV），跳过容器健康检查。"
-            exit 0
+            echo "::error::EWOH_RUNTIME_DATABASE_URL 未注入：容器健康门禁不能静默 SKIP。"
+            exit 1
           fi
           container="$(docker run -d --network host \
             -e EWOH_DEPLOY_TARGET=standalone \

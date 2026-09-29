@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import type { INestApplication, LogLevel } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { AddressInfo } from 'node:net';
@@ -22,6 +22,18 @@ interface RootDatabaseHandle {
   };
 }
 
+/** EWOH_E2E_APP_LOGGER="error,warn,log,debug" → Nest 日志级别；未设置即静默（默认）。 */
+function parseE2EAppLoggerLevels(): false | LogLevel[] {
+  const raw = process.env.EWOH_E2E_APP_LOGGER?.trim();
+  if (!raw) return false;
+  const valid: LogLevel[] = ['error', 'warn', 'log', 'debug', 'verbose'];
+  const levels = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is LogLevel => (valid as string[]).includes(s));
+  return levels.length > 0 ? levels : false;
+}
+
 export async function startE2EApp(
   config: E2EConfig,
   simulatorOrgId: string,
@@ -32,7 +44,11 @@ export async function startE2EApp(
   // write/close 竞态，TypeError 脱离 Promise 链直接打断测试——产品形态下
   // 该故障被守卫接管、请求以结构化 5xx 暴露。仅连接类故障被接管，其余
   // 异常仍保持 Node 默认语义（重复安装自动替换上一次）。
-  installPgConnectionFaultGuard();
+  // TEST-01 修复（2026-09-22）：这个守卫是**进程级**的 `process.on` 注册，而它的语义属于
+  // "这一个正在运行的被测应用"。原来把返回的 disposer 丢掉 ⇒ 应用关闭后仍有监听器在接管
+  // 进程级异常，本 worker 后续所有文件（jest 只隔离模块注册表，不隔离 `process`）
+  // 的故障语义都由一个已经关掉的应用决定。现在让它的生命周期与 handle 对齐。
+  const disposeFaultGuard = installPgConnectionFaultGuard();
   process.env.EWOH_DEPLOY_TARGET = 'standalone';
   process.env.DATABASE_URL = config.runtimeDatabaseUrl;
   process.env.JWT_SECRET = config.jwtSecret;
@@ -72,7 +88,9 @@ export async function startE2EApp(
     StandaloneAppModule,
     {
       abortOnError: false,
-      logger: false,
+      // 默认静默（用例自己断言，不靠日志判定）。排障时用 EWOH_E2E_APP_LOGGER=error,warn,log,debug
+      // 打开：fire-and-forget 路径的失败/去抖只出现在 debug/warn 里，关掉日志等于把证据一起关掉。
+      logger: parseE2EAppLoggerLevels(),
     },
   );
   app.enableCors({
@@ -100,7 +118,13 @@ export async function startE2EApp(
       try {
         await app.close();
       } finally {
-        await rootDatabase.$client?.end({ timeout: 5 });
+        try {
+          await rootDatabase.$client?.end({ timeout: 5 });
+        } finally {
+          // 摘监听放在连接池收尾**之后**：R-4 的竞态（postgres write/close）正是在
+          // 关停这一步最容易出现，守卫必须活过它，之后再交还 Node 默认语义。
+          disposeFaultGuard();
+        }
       }
     },
   };

@@ -12,6 +12,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: 检出代码
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -65,11 +66,11 @@ jobs:
         # 显式门禁：SequenceBuffer 乱序/重复/补传/窗口拒绝，edge bridge 失败批缓冲与
         # 重试，Sparkplug session 序列缺口/重复检测。完整覆盖已并入 make test-contract，
         # 此处以命名步骤单独拉出以便门禁可追溯。
-        run: |
-          PYTHONPATH=src python3 -m pytest \
-            tests/test_edge_backfill.py \
-            tests/test_edge_bridge_ingest.py \
-            tests/test_connector_runtime.py -q
+        # CI-01：改用 make test-gated——裸 pytest 下用例被跳过仍退出 0，
+        # 门禁会在「假绿」的位置上要求每次跳过都在 tests/ci-skip-baseline.txt 登记。
+        run: >
+          make test-gated
+          PYTEST_GATED_TARGETS="tests/test_edge_backfill.py tests/test_edge_bridge_ingest.py tests/test_connector_runtime.py"
 
       - name: 运行 ruff 静态检查
         run: ruff check src/edge_platform

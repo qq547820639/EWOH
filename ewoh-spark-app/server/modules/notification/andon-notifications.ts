@@ -37,8 +37,8 @@ export type AndonNotificationBucket = (typeof ANDON_NOTIFICATION_BUCKETS)[number
 /**
  * 重开桶带**发生序号**：第 1 次 = `reopened`，第 N 次（N≥2）= `reopened-N`。
  *
- * 为什么桶不能恒为 `reopened`：通知号是幂等键（`notification_id` 全局唯一 +
- * ON CONFLICT DO NOTHING），同一安灯第二次重开若仍用 `reopened`，id 与第一次
+ * 为什么桶不能恒为 `reopened`：通知号是幂等键（standalone_100 起唯一性收敛为
+ * `(org_id, notification_id)` 复合 + ON CONFLICT DO NOTHING），同一安灯第二次重开若仍用 `reopened`，id 与第一次
  * 完全相同 → 插入被静默吞掉（只累加 duplicates）——第二次重开**没有任何人
  * 被告知**，恰恰复现 NO-48a 要消灭的"关过一次就静默"。序号取自 evidence
  * timeline 里 reopen 事实的累计次数：重放同一次转移得到同一序号（幂等保持），

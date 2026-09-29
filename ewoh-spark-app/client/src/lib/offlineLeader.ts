@@ -59,6 +59,8 @@ export interface FlushLeaseManagerOptions {
   heartbeatMs?: number;
   /** Exchange window used to resolve simultaneous deterministic claims. */
   electionWindowMs?: number;
+  /** Injectable election token (tests use deterministic lexical ordering). */
+  tokenFactory?: () => string;
 }
 
 function createId(): string {
@@ -102,6 +104,7 @@ export class FlushLeaseManager {
   private readonly claimDelay: () => number;
   private readonly heartbeatMs: number;
   private readonly electionWindowMs: number;
+  private readonly tokenFactory: () => string;
   private readonly electors = new Map<string, BroadcastElector>();
 
   constructor(options: FlushLeaseManagerOptions = {}) {
@@ -116,6 +119,7 @@ export class FlushLeaseManager {
     this.claimDelay = options.claimDelay ?? (() => 100 + Math.random() * 300);
     this.heartbeatMs = options.heartbeatMs ?? 5_000;
     this.electionWindowMs = options.electionWindowMs ?? 500;
+    this.tokenFactory = options.tokenFactory ?? createId;
   }
 
   /** True when the Web Locks API is available (the preferred path). */
@@ -184,7 +188,7 @@ export class FlushLeaseManager {
 
   private startElection(name: string): BroadcastElector {
     const channel = this.createBroadcast();
-    const token = createId();
+    const token = this.tokenFactory();
     if (!channel) {
       // No BroadcastChannel — single-tab environment, always the leader.
       return {
@@ -199,6 +203,7 @@ export class FlushLeaseManager {
     // before its promise resolves (a follower may wait indefinitely).
     let released = false;
     let lastSeen = this.now();
+    let leaderToken: string | null = null;
     const competingTokens = new Set<string>();
 
     const resultPromise = new Promise<LeaderResult>((resolve) => {
@@ -245,9 +250,24 @@ export class FlushLeaseManager {
         if (msg.type === 'ping' || msg.type === 'claim') {
           lastSeen = this.now();
         }
+        if (msg.type === 'ping') {
+          // A ping proves a settled leader already owns this lease. A later
+          // tab must follow it even when its own token would win a fresh race.
+          leaderToken = msg.token;
+          if (!settled) {
+            resolve(settle(false, true));
+            return;
+          }
+        }
         if (msg.type === 'claim') {
           competingTokens.add(msg.token);
           if (msg.token < token) released = true; // deterministic loser
+        }
+        if (msg.type === 'claim' && settled && isLeader) {
+          // Answer a challenger immediately; waiting for the normal heartbeat
+          // can let the challenger finish its election window first.
+          channel.postMessage({ type: 'ping', name, token });
+          return;
         }
         if (msg.type === 'claim' && !settled && released) {
           resolve(settle(false, true));
@@ -270,6 +290,7 @@ export class FlushLeaseManager {
           if (settled) return;
           const winner =
             !released &&
+            !leaderToken &&
             (competingTokens.size === 0 ||
               token < [...competingTokens].sort()[0]);
           if (winner) {

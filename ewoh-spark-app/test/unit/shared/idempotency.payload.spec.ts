@@ -85,6 +85,72 @@ describe('IdempotencyService.executeWithPayload (Task 6 — offline end-to-end i
     expect(replay).toEqual({ ok: true });
   });
 
+  it('binds the payload before the side effect so a failed attempt cannot be retargeted', async () => {
+    const service = new IdempotencyService(
+      new InMemoryIdempotencyStore(),
+      new InMemoryPayloadStore(),
+    );
+    let attempts = 0;
+
+    await expect(
+      service.executeWithPayload('idem-key-failed', { orderId: 'WO-1' }, async () => {
+        attempts += 1;
+        throw new Error('device unavailable');
+      }),
+    ).rejects.toThrow('device unavailable');
+
+    await expect(
+      service.executeWithPayload('idem-key-failed', { orderId: 'WO-999' }, async () => {
+        attempts += 1;
+        return { retargeted: true };
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(attempts).toBe(1);
+
+    await expect(
+      service.executeWithPayload('idem-key-failed', { orderId: 'WO-1' }, async () => {
+        attempts += 1;
+        return { retried: true };
+      }),
+    ).resolves.toEqual({ retried: true });
+    expect(attempts).toBe(2);
+  });
+
+  it('rejects a concurrent replay whose payload differs before trusting the settled result', async () => {
+    class GatedStore extends InMemoryIdempotencyStore {
+      claimed = false;
+      async claim(key: string, scope?: string) {
+        const won = !this.claimed;
+        this.claimed = true;
+        return won;
+      }
+    }
+    const store = new GatedStore();
+    const service = new IdempotencyService(store, new InMemoryPayloadStore());
+    let releaseOperation: (() => void) | undefined;
+    const operation = new Promise<{ ok: true }>((resolve) => {
+      releaseOperation = () => resolve({ ok: true });
+    });
+
+    const winner = service.executeWithPayload(
+      'idem-key-race',
+      { orderId: 'WO-1' },
+      () => operation,
+    );
+    // Let the winner claim and bind its payload before the challenger starts.
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(
+      service.executeWithPayload(
+        'idem-key-race',
+        { orderId: 'WO-999' },
+        async () => ({ hijacked: true }),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    releaseOperation?.();
+    await expect(winner).resolves.toEqual({ ok: true });
+  });
+
   it('computeFingerprint is deterministic and order-stable', () => {
     expect(computeFingerprint({ b: 2, a: 1 })).toBe(computeFingerprint({ a: 1, b: 2 }));
     expect(computeFingerprint({ a: 1 })).not.toBe(computeFingerprint({ a: 2 }));

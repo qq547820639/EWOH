@@ -1,4 +1,4 @@
--- 095 verify：列与部分索引就位；可空语义（NULL = 从未交付）+ 时间可写回读。
+-- 095 verify：列与部分索引就位；sent 必须带 sent_at；delivered_at NULL = 从未交付且时间可写回读。
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 
 DO $$
@@ -27,9 +27,9 @@ BEGIN
   -- 可空语义：未交付的行必须是 NULL（不许用 0/epoch 冒充"交付过"）
   BEGIN
     INSERT INTO ewoh_control_command
-      (org_id, command_id, request_id, root_command_id, attempt_no, command_key, status)
+      (org_id, command_id, request_id, root_command_id, attempt_no, command_key, status, sent_at)
     VALUES
-      (probe_org, probe_cmd || '-null', 'CR-verify-095', probe_cmd || '-null', 1, 'pause', 'sent');
+      (probe_org, probe_cmd || '-null', 'CR-verify-095', probe_cmd || '-null', 1, 'pause', 'sent', now());
     null_ok := EXISTS (
       SELECT 1 FROM ewoh_control_command
        WHERE org_id = probe_org AND command_id = probe_cmd || '-null' AND delivered_at IS NULL
@@ -43,9 +43,9 @@ BEGIN
   -- 写入/回读
   BEGIN
     INSERT INTO ewoh_control_command
-      (org_id, command_id, request_id, root_command_id, attempt_no, command_key, status, delivered_at)
+      (org_id, command_id, request_id, root_command_id, attempt_no, command_key, status, sent_at, delivered_at)
     VALUES
-      (probe_org, probe_cmd, 'CR-verify-095', probe_cmd, 1, 'pause', 'sent', now());
+      (probe_org, probe_cmd, 'CR-verify-095', probe_cmd, 1, 'pause', 'sent', now(), now());
     write_read_ok := EXISTS (
       SELECT 1 FROM ewoh_control_command
        WHERE org_id = probe_org AND command_id = probe_cmd AND delivered_at IS NOT NULL

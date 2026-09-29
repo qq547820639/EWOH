@@ -35,7 +35,7 @@ describe('v0.7 B1: isFaultTransition（设备离线转换判定）', () => {
 });
 
 /* NEST-228：detectFaultTransition 的 DB 查询路径 + DEVICE_OFFLINE 重排触发。
- * fake db 侦测 ewohDevice select where；replanCoordinator 侦测 handleTrigger
+ * fake db 侦测 ewohDevice select where；replanCoordinator 侦测 handleTriggerDetached
  * 仅在“此前正常 + 新故障码”时被调用（fail-closed：查询异常不触发、不阻断）。
  */
 describe('v0.7 B1: detectFaultTransition（DB 路径 + replan 触发）', () => {
@@ -47,7 +47,7 @@ describe('v0.7 B1: detectFaultTransition（DB 路径 + replan 触发）', () => 
   };
 
   function makeHarness(existingRow: Record<string, unknown> | null) {
-    const handleTrigger = jest.fn().mockResolvedValue({ runId: 'run-1' });
+    const handleTriggerDetached = jest.fn().mockResolvedValue({ runId: 'run-1' });
     const rows = existingRow ? [existingRow] : [];
     // drizzle select().from().where().limit() 形态的链式 fake。
     const selectWhere = jest.fn(() => ({
@@ -63,37 +63,37 @@ describe('v0.7 B1: detectFaultTransition（DB 路径 + replan 触发）', () => 
       {} as never,
       {} as never,
       {} as never,
-      { handleTrigger } as never,
+      { handleTriggerDetached } as never,
       {} as never,
     );
-    return { service, handleTrigger, selectWhere };
+    return { service, handleTriggerDetached, selectWhere };
   }
 
   it('此前正常 + 新故障码 → 查询既有状态并触发 DEVICE_OFFLINE 重排（带 org ctx）', async () => {
-    const { service, handleTrigger } = makeHarness({ faultCode: null, online: true });
+    const { service, handleTriggerDetached } = makeHarness({ faultCode: null, online: true });
     await (service as unknown as {
       detectFaultTransition: (d: string, f: string, c: unknown) => Promise<void>;
     }).detectFaultTransition('exo-1', 'E1001', ORG_CTX);
     // fire-and-forget：flush 微任务队列后断言重排已被调用。
     await new Promise((resolve) => setImmediate(resolve));
-    expect(handleTrigger).toHaveBeenCalledWith('DEVICE_OFFLINE', 'exo-1', ORG_CTX);
+    expect(handleTriggerDetached).toHaveBeenCalledWith('DEVICE_OFFLINE', 'exo-1', ORG_CTX);
   });
 
   it('已有故障码 → 不触发重排', async () => {
-    const { service, handleTrigger } = makeHarness({ faultCode: 'E1000', online: true });
+    const { service, handleTriggerDetached } = makeHarness({ faultCode: 'E1000', online: true });
     await (service as unknown as {
       detectFaultTransition: (d: string, f: string, c: unknown) => Promise<void>;
     }).detectFaultTransition('exo-1', 'E1002', ORG_CTX);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(handleTrigger).not.toHaveBeenCalled();
+    expect(handleTriggerDetached).not.toHaveBeenCalled();
   });
 
   it('无既有行（首次接入）→ 不触发重排', async () => {
-    const { service, handleTrigger } = makeHarness(null);
+    const { service, handleTriggerDetached } = makeHarness(null);
     await (service as unknown as {
       detectFaultTransition: (d: string, f: string, c: unknown) => Promise<void>;
     }).detectFaultTransition('exo-1', 'E1001', ORG_CTX);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(handleTrigger).not.toHaveBeenCalled();
+    expect(handleTriggerDetached).not.toHaveBeenCalled();
   });
 });

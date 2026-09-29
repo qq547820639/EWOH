@@ -41,8 +41,34 @@ export function getDeviceId(storage: StorageLike = defaultStorage()): string {
 }
 
 /** Storage-scoped settings key: prefix.userId.deviceId. */
+function encodeStorageSegment(value: string): string {
+  // User ids and device ids are untrusted storage key fragments. Encoding the
+  // delimiters prevents "a.b" + "c" from colliding with "a" + "b.c".
+  // encodeURIComponent intentionally leaves "." unchanged; encode it too because
+  // it is our storage-key delimiter.
+  return encodeURIComponent(value).replace(/\./g, '%2E');
+}
+
 export function settingsKey(userId: string, deviceId: string): string {
-  return `${SETTINGS_PREFIX}.${userId}.${deviceId}`;
+  return `${SETTINGS_PREFIX}.${encodeStorageSegment(userId)}.${encodeStorageSegment(deviceId)}`;
+}
+
+const SCAN_MODES = new Set(['scanner', 'camera', 'manual']);
+
+function sanitizeSettings(value: unknown): WorkbenchSettings {
+  // JSON.parse can revive attacker-controlled storage shapes, including
+  // __proto__-shaped payloads. Keep an allow-list and reject unknown fields so
+  // preferences cannot become a prototype-pollution or type-confusion vector.
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const output: WorkbenchSettings = {};
+  if (typeof input.touchMode === 'boolean') output.touchMode = input.touchMode;
+  if (typeof input.oneHandMode === 'boolean') output.oneHandMode = input.oneHandMode;
+  if (typeof input.gloveMode === 'boolean') output.gloveMode = input.gloveMode;
+  if (typeof input.scanMode === 'string' && SCAN_MODES.has(input.scanMode)) {
+    output.scanMode = input.scanMode as WorkbenchSettings['scanMode'];
+  }
+  return output;
 }
 
 export function readSettings(
@@ -57,8 +83,7 @@ export function readSettings(
     return {};
   }
   try {
-    const parsed = JSON.parse(raw) as WorkbenchSettings;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    return sanitizeSettings(JSON.parse(raw));
   } catch {
     return {};
   }
@@ -69,10 +94,14 @@ export function saveSettings(
   patch: WorkbenchSettings,
   storage: StorageLike = defaultStorage(),
 ): WorkbenchSettings {
+  const safePatch = sanitizeSettings(patch);
   if (!storage) {
-    return patch;
+    return safePatch;
   }
-  const next: WorkbenchSettings = { ...readSettings(userId, storage), ...patch };
+  const next: WorkbenchSettings = {
+    ...readSettings(userId, storage),
+    ...safePatch,
+  };
   storage.setItem(settingsKey(userId, getDeviceId(storage)), JSON.stringify(next));
   return next;
 }

@@ -49,6 +49,9 @@ const errText = (res) => String(res.body?.error?.message ?? res.body?.message ??
  */
 let rateLimited = false;
 
+/** 候选扫描取证（ENV-02）：SKIP 时把"扫到了什么"原样打出来，不再只说"没有方案"。 */
+const scanTrace = [];
+
 /** 调度触发冷却窗口（与后端 R2 去抖一致）：被去抖后等过它再重试一次。 */
 const COOLDOWN_WAIT_MS = 31_000;
 
@@ -150,10 +153,20 @@ async function findPlan(adminToken, opToken) {
     const list = await request('GET', '/api/scheduler/plans?limit=30', null, adminToken);
     const plans = list.body?.data ?? list.body?.plans ?? [];
     const candidates = [];
-    for (const p of plans) {
-      if (p.status !== 'shadow' && p.status !== 'approved') continue;
+    // ENV-02 取证：把"扫到几个方案、每个有几条待派工 assignment、首条违规是什么"记下来。
+    // 没有这些，SKIP 只能写成"库里没有可用方案"，而实测有两种完全不同的成因
+    // （真的没方案 / 有方案但全员 person_unavailable ⇒ 0 assignment）。
+    scanTrace.push(`列表返回 ${plans.length} 个方案`);
+    for (const p of plans.slice(0, 6)) {
       const detail = await request('GET', `/api/scheduler/plans/${p.planId}`, null, adminToken);
-      const pending = (detail.body?.assignments ?? []).filter((a) => PENDING.has(a.status));
+      const all = detail.body?.assignments ?? [];
+      const pending = all.filter((a) => PENDING.has(a.status));
+      const firstViolation = (detail.body?.violations ?? detail.body?.conflicts ?? [])[0];
+      const why = firstViolation
+        ? `${firstViolation.type ?? '?'}:${firstViolation.reason ?? '?'}`
+        : '-';
+      scanTrace.push(`${p.planId}[${p.status}] 待派工=${pending.length}/${all.length} 首条违规=${why}`);
+      if (p.status !== 'shadow' && p.status !== 'approved') continue;
       if (pending.length >= 2) {
         candidates.push({ plan: p, detail: detail.body, pending });
       }
@@ -269,6 +282,7 @@ async function main() {
       '扫遍库中候选（含触发新调度后的新方案）仍没有"≥2 条可派工 assignment 且能审批通过"的方案。'
       + '常见成因：可调度任务已被前面的场景消费（golden-path / 回执闭环会消费），'
       + '或候选方案快照均已过期且重排失败。'
+      + `本轮扫描面（ENV-02 取证）：${[...new Set(scanTrace)].slice(-7).join(' ; ') || '（未扫到任何方案列表）'}。`
       + '处置：先复位场景数据再运行本场景：'
       + 'node db/runner/reset-scenario-data.js --org-id <org> --yes');
     return finish();

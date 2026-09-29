@@ -24,7 +24,59 @@ function warnOnce(alreadyWarned: boolean | undefined, message: string): true {
   return true;
 }
 
+/**
+ * CFG-01c 观测点（2026-09-24，链行为基线）：默认关闭、零语义影响；`EWOH_DB_NEST504_TRACE=1` 时
+ * 给"HTTP 请求上下文内无事务 store 回落根句柄"这条分支补**按调用点去重**的溯源留痕，回答登记册
+ * 三问里"这 11 次是谁发的（同一条还是 N 条不同路径）""有没有真需要事务边界的请求路径"。
+ * warnOnce 是每实例一次的布尔，看不见具体查询；这里以调用帧为键、每种路径只报一次。
+ * 与 RUN-01 观测同一手法（默认不改变行为），不改生产日志量。
+ */
+const nest504TracedCallers = new Set<string>();
+function traceRootFallbackCaller(requestId: string | undefined): void {
+  if (process.env.EWOH_DB_NEST504_TRACE !== '1') return;
+  const frames = (new Error().stack || '').split('\n');
+  const caller = frames.find((f) =>
+    /server[\\/](modules|common|database)[\\/]/.test(f) && !/request-database-context/.test(f));
+  const key = (caller || frames[3] || '(no-frame)').trim();
+  if (nest504TracedCallers.has(key)) return;
+  nest504TracedCallers.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(`[NEST504-TRACE] req=${requestId ?? '-'} distinct-callers=${nest504TracedCallers.size} caller=${key}`);
+}
+
 type StandaloneDatabase = PostgresJsDatabase<Record<string, never>>;
+
+/**
+ * RUN-01 观测点（2026-09-21，链行为基线 §5.3h）：**已结束的事务被后来的续作 join** 这一形状。
+ *
+ * 实测成因：处理器里不 await 的续作在响应返回后才继续跑，而 AsyncLocalStorage 仍带着
+ * 请求事务的 store；`runInTransaction` 的「已有 store 就加入、不开 savepoint」于是把续作
+ * 挂到那个**已经 COMMIT/ROLLBACK** 的事务上 → 表现是静默挂死或写入丢失（无异常、无日志）。
+ * 产品侧的修复是让续作自带事务；这里补的是**发现能力**：一旦再出现同类写法，日志里必须有名字。
+ *
+ * 只观测不改变语义：不在这里抛错——同一进程里哪些路径会撞上它尚未穷尽测量（全仓 50+ 处非 await
+ * 调用点），把观测变成新故障源违背「先复现再改」。EWOH_DB_RUN01_THROW=1 可显式升级为抛错。
+ */
+const settledTransactions = new WeakSet<object>();
+const settledJoinReported = new WeakSet<object>();
+
+function markTransactionSettled(tx: object): void {
+  settledTransactions.add(tx);
+}
+
+function warnIfJoinedAfterSettle(tx: object): void {
+  if (!settledTransactions.has(tx) || settledJoinReported.has(tx)) return;
+  settledJoinReported.add(tx);
+  // eslint-disable-next-line no-console
+  console.error(
+    '[RequestDatabaseContext] RUN-01：请求事务已结束，仍有续作 join 到同一 store'
+    + '（该写入可能挂住或丢失）。修法=把这段续作改为 runDetachedTransaction，'
+    + '见基线文档 §5.3h。EWOH_DB_RUN01_THROW=1 可把本观测升级为抛错。',
+  );
+  if (process.env.EWOH_DB_RUN01_THROW === '1') {
+    throw new Error('RUN-01: joined a settled request transaction');
+  }
+}
 
 @Injectable()
 export class RequestDatabaseContext {
@@ -52,6 +104,7 @@ export class RequestDatabaseContext {
             );
           }
           if (currentRequestContext()) {
+            traceRootFallbackCaller(currentRequestContext()?.requestId);
             this.warnedRootFallback =
               warnOnce(this.warnedRootFallback, 'NEST-504: HTTP 请求上下文内无事务 store，回落根句柄（无 GUC/RLS）。请将该查询移入 runInTransaction 或经 OrgContextInterceptor 路径调用');
           }
@@ -121,7 +174,15 @@ export class RequestDatabaseContext {
    *
    * 语义边界（不要滥用）：
    *   · 只用于**错误/拒绝路径上必须存活**的事实：撤回、拒绝留痕、补偿事件；
-   *   · 正常成功路径一律走 `runInTransaction`（同请求同事务，保证原子性）；
+   *   · 以及**活过请求的续作**（RUN-01，2026-09-21 实测）：处理器里不 await 的异步续作
+   *     在响应返回之后才继续跑，那时请求事务已经提交/回滚，而 ALS store 仍挂在续作上；
+   *     `runInTransaction` 的"已有 store 就加入、且不开 savepoint"语义会把续作
+   *     挂到那个**已结束**的事务上。实测两种形态：ingest 故障重排留下永不闭合的
+   *     `queued` run（有触发记录、无方案、无日志）；任务写桥接则连触发去重记录都不产生
+   *     （0 行 0 日志，静默丢失）。这类续作必须自带事务。
+   *   · 副作用要说清：续作读不到发起方**尚未提交**的写入，它看到的是上一个已提交世界态
+   *     （自动重排因此基于"已提交世界"而非"在途批次"——这是刻意的，两阶段互不回滚）。
+   *   · 正常同步成功路径一律走 `runInTransaction`（同请求同事务，保证原子性）；
    *   · 它开的是**新连接**：调用方不得在同一操作里依赖外层的行锁或未提交读，
    *     也不得写入与外层事务存在锁序冲突的行。
    *   · 通过 `storage.run(newTx, …)` 建立新上下文：内部用 DRIZZLE_DATABASE 代理
@@ -131,7 +192,9 @@ export class RequestDatabaseContext {
     settings: readonly TransactionSetting[],
     operation: (db: StandaloneDatabase) => Promise<T>,
   ): Promise<T> {
-    return this.rootDatabase.transaction(async (transaction) => {
+    let openedTransaction: StandaloneDatabase | undefined;
+    const running = this.rootDatabase.transaction(async (transaction) => {
+      openedTransaction = transaction as unknown as StandaloneDatabase;
       for (const setting of settings) {
         await transaction.execute(
           sql`select set_config(${setting.name}, ${setting.value}, true)`,
@@ -141,6 +204,9 @@ export class RequestDatabaseContext {
         transaction as unknown as StandaloneDatabase,
         () => operation(transaction as unknown as StandaloneDatabase),
       );
+    });
+    return running.finally(() => {
+      if (openedTransaction) markTransactionSettled(openedTransaction as unknown as object);
     });
   }
 
@@ -166,6 +232,8 @@ export class RequestDatabaseContext {
     try {
       const activeTransaction = this.storage.getStore();
       if (activeTransaction) {
+        // RUN-01 观测：store 已结束 = 这是一段活过请求的续作（详见 settledTransactions 注释）。
+        warnIfJoinedAfterSettle(activeTransaction as unknown as object);
         // Keep one request on one transaction/connection. There is no savepoint:
         // an inner failure aborts the whole request transaction, and inner GUC
         // settings persist for the remainder of the active transaction. Callers
@@ -178,7 +246,9 @@ export class RequestDatabaseContext {
         return operation();
       }
 
-      return this.rootDatabase.transaction(async (transaction) => {
+      let openedTransaction: StandaloneDatabase | undefined;
+      const running = this.rootDatabase.transaction(async (transaction) => {
+        openedTransaction = transaction as unknown as StandaloneDatabase;
         for (const setting of effectiveSettings) {
           await transaction.execute(
             sql`select set_config(${setting.name}, ${setting.value}, true)`,
@@ -186,6 +256,11 @@ export class RequestDatabaseContext {
         }
 
         return this.storage.run(transaction as unknown as StandaloneDatabase, operation);
+      });
+      // 注意：不能用外层 try/finally 来标记——`return promise` 会立刻触发 finally，
+      // 那时事务还没结束。必须挂在 promise 自身上（提交/回滚都算 settle）。
+      return running.finally(() => {
+        if (openedTransaction) markTransactionSettled(openedTransaction as unknown as object);
       });
     } finally {
       const durationMs = Date.now() - startedAt;

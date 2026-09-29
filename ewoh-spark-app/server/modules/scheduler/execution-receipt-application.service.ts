@@ -12,6 +12,7 @@ import { RequestDatabaseContext } from '../../database/request-database-context'
 import { TaskService, taskActionPath } from '../task/task.service';
 import { ExecutionService } from './execution.service';
 import { receiptProvenance, hasIndependentApproval, independentReceiptEvidence } from './execution-receipt-provenance';
+import { advanceAssignmentByCAS, type AssignmentStatus } from './scheduling-assignment.lifecycle';
 
 /** Both public endpoints converge here. All domain writes and outbox share one GUC transaction. */
 @Injectable()
@@ -106,7 +107,7 @@ export class ExecutionReceiptApplicationService {
       }
       if (!row || row.planId !== plan.planId || row.taskId !== task.id) throw new ConflictException('RECEIPT_EXECUTION_LINK_MISMATCH');
       const target = body.status ?? (body.actualEndAt != null ? 'COMPLETED' : body.actualStartAt != null ? 'STARTED' : row.status);
-      const desiredAssignment = ({ PLANNED: 'dispatched', DISPATCHED: 'dispatched', STARTED: 'executing', PAUSED: 'executing', COMPLETED: 'completed', FAILED: 'failed', CANCELLED: 'cancelled' } as Record<string, string>)[target];
+      const desiredAssignment = ({ PLANNED: 'dispatched', DISPATCHED: 'dispatched', STARTED: 'executing', PAUSED: 'executing', COMPLETED: 'completed', FAILED: 'failed', CANCELLED: 'cancelled' } as Record<string, AssignmentStatus>)[target];
       const desiredTask = ({ STARTED: 'executing', PAUSED: 'paused', COMPLETED: 'completed', FAILED: 'exception', CANCELLED: 'cancelled' } as Record<string, string>)[target];
       if (!desiredAssignment) throw new BadRequestException('INVALID_EXECUTION_STATUS');
       if (['completed', 'failed', 'cancelled'].includes(assignment.status) && assignment.status !== desiredAssignment) throw new ConflictException('ASSIGNMENT_ALREADY_TERMINAL');
@@ -138,9 +139,13 @@ export class ExecutionReceiptApplicationService {
       const execution = await this.executionService.update(assignment.assignmentId, { ...body, status: target as ExecutionUpdateRequest['status'] }, orgId);
       const summary: ExecutionReceiptSummary = { matchedRows: 1, advancedAssignments: 0, advancedTaskSteps: 0, skips: [] };
       if (assignment.status !== desiredAssignment) {
-        const changed = await this.db.update(ewohSchedulingPlanAssignment).set({ status: desiredAssignment, version: sql`${ewohSchedulingPlanAssignment.version} + 1` }).where(and(
-          eq(ewohSchedulingPlanAssignment.id, assignment.id), eq(ewohSchedulingPlanAssignment.orgId, orgId), eq(ewohSchedulingPlanAssignment.status, assignment.status),
-        )).returning();
+        // V279：回执推进的逐条 CAS 收进具名入口（谓词与 version 列自增逐字保持，0 命中仍在此抛文案）。
+        const changed = await advanceAssignmentByCAS(this.db, {
+          id: assignment.id,
+          orgId,
+          fromStatus: assignment.status,
+          toStatus: desiredAssignment,
+        });
         if (!changed.length) throw new ConflictException('ASSIGNMENT_STATE_CONFLICT');
         await this.db.insert(ewohAssignmentEvent).values({ eventId: `EVT-${randomUUID()}`, orgId, assignmentId: assignment.assignmentId, taskId: task.id, actor: ctx.userId, fromStatus: assignment.status, toStatus: desiredAssignment, reason: 'canonical execution receipt' });
         summary.advancedAssignments++;

@@ -1,0 +1,44 @@
+{
+  "_说明": "D 桶（§6.2「属他人未提交工作」）每行的**修法落点**机器可读清单，供 scripts/chain-baseline/d-bucket-collision.cjs 现算「脏 hunk 与落点重不重叠」。落点一律用 needle（所在行的原文片段）定位、不存行号——行号会随他人改动漂移（V216 实测：F-08 的 312→315）。谁改判 D 桶归属，谁同时改这份清单；缺行会被量具判非零退出，不会静默漏检。",
+  "_来源": "登记册 §5.3fq（V216 hunk 级重算）与 §5.3fr（V217 做成常驻判据）；V220：GATE-07 闭合后摘出（桶 5→4）；V224：IDX-01 入 D 桶（落点＝他人未提交的 106 号四处登记行，零间隔）",
+  "sites": {
+    "WORKER-01": [
+      {
+        "file": "ewoh-spark-app/server/modules/operations/workbench-export.worker.ts",
+        "needle": "onApplicationDestroy(): void {"
+      }
+    ],
+    "HTTP-01": [
+      {
+        "file": "ewoh-spark-app/test/e2e/ewoh-http.e2e.spec.ts",
+        "needle": "/api/mobile/workbench?personId="
+      }
+    ],
+    "F-08": [
+      {
+        "file": "ewoh-spark-app/server/modules/control/control.service.ts",
+        "needle": "计量口径：`authorization_verified_at`"
+      }
+    ],
+    "F-18": [
+      {
+        "file": "ewoh-spark-app/server/modules/control/control.service.ts",
+        "needle": "private async expireBacklogCommands("
+      },
+      {
+        "file": "ewoh-spark-app/server/modules/control/control.service.ts",
+        "needle": "await this.db.insert(ewohControlBacklogSnapshot).values({"
+      }
+    ],
+    "IDX-01": [
+      {
+        "file": "db/runner/run_migrations.js",
+        "needle": "standalone_control_sent_state_pair: path.join(root, 'db/migrations/standalone_106_control_sent_state_pair.sql'),"
+      },
+      {
+        "file": "db/runner/run_migrations.js",
+        "needle": "'--verify-standalone-control-sent-state-pair': ['standalone_control_sent_state_pair_verify'"
+      }
+    ]
+  }
+}

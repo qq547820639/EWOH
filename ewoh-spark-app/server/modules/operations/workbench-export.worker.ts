@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readPositiveIntSetting } from '../shared/limit-config';
 import {
   WORKBENCH_EXPORT_STORE,
   WorkbenchExportService,
@@ -41,6 +43,50 @@ const DEFAULT_INTERVAL_MS = 5_000;
 const PAGE_SIZE = 500;
 const MAX_ROWS = 20_000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_EXPORT_RETENTION_MS = 25 * 60 * 60 * 1000;
+const EXPORT_ARTIFACT_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.csv$/i;
+
+export function exportArtifactDir(env: NodeJS.ProcessEnv = process.env): string {
+  return (
+    env.WORKBENCH_EXPORT_DIR?.trim() ||
+    join(tmpdir(), 'ewoh-workbench-exports')
+  );
+}
+
+export function isManagedExportArtifactName(name: string): boolean {
+  return EXPORT_ARTIFACT_PATTERN.test(name);
+}
+
+/**
+ * Expired task rows stop download access, but they do not remove the CSV from
+ * disk. Purge managed artifacts after a retention grace period so sensitive
+ * workbench rows do not remain in the shared temporary directory indefinitely.
+ */
+export async function purgeExpiredExportArtifacts(
+  dir: string = exportArtifactDir(),
+  retentionMs = DEFAULT_EXPORT_RETENTION_MS,
+  now = Date.now(),
+): Promise<number> {
+  let entries: Array<string>;
+  try {
+    entries = await readdir(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+
+  let removed = 0;
+  for (const name of entries) {
+    if (!isManagedExportArtifactName(name)) continue;
+    const path = join(dir, name);
+    const info = await stat(path);
+    if (!info.isFile()) continue;
+    if (now - info.mtimeMs <= retentionMs) continue;
+    await rm(path, { force: true });
+    removed += 1;
+  }
+  return removed;
+}
 
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -99,6 +145,7 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
     this.timer = setInterval(() => {
       void this.tick();
     }, intervalMs);
+    void this.cleanupArtifacts();
     this.timer.unref?.();
     this.logger.log(
       `workbench export worker started (${this.workerId}, interval=${intervalMs}ms)`,
@@ -115,6 +162,7 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
     this.ticking = true;
     let processed = 0;
     try {
+      await this.cleanupArtifacts();
       const ids = await this.store.listClaimable();
       for (const id of ids) {
         if (await this.processOne(id)) processed += 1;
@@ -127,6 +175,28 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
       this.ticking = false;
     }
     return processed;
+  }
+
+  private async cleanupArtifacts(): Promise<void> {
+    const retentionMs = readPositiveIntSetting(
+      process.env.WORKBENCH_EXPORT_RETENTION_MS,
+      DEFAULT_EXPORT_RETENTION_MS,
+      'WORKBENCH_EXPORT_RETENTION_MS',
+      (message) => this.logger.warn(message),
+    );
+    try {
+      const removed = await purgeExpiredExportArtifacts(
+        exportArtifactDir(process.env),
+        retentionMs,
+      );
+      if (removed > 0) {
+        this.logger.log(`workbench export artifacts purged (${removed})`);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `workbench export artifact purge failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async processOne(taskId: string): Promise<boolean> {
@@ -239,9 +309,7 @@ export class WorkbenchExportWorkerService implements OnApplicationBootstrap {
   }
 
   private persistArtifact(taskId: string, csv: string): string {
-    const dir =
-      process.env.WORKBENCH_EXPORT_DIR?.trim() ||
-      join(tmpdir(), 'ewoh-workbench-exports');
+    const dir = exportArtifactDir(process.env);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${taskId}.csv`), csv, 'utf8');
     return `/api/operations/workbench/export/${taskId}/download`;

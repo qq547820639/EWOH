@@ -141,13 +141,20 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
       );
       if (pending.length === 0) break;
       const ids = pending.map((row) => row.id);
-      await this.ownerClient.unsafe(
+      // 来源态谓词必须留在 UPDATE 里：SELECT 与 UPDATE 之间没有事务，运维在这两步之间点了「处置」
+      // 会把同一行写成 status='expired' + handler_action 已落 的矛盾行（V284 补，与 dashboard
+      // 的 event.handle 互踩）。计数改取 RETURNING 行数，跳过并发处置的行不再被计入日志。
+      const expiredRows = await this.ownerClient.unsafe<Array<{ id: string }>>(
         `UPDATE ewoh_event
          SET status = 'expired', _updated_at = now()
-         WHERE id = ANY($1)`,
+         WHERE id = ANY($1) AND status = 'open'
+         RETURNING id`,
         [ids],
       );
-      total += pending.length;
+      total += expiredRows.length;
+      // 终止条件要由"确实改到了行"保证：谓词与 SELECT 一旦脱钩（或被并发反复重开），
+      // 只靠 SELECT 读空退出会原地空转（V285 反证 M2 实测：守卫写成永不成立时循环不结束）。
+      if (expiredRows.length === 0) break;
     }
     if (total > 0) {
       this.logger.log(

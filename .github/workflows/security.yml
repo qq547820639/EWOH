@@ -13,6 +13,12 @@ on:
 permissions:
   contents: read
 
+env:
+  GITLEAKS_VERSION: v8.30.1
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  TRIVY_VERSION: v0.74.0
+  TRIVY_SHA256: "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"
+
 jobs:
   security:
     runs-on: ubuntu-latest
@@ -58,9 +64,9 @@ jobs:
       - name: 安装 gitleaks（固定版本 v8.30.1）
         run: |
           set -e
-          GITLEAKS_VERSION="v8.30.1"
           curl -sSL -o /tmp/gitleaks.tar.gz \
             "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_8.30.1_linux_x64.tar.gz"
+          echo "$GITLEAKS_SHA256  /tmp/gitleaks.tar.gz" | sha256sum -c -
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           chmod +x /tmp/gitleaks
           /tmp/gitleaks version
@@ -154,12 +160,16 @@ jobs:
             exit 0
           fi
           if ! command -v trivy >/dev/null 2>&1; then
-            TRIVY_VERSION="v0.58.1"
             curl -sSL -o /tmp/trivy.tar.gz \
-              "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_0.58.1_Linux-64bit.tar.gz"
+              "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_0.74.0_Linux-64bit.tar.gz"
+            echo "$TRIVY_SHA256  /tmp/trivy.tar.gz" | sha256sum -c -
             tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
           fi
-          if /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL "${EWOH_IMAGE_REF}"; then
+          set +e
+          /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL "${EWOH_IMAGE_REF}"
+          TRIVY_EXIT=$?
+          set -e
+          if [ "$TRIVY_EXIT" -eq 0 ]; then
             node scripts/truth-gate-record.js \
               --id container-image-scan \
               --name "容器镜像漏洞扫描 (Trivy)" \
@@ -167,11 +177,10 @@ jobs:
               --details "镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞"
             echo "OK: 镜像 ${EWOH_IMAGE_REF} 未发现 HIGH/CRITICAL 漏洞。"
           else
-            TRIVY_EXIT=$?
             node scripts/truth-gate-record.js \
               --id container-image-scan \
               --name "容器镜像漏洞扫描 (Trivy)" \
               --status FAILED \
-              --details "Trivy 扫描镜像 ${EWOH_IMAGE_REF} 发现 HIGH/CRITICAL 漏洞（exit ${TRIVY_EXIT}）"
-            exit "${TRIVY_EXIT}"
+              --details "Trivy 扫描镜像 ${EWOH_IMAGE_REF} 发现 HIGH/CRITICAL 漏洞或扫描失败（exit ${TRIVY_EXIT}）"
+            exit "$TRIVY_EXIT"
           fi

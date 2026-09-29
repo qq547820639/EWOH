@@ -14,10 +14,10 @@ states:
   - upgraded
   - rolled_back
 transitions:
-  - { from: installed, to: upgraded, condition: fleet_upgrade, ring: any }
-  - { from: replayed, to: upgraded, condition: fleet_upgrade, ring: any }
-  - { from: upgraded, to: rolled_back, condition: fleet_rollback, ring: any }
-  - { from: installed, to: rolled_back, condition: fleet_rollback, ring: any }
-  - { from: replayed, to: rolled_back, condition: fleet_rollback, ring: any }
-  - { from: rolled_back, to: upgraded, condition: fleet_upgrade, ring: any }
+  - { from: installed, to: upgraded, condition: fleet_upgrade, ring: any, kind: action }
+  - { from: replayed, to: upgraded, condition: fleet_upgrade, ring: any, kind: action }
+  - { from: upgraded, to: rolled_back, condition: fleet_rollback, ring: any, kind: action }
+  - { from: installed, to: rolled_back, condition: fleet_rollback, ring: any, kind: action }
+  - { from: replayed, to: rolled_back, condition: fleet_rollback, ring: any, kind: action }
+  - { from: rolled_back, to: upgraded, condition: fleet_upgrade, ring: any, kind: action }
 terminal: []

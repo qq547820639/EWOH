@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  InternalServerErrorException,
   Injectable,
   Inject,
   Logger,
@@ -477,6 +478,7 @@ export class AgentService {
     approvalId: string,
     approved: boolean,
     actor?: { userId: string; roles?: string[] },
+    reason?: string,
   ): Promise<ExecuteAgentCommandResult> {
     // 待批事实 = ewoh_agent_approval 台账行（进程重启后仍可解析，ADR-039）。
     // NEST-305：按 (orgId, approvalId) 定位——他租户审批不可被解析（404 语义）。
@@ -518,6 +520,10 @@ export class AgentService {
           + '）',
       );
     }
+    const normalizedReason = reason?.trim() ?? '';
+    if (!approved && !normalizedReason) {
+      throw new BadRequestException('人工驳回必须带非空 reason（拒绝事实不允许静默）');
+    }
     const agentId = row.agentId;
     const command = row.command;
     const payload = (row.payloadJson ?? {}) as Record<string, unknown>;
@@ -556,9 +562,9 @@ export class AgentService {
       const rejectedDecision = this.projectApprovalDecision({
         approvalId, agentId, command, orgId,
         manifestRiskLevel: typeof full.riskLevel === 'string' ? full.riskLevel : null,
-        outcome: 'rejected', operator: actor?.userId ?? null, now: new Date(),
+        outcome: 'rejected', operator: actor?.userId ?? null, reason: normalizedReason, now: new Date(),
       });
-      await this.resolveRow(approvalId, orgId, 'rejected', actor, { approved: false }, rejectedDecision);
+      await this.resolveRow(approvalId, orgId, 'rejected', actor, { approved: false, rejectedReason: normalizedReason }, rejectedDecision);
       await this.recordDecisionEvent(orgId, full, pendingInput, 'rejected', {
         approvalId,
         approved: false,
@@ -582,19 +588,21 @@ export class AgentService {
 
   /**
    * NO-13j / ADR-059：agent_approval 决策投影（ADR-047 契约门）。
-   * 缺口/契约失败 → log 显式 + 返回 null（decision_json 留 NULL），
-   * 绝不阻断审批主流程（§2/§33，与 ADR-057 同纪律）。
+   * 投影失败 → 记录错误并 fail-closed 抛出 500；没有可追溯决策记录时，
+   * 不允许授权终态落地，避免无审计批准。
    */
   private projectApprovalDecision(
     input: Omit<AgentApprovalDecisionInput, 'operator' | 'reason'> &
       Partial<Pick<AgentApprovalDecisionInput, 'operator' | 'reason'>>,
-  ): DecisionRecord | null {
+  ): DecisionRecord {
     const { record, issues } = projectAgentApprovalDecision(input as AgentApprovalDecisionInput);
     if (!record) {
-      this.logger.warn(
-        `agent approval 决策投影缺口 ${input.approvalId}（不阻断审批主流程）：${issues.join(',')}`,
+      this.logger.error(
+        `agent approval 决策投影失败 ${input.approvalId}（fail-closed）：${issues.join(',')}`,
       );
-      return null;
+      throw new InternalServerErrorException(
+        `DECISION_PROJECTION_FAILED: agent approval ${input.approvalId} 的授权决策无法留痕，已拒绝解析`,
+      );
     }
     return record;
   }

@@ -126,7 +126,7 @@ test.describe('Scheduling 分波派工', () => {
     await expect(consequence).toContainText('本波派发 1 条');
     await expect(consequence).toContainText('仍有 2 条待派工');
     await expect(consequence).toContainText('未进入终态');
-    await expect(consequence).toContainText('没有取消派工的接口');
+    await expect(consequence).toContainText('未开始项可通过方案级「取消/回滚」收回');
     // 主按钮用真实动词
     await expect(page.getByTestId('wave-confirm-submit-PLAN-WAVE-1')).toContainText('派发 1 条');
   });

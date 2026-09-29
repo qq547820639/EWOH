@@ -1,14 +1,14 @@
 # Coverage Report — 二轮审计文件覆盖账本
 
-- 生成时间: 2026-09-21T00:59:59.799Z
-- 活跃文件总数: 2722
-- 当前内容与完整阅读区间均已验证: 612
-- active_unread_files: 2110
-- partial_review_files: 0
-- stale_review_files: 0
+- 生成时间: 2026-09-29T02:24:47.790Z
+- 活跃文件总数: 2865
+- 当前内容与完整阅读区间均已验证: 674
+- active_unread_files: 2191
+- partial_review_files: 33
+- stale_review_files: 38
 - missing_or_out_of_scope_files: 0
-- 总行数: 561439
-- 已验证行数: 115923
+- 总行数: 610100
+- 已验证行数: 125309
 - gate_result: FAIL
 - 验证依据：现场文件清单、原始字节 SHA-256、审阅 SHA-256、合法行区间的完整并集；自动扫描本身不构成阅读证据。
 
@@ -22,31 +22,32 @@
 
 | domain | files | reviewed | lines |
 | --- | --- | --- | --- |
-| app-config | 281 | 2 | 65360 |
+| app-config | 328 | 22 | 80006 |
 | catalog | 15 | 0 | 872 |
-| ci | 10 | 7 | 2563 |
-| client | 722 | 152 | 124902 |
-| contracts | 91 | 14 | 12918 |
-| database | 334 | 193 | 25932 |
+| ci | 10 | 7 | 2615 |
+| client | 722 | 158 | 125181 |
+| contracts | 91 | 6 | 13467 |
+| database | 340 | 207 | 26147 |
 | deploy | 36 | 0 | 1583 |
-| edge | 306 | 84 | 72192 |
+| edge | 313 | 93 | 73865 |
 | feishu | 29 | 0 | 7495 |
-| openapi | 3 | 0 | 24547 |
-| py-contracts | 51 | 5 | 12383 |
-| root | 33 | 1 | 12619 |
-| scripts | 85 | 5 | 18859 |
+| openapi | 3 | 0 | 24567 |
+| py-contracts | 53 | 5 | 12539 |
+| root | 33 | 0 | 12899 |
+| scripts | 155 | 5 | 46026 |
 | security | 4 | 4 | 129 |
-| server | 598 | 121 | 150827 |
+| server | 609 | 144 | 154435 |
 | shared | 93 | 23 | 22113 |
-| tools | 31 | 1 | 6145 |
+| tools | 31 | 0 | 6161 |
 
 ## 未验证文件
 
-- .github/workflows/perf.yml: not_reviewed, missing_review_hash, incomplete_review_ranges
-- .github/workflows/runtime-gates.yml: not_reviewed, missing_review_hash
-- .github/workflows/standalone.yml: not_reviewed, missing_review_hash, incomplete_review_ranges
+- .github/workflows/long-cycle-gates.yml: stale_review_hash, stale_inventory_hash
+- .github/workflows/test.yml: stale_review_hash, stale_inventory_hash
+- .github/workflows/tests.yml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - .gitignore: not_reviewed, missing_review_hash, incomplete_review_ranges
 - CHANGELOG.md: not_reviewed, missing_review_hash, incomplete_review_ranges
+- Makefile: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - README.md: not_reviewed, missing_review_hash, incomplete_review_ranges
 - SECURITY.md: not_reviewed, missing_review_hash, invalid_review_ranges
 - catalog/connectors/connector-contract.schema.json: not_reviewed, missing_review_hash
@@ -86,6 +87,7 @@
 - contracts/decision/decision.test-vectors.json: not_reviewed, missing_review_hash
 - contracts/entity/entity-model.schema.json: not_reviewed, missing_review_hash
 - contracts/entity/test-vectors.json: not_reviewed, missing_review_hash
+- contracts/events/event-catalog.yaml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - contracts/exo/exo-config.schema.json: not_reviewed, missing_review_hash
 - contracts/exo/exo-config.test-vectors.json: not_reviewed, missing_review_hash
 - contracts/exo/exo-session.schema.json: not_reviewed, missing_review_hash
@@ -130,6 +132,13 @@
 - contracts/risk/test-vectors.json: not_reviewed, missing_review_hash
 - contracts/simulation/simulation-run.schema.json: not_reviewed, missing_review_hash
 - contracts/simulation/simulation-run.test-vectors.json: not_reviewed, missing_review_hash
+- contracts/state-machines/agent-task.yaml: stale_review_hash, stale_inventory_hash
+- contracts/state-machines/alert.yaml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- contracts/state-machines/approval.yaml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- contracts/state-machines/control.yaml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- contracts/state-machines/fleet.yaml: stale_review_hash, stale_inventory_hash
+- contracts/state-machines/plan.yaml: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- contracts/state-machines/task.yaml: stale_review_hash, stale_inventory_hash
 - contracts/work/artifact-paths.json: not_reviewed, missing_review_hash
 - contracts/work/artifact-paths.schema.json: not_reviewed, missing_review_hash
 - contracts/work/examples/sample-work-graph.json: not_reviewed, missing_review_hash
@@ -187,13 +196,7 @@
 - db/migrations/standalone_045_learning_proposal.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/migrations/standalone_046_exo_session.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/migrations/standalone_047_outcome_annotation.sql: not_reviewed, missing_review_hash
-- db/migrations/standalone_048_shadow_plan_isolation.sql: not_reviewed, missing_review_hash
-- db/migrations/standalone_049_agent_approval.sql: not_reviewed, missing_review_hash
-- db/migrations/standalone_050_decision_records.sql: not_reviewed, missing_review_hash
 - db/migrations/standalone_051_exo_config.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/migrations/standalone_052_agent_approval_decision.sql: not_reviewed, missing_review_hash, invalid_review_ranges
-- db/migrations/standalone_053_learning_proposal_decision.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/migrations/standalone_054_policy_activation_decision.sql: not_reviewed, missing_review_hash
 - db/migrations/standalone_058_control_attempt_unique.sql: not_reviewed, missing_review_hash
 - db/migrations/standalone_062_route_edge_status_check.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/migrations/standalone_063_ai_suggestion_title_width.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -228,7 +231,9 @@
 - db/migrations/standalone_101_dead_letter_reason_registry.rollback.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/migrations/standalone_101_dead_letter_reason_registry.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/migrations/standalone_102_control_backlog_snapshot.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/runner/run_migrations.js: not_reviewed, stale_review_hash, incomplete_review_ranges
+- db/migrations/standalone_107_control_request_status_contract.rollback.sql: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- db/migrations/standalone_107_control_request_status_contract.sql: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- db/runner/run_migrations.js: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - db/seed/001_demo_seed.sql: not_reviewed, missing_review_hash
 - db/seed/demo_events_seed_cc.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/seed/standalone_001_seed.sql: not_reviewed, missing_review_hash, invalid_review_ranges
@@ -257,10 +262,6 @@
 - db/verify/standalone_042_trace_span.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_044_simulation_run.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_046_exo_session.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/verify/standalone_048_shadow_plan_isolation.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/verify/standalone_050_decision_records.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/verify/standalone_052_agent_approval_decision.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/verify/standalone_054_policy_activation_decision.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_059_spatial_entity_org_unique.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_061_telemetry_org_ts_index.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_063_ai_suggestion_title_width.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -278,10 +279,10 @@
 - db/verify/standalone_089_perception_fusion.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_091_improvement_action_outcome_ref.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_093_control_command_authorization.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
-- db/verify/standalone_095_control_command_delivered_at.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_097_idempotency_payload_fingerprint.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_099_material_entity.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - db/verify/standalone_101_dead_letter_reason_registry.verify.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
+- db/verify/standalone_107_control_request_status_contract.verify.sql: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - deploy/.env.example: not_reviewed, missing_review_hash, incomplete_review_ranges
 - deploy/cloud/.env.compose.example: not_reviewed, missing_review_hash
 - deploy/cloud/Dockerfile.api: not_reviewed, missing_review_hash
@@ -358,6 +359,7 @@
 - ewoh-spark-app/client/public/manifest.webmanifest: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/public/sw.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/api/ai.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/client/src/api/control.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/client/src/app.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/components/AlertToast.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/components/DangerousActionDialog.tsx: not_reviewed, missing_review_hash
@@ -574,6 +576,7 @@
 - ewoh-spark-app/client/src/hooks/useKeyboardShortcuts.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/hooks/usePlanOverrides.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/hooks/useSchedulerConflicts.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/client/src/hooks/useSchedulerStream.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/client/src/index.css: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/index.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/lib/AppContainer.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -625,10 +628,6 @@
 - ewoh-spark-app/client/src/lib/networkQuality.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/observability.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/client/src/lib/observability.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/client/src/lib/offlineCrypto.test.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/client/src/lib/offlineCrypto.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/client/src/lib/offlineSettings.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/client/src/lib/offlineSettings.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/offlineStatus.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/client/src/lib/offlineStatus.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/onboardingCatalog.ts: not_reviewed, missing_review_hash
@@ -640,8 +639,6 @@
 - ewoh-spark-app/client/src/lib/progressiveList.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/requestCorrelation.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/client/src/lib/requestCorrelation.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/client/src/lib/resumableUpload.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/client/src/lib/resumableUpload.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/roleMatrix.test.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/lib/roleMatrix.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/lib/roleMatrixBackend.test.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -679,8 +676,6 @@
 - ewoh-spark-app/client/src/lib/timeline.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/lib/timelineModel.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/client/src/lib/timelineModel.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/client/src/lib/uploadGuard.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/client/src/lib/uploadGuard.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/urlSafety.test.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/client/src/lib/urlSafety.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/client/src/lib/useDangerousConfirm.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -816,7 +811,7 @@
 - ewoh-spark-app/client/src/pages/Devices/DeviceConfigDrawer.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Devices/Devices.render.test.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Devices/Devices.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.test.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.test.tsx: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Devices/ExecutionBoundaryPanel.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Devices/ResponsibilityDialog.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Devices/batchRestoreLogic.test.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -831,7 +826,7 @@
 - ewoh-spark-app/client/src/pages/Exo/exoSessionLogic.test.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/Exo/exoSessionLogic.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.test.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/client/src/pages/FactoryOperations/DeliveryBacklogTable.tsx: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/FactoryOperations/ExecutionFeedback.test.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/FactoryOperations/ExecutionFeedback.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/client/src/pages/FactoryOperations/ExecutionReceiptRow.cache.test.tsx: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -948,6 +943,7 @@
 - ewoh-spark-app/scripts/fix-import-placement.cjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/scripts/gen-openapi.js: not_reviewed, missing_review_hash
 - ewoh-spark-app/scripts/hooks/run-precommit.js: not_reviewed, missing_review_hash
+- ewoh-spark-app/scripts/jest-alias-map.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/scripts/lint-design-tokens.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/scripts/lint.js: not_reviewed, missing_review_hash
 - ewoh-spark-app/scripts/perf-bench.mjs: not_reviewed, missing_review_hash
@@ -971,6 +967,11 @@
 - ewoh-spark-app/server/common/request-context.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/common/uuid.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/common/workorder-ids.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/server/database/pg-connection-fault.spec.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/database/request-database-context.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/database/request-database-context.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/database/schema.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/database/standalone.provider.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/main.bootstrap-exit.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/main.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/aas/aas.controller.ts: not_reviewed, missing_review_hash
@@ -980,28 +981,28 @@
 - ewoh-spark-app/server/modules/ai/ai.module.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/alert/alert.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/alert/alert.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/alert/alert.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/approval/approval-controller-role-parity.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/approval/approval-expiry.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/approval/approval-expiry.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/approval/approval-expiry.worker.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/approval/approval-persistence.guardrails.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/approval/approval.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/audit/audit.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/audit/audit.module.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/audit/audit.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/authorization-fingerprint.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/auth/auth.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.spec.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/control/control-delivery-backlog.worker.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/control/control.controller.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/control/control.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/control.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/control/control.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/control/control.service.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/control/control.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/__tests__/dashboard.workers-join.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/__tests__/workbench-now-backlog.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/dashboard.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/dashboard.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/dashboard.params.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/dashboard/dashboard.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/dashboard/device-contract.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/dashboard/workbench-now.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/dashboard/workbench-now.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/data-quality/data-quality-notification.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/data-quality/data-quality-notification.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/data-quality/data-quality.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1030,16 +1031,11 @@
 - ewoh-spark-app/server/modules/exo/exo-session.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/exo/exo-session.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/files/file.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/files/file.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/files/storage/local-storage.driver.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/files/storage/s3-storage.driver.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/files/storage/storage-driver.factory.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/files/storage/storage-driver.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/files/upload-validator.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/gamification/gamification.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/gamification/gamification.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/gamification/gamification.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/health/health.controller.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/server/modules/gamification/gamification.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/health/health.controller.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/health/health.module.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/health/replan-guard-status.service.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/identity/__tests__/identity.service.spec.ts: not_reviewed, missing_review_hash
@@ -1053,7 +1049,7 @@
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-dataquality-org.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-event-batch-andon.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-event-batch-clock-drift.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/ingest/__tests__/ingest-fault-transition.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/server/modules/ingest/__tests__/ingest-fault-transition.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-guard-keybinding.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-key-config.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/__tests__/ingest-mes-idempotent.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1064,24 +1060,25 @@
 - ewoh-spark-app/server/modules/ingest/device-execution-receipt.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/ingest-key-config.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/ingest.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/ingest/ingest.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/ingest/ingest.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/knowledge/__tests__/knowledge.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/knowledge/knowledge.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/knowledge/knowledge.module.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/knowledge/knowledge.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/learning/__tests__/improvement-action.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/learning/__tests__/improvement-action.service.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/__tests__/learning-proposal.concurrency.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/__tests__/learning-proposal.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/__tests__/learning-signal.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/__tests__/learning.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/learning/__tests__/outcome-annotation.controller.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/__tests__/outcome-annotation.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/learning/improvement-action-overdue.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/learning/improvement-action-overdue.worker.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/learning/improvement-action-overdue.worker.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/improvement-action.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/learning/improvement-action.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/learning/improvement-action.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/learning-proposal.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/learning/learning-proposal.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/learning/learning-proposal.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/learning-signal.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/learning-signal.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/learning/learning.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1103,16 +1100,12 @@
 - ewoh-spark-app/server/modules/mes/__tests__/mes.quality-cas.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/mes/mes.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/mes/mes.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/mes/mes.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/mes/mes.state-machine.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/metrics/metrics.controller.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/metrics/metrics.interceptor.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/metrics/metrics.module.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/metrics/metrics.service.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/mobile/__tests__/mobile-org-passthrough.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/mobile/mobile.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/mobile/mobile.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/mobile/mobile.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/model/__tests__/model.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/model/model.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/model/model.module.ts: not_reviewed, missing_review_hash
@@ -1120,7 +1113,7 @@
 - ewoh-spark-app/server/modules/notification/__tests__/email-transport.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/notification/__tests__/notification-resolution.link.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/notification/__tests__/notification.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/notification/andon-notifications.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/notification/andon-notifications.ts: not_reviewed, missing_review_hash, stale_inventory_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/notification/channel-dispatcher.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/notification/deterministic-notifications.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/notification/email-transport.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1156,13 +1149,6 @@
 - ewoh-spark-app/server/modules/operations/operations.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/operations/operations.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/operations/role-workbench.cursor.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/operations/role-workbench.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/operations/workbench-access.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/operations/workbench-export-state.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/operations/workbench-export.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/operations/workbench-export.store.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/operations/workbench-export.worker.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/operations/workbench-export.worker.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/operations/workbench-list-query.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/organization/organization.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/organization/organization.module.ts: not_reviewed, missing_review_hash
@@ -1186,7 +1172,6 @@
 - ewoh-spark-app/server/modules/resource/__tests__/resource.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/resource/resource.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/resource/resource.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/resource/resource.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/responsibility/device-responsibility.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/responsibility/device-responsibility.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/responsibility/device-responsibility.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1203,7 +1188,6 @@
 - ewoh-spark-app/server/modules/scale/compatibility.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scale/scale.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scale/scale.module.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scale/scale.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__fixtures__/cert-expired.json: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__fixtures__/device-offline.json: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__fixtures__/forbidden-zone.json: not_reviewed, missing_review_hash
@@ -1237,6 +1221,7 @@
 - ewoh-spark-app/server/modules/scheduler/__tests__/dispatch-integration.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/due-lateness-semantics.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/duration-model-consumer.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/event-driven.spec.ts: stale_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/failure-injection.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/field-work.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/golden-scheduler-scenarios.spec.ts: not_reviewed, missing_review_hash
@@ -1265,12 +1250,13 @@
 - ewoh-spark-app/server/modules/scheduler/__tests__/r2-fake-db-where.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/r2-sch-p1-regression.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/r2-ssv-regression.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/__tests__/replan-guard-failclosed.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/replan-detached-trigger.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/replan-guard-failclosed.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/replan-kpi.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scheduler/__tests__/replan-multi-instance.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/replan-multi-instance.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/replan-preview.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/__tests__/replan-stability-budget.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scheduler/__tests__/replan-storm.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/server/modules/scheduler/__tests__/replan-stability-budget.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/replan-storm.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/replan-v2-impact.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/resource-freshness.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/resource-source.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1281,15 +1267,18 @@
 - ewoh-spark-app/server/modules/scheduler/__tests__/route-cost-mode.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/route-matrix-key.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/routing.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-domain.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-domain.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-feedback-actuals-controller.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-metrics.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-run-profile.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-test-helpers.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/scheduler-test-helpers.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-assignment.lifecycle.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-context.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-feedback-shadow.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-feedback.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-objective-evaluator.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-plan.lifecycle.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/scheduling-run.lifecycle.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/shadow-plan-guard.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/solver-activation.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/solver-contract-parity.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1300,7 +1289,7 @@
 - ewoh-spark-app/server/modules/scheduler/__tests__/station-decision.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/task-dag.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/task-lifecycle.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/__tests__/task-scheduling-bridge.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/__tests__/task-scheduling-bridge.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/travel-cost.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/__tests__/trigger-entity-cooldown.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/__tests__/world-state-db-failure.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1316,17 +1305,15 @@
 - ewoh-spark-app/server/modules/scheduler/decision-ledger.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/decision-projection.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/device-capabilities.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/dispatch-coordinator.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/execution-receipt-application.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/heuristic-scheduling-solver.ts: not_reviewed, stale_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/impact-analyzer.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/impact-propagation.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/kpi.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/narration/scheduling-narrator.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/override-preview.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/pg-notify.listener.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/plan-compare.service.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scheduler/policy-activation.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/policy-replay.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/pre-approval-simulation.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/plan.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/duration-model-training.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/empirical-duration-prediction.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/prediction/__tests__/shadow-evaluator-backfill-keys.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1341,43 +1328,40 @@
 - ewoh-spark-app/server/modules/scheduler/prediction/shadow-evaluator.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/prediction/training-sample-eligibility.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/priority-engine.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/server/modules/scheduler/replan-preview.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/replan-coordinator.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/resource-adapters.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/resource-projection.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/route-cost-memo.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/route-cost.provider.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/routing.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduler-constraint-application.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-dispatch-application.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-metrics.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduler-metrics.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-plan-application.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-replan-application.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-run-context.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/scheduler-run-orchestrator.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/scheduler-run-context.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/scheduler-run-orchestrator.service.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduler.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/scheduling-assignment.lifecycle.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduling-context.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/scheduling-objective-evaluator.service.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/scheduler/shadow-policy.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/scheduling-plan.lifecycle.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/server/modules/scheduler/scheduling-run.lifecycle.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/server/modules/scheduler/solver-resource-index.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/task-dag.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/scheduler/task-lifecycle.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/scheduler/task-scheduling.bridge.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/scheduler/task-scheduling.bridge.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/travel-cost.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/scheduler/trigger.service.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/shared/__tests__/root-db-allowlist.audit.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/server/modules/scheduler/world-state.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/shared/__tests__/root-db-allowlist.audit.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/shared/access-token.guard.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/audit-chain.service.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/audit.service.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/database-audit-sink.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/shared/db-idempotency.store.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/errors.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/shared/idempotency.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/org-context.streaming.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/pagination.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/parse-date-input.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/public.decorator.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/server/modules/shared/redis.service.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/server/modules/shared/roles.decorator.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shared/shared.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/shift/shift-controller-role.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1390,6 +1374,8 @@
 - ewoh-spark-app/server/modules/simulation/simulation.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/simulator/__tests__/simulator.org.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/simulator/retention.service.postgres-mock.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/server/modules/simulator/retention.service.spec.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/server/modules/simulator/retention.service.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/server/modules/simulator/simulator.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/simulator/simulator.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/simulator/simulator.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1401,7 +1387,6 @@
 - ewoh-spark-app/server/modules/system/system.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/task/task.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/task/task.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/task/task.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/telemetry/telemetry.controller.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/telemetry/telemetry.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/telemetry/telemetry.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1436,7 +1421,6 @@
 - ewoh-spark-app/server/modules/world/order-chain.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/world/world.controller.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/modules/world/world.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/server/modules/world/world.service.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/standalone-app.module.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/server/standalone-main.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/shared/agent-task.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1511,7 +1495,7 @@
 - ewoh-spark-app/shared/workorder.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/tailwind.config.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/browser/a11y.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/browser/approval-authorizations.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/browser/approval-authorizations.spec.js: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/browser/auth-real-login.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/authenticated.spec.js: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/test/browser/browser-global-setup.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1522,7 +1506,6 @@
 - ewoh-spark-app/test/browser/execution-boundary.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/exo-workbench.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/factory-operations-receipt.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/browser/field-operations.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/field-receipt-real.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/learning-console-real.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/learning-console.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1534,7 +1517,6 @@
 - ewoh-spark-app/test/browser/responsibility-readiness.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/runtime-target.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/scheduler-command-map.e2e.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/test/browser/scheduling-wave-dispatch.spec.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/scheduling-wave-real.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/standalone-browser-server.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/browser/sw-update.spec.ts: not_reviewed, missing_review_hash
@@ -1559,63 +1541,106 @@
 - ewoh-spark-app/test/contract/mapping.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/contract/policy.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/contract/workflow.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/test/e2e/act-notification-identity.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/agent-task-cas-window.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/agv-transport-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/andon-notification-identity.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/approval-expiry-reminder.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/approval-expiry-worker-tick.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/approval-instance-uniqueness.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/auth-org-scope-boundary.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/authorization-validity-anchor.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/backlog-snapshot-failure-boundary.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/capability-disabled-plan-explain.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/concurrency-real-pg.e2e.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/test/e2e/control-actuator-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/chain-idempotency-restart.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/concurrency-real-pg.e2e.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/control-actuator-loop.mjs: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/control-backlog-audit-trail.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/control-backlog-worker-tick.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/control-delivery-race.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/control-receipt-boundary.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/control-restart-boundary.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/control-verification-projection.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/ctrl-notification-identity.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/data-quality-notification-leg.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/device-physics-adversarial.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/dispatch-offline-heal.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/dispatch-receipt-concurrency.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/dq-notification-identity.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/e2e-app-lifecycle.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/e2e-global-env.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/edge-multisource-uplink.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/ewoh-http.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/edge-multisource-uplink.mjs: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/ewoh-http.e2e.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/execution-offline-stuck.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/execution-receipt-closed-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/exo-session-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/exo-simfarm-adversarial.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/f61-02-persistence.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/fault-replan-retrospective.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/golden-path-verify.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/fault-replan-retrospective.mjs: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/feedback-projection-reconciliation.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/golden-path-verify.mjs: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/guc-read-write-split.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/health-ready-tx-guard.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/helpers/plan-freshness.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/helpers/task-readiness.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/improvement-action-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/jest.config.js: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/kpi-delivery-window-projection.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/learning-override-copy.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/learning-proposal-governance.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/learning-signal-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/master-data-capability-import.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/material-inventory-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/observation-reasoning-live.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/org-rls-guc.e2e.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
-- ewoh-spark-app/test/e2e/partial-dispatch-wave.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/perception-fusion-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/e2e/pg-temporary-failure.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/partial-dispatch-wave.mjs: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/pg-temporary-failure.e2e.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/plan-cancel-execution-projection.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/plan-reject-authority.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/plan-staleness-loop.mjs: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/replan-dual-instance.e2e.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
+- ewoh-spark-app/test/e2e/replan-supersedes-dispatched.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/retention-expire-concurrency.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/e2e/run-closure-state-guard.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/scheduler-upgrade.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/scheduling-plan-dispatch-tenant-cas.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/e2e/snapshot-concurrency.e2e.spec.ts: not_reviewed, missing_review_hash, invalid_review_ranges
 - ewoh-spark-app/test/e2e/solver-comparison-benchmark.e2e.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/e2e/standalone-e2e-server.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/e2e/world-snapshot-collection-window.e2e.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/helpers/drizzle-fake-matcher.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/drizzle-fake-matcher.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/helpers/e2e-app.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/helpers/e2e-app.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/e2e-config.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/helpers/e2e-config.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/e2e-db.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/e2e-http.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/helpers/fake-control-db.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/helpers/e2e-lock-window.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/helpers/fake-control-db.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/fake-resource-db.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/helpers/fake-world-db.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/scenarios/scenario-packages.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/aas/aas.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/agent/agent-orchestrator.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/agent/agent.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/unit/agent/agent.service.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/unit/ai/ai.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/alert/alert.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/approval/approval-expiry.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/unit/approval/approval-expiry.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/unit/approval/approval-persistence.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/unit/approval/approval-wiring.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/unit/approval/approval.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/audit/audit-query.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/auth/access-token.guard.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/auth/auth.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
+- ewoh-spark-app/test/unit/auth/access-token.guard.spec.ts: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/unit/auth/auth.service.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/condition-writer.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/control-assembly-invariants.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/doc-face-token-residue.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/freshness-scope-closure.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/promotion-readings.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/recorder-preflight.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/status-target-states.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/status-write-guard-census.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- ewoh-spark-app/test/unit/chain-baseline/vocabulary-bindings.spec.ts: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - ewoh-spark-app/test/unit/collect-repo-facts.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/control/control.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/dashboard/dashboard.controller.spec.ts: not_reviewed, missing_review_hash
@@ -1628,22 +1653,18 @@
 - ewoh-spark-app/test/unit/erp/erp-material-movement.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/erp/erp.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/events/event-catalog.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/files/file.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/files/s3-storage.driver.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/files/upload-validator.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/gamification/gamification.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/harness.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/health/health.controller.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/test/unit/health/health.controller.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/unit/ingest/ingest.guard.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/ingest/ingest.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/ingest/sensor-ingest.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/master-data/master-data-import.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/materials/materials-snapshot-orders.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/mes/mes.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/metrics/metrics.controller.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/metrics/metrics.interceptor.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/metrics/metrics.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/mobile/mobile.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/model/model.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/notification/andon-notifications.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/notification/channel-dispatcher.service.spec.ts: not_reviewed, missing_review_hash
@@ -1657,11 +1678,7 @@
 - ewoh-spark-app/test/unit/onboarding/onboarding.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/operations/dangerous-action.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/operations/operations.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/operations/role-workbench.service.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/operations/workbench-export-state.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/operations/workbench-export.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/operations/workbench-list-query.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/operations/workbench-view.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/organization/organization.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/parameters/parameters.service.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/perception/perception-fusion.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1684,7 +1701,7 @@
 - ewoh-spark-app/test/unit/scheduler/plan-org-isolation.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/scheduler/plan-pre-approval-simulation.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/scheduler/pre-approval-simulation.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/scheduler/replan-decision-persistence.spec.ts: not_reviewed, missing_review_hash
+- ewoh-spark-app/test/unit/scheduler/replan-decision-persistence.spec.ts: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - ewoh-spark-app/test/unit/scheduler/scheduler-read-org-isolation.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/scheduler/scheduler.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/scripts/gate-scripts.selftest.spec.ts: not_reviewed, missing_review_hash
@@ -1696,16 +1713,9 @@
 - ewoh-spark-app/test/unit/shared/audit.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/shared/database-audit-sink.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/shared/exception.filter.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/shared/idempotency.claim.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/shared/idempotency.payload.durability.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/shared/idempotency.payload.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/shared/idempotency.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/shared/main-bootstrap.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/shared/org-context.interceptor.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/shared/org-scope.service.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/shared/pagination-errors.spec.ts: not_reviewed, missing_review_hash
-- ewoh-spark-app/test/unit/shared/rate-limit-redis-fallback.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
-- ewoh-spark-app/test/unit/shared/rate-limit.guard.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - ewoh-spark-app/test/unit/shared/request-database-context.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/shared/roles.guard.spec.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/test/unit/shared/standalone-main.spec.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1744,14 +1754,15 @@
 - ewoh-spark-app/vite.config.ts: not_reviewed, missing_review_hash
 - ewoh-spark-app/vite.standalone.config.ts: not_reviewed, missing_review_hash, incomplete_review_ranges
 - feature-status.yaml: not_reviewed, missing_review_hash, incomplete_review_ranges
-- openapi/ewoh.yaml: not_reviewed, missing_review_hash, incomplete_review_ranges
+- openapi/ewoh.yaml: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - openapi/route-manifest.json: not_reviewed, missing_review_hash, incomplete_review_ranges
 - openapi/work-orchestration.yaml: not_reviewed, missing_review_hash, invalid_review_ranges
 - package.json: not_reviewed, missing_review_hash, incomplete_review_ranges
 - pyproject.toml: not_reviewed, missing_review_hash, incomplete_review_ranges
-- requirements-dev.txt: not_reviewed, missing_review_hash, incomplete_review_ranges
+- requirements-dev.txt: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - run.py: not_reviewed, missing_review_hash
 - scripts/aas-tck.py: not_reviewed, missing_review_hash
+- scripts/assert-test-skips.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - scripts/audit-asset-catalog-contracts.js: not_reviewed, missing_review_hash
 - scripts/audit-client-security-sinks.js: not_reviewed, missing_review_hash, invalid_review_ranges
 - scripts/audit-contract-touchpoints.js: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1765,12 +1776,13 @@
 - scripts/audit-mapping-contracts.js: not_reviewed, missing_review_hash
 - scripts/audit-old-findings.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/audit-openapi-routes.js: not_reviewed, missing_review_hash, incomplete_review_ranges
-- scripts/audit-org-predicates.js: not_reviewed, missing_review_hash, invalid_review_ranges
+- scripts/audit-org-predicates.js: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - scripts/audit-policy-contracts.js: not_reviewed, missing_review_hash, invalid_review_ranges
+- scripts/audit-public-tx-free-reads.js: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - scripts/audit-repo-facts.js: not_reviewed, missing_review_hash, incomplete_review_ranges
-- scripts/audit-scheduler-transactions.js: not_reviewed, missing_review_hash
+- scripts/audit-scheduler-transactions.js: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - scripts/audit-ssrf-surface.js: not_reviewed, missing_review_hash
-- scripts/audit-state-machine-roles.js: not_reviewed, missing_review_hash, incomplete_review_ranges
+- scripts/audit-state-machine-roles.js: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - scripts/audit-unrls-tenant-tables.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/audit-work-graph-contracts.js: not_reviewed, missing_review_hash
 - scripts/audit-workflow-contracts.js: not_reviewed, missing_review_hash
@@ -1778,6 +1790,73 @@
 - scripts/canary-deploy.sh: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/capability-drift-check.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/capability-restore.js: not_reviewed, missing_review_hash, incomplete_review_ranges
+- scripts/chain-baseline/alias-table-sync.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/artifact-consistency.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/artifact-consistency.selftest.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/assert-criterion-mutation.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/async-producer-face.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/attribution-shadow.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/bg-task-db-context.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/change-amplification.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/ci-e2e-surface.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/ci-onboarding-cost.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/client-status-drift.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/context-forwarding.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/contract-arrow-evidence.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/contract-arrow-writers.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/contract-arrows.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/contract-condition-labels.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/contract-emitters.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/convergence-sites.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/copy-census.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/d-bucket-collision.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/doc-face-reconciliation.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/doctor.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/down.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/event-payload.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/event-readside.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/event-roles.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/fix-sites.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/gate-negative-control.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/gate-shape-exposure.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/gen-vocabulary-bindings.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/import-closure.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/instrument-readers.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/instrument-surface.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/lib.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/matrix-check.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/optional-fallback-exposure.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/outbox-runtime-probe.mjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/probe-stored-state-vocabulary.mjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/projection-consistency.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/promotion-readings.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/provision.mjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/raw-status-writes.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/rebuild-baseline.mjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/rebuild.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/recorder-preflight.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/replay-freshness.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/schema-probe.mjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/seed.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/spec-case-inventory.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/state-column-vocabulary.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/status-quo-assertions.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/status-target-states.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/status-vocabulary-bindings.json: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/status-write-guard-census.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/tick-reachability.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/timing-assertion-census.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/tx-boundary-shadow.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/unhandled-rejection-exposure.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/unit-triage.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/up.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/verify-teeth.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/verify-wiring.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/verify.sh: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/worker-shutdown-probe.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/worker-timer-census.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/write-fanout.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- scripts/chain-baseline/writer-drift-shadow.cjs: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - scripts/collect-repo-facts.js: not_reviewed, missing_review_hash, invalid_review_ranges
 - scripts/connector-tck.py: not_reviewed, missing_review_hash
 - scripts/container-image-gate.sh: not_reviewed, missing_review_hash
@@ -1795,7 +1874,7 @@
 - scripts/maintain-shift-task-windows.sql: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/migrate-domain-state.js: not_reviewed, missing_review_hash
 - scripts/migration-fresh-chain-check.js: not_reviewed, missing_review_hash, incomplete_review_ranges
-- scripts/migration-fresh-install-check.sh: not_reviewed, missing_review_hash
+- scripts/migration-fresh-install-check.sh: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - scripts/migration-gap-check.js: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/package-release.sh: not_reviewed, missing_review_hash, incomplete_review_ranges
 - scripts/pilot-readiness-check.sh: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -1821,6 +1900,7 @@
 - scripts/truth-manifest.js: not_reviewed, missing_review_hash
 - scripts/truth-source.js: not_reviewed, missing_review_hash
 - scripts/truth-status.js: not_reviewed, missing_review_hash
+- scripts/tx-scope-shared.js: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - scripts/validate-repo-facts.js: not_reviewed, missing_review_hash, invalid_review_ranges
 - scripts/verify-backup-restore.mjs: not_reviewed, missing_review_hash
 - scripts/verify-deploy-artifacts.js: not_reviewed, missing_review_hash
@@ -1886,12 +1966,13 @@
 - src/edge_platform/contracts/resource.py: not_reviewed, missing_review_hash
 - src/edge_platform/contracts/risk.py: not_reviewed, missing_review_hash
 - src/edge_platform/contracts/simulation_run.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/contracts/state_machine_loader.py: not_reviewed, missing_review_hash
+- src/edge_platform/contracts/state_machine_loader.py: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/contracts/workorder.py: not_reviewed, missing_review_hash
 - src/edge_platform/demo.db: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/edge/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/edge/adapters/ny_exo_a1/fixtures/index.json: not_reviewed, missing_review_hash
-- src/edge_platform/edge/storage.py: not_reviewed, stale_review_hash, incomplete_review_ranges
+- src/edge_platform/edge/bridge/control_downlink.py: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
+- src/edge_platform/edge/storage.py: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/governance/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/inference/__init__.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/inference/dataset_split.py: not_reviewed, missing_review_hash
@@ -1922,14 +2003,8 @@
 - src/edge_platform/rbac/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/rbac/permissions.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/rbac/roles.py: not_reviewed, missing_review_hash
-- src/edge_platform/routes/actuators.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/admin.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/routes/andon.py: not_reviewed, missing_review_hash
-- src/edge_platform/routes/health.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/inference.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/replay.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/routes/scheduler.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/run.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- src/edge_platform/run.py: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/runtime/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/runtime/bootstrap.py: not_reviewed, missing_review_hash
 - src/edge_platform/runtime/dependencies.py: not_reviewed, missing_review_hash
@@ -1959,11 +2034,11 @@
 - src/edge_platform/scheduler/planner.py: not_reviewed, missing_review_hash
 - src/edge_platform/scheduler/priority.py: not_reviewed, missing_review_hash
 - src/edge_platform/scheduler/replanner.py: not_reviewed, missing_review_hash
-- src/edge_platform/scheduler/repository.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- src/edge_platform/scheduler/repository.py: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/scheduler/reservation.py: not_reviewed, missing_review_hash
 - src/edge_platform/scheduler/resources.py: not_reviewed, missing_review_hash
 - src/edge_platform/scheduler/route_planner.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/scheduler/scheduler_service.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- src/edge_platform/scheduler/scheduler_service.py: not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/scheduler/scoring.py: not_reviewed, missing_review_hash
 - src/edge_platform/scheduler/world_state.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/scripts/__init__.py: not_reviewed, missing_review_hash
@@ -1982,7 +2057,6 @@
 - src/edge_platform/static/index.html: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/stubs.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/_fixtures.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/tests/test_actuator_api.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_actuator_fault_gated.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_actuator_modbus.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_actuator_opcua.py: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -2003,6 +2077,9 @@
 - src/edge_platform/tests/test_dataset_split_and_card.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_demo_simulator.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_device_driver.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- src/edge_platform/tests/test_edge02_redetermination.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- src/edge_platform/tests/test_edge03_failopen_boundary.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- src/edge_platform/tests/test_edge05_deadletter_visibility.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - src/edge_platform/tests/test_edge_core_ur8_regression.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_event_envelope_wiring.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_exo_binding.py: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -2011,7 +2088,6 @@
 - src/edge_platform/tests/test_get_route_auth_matrix.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_governance_executors.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_inference.py: not_reviewed, missing_review_hash, incomplete_review_ranges
-- src/edge_platform/tests/test_inference_admin_degraded.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_learning_loop.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_local_llm.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_metrics_uplink.py: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -2025,6 +2101,8 @@
 - src/edge_platform/tests/test_rbac.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_rbac_enforcement.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_repository.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- src/edge_platform/tests/test_run_main_process_isolation.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- src/edge_platform/tests/test_run_shutdown_protocol.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - src/edge_platform/tests/test_scenario.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_scheduler.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_scheduler_hydrate.py: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -2040,13 +2118,13 @@
 - src/edge_platform/tests/test_snapshot_provenance.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_spatial.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_spatial_rules.py: not_reviewed, missing_review_hash
-- src/edge_platform/tests/test_storage_tables.py: not_reviewed, stale_review_hash, incomplete_review_ranges
+- src/edge_platform/tests/test_state_machine_contract_parse.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
+- src/edge_platform/tests/test_storage_tables.py: not_reviewed, stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - src/edge_platform/tests/test_sustained_run.py: not_reviewed, missing_review_hash
 - src/edge_platform/tests/test_task_assignment_sync.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_thermal.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_thermal_calib.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_warm_start_rolling.py: not_reviewed, missing_review_hash
-- src/edge_platform/tests/test_world_api.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/tests/test_write_route_auth_matrix.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - src/edge_platform/twin/__init__.py: not_reviewed, missing_review_hash
 - src/edge_platform/twin/manifests/assembly-cell-1.0.0.json: not_reviewed, missing_review_hash
@@ -2054,6 +2132,7 @@
 - src/edge_platform/twin/package.py: not_reviewed, missing_review_hash
 - src/edge_platform/world_model/__init__.py: not_reviewed, missing_review_hash
 - tests/__init__.py: not_reviewed, missing_review_hash
+- tests/ci-skip-baseline.txt: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - tests/edge/__init__.py: not_reviewed, missing_review_hash
 - tests/edge/test_cpsat_solver.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tests/golden-fixtures/contract-golden-scenarios.json: not_reviewed, missing_review_hash, incomplete_review_ranges
@@ -2064,6 +2143,7 @@
 - tests/golden-fixtures/scheduler-workflow-golden.json: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tests/r2_sched_semantics_test.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tests/test_aas_codec.py: not_reviewed, missing_review_hash
+- tests/test_assert_test_skips.py: new_file_missing_from_ledger, not_reviewed, missing_review_hash, stale_inventory_hash, stale_line_count, invalid_review_ranges
 - tests/test_bandit_gate.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tests/test_bus_contract.py: not_reviewed, missing_review_hash, invalid_review_ranges
 - tests/test_capability_contract.py: not_reviewed, missing_review_hash
@@ -2100,6 +2180,7 @@
 - tests/test_ts_python_contract_parity.py: not_reviewed, missing_review_hash
 - tests/test_twin_package.py: not_reviewed, missing_review_hash
 - tools/device_physics_sim.py: not_reviewed, missing_review_hash, incomplete_review_ranges
+- tools/edge_control_agent.py: stale_review_hash, stale_inventory_hash, stale_line_count, incomplete_review_ranges
 - tools/edge_sensor_sim.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tools/exo_fleet_sim.py: not_reviewed, missing_review_hash, incomplete_review_ranges
 - tools/factory-replication/README.md: not_reviewed, missing_review_hash, invalid_review_ranges

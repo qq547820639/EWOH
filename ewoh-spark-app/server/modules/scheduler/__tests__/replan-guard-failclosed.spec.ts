@@ -16,7 +16,9 @@
 import { ReplanCoordinatorService } from '../replan-coordinator.service';
 import { SchedulerMetricsService } from '../scheduler-metrics.service';
 import { ReplanGuardStatusService } from '../../health/replan-guard-status.service';
-import { buildSnapshot } from './scheduler-test-helpers';
+import {
+  buildSnapshot, fakeRunWhereBuilder
+} from './scheduler-test-helpers';
 
 const ORIGINAL_DEPLOY_TARGET = process.env.EWOH_DEPLOY_TARGET;
 
@@ -112,7 +114,7 @@ const SHORT_CONFIG = {
 /** db.update 最小链（成功路径 run 状态闭合）。 */
 function makeUpdateChain() {
   return jest.fn(() => ({
-    set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
+    set: jest.fn(() => ({ where: jest.fn(() => fakeRunWhereBuilder()) })),
   }));
 }
 

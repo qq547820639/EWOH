@@ -1,8 +1,10 @@
 import {
   DatabaseOrgHierarchyProvider,
   ORG_SCOPE_CACHE_TTL_MS,
+  OrgScopeHierarchyCycleError,
   OrgScopeService,
   type OrgHierarchyProvider,
+  type OrgNode,
 } from '../../../server/modules/shared/org-scope.service';
 
 describe('OrgScopeService', () => {
@@ -95,6 +97,24 @@ describe('OrgScopeService', () => {
     const scope = await service.resolveOrgScope('a');
 
     expect(scope.orgIds).toEqual(['a', 'b', 'c']);
+  });
+
+  it('rejects an organization hierarchy cycle without caching an empty-config scope', async () => {
+    const cycleNodes: Record<string, OrgNode> = {
+      a: { id: 'a', parentId: 'b', config: { theme: 'light' } },
+      b: { id: 'b', parentId: 'a', config: {} },
+    };
+    const provider: OrgHierarchyProvider = {
+      loadOrg: async (orgId) => cycleNodes[orgId] ?? null,
+      loadChildren: async (parentId) =>
+        Object.values(cycleNodes).filter((node) => node.parentId === parentId),
+    };
+    const service = new OrgScopeService(provider);
+
+    await expect(service.resolveOrgScope('a')).rejects.toThrow(
+      OrgScopeHierarchyCycleError,
+    );
+    expect(service.getCacheSize()).toBe(0);
   });
 
   it('loads the org hierarchy from ewoh_organization rows', async () => {

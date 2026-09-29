@@ -21,7 +21,7 @@
  * 三态报告：PASS = 断言通过；FAIL = 断言失败；SKIP = 前置缺失（未验证，退出码 2）。
  */
 import http from 'node:http';
-import { approveWithReplan } from './helpers/plan-freshness.mjs';
+import { approveWithReplan, planStalenessOf, stalenessSummary } from './helpers/plan-freshness.mjs';
 import {
   advanceTasksToPendingDispatch,
   isPlanStale,
@@ -165,6 +165,34 @@ async function main() {
   );
   step('⑥ 授权：审批（独立身份）', approve.status === 200 && approve.body?.status === 'approved',
     approve.status === 200 ? `status=${approve.body?.status}` : `HTTP ${approve.status}：${errText(approve)}`);
+  if (approve.status !== 200 || approve.body?.status !== 'approved') {
+    /**
+     * 失败自带成因（V67c；沿用 §5.3n 把 F-10 抓出来的那条做法：让断言自己吐出能区分成因的事实）。
+     * `PLAN_STALE` 有两条完全不同的来路，处置也不同：
+     *  ① 快照自然过期——设备遥测新鲜度只有 60s，而全链场景一轮要几分钟（`plan-freshness.mjs` 头部记着这件事）；
+     *  ② 方案被**别处的自动重排**抢先替代（F-12：supersede 是无条件改写）。
+     * 判别只看一件事：此刻方案行还是不是 shadow/draft。仍是 ⇒ ①；已 `superseded` ⇒ ②。
+     * 这里**不放宽断言**（⑥ 该红还是红），只补一条不进入统计的诊断行。
+     */
+    const live = await request('GET', `/api/scheduler/plans/${plan.planId}`, null, token);
+    const diag = planStalenessOf(approve.body);
+    const changeKeys = Array.isArray(diag?.changes)
+      ? diag.changes
+        .map((c) => `${c.entityKey ?? '?'}[${c.severity ?? '?'}${c.selfInflicted ? '/self' : '/external'}]`)
+        .join(' ')
+      : '无 changes 明细';
+    console.log(
+      '  ↳ ⑥ 失败成因：'
+      + `message=${errText(approve)} `
+      + `cause=${String(approve.body?.error?.cause ?? approve.body?.cause ?? '-')}`
+      + ` 变化实体=${changeKeys} `
+      + `过期诊断=${stalenessSummary(diag)} `
+      + `方案当前状态=${live.body?.status ?? `取不到(HTTP ${live.status})`} `
+      + `supersededBy=${live.body?.supersededBy ?? '-'} `
+      + `审批携带 snapshotVersion=${plan.snapshotVersion ?? '-'} version=${plan.version ?? '-'} `
+      + '⇒ 仍为 shadow/draft=快照过期(①)；已 superseded=被别处重排抢先(②)',
+    );
+  }
 
   // ── ⑦ 执行：派工 + 回执 ─────────────────────────────────────────────────
   // 现场现实（2026-09-13 实测）：方案里可能含**可调度但尚未就绪**的任务

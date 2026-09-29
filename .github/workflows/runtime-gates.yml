@@ -26,6 +26,11 @@ on:
 permissions:
   contents: read
 
+env:
+  KIND_SHA256: "1d86e3069ffbe3da9f1a918618aecbc778e00c75f838882d0dfa2d363bc4a68c"
+  KUBECTL_SHA256: "7c3807c0f5c1b30110a2ff1e55da1d112a6d0096201f1beb81b269f582b5d1c5"
+  HELM_SHA256: "f5355c79190951eed23c5432a3b920e071f4c00a64f75e077de0dd4cb7b294ea"
+
 jobs:
   runtime-gates:
     runs-on: ubuntu-latest
@@ -95,6 +100,7 @@ jobs:
           if ! command -v helm >/dev/null 2>&1; then
             curl -fsSL -o /tmp/helm.tar.gz \
               "https://get.helm.sh/helm-v3.16.3-linux-amd64.tar.gz"
+            echo "$HELM_SHA256  /tmp/helm.tar.gz" | sha256sum -c -
             tar -xzf /tmp/helm.tar.gz -C /tmp
             export PATH="/tmp/linux-amd64:$PATH"
           fi
@@ -168,14 +174,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o "$HOME/.local/bin/kind" \
+          curl -fsSL -o /tmp/kind \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x "$HOME/.local/bin/kind"
-          curl -fsSL -o "$HOME/.local/bin/kubectl" \
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          chmod +x /tmp/kind
+          mv /tmp/kind "$HOME/.local/bin/kind"
+          curl -fsSL -o /tmp/kubectl \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x "$HOME/.local/bin/kubectl"
+          echo "$KUBECTL_SHA256  /tmp/kubectl" | sha256sum -c -
+          chmod +x /tmp/kubectl
+          mv /tmp/kubectl "$HOME/.local/bin/kubectl"
           curl -fsSL -o /tmp/helm.tar.gz \
             "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "$HELM_SHA256  /tmp/helm.tar.gz" | sha256sum -c -
           tar -xzf /tmp/helm.tar.gz -C /tmp
           mv /tmp/linux-amd64/helm "$HOME/.local/bin/helm"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -274,6 +285,10 @@ jobs:
           runtime_pw="$(openssl rand -hex 24)"
           admin_pw="$(openssl rand -hex 24)"
           jwt="$(openssl rand -hex 32)"
+          echo "::add-mask::$PG_PASSWORD"
+          echo "::add-mask::$runtime_pw"
+          echo "::add-mask::$admin_pw"
+          echo "::add-mask::$jwt"
           echo "runtime_pw_len=${#runtime_pw} admin_pw_len=${#admin_pw} jwt_len=${#jwt}"
           kubectl -n "$NS" create secret generic ewoh-api-secret \
             --from-literal="DATABASE_URL=postgresql://ewoh_api:${runtime_pw}@postgres:5432/ewoh" \
@@ -527,6 +542,8 @@ jobs:
           set -euo pipefail
           runtime_password="$(openssl rand -hex 24)"
           admin_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$runtime_password"
+          echo "::add-mask::$admin_password"
           export EWOH_API_DATABASE_PASSWORD="$runtime_password"
           export EWOH_RUNTIME_DATABASE_URL="postgresql://ewoh_api:${runtime_password}@127.0.0.1:5432/ewoh"
           export EWOH_BOOTSTRAP_ADMIN_USERNAME=ci_admin

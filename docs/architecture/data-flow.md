@@ -50,7 +50,7 @@
 | 边缘离线链 | 本地 SQLite → Bridge 补传 | 回填/backfill、离线判定 10s、批量≤100 |
 | 感知融合链（NO-56a/c/59a） | UWB 定位 + 外骨骼 IMU（俯仰+关节角→动作）+ 视觉检测/骨架/动作 + 工位语义 + 任务上下文 + 环境传感 → `ewoh_perception_fusion` 快照 | 源策略（权重/TTL/质量因子）、置信度**按源**计权（每源一次，多维度不叠加）、冲突逐条保留、过期/不可信显式排除；快照号 = 主体+窗口桶（幂等） |
 | 感知门控链（NO-58b） | 融合快照 → 推理事实 `perceptionGate` → 结论 `advisoryOnly`；→ 调度冲突面 `perception_inconsistent` | 门控一致性契约校验（不许强建议 ⇒ 必须标 advisory 且给原因）；冲突为提示层（不阻断调度）、与在飞任务无关的主体不进冲突面、读取失败如实降级 |
-| 控制命令**投递**链（NO-62a/b） | 人工下发（授权范围指纹固化）→ 网关轮询 → **投递前复核**（审批时效 + 指纹 + 租户）→ 不过则撤回（独立事务提交 + `delivery_rejected` 结果行 + 审计 + `NTF-CTRL-*`）→ 通过则按优先级投递（`stop` 插队）→ ack（指纹原样回传）→ 回执（执行了但授权已失效 → 额外落 `authorization_violation`） | 复核失败原因封闭词表（`authorization_expired`/`authorization_revoked`/`approval_missing`/`approval_not_granted`/`fingerprint_mismatch`/`request_terminal`/`device_org_mismatch`）；撤回必须独立事务（请求事务会因 4xx 回滚）；投递顺序即安全语义 |
+| 控制命令**投递**链（NO-62a/b） | 人工下发（授权范围指纹固化）→ 网关轮询 → **投递前复核**（审批时效 + 指纹 + 租户）→ 不过则撤回（独立事务提交 + `delivery_rejected` 结果行 + 审计 + `NTF-CTRL-*`）→ 通过则按优先级投递（`stop` 插队）→ ack（指纹原样回传）→ 回执（执行了但授权已失效 → 额外落 `authorization_violation`） | 复核失败原因封闭词表（`authorization_expired`/`authorization_revoked`/`approval_missing`/`approval_not_granted`/`fingerprint_mismatch`/`fingerprint_key_missing`/`request_terminal`/`device_org_mismatch`）；撤回必须独立事务（请求事务会因 4xx 回滚）；投递顺序即安全语义 |
 | 新鲜度分档闸门（NO-64a） | 快照 `entityVersions`（全量摘要）+ `entityContentVersions`（**内容版本**：排除新鲜度派生字段与证据时钟）+ `entityEvidence`（来源时间/质量/状态）→ 审批/派工共用 `stalenessVerdict`：内容不同 → 拒绝（`CONTENT_CHANGED`）；仅证据老化且**方案依赖**该资源且其 `dataQuality≠FRESH` → 拒绝（`EVIDENCE_STALE`）；与方案无关 → 不阻断并如实报告 | 老快照缺内容版本 → 严格判定（fail-closed）；"心跳/沉默"不再被当成"世界变了"，但**依赖资源的证据过期仍然拒绝** |
 | 方案过期诊断链（NO-62c） | 方案 snapshotVersion → `describeStaleness`（entityVersions + reservations 差异）→ `GET /plans/{id}/staleness` / 审批 409 `error.planStaleness` → 页面差异面板 → 一键重排（新方案 + 新快照） | 与审批同一实现；区分外部变化 / 本方案自身执行效果；快照行缺失 → `snapshotFound=false` 且明说"无法比较"，不假装新鲜 |
 | 执行机构调度链（NO-61a） | 状态帧（位置/电量/故障）→ `projectActuatorDeviceState` → `ewoh_device`（位置/电量/故障）→ 世界快照设备能力 `transport.move` → 候选/资格评估 → 方案 assignment | 设备新鲜度 **60s**（过期判 OFFLINE 不派工）；电量/位置用 COALESCE 保留已知值；任务须走状态机到 `pending_dispatch`；能力停用即不参与匹配 |
@@ -190,5 +190,6 @@ POST /plans/{id}/approve（过期）→ 409 { error: { code: PLAN_STALE, planSta
 
 **数据契约要点**：`ewoh_control_command.authorization_fingerprint / authorization_verified_at /
 revoked_reason / revoked_at`（迁移 093，撤回原因封闭词表 + 投递部分索引）；
-`ewoh_control_result.resultType ∈ {gateway_ack, command_receipt, delivery_rejected, authorization_violation}`。
+`ewoh_control_result.resultType ∈ {gateway_ack, command_receipt, delivery_rejected, authorization_violation, delivery_expired}`
+（`delivery_expired` = F-02 过期收敛这一事实本身，与"设备做过什么"的回执分列）。
 

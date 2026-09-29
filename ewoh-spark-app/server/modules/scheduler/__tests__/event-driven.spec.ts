@@ -7,10 +7,7 @@ import { ImpactAnalyzer } from '../impact-analyzer';
 import { ReplanCoordinatorService } from '../replan-coordinator.service';
 import type { WorldStateSnapshot } from '@shared/api.interface';
 import {
-  person as seedPerson,
-  task as seedTask,
-  device as seedDevice,
-  buildSnapshot,
+  person as seedPerson, task as seedTask, device as seedDevice, buildSnapshot, fakeRunWhereBuilder
 } from './scheduler-test-helpers';
 
 /* ===== 新触发类型在 ImpactAnalyzer 中的影响域裁剪 ===== */
@@ -85,7 +82,7 @@ describe('ReplanCoordinatorService 事件驱动重排（Task 5.1/5.2）', () => 
   }) {
     const db = {
       update: jest.fn(() => ({
-        set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
+        set: jest.fn(() => ({ where: jest.fn(() => fakeRunWhereBuilder()) })),
       })),
     };
     const requestDatabaseContext = {

@@ -69,7 +69,22 @@ describe('A1 TaskService 任务写事件发射', () => {
 describe('A1 TaskSchedulingBridge 桥接转发', () => {
   const actor = { userId: 'u1', primaryOrgId: 'org1', accessibleOrgIds: ['org1'], isGlobalAdmin: false };
 
-  it('onModuleInit 注册回调 → 任务事件转发 injectSchedulingEvent（fire-and-forget）', async () => {
+  // RUN-01（2026-09-21）：桥接的续作必须**自带事务**，不能继承任务写请求的 store。
+  // 替身同形：记录 GUC 设置并原样执行 operation（真实实现会开新连接并重绑 ALS store）。
+  function makeDetachedDb() {
+    const calls: unknown[] = [];
+    const requestDatabaseContext = {
+      runDetachedTransaction: jest.fn(
+        async (settings: unknown, operation: () => Promise<unknown>) => {
+          calls.push(settings);
+          return operation();
+        },
+      ),
+    };
+    return { calls, requestDatabaseContext };
+  }
+
+  it('onModuleInit 注册回调 → 任务事件转发 injectSchedulingEvent（fire-and-forget + 独立事务）', async () => {
     const events: Array<{ taskId: string; trigger: string }> = [];
     const taskService = {
       onTaskEvent: (fn: (taskId: string, trigger: string, actor?: any) => void) => {
@@ -87,7 +102,12 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
           return { run: { runId: 'RUN-1' }, plans: [], debounced: false, cascaded: [] };
         }),
     };
-    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any);
+    const { calls, requestDatabaseContext } = makeDetachedDb();
+    const bridge = new TaskSchedulingBridge(
+      taskService as any,
+      schedulerService as any,
+      requestDatabaseContext as any,
+    );
     await bridge.onModuleInit();
     // 等待 fire-and-forget promise 落定
     await new Promise((r) => setTimeout(r, 10));
@@ -95,6 +115,11 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
     expect(injected[0].body).toEqual({ trigger: 'TASK_CREATED', entityId: 'TASK-1' });
     // NEST-119：actor 原样透传（重排归属可追溯）。
     expect(injected[0].actor).toBe(actor);
+    // RUN-01：转发发生在 detached 事务里，且带该 actor 的租户 GUC —— 否则会挂到已结束的
+    // 请求事务上静默丢失（实测 0 run / 0 trigger / 0 日志）；丢了 GUC 则掉进 RLS 静默空读。
+    expect(calls).toHaveLength(1);
+    const gucs = calls[0] as Array<{ name: string; value: string }>;
+    expect(gucs.find((g) => g.name === 'app.current_org_id')?.value).toBe('org1');
   });
 
   it('NEST-119：无 actor/org 上下文的事件 → 拒绝桥接（fail-closed，不触发匿名重排）', async () => {
@@ -104,10 +129,12 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
     const schedulerService = {
       injectSchedulingEvent: jest.fn().mockResolvedValue({ run: null, plans: [], debounced: true, cascaded: [] }),
     };
-    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any);
+    const { calls, requestDatabaseContext } = makeDetachedDb();
+    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any, requestDatabaseContext as any);
     bridge.onModuleInit();
     await new Promise((r) => setTimeout(r, 10));
     expect(schedulerService.injectSchedulingEvent).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
   });
 
   it('injectSchedulingEvent 失败 → 仅日志不抛出（fire-and-forget 容错）', async () => {
@@ -117,7 +144,8 @@ describe('A1 TaskSchedulingBridge 桥接转发', () => {
     const schedulerService = {
       injectSchedulingEvent: jest.fn().mockRejectedValue(new Error('replan down')),
     };
-    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any);
+    const { requestDatabaseContext } = makeDetachedDb();
+    const bridge = new TaskSchedulingBridge(taskService as any, schedulerService as any, requestDatabaseContext as any);
     bridge.onModuleInit(); // 同步注册（Nest onModuleInit 同步签名）
     await expect(Promise.resolve()).resolves.toBeUndefined();
     await new Promise((r) => setTimeout(r, 10));

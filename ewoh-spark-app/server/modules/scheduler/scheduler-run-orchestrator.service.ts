@@ -20,8 +20,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { ewohSchedulingRun } from '@server/database/schema';
-import { eq } from 'drizzle-orm';
+import { closeSchedulingRun } from './scheduling-run.lifecycle';
 import type {
   SchedulePlan,
   SchedulingPlanV2,
@@ -192,10 +191,16 @@ export class SchedulerRunOrchestrator {
         await this.requestDatabaseContext.runInTransaction(
           buildGucSettings(ctx),
           async () => {
-            await this.db
-              .update(ewohSchedulingRun)
-              .set({ status: 'failed', failureReason: message })
-              .where(eq(ewohSchedulingRun.runId, run.runId));
+            await closeSchedulingRun(
+              this.db,
+              {
+                runId: run.runId,
+                orgId: run.orgId ?? ctx.primaryOrgId,
+                patch: { status: 'failed', failureReason: message },
+                stage: 'failed',
+              },
+              this.logger,
+            );
           },
         );
       } catch (inner) {
@@ -249,16 +254,22 @@ export class SchedulerRunOrchestrator {
         // standalone_030_solver_activation（Task A / P0）：run 回填方案求解器状态/回退原因
         // （取首个被采用方案；shadow 模式 plans 不落库正式表，仅回填观测值）。
         const first = plans[0];
-        await this.db
-          .update(ewohSchedulingRun)
-          .set({
-            status: 'succeeded',
-            snapshotVersion: snapshot.snapshotVersion,
-            planIds: isShadow ? [] : plans.map((p) => p.planId),
-            solverStatus: first?.solverStatus ?? null,
-            fallbackReason: first?.fallbackReason ?? null,
-          })
-          .where(eq(ewohSchedulingRun.runId, run.runId));
+        await closeSchedulingRun(
+          this.db,
+          {
+            runId: run.runId,
+            orgId: run.orgId ?? ctx.primaryOrgId,
+            patch: {
+              status: 'succeeded',
+              snapshotVersion: snapshot.snapshotVersion,
+              planIds: isShadow ? [] : plans.map((p) => p.planId),
+              solverStatus: first?.solverStatus ?? null,
+              fallbackReason: first?.fallbackReason ?? null,
+            },
+            stage: 'persisted',
+          },
+          this.logger,
+        );
 
         // 缓存一致性（2026-08-19）：调度成功 = 世界版本推进，立即失效 org 的
         // context 短缓存（否则"触发调度→前端看到新版本"延迟最多 10s TTL）。

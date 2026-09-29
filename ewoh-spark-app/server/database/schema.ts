@@ -2792,7 +2792,9 @@ export const ewohControlRequest = pgTable("ewoh_control_request", {
    * @type { string[] }
    */
   commandKeys: jsonb("command_keys").notNull().default(sql`'[]'::jsonb`),
-  status: varchar("status", { length: 50 }).notNull().default('draft'),
+  // 默认值与 standalone_107 的 CHECK 同侧：词表外的 `draft` 会让"省略 status"的写入
+  // 落进 contracts/state-machines/control.yaml 描述不了的状态（REQST-01）。
+  status: varchar("status", { length: 50 }).notNull().default('created'),
   idempotencyKey: varchar("idempotency_key", { length: 255 }),
   requestedBy: varchar("requested_by", { length: 255 }),
   approvedBy: varchar("approved_by", { length: 255 }),

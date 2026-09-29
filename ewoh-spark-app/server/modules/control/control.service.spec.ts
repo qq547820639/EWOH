@@ -393,6 +393,9 @@ describe('R2-SMI-009：请求行状态 CAS', () => {
     const q = (rows: unknown[]) => {
       const p: any = Promise.resolve(rows);
       p.where = () => p;
+      // 行锁环（`.for('update')`）与链上其它环同形状：可 await、可继续 .limit()，
+      // 且**不改变结果集**（PG 的 SELECT ... FOR UPDATE 返回同一批命中行）。
+      p.for = () => p;
       p.orderBy = () => p;
       p.limit = () => p;
       return p;
@@ -712,6 +715,41 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
       .toBe(true);
   });
 
+  /**
+   * F-09（链行为基线，2026-09-22）：撤回的命令行 UPDATE 带 `status='sent'` 谓词，
+   * 但**不检查命中行数**——并发回执先落地时，撤回其实没发生，代码却继续写
+   * `delivery_rejected` 结果行 + `control.command.delivery_rejected` 审计
+   * （`before:sent → after:revoked`），台账上就多出一条**没有发生过的事实**。
+   * 这里用替身确定性地制造 0 行命中（不需要真实并发时序），断言"假事实"不得写入。
+   */
+  it('F-09 竞态：撤回 CAS 未命中时不得写下「已被撤回」这条假事实', async () => {
+    const expired = approvalInstance('approved', { approvedAt: '2020-01-01T00:00:00.000Z' });
+    const seeded = serviceWith(expired, {
+      commands: [commandSeed({ authorizationFingerprint: 'deadbeefdeadbeef' })],
+    });
+    const db = seeded.db as unknown as { update: jest.Mock };
+    const originalUpdate = db.update;
+    db.update = jest.fn((table: unknown) => {
+      if (table !== ewohControlCommand) return originalUpdate(table);
+      return {
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([]) })),
+        })),
+      };
+    });
+
+    await seeded.service.listPendingCommands('exo-1', {}, ACTOR);
+
+    expect(
+      seeded.resultRows.some((r) => (r as Record<string, unknown>).resultType === 'delivery_rejected'),
+    ).toBe(false);
+    expect(
+      seeded.audit.logs.some((l) => l.action === 'control.command.delivery_rejected'),
+    ).toBe(false);
+    // 并发改写方的事实保持原样：既不是 revoked，也不能被我们覆盖成 revoked
+    expect(String((seeded.commandRows[0] as Record<string, unknown>).status)).not.toBe('revoked');
+  });
+
   it('授权范围被改写（指纹不符）→ 撤回并给出 fingerprint_mismatch（不静默投递）', async () => {
     const { service, resultRows } = serviceWith(approvalInstance('approved'), {
       commands: [commandSeed({ authorizationFingerprint: 'deadbeefdeadbeef' })],
@@ -923,7 +961,145 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
     }
   });
 
-  it('NO-77a 实时快照：与巡检同一判定，聚合数字正确（两台设备/未交付与已投未回执分列）', async () => {
+  /**
+   * F-02（链行为基线，2026-09-21）：`expired` 从"声明了但全仓无人写"变成有权威 writer。
+   * 时限缺省取 `CAPABILITY_APPROVAL_VALIDITY_MS`（24h）——命令的授权依据就是那张审批。
+   * fake-db 的 update 不评 WHERE（会把 patch 落到所有行），因此每条用例只放一条命令，
+   * 断言打在 `updates`/`inserts`/`audit.logs` 上，而不是"其它行没被改"。
+   */
+  function makeSweepService(seed: { requests?: unknown[]; commands?: unknown[] }) {
+    const fake = makeControlDb({
+      requests: seed.requests ?? [requestSeed({ status: 'pending_gateway', commandKeys: ['dispatch_task'] })],
+      commands: seed.commands ?? [],
+    });
+    const audit = makeAuditStub();
+    const service = new ControlService(
+      fake.db as never,
+      audit.stub as never,
+      makeApprovalStub(approvalInstance('approved')) as never,
+    );
+    return { fake, audit, service };
+  }
+
+  it('F-02 过期收敛：超过授权有效期仍无回执的在飞命令 → expired + 结果行 + 审计 + 请求聚合 timeout', async () => {
+    const stale = new Date(Date.now() - 25 * 60 * 60_000); // 25h > 24h 授权有效期
+    const { fake, audit, service } = makeSweepService({
+      commands: [commandSeed({ commandId: 'att-expired', commandKey: 'dispatch_task', status: 'sent', sentAt: stale, payload: null })],
+    });
+
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+
+    expect(result.expired).toBe(1);
+    expect(result.expiryConflicts).toBe(0);
+    expect(result.expiryMs).toBe(ControlService.commandExpiryMs());
+    const commandUpdates = fake.updates.filter((u) => u.table === ewohControlCommand);
+    expect(commandUpdates.some((u) => String((u.set as Record<string, unknown>).status) === 'expired')).toBe(true);
+    expect(
+      (fake.inserts ?? []).some((i) =>
+        i.table === ewohControlResult
+        && String((i.row as Record<string, unknown>).resultType) === 'delivery_expired'
+        && String((i.row as Record<string, unknown>).commandId) === 'att-expired'),
+    ).toBe(true);
+    expect(audit.logs.some((log) => log.action === 'control.command.expired')).toBe(true);
+    // 聚合必须跟着走：只改命令行 = 悬挂从 attempt 挪到 request，等于没修
+    const requestUpdate = fake.updates.find((u) => u.table === ewohControlRequest);
+    expect(String((requestUpdate?.set as Record<string, unknown>)?.status)).toBe('timeout');
+    // 已经等不到答案的命令不该再天天叫人
+    expect(result.devicesWithBacklog).toBe(0);
+    expect(
+      fake.notificationRows.some((row) =>
+        String((row as Record<string, unknown>).notificationId ?? '').includes('delivery_backlog'),
+      ),
+    ).toBe(false);
+  });
+
+  it('F-02 显式业务期限优先：request.deadline 已过 → 即使下发时刻还很新也收敛（规则记入结果行）', async () => {
+    const pastDeadline = new Date(Date.now() - 60_000).toISOString();
+    const { fake, service } = makeSweepService({
+      requests: [requestSeed({ status: 'pending_gateway', commandKeys: ['dispatch_task'], deadline: pastDeadline })],
+      commands: [commandSeed({
+        commandId: 'att-deadline', commandKey: 'dispatch_task', status: 'sent',
+        // 下发才 6 分钟：单看授权有效期窗口**绝不该**过期——过期判据必须是 deadline 优先
+        sentAt: new Date(Date.now() - 6 * 60_000), payload: null,
+      })],
+    });
+
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+
+    expect(result.expired).toBe(1);
+    const expiryInsert = (fake.inserts ?? []).find((i) =>
+      i.table === ewohControlResult
+      && String((i.row as Record<string, unknown>).resultType) === 'delivery_expired',
+    );
+    expect(expiryInsert).toBeDefined();
+    const json = (expiryInsert!.row as Record<string, unknown>).resultJson as Record<string, unknown>;
+    expect(json.expiryRule).toBe('business_deadline');
+    expect(json.deadlineAt).toBeTruthy();
+    // 提醒侧不得再把这条已收敛的命令算进积压（同一份判定，不两套口径）
+    expect(result.devicesWithBacklog).toBe(0);
+  });
+
+  it('F-02 边界：未过有效期的积压只提醒、不收敛（提醒与过期是两件事）', async () => {    const old = new Date(Date.now() - 6 * 60_000); // 超 SLA(5min)、未升级、远未过期
+    const { fake, service } = makeSweepService({
+      commands: [commandSeed({ commandId: 'att-waiting', commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null })],
+    });
+
+    const result = await service.sweepDeliveryBacklog(ACTOR);
+
+    expect(result.expired).toBe(0);
+    expect(result.scanned).toBe(1);
+    expect(result.devicesWithBacklog).toBe(1);
+    expect(result.created).toBeGreaterThan(0);
+    expect(
+      fake.updates.some((u) => u.table === ewohControlCommand
+        && String((u.set as Record<string, unknown>).status) === 'expired'),
+    ).toBe(false);
+  });
+
+  it('F-02 迟到回执：expired 命令的设备回执按事实登记，不复活成 executed', async () => {
+    const { fake, service } = makeSweepService({
+      requests: [requestSeed({ status: 'timeout', commandKeys: ['dispatch_task'] })],
+      commands: [commandSeed({
+        commandId: 'att-late', commandKey: 'dispatch_task', status: 'expired',
+        sentAt: new Date(Date.now() - 25 * 60 * 60_000), payload: null,
+      })],
+    });
+
+    // 命令已是终态：旧实现会在请求终端闸门外层直接 400，设备"真的动过"这条事实就丢了。
+    const out = await service.receiveReceipt('ctl-1', 'dispatch_task', 'executed', { via: 'late' }, ACTOR);
+
+    // 请求聚合仍是终态 timeout：迟到回执登记事实，但不把整条请求复活成"已执行"
+    expect(String(out.status)).toBe('timeout');
+    expect(
+      (fake.inserts ?? []).some((i) =>
+        i.table === ewohControlResult
+        && String((i.row as Record<string, unknown>).resultType) === 'command_receipt'
+        && String((i.row as Record<string, unknown>).resultCode) === 'executed'),
+    ).toBe(true);
+    const commandUpdates = fake.updates.filter((u) => u.table === ewohControlCommand);
+    // 只登记观测（response_*），不改写终态
+    expect(commandUpdates.every((u) => (u.set as Record<string, unknown>).status === undefined)).toBe(true);
+    expect(commandUpdates.some((u) => (u.set as Record<string, unknown>).responseAt instanceof Date)).toBe(true);
+  });
+
+  it('F-02 时限可运维覆盖：EWOH_CONTROL_COMMAND_EXPIRY_MS 生效（非法值回退默认）', async () => {
+    const previous = process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS;
+    try {
+      process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS = '60000';
+      expect(ControlService.commandExpiryMs()).toBe(60_000);
+      expect(ControlService.commandExpiryMs()).toBeLessThan(24 * 60 * 60_000);
+      // 非法值 → 回退到文档化缺省（24h 授权有效期），不静默变成 0/NaN（那会让所有命令秒过期）
+      process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS = 'abc';
+      expect(ControlService.commandExpiryMs()).toBe(24 * 60 * 60_000);
+    } finally {
+      if (previous === undefined) delete process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS;
+      else process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS = previous;
+    }
+    expect(ControlService.commandExpiryMs()).toBe(24 * 60 * 60_000);
+  });
+
+
+      it('NO-77a 实时快照：与巡检同一判定，聚合数字正确（两台设备/未交付与已投未回执分列）', async () => {
     const old = new Date(Date.now() - 30 * 60_000); // 6× SLA → 升级
     const fake = makeControlDb({
       requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
@@ -1006,6 +1182,29 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
     });
     const snap = await service.getDeliveryBacklogSnapshot(ACTOR);
     expect(snap.totals).toMatchObject({ devices: 0, commands: 0, escalatedDevices: 0, oldestWaitingMs: null });
+    expect(snap.truncated).toBe(false); // 没读满上限 ⇒ 明细就是全量，不许报截断
+  });
+
+  it('PROJ-06 读满单轮上限 ⇒ truncated 必须为 true，且 totals 不许被静默改成 0', async () => {
+    // fake 库不解释 limit ⇒ 种满 500 行就等于"这条读被上限截断"。
+    // 这一支要钉的是**降级方向**：全量聚合拿不到时退回样本计数（下界），
+    // 而不是把 totals 归零——那会把"积压很多"报成"没有积压"，比旧行为更坏。
+    const old = new Date(Date.now() - 30 * 60_000);
+    const fake = makeControlDb({
+      requests: [requestSeed({ status: 'approved', commandKeys: ['dispatch_task'], riskLevel: 'high' })],
+      commands: Array.from({ length: 500 }, (_, i) => commandSeed({
+        commandId: `att-cap-${i}`, commandKey: 'dispatch_task', status: 'sent', sentAt: old, payload: null,
+      })),
+    });
+    const service = new ControlService(fake.db as never, makeAuditStub().stub as never, makeApprovalStub(approvalInstance('approved')) as never);
+    // 前一个用例（无积压）把同一租户的空快照写进了 TTL 缓存；不清就测不到本用例的库。
+    (ControlService as unknown as { snapshotCache: Map<string, unknown> }).snapshotCache.clear();
+    const snap = await service.getDeliveryBacklogSnapshot(ACTOR);
+    (ControlService as unknown as { snapshotCache: Map<string, unknown> }).snapshotCache.clear();
+
+    expect(snap.truncated).toBe(true);
+    expect(snap.totals.commands).toBeGreaterThan(0);
+    expect(snap.devices.reduce((acc, d) => acc + d.commands, 0)).toBe(snap.totals.commands);
   });
 
   it('NO-70a 升级链：积压超过 N 倍 SLA → 加发生产管理者（critical，升级桶）', async () => {
@@ -1260,7 +1459,12 @@ describe('NO-62a：投递前授权复核（指纹 / 审批时效 / 撤回 / 未�
       commands: [commandSeed({ status: 'revoked', revokedReason: 'authorization_expired', authorizationFingerprint: 'x' })],
     });
     const request = await service.receiveReceiptByCommandId('att-seed-1', 'executed', { adapterAccepted: true }, ACTOR);
-    expect(request.attempts.find((a) => a.commandKey === 'dispatch_task')?.status).toBe('executed');
+    // F-01 行为变化（2026-09-21，链行为基线 B-02）：此处原断言 `executed`，与本服务
+    // :2372 自己声明的「绝不把它当成一次正常执行」相互矛盾——违规回执照记事实，
+    // 但不得把已撤回命令的状态改写成正常执行。真实 PostgreSQL 复现见
+    // test/e2e/control-receipt-boundary.e2e.spec.ts。
+    expect(request.attempts.find((a) => a.commandKey === 'dispatch_task')?.status).toBe('revoked');
+    expect(request.status).not.toBe('executed');
     expect(resultRows.some((r) => (r as Record<string, unknown>).resultType === 'command_receipt')).toBe(true);
     expect(resultRows.find((r) => (r as Record<string, unknown>).resultType === 'authorization_violation'))
       .toMatchObject({ resultCode: 'unauthorized_execution', success: false });
@@ -1488,6 +1692,9 @@ describe('F4：ackCommand 的 CAS 未命中必须显式冲突（不撒谎的 ack
       const q: any = Promise.resolve(rows);
       q.where = (cond: unknown) => chain(rows.filter((row) => matches(cond, row)));
       q.innerJoin = () => q(rows);
+      // 行锁环与链上其它环同形状：可 await、可继续 .limit()，且**不改变结果集**
+      // （PG 的 SELECT ... FOR UPDATE 返回同一批命中行）。
+      q.for = () => q;
       q.orderBy = () => q;
       q.limit = () => q;
       return q;

@@ -170,7 +170,14 @@ function assertWorkerStepAssignment(
   if (!roles.includes('worker')) {
     return;
   }
-  if (!step.assignedPersonId || step.assignedPersonId !== actor.userId) {
+  // assignedPersonId is a personnel-domain ID. Workers may only act through the
+  // signed account↔person binding; auth userId is a different identity space.
+  const signedPersonId = actor?.personId?.trim() ?? '';
+  if (
+    !signedPersonId ||
+    !step.assignedPersonId ||
+    step.assignedPersonId !== signedPersonId
+  ) {
     throw new ForbiddenException(
       'WORKER_STEP_ASSIGNMENT_REQUIRED: worker can only operate steps assigned to them',
     );
@@ -1322,7 +1329,7 @@ export class MesService {
     }
     const resultJson = { ...((step.resultJson as Record<string, unknown> | null) ?? {}) };
     resultJson.quality = {
-      inspectorId: body.inspectorId ?? actor?.userId ?? null,
+      inspectorId: body.inspectorId ?? actor?.personId ?? actor?.userId ?? null,
       result: body.result,
       defectCode: body.defectCode ?? null,
       quantity: body.quantity ?? null,

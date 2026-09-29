@@ -267,3 +267,16 @@ export function makeEligibilityCtx(
     ...overrides,
   };
 }
+/**
+ * drizzle 的 `update().set().where()` 返回的是一个**既能 await 又带 `.returning()`** 的构建器。
+ * 替身必须同形：`ReplanCoordinatorService.closeRun` 用 `.returning()` 判 0 行命中（F-09 同类收口），
+ * 而只提供 `where: () => Promise.resolve()` 的旧替身会让每一条 happy path 都以
+ * `... .returning is not a function` 失败——这正是本仓库记过名的「替身与真实写路径形状不一致」缺陷族。
+ */
+export function fakeRunWhereBuilder(
+  rows: Array<Record<string, unknown>> = [{ runId: 'RUN-1' }],
+): Promise<Array<Record<string, unknown>>> & {
+  returning: () => Promise<Array<Record<string, unknown>>>;
+} {
+  return Object.assign(Promise.resolve(rows), { returning: () => Promise.resolve(rows) });
+}

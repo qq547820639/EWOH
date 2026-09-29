@@ -149,6 +149,18 @@ function consoleMock(overrides = {}) {
   };
 }
 
+const AGENT_APPROVAL = {
+  approvalId: 'AGENT-REJECT-1',
+  agentId: 'agent:supervisor',
+  command: 'propose_plan',
+  payload: { kind: 'advisory' },
+  roles: ['workshop_lead'],
+  createdAt: new Date().toISOString(),
+  expiresAtMs: Date.now() + 60 * 60 * 1000,
+  remainingMs: 60 * 60 * 1000,
+  expired: false,
+};
+
 test.describe('审批控制台 · 执行边界授权', () => {
   let server;
 
@@ -222,6 +234,34 @@ test.describe('审批控制台 · 执行边界授权', () => {
     await openSession(page, server.baseUrl, ROLES.dispatcher, '/approval-console');
     await expect(page.getByRole('heading', { name: '403 无权限' })).toBeVisible();
     await expect(page.getByTestId('authorization-section')).toHaveCount(0);
+  });
+
+  test('Agent 驳回必须带理由，并作为审计载荷提交', async ({ page }) => {
+    let resolvePayload;
+    await mockApi(
+      page,
+      consoleMock({
+        'GET /api/approvals/authorizations': [],
+        'GET /api/agents/approvals': [AGENT_APPROVAL],
+        'POST /api/agents/approvals/AGENT-REJECT-1/resolve': ({ body }) => {
+          resolvePayload = body;
+          return { status: 200, body: { ok: true } };
+        },
+      }),
+    );
+    await openSession(page, server.baseUrl, ROLES.workshop_lead, '/approval-console');
+
+    await page.getByRole('button', { name: '驳回' }).click();
+    const submit = page.getByRole('button', { name: '提交驳回' });
+    await expect(submit).toBeDisabled();
+    await page.getByLabel('驳回理由（必填，写入审计）').fill('现场风险未闭环，不能执行');
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    await expect.poll(() => resolvePayload).toMatchObject({
+      approved: false,
+      reason: '现场风险未闭环，不能执行',
+    });
   });
 
   /**

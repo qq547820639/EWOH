@@ -96,11 +96,14 @@ export class AgentController {
   @Post('approvals/:approvalId/resolve')
   resolveApproval(
     @Param('approvalId') approvalId: string,
-    @Body() body: { approved: boolean },
+    @Body() body: { approved: boolean; reason?: string },
     @Req() request?: { userContext?: OrgContext },
   ) {
     if (typeof body?.approved !== 'boolean') {
       throw new BadRequestException('approved 必填（boolean）');
+    }
+    if (!body.approved && !body.reason?.trim()) {
+      throw new BadRequestException('人工驳回必须带非空 reason（拒绝事实不允许静默）');
     }
     return this.agentService.resolveApproval(
       this.currentOrgId(request),
@@ -111,6 +114,7 @@ export class AgentController {
         // FR5：透传角色供服务层做"资格角色 ∩ 台账 rolesJson"强制（fail-closed）。
         roles: request?.userContext?.roles ?? [],
       },
+      body.reason?.trim(),
     );
   }
 

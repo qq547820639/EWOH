@@ -45,6 +45,8 @@ notes:
   - "审计整改 W1（2026-08-17，standalone_057_rls_null_reject）：1) SQL-028/029 分类修正——ewoh_agent_approval / ewoh_learning_proposal 实为 standalone_049 / standalone_045 全新 CREATE TABLE，status 由 altered 改 new（managed_count/physical_create_count 不变，表已在列）；2) SQL-030 补登 4 张此前完全缺失的表（saved_views / workbench_export_tasks / prediction_shadow_observation / ewoh_snapshot_version_counter，登记于 additional_hardened_existing_tables 段末尾的登记性条目——三者非 org_id 列名或 GLOBAL_SHARED 语义，不进入 managed_tables 核心口径，verify expected 列表不变）；3) 057 迁移本体见 db/migrations/standalone_057_rls_null_reject.sql（RLS 去 NULL 放行、org_id NOT NULL backfill、业务键复合唯一、ewoh_org_visible(text) 重载）。"
   - "审计整改 W2/W3 补记（R2-DBM-002/003，2026-08-18）：standalone_058_control_attempt_unique 补接入 runner（--apply/--rollback/--verify-standalone-control-attempt-unique）并补 verify 脚本；ewoh_control_command 在 001 复合业务键 (org_id,root_command_id,attempt_no,command_key) 之外，由 058 追加唯一索引 uq_ewoh_control_command_attempt (request_id,command_key,attempt_no)（NEST-425：防并发读-算-写竞态的 attempt 序号唯一，两类键并存，防重放以 058 键为准）；standalone_059_spatial_entity_org_unique 同步补接入（ewoh_spatial_entity 业务键收敛 (org_id,entity_id)，R2-SOP-003/R2-SAM-003）。"
   - "审计整改 R2-SDB-006（2026-08-18，standalone_060_idempotency_org）：ewoh_idempotency_keys 增 org_id（DEFAULT 取 app.current_org_id GUC，无上下文回退默认 org）+ 唯一键 (scope,idempotency_key) → (org_id,scope,idempotency_key) + RLS idempotency_org_isolation（org 匹配或全局管理员，无 NULL 放行）——同 key 跨租户不再回放他租户响应；登记性条目（原 GLOBAL 键空间表加固，不改变 managed_tables 计数口径）。"
+  - "执行边界加固（2026-09-21，standalone_106_control_sent_state_pair）：ewoh_control_command 新增 chk_ewoh_control_command_sent_has_time，数据库层强制 status=sent 必须携带 sent_at；这是约束加固而非新受管表，managed_tables / physical_create_count 口径不变。"
+
 managed_tables:
   - domain: "Scale"
     logical_name: "ewoh_asset_package"

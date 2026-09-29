@@ -1,0 +1,19 @@
+{
+  "trace_id": "EWOH-20260920-repository-walkthrough-prompt",
+  "intent_anchor": {
+    "objective": "Inspect repository architecture and core call chains, then deliver a detailed Chinese copyable prompt for systematic full repository walkthrough.",
+    "success_criteria": ["Repository-specific paths and commands verified", "Current coverage limits disclosed", "Prompt covers architecture, modules, data flow, implementation, quality and evidence"],
+    "constraints": ["Preserve existing worktree changes", "No product changes, commits, deployment or real equipment operations", "Never equate inventory or historical reports with current full code review"]
+  },
+  "project_root": "/Volumes/Extra/CodeProj/EWOH",
+  "current_status": "prompt_extended_with_independent_architecture_judgment_and_reviewed",
+  "source_refs": ["Current user request", "git HEAD c4133284204f3b1f6bccc33653ae2ca6d76a7649 plus dirty worktree", "README.md", "docs/audit/current/coverage-report.md"],
+  "trace_registry": {},
+  "decision_log": ["Produce a repository-grounded prompt; do not represent this reconnaissance as a completed file-by-file audit", "Use dedicated state so ongoing delivery state remains untouched"],
+  "risk_register": ["Historical audit coverage and test claims require fresh verification", "Existing uncommitted changes span runtimes, migrations and tests"],
+  "restore_labels": {"repository_inventory": "confirmed_current", "historical_audit_claims": "stale_or_unverified"},
+  "verification_state": {"inventory": "3829 tracked files; no AGENTS.md found by hidden-file search", "audit_ledger_live_stats": "2730 scoped files, 711 valid review records, 2019 unverified at inspection time", "audit_ledger_tests": "21 tests passed using disposable fixtures", "prompt_validation": "9 npm scripts and 13 Make targets exist; referenced paths verified; whitespace checks passed", "independent_review": "PASS_WITH_NIT: no P0/P1/P2; sole P3 was stale task status and is resolved by this update; full product tests and full line audit not performed"},
+  "subagent_state": {"edge_walkthrough": "completed", "server_walkthrough": "completed", "client_sidecar_walkthrough": "partial findings delivered, 429 retry exhaustion; Principal completed required entrypoint inspection", "prompt_review": "503 model unavailable; replaced with default-model independent review", "prompt_review_fallback": "completed; no active delegated work remains"},
+  "architecture_addendum": {"scope": "User-requested independent system assessment and refactoring strategy added in sections 12 and 13", "decision": "Tentative preference for focused modular refactoring; preserve justified runtime boundaries and multiple projections", "review": "PASS after correcting premature findings, overly broad authority, mandatory DI and unverified cost assumptions", "validation": "Documentation checks only; no additional product test or external solution research claimed", "implementation": "No business-code refactoring performed"},
+  "next_entrypoint": "docs/agent/repository-systematic-walkthrough-prompt.md"
+}

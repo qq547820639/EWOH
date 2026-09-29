@@ -99,7 +99,8 @@ export class ControlController {
  * 说成 `requests/delivery-backlog/sweep` 会把 URL 说成它不是的东西。
  *
  * 定时 worker 跑同一实现；这里额外开放给值班角色手动触发（现场排障不必等下一个周期）。
- * 只写提醒与审计，**不改命令/设备事实**。
+ * 写三类事实：提醒、审计，以及 F-02 的**过期收敛**（在飞命令超授权有效期 → `expired`，
+ * CAS 未命中即跳过）；仍不改**设备**事实（设备状态只由设备自己的上行决定）。
  */
 @Controller('api/control')
 export class ControlDeliveryBacklogController {

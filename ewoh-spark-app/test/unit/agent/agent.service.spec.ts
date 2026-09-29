@@ -370,7 +370,7 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
   });
 
   it('审批驳回 → 拒绝留痕（不执行）', async () => {
-    const { events, service } = createAgentDb([
+    const { approvals, events, service } = createAgentDb([
       registeredRow(makeManifest({
         approvalRequirement: { autonomousLevel: 'L1', approvalRequiredFor: ['propose_plan'] },
       })),
@@ -379,9 +379,18 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    // 驳回是授权事实：没有理由就不能形成可解释审计。
+    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }))
+      .rejects.toThrow(/reason/);
+
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }, '现场条件不满足');
     expect(result.executed).toBe(false);
     expect(result.outcome).toBe('rejected');
+    const row = approvals.find((a) => a.approvalId === proposed.approvalId);
+    expect(row?.resolutionJson).toMatchObject({
+      approved: false,
+      rejectedReason: '现场条件不满足',
+    });
     const decisionEvents = events.filter((e) => e.eventType === 'AgentDecisionRecorded');
     expect(decisionEvents.length).toBeGreaterThanOrEqual(1);
   });
@@ -414,7 +423,7 @@ describe('AgentService（NO-06c：审批桥接 + 工厂主管 Agent）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }, '现场条件不满足');
     const mine = notifications.find((n) => n.externalRef === proposed.approvalId);
     expect(mine).toMatchObject({
       status: 'resolved',
@@ -625,7 +634,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
       command: 'propose_plan',
       payload: {},
     });
-    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] });
+    const result = await service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] }, '现场条件不满足');
     expect(result.outcome).toBe('rejected');
     const row = approvals.find((a) => a.approvalId === proposed.approvalId);
     const decision = (row as Record<string, unknown>).decisionJson as Record<string, unknown>;
@@ -634,7 +643,7 @@ describe('AgentService（NO-06d：领域命令执行器 + 审批超时）', () =
     expect((decision.selected as Record<string, unknown>).optionId).toBe('opt:reject');
     expect(validateDecision(decision)).toEqual([]);
     // 重复解析 CAS 未命中 → 不再追加第二条决策（确定性幂等）。
-    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] }))
+    await expect(service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'u2', roles: ['workshop_lead'] }, '现场条件不满足'))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -898,9 +907,9 @@ describe('AgentService（NO-12f/ADR-030：待批清单 + 通知闭环）', () =>
       command: 'propose_plan',
       payload: {},
     });
-    const first = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    const first = await ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }, '现场条件不满足');
     expect(first.outcome).toBe('rejected');
-    await expect(ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }))
+    await expect(ctx.service.resolveApproval('ORG-1', proposed.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }, '现场条件不满足'))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 });

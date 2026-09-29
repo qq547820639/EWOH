@@ -257,8 +257,10 @@ export function useSchedulerStream(options: UseSchedulerStreamOptions = {}): {
         if (typeof pid === 'string') {
           queryClient.invalidateQueries({ queryKey: queryKeys.schedulerPlan(pid) });
         }
-        // v0.7 Batch7.1：执行变化 → 失效世界状态（地图实体位置提前刷新，
-        // 等效"近实时"，2s 轮询作为兜底保底；避免直接改 FactoryMap 渲染链的高风险）。
+        // v0.7 Batch7.1：执行变化 → 失效世界状态（地图实体位置提前刷新，等效"近实时"；
+        // 避免直接改 FactoryMap 渲染链的高风险）。断流时的兜底不在这里：世界状态查询自带
+        // refetchInterval 10s（useCommandMapQueries.ts:64），而 worldState 不在本 hook 的
+        // SSE 故障轮询键集 pollingInvalidateKeys() 里，两者是两条独立路径。
         queryClient.invalidateQueries({ queryKey: queryKeys.worldState });
       }
     },

@@ -13,10 +13,7 @@
 import { ReplanCoordinatorService } from '../replan-coordinator.service';
 import type { WorldStateSnapshot } from '@shared/api.interface';
 import {
-  person as seedPerson,
-  task as seedTask,
-  device as seedDevice,
-  buildSnapshot,
+  person as seedPerson, task as seedTask, device as seedDevice, buildSnapshot, fakeRunWhereBuilder
 } from './scheduler-test-helpers';
 
 /** 构造带可配置 replan 稳定性预算配置的 ReplanCoordinatorService。 */
@@ -30,7 +27,7 @@ function makeReplanService(opts: {
 }) {
   // 捕获 run 更新 payload（断言抑制路径 planIds=[] / status=succeeded）。
   const setMock = jest.fn((_payload: Record<string, unknown>) => ({
-    where: jest.fn(() => Promise.resolve()),
+    where: jest.fn(() => fakeRunWhereBuilder()),
   }));
   const db = {
     update: jest.fn(() => ({ set: setMock })),

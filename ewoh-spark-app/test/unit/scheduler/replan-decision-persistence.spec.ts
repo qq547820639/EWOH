@@ -38,7 +38,10 @@ function makeReplanFlow() {
       set: jest.fn((patch: Record<string, unknown>) => ({
         where: jest.fn(() => {
           for (const row of planRows.values()) Object.assign(row, patch);
-          return Promise.resolve();
+          // 真实 drizzle 构建器**既可 await 又带 .returning()**；`closeRun` 用后者判 0 行命中，
+          // 替身不同形就会把每次正常闭合都读成"未命中"（本仓库记过名的替身形状漂移）。
+          const hit = [{ runId: 'RUN-1' }];
+          return Object.assign(Promise.resolve(hit), { returning: () => Promise.resolve(hit) });
         }),
       })),
     })),

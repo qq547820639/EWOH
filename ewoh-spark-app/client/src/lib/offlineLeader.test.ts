@@ -175,6 +175,50 @@ describe('offlineLeader — BroadcastChannel fallback (multi-tab)', () => {
     expect(messages).toContainEqual({ type: 'release', name: 'logout', token: expect.any(String) });
   });
 
+  it('a tab joining after a settled leader follows it instead of splitting the lease', async () => {
+    const messages: Array<{ data: unknown }> = [];
+    const channels: BroadcastLike[] = [];
+    const makeFactory = (): BroadcastChannelFactory => () => {
+      const channel = {
+        postMessage: (data: unknown) => {
+          for (const other of channels) {
+            if (other !== channel && other.onmessage) other.onmessage({ data });
+          }
+        },
+        close: () => undefined,
+        onmessage: null,
+      };
+      channels.push(channel);
+      return channel;
+    };
+
+    const leaderManager = new FlushLeaseManager({
+      locks: null,
+      createBroadcast: makeFactory(),
+      tokenFactory: () => 'token-b-leader',
+      claimDelay: () => 0,
+      electionWindowMs: 5,
+      heartbeatMs: 5,
+    });
+    const leader = await leaderManager.acquireLeader('late-joiner');
+    expect(leader.isLeader).toBe(true);
+
+    const followerManager = new FlushLeaseManager({
+      locks: null,
+      createBroadcast: makeFactory(),
+      tokenFactory: () => 'token-a-lower',
+      claimDelay: () => 0,
+      electionWindowMs: 5,
+      heartbeatMs: 5,
+    });
+    const follower = await followerManager.acquireLeader('late-joiner');
+
+    expect(follower.isLeader).toBe(false);
+    expect(leader.isLeader).toBe(true);
+    leader.release();
+    follower.release();
+  });
+
   it('single-tab environment (no BroadcastChannel) is always the leader', async () => {
     const manager = new FlushLeaseManager({
       locks: null,

@@ -25,6 +25,13 @@ export class LocalStorageDriver implements StorageDriver {
     }
   }
 
+  /** 组织 ID 与文件 ID 一样是数据库 UUID；禁止让它进入路径拼接。 */
+  private assertValidOrgId(orgId: string): void {
+    if (!isValidUuid(orgId)) {
+      throw new BadRequestException('invalid org id (uuid required)');
+    }
+  }
+
   private orgDir(orgId: string): string {
     return join(this.rootDir, orgId);
   }
@@ -48,6 +55,7 @@ export class LocalStorageDriver implements StorageDriver {
 
   async save(id: string, buffer: Buffer, record: FileRecord): Promise<void> {
     this.assertValidId(id);
+    this.assertValidOrgId(record.orgId);
     const orgId = record.orgId;
     await mkdir(this.orgDir(orgId), { recursive: true });
     const contentPath = this.orgPath(orgId, id);
@@ -145,6 +153,7 @@ export class LocalStorageDriver implements StorageDriver {
       return records;
     };
     if (orgId) {
+      this.assertValidOrgId(orgId);
       // NEST-306：org 作用域只扫本 org 桶。
       const records = await collectFrom(this.orgDir(orgId));
       return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -184,6 +193,7 @@ export class LocalStorageDriver implements StorageDriver {
 
   async findByIdempotencyKey(key: string, orgId: string): Promise<FileRecord | null> {
     if (!key) return null;
+    this.assertValidOrgId(orgId);
     const records = await this.list(orgId);
     return (
       records.find(

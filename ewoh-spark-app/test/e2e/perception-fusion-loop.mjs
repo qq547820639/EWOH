@@ -255,7 +255,7 @@ async function main() {
           values: { workload: 0.99, fatigue: 0.9, ergonomicRisk: 0.9 },
           evidenceIds: [`event:${tag}-gate`],
         }],
-      }, leadToken);
+      }, adminToken);
       const conclusions = Array.isArray(reasoning.body?.trace?.conclusions)
         ? reasoning.body.trace.conclusions
         : (Array.isArray(reasoning.body?.conclusions) ? reasoning.body.conclusions : []);

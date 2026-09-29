@@ -17,14 +17,13 @@ import threading
 import time
 
 from edge_platform import server, services
-from edge_platform.config import Settings
 from edge_platform.scheduler.cpsat import solver as cpsat_solver
 from edge_platform.scheduler.cpsat import worker as cpsat_worker
 from edge_platform.scheduler.cpsat.contract import SolverRequest
 from edge_platform.scheduler.repository import ReadonlyModeError
 
 from . import STREAM, Route, affix, dispatch_routes, exact, sub_path
-from ._util import now_iso, resolve_actor
+from ._util import now_iso, resolve_actor, runtime_mode
 
 # ---- EDGE-006：SSE 连接资源上限（防线程耗尽 DoS） ----
 MAX_SSE_CONNECTIONS = 20  # 同时存活的事件流连接上限（超限 503）
@@ -54,7 +53,7 @@ def _sched(ctx, h):
 def api_resource_state(ctx, h, req_meta):
     """GET /api/resources/state — 统一实时资源状态（Phase 3）。"""
     if ctx.resource_state_service is None:
-        return h.send_json({"items": [], "now": now_iso(), "note": "资源状态服务未启用"})
+        return h._new_error("not_ready", "资源状态服务未启用，拒绝伪造空资源状态", 503)
     items = ctx.resource_state_service.build_resource_states(ctx.storage, ctx)
     return h.send_json({"items": items, "now": now_iso()})
 
@@ -68,7 +67,7 @@ def api_command_map_stream(ctx, h, req_meta):
     （默认 1h，到期服务端主动断开，客户端按 retry 指引重连），防线程耗尽 DoS。
     """
     global _sse_active
-    if Settings.load().runtime_mode == "production":
+    if runtime_mode() == "production":
         actor = h._actor() if hasattr(h, "_actor") else None
         if actor is None:
             return h._new_error("unauthorized", "production 事件流必须携带有效 Bearer token", 401)
@@ -145,6 +144,11 @@ def api_task_detail(ctx, h, task_id):
         return h._new_error("not_ready", str(e), 503)
 
 
+def _require_task_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("请求体必须是 JSON 对象")
+
+
 def _task_field(payload, key):
     v = payload.get(key)
     if v is None:
@@ -155,17 +159,19 @@ def _task_field(payload, key):
         "predecessor_task_ids",
         "exclusive_resource_ids",
     ):
-        return list(v) if isinstance(v, list) else []
+        if not isinstance(v, list):
+            raise ValueError(f"{key} 必须为字符串数组")
+        return v
     if key in ("priority", "estimated_duration_sec"):
         try:
             return int(v)
         except (TypeError, ValueError):
-            return 0
+            raise ValueError(f"{key} 必须为整数") from None
     if key in ("load_level",):
         try:
             return float(v)
         except (TypeError, ValueError):
-            return 0.0
+            raise ValueError("load_level 必须为数字") from None
     if key == "safety_critical":
         return bool(v)
     return v
@@ -182,16 +188,20 @@ def api_create_task(ctx, h, payload):
     except RuntimeError as e:
         return h._new_error("not_ready", str(e), 503)
     actor = h._actor()
-    fields = {}
-    for key in (
-        "task_type", "priority", "status", "station_id", "zone_id",
-        "required_skills", "required_device_capabilities", "release_at", "earliest_start",
-        "due_at", "estimated_duration_sec", "predecessor_task_ids", "exclusive_resource_ids",
-        "load_level", "safety_critical",
-    ):
-        v = _task_field(payload, key)
-        if v is not None:
-            fields[key] = v
+    try:
+        _require_task_payload(payload)
+        fields = {}
+        for key in (
+            "task_type", "priority", "status", "station_id", "zone_id",
+            "required_skills", "required_device_capabilities", "release_at", "earliest_start",
+            "due_at", "estimated_duration_sec", "predecessor_task_ids", "exclusive_resource_ids",
+            "load_level", "safety_critical",
+        ):
+            v = _task_field(payload, key)
+            if v is not None:
+                fields[key] = v
+    except ValueError as e:
+        return h._new_error("invalid_params", str(e), 400)
     try:
         task = sched.create_task(actor_id=actor, **fields)
     except ReadonlyModeError as e:
@@ -208,18 +218,22 @@ def api_update_task(ctx, h, task_id, payload):
     except RuntimeError as e:
         return h._new_error("not_ready", str(e), 503)
     actor = h._actor()
-    expected_version = payload.get("version")
-    reason = payload.get("reason", "")
-    fields = {}
-    for key in (
-        "task_type", "priority", "status", "station_id", "zone_id",
-        "required_skills", "required_device_capabilities", "release_at", "earliest_start",
-        "due_at", "estimated_duration_sec", "predecessor_task_ids", "exclusive_resource_ids",
-        "load_level", "safety_critical",
-    ):
-        v = _task_field(payload, key)
-        if v is not None:
-            fields[key] = v
+    try:
+        _require_task_payload(payload)
+        expected_version = payload.get("version")
+        reason = payload.get("reason", "")
+        fields = {}
+        for key in (
+            "task_type", "priority", "status", "station_id", "zone_id",
+            "required_skills", "required_device_capabilities", "release_at", "earliest_start",
+            "due_at", "estimated_duration_sec", "predecessor_task_ids", "exclusive_resource_ids",
+            "load_level", "safety_critical",
+        ):
+            v = _task_field(payload, key)
+            if v is not None:
+                fields[key] = v
+    except ValueError as e:
+        return h._new_error("invalid_params", str(e), 400)
     if not fields:
         return h._new_error("invalid_params", "无可更新字段", 400)
     try:
@@ -291,7 +305,7 @@ def api_scheduling_request_detail(ctx, h, request_id):
 def api_scheduling_plans(ctx, h, req_meta):
     """GET /api/scheduling/plans — 方案列表（?status= 过滤）。"""
     if ctx.scheduler is None:
-        return h.send_json({"items": [], "now": now_iso()})
+        return h._new_error("not_ready", "调度服务未启用，拒绝伪造空列表", 503)
     status = h.arg("status") or None
     items = [
         p.to_dict()
@@ -384,7 +398,7 @@ def api_replan_plan(ctx, h, plan_id, payload):
 def api_assignments(ctx, h, req_meta):
     """GET /api/assignments — 派工列表（?status= 过滤）。"""
     if ctx.scheduler is None:
-        return h.send_json({"items": [], "now": now_iso()})
+        return h._new_error("not_ready", "调度服务未启用，拒绝伪造空列表", 503)
     status = h.arg("status") or None
     items = [a.to_dict() for a in ctx.scheduler.list_assignments(status=status)]
     return h.send_json({"items": items, "now": now_iso()})
@@ -434,7 +448,9 @@ def route_tasks_assignments(ctx, h, req_meta):
 
 
 def route_sched_requests_list(ctx, h, req_meta):
-    items = [r.to_dict() for r in ctx.scheduler.list_requests()] if ctx.scheduler else []
+    if ctx.scheduler is None:
+        return h._new_error("not_ready", "调度服务未启用，拒绝伪造空请求列表", 503)
+    items = [r.to_dict() for r in ctx.scheduler.list_requests()]
     return h.send_json({"items": items})
 
 

@@ -22,6 +22,12 @@ VERIFY_DIR="${REPO_ROOT}/db/verify"
 # ── 模式 2：真实空库顺序执行 + verify（EWOH_PG_URL 提供时） ─────────────────
 if [[ -n "${EWOH_PG_URL:-}" ]]; then
   echo "[migration-fresh-install-check] PG 模式：EWOH_PG_URL 已提供，真实空库顺序执行"
+  # 缺 psql 时此前会以 rc=127 崩在 shell 里（"command not found"）——同样响，但读起来像脚本坏了，
+  # 而且 trap/cleanup 已经挂着。这里显式判一次，报"不可判"并单独给退出码，别让它冒充通过。
+  if ! command -v psql >/dev/null 2>&1; then
+    echo "不可判 migration_pg_apply: EWOH_PG_URL 已设但本机没有 psql（embedded-postgres 只带 initdb/pg_ctl/postgres）⇒ 这一档没跑，不折算成通过"
+    exit 3
+  fi
   SCHEMA="ewoh_fresh_gate"
   cleanup() { psql "${EWOH_PG_URL}" -v ON_ERROR_STOP=1 -q -c "DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE;" >/dev/null 2>&1 || true; }
   trap cleanup EXIT

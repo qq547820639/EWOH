@@ -205,20 +205,15 @@ export class ApprovalExpiryService {
   }
 
   /**
-   * 全部活跃租户扫描（供定时 worker 用）。
+   * 列出"最近 N 天内有审批实例"的租户（有授权才可能有到期），供 worker 逐租户扫描。
    *
-   * 只扫"最近 7 天有审批实例"的租户（有授权才可能有到期），避免全表扫租户表；
-   * 逐租户调用 `sweep`（幂等），单个租户失败不影响其它租户（如实留痕）。
+   * 这是一条**跨租户**读：`ewoh_event` 开着 RLS，没有上下文时它一律返回 0 行而不是报错
+   * （V207 实测：owner 视角 1 个租户、`ewoh_api` 无 GUC 视角 0 行，而同一个前提经 HTTP
+   * 带上下文扫描能落 2 条提醒）。所以本方法**自己不开上下文**——谁调谁负责：
+   * worker 走 `systemGlobalAdminTransaction`（P1-GUC 约定，与投递积压巡检同形），
+   * HTTP 路径由请求拦截器给上下文。
    */
-  async sweepAllActiveOrgs(options: { now?: Date; lookbackDays?: number } = {}): Promise<{
-    orgs: number;
-    created: number;
-    duplicates: number;
-    /** NO-45a：本次跨租户因"授权已失效"关闭的催办提醒条数。 */
-    resolved: number;
-    failures: Array<{ orgId: string; error: string }>;
-  }> {
-    const lookbackDays = options.lookbackDays ?? 7;
+  async listOrgsWithRecentApprovalInstances(lookbackDays = 7): Promise<string[]> {
     const rows = (await this.db.execute(sql`
       SELECT DISTINCT org_id
       FROM "ewoh_event"
@@ -226,26 +221,8 @@ export class ApprovalExpiryService {
         AND org_id IS NOT NULL
         AND created_at > now() - (${lookbackDays} || ' days')::interval
     `)) as unknown as Array<{ org_id?: string | null }>;
-    let created = 0;
-    let duplicates = 0;
-    let resolved = 0;
-    const failures: Array<{ orgId: string; error: string }> = [];
-    for (const row of rows) {
-      const orgId = String(row.org_id ?? '').trim();
-      if (!orgId) continue;
-      try {
-        const result = await this.sweep(
-          { userId: 'system', primaryOrgId: orgId, roles: ['global_admin'] } as OrgContext,
-          options,
-        );
-        created += result.created;
-        duplicates += result.duplicates;
-        resolved += result.resolved;
-      } catch (error) {
-        failures.push({ orgId, error: String(error).slice(0, 200) });
-        this.logger.error(`授权到期扫描失败 org=${orgId}: ${String(error)}`);
-      }
-    }
-    return { orgs: rows.length, created, duplicates, resolved, failures };
+    return rows
+      .map((row) => String(row.org_id ?? '').trim())
+      .filter((orgId) => orgId !== '');
   }
 }

@@ -97,6 +97,26 @@ const SNAPSHOT = {
       violations: [{ resultType: 'delivery_rejected', resultCode: 'fingerprint_mismatch', at: '2026-09-12T09:58:05.000Z' }],
       executable: false,
     },
+    {
+      // F-02：`expired` 自本轮起才真正可达（巡检是它的唯一 writer）
+      commandId: 'att-4',
+      requestId: 'ctl-4',
+      commandKey: 'dispatch_task',
+      attemptNo: 1,
+      status: 'expired',
+      deliveryState: 'expired',
+      deliveryNote: '超过授权有效期仍未收到设备回执，命令不再视为在飞（过期 ≠ 失败）',
+      sentAt: '2026-09-11T09:00:00.000Z',
+      responseAt: null,
+      revokedReason: null,
+      revokedReasonLabel: null,
+      fingerprintScheme: 'hmac-sha256:v2',
+      fingerprintVerified: true,
+      ack: null,
+      receipt: null,
+      violations: [],
+      executable: false,
+    },
   ],
 };
 
@@ -129,6 +149,12 @@ describe('ExecutionBoundaryPanel（NO-66a）', () => {
   it('违规留痕单列：投递被拒并撤回（含原因码）', () => {
     const markup = renderToStaticMarkup(<ExecutionBoundaryPanel deviceId="AGV-01" />);
     expect(markup).toContain('投递被拒并撤回（fingerprint_mismatch）');
+  });
+
+  it('F-02 过期终态可见：expired 渲染成"已超时"+ 过期说明（既不当失败也不当在飞）', () => {
+    const markup = renderToStaticMarkup(<ExecutionBoundaryPanel deviceId="AGV-01" />);
+    expect(markup).toContain('已超时');
+    expect(markup).toContain('过期 ≠ 失败');
   });
 
   it('空列表显式说明（无命令 ≠ 设备正常）', () => {

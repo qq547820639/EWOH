@@ -95,7 +95,8 @@ describe('RoleWorkbenchService', () => {
     });
 
     const result = await service.getWorkbench('operator', 'P-1', {
-      userId: 'P-1',
+      userId: 'auth-1',
+      personId: 'P-1',
       primaryOrgId: 'org-1',
       roles: ['worker'],
     });
@@ -194,12 +195,54 @@ describe('RoleWorkbenchService', () => {
   it('rejects querying another operator unless the caller is an admin', async () => {
     const service = createService(() => []);
     await expect(
-      service.getWorkbench('operator', 'OTHER-USER', {
-        userId: 'P-1',
+      service.getWorkbench('operator', 'OTHER-PERSON', {
+        userId: 'auth-1',
+        personId: 'P-1',
         primaryOrgId: 'org-1',
         roles: ['worker'],
       }),
-    ).rejects.toThrow('only query your own operator workbench');
+    ).rejects.toThrow('bound to your signed personId');
+  });
+
+  it('does not fall back from an unbound worker auth subject to assignedPersonId', async () => {
+    const service = createService((cfg) => {
+      if (cfg.table === ewohScheduleTaskStep && !cfg.isCount) return [];
+      return [];
+    });
+
+    const result = await service.getWorkbench('operator', undefined, {
+      userId: 'auth-1',
+      personId: null,
+      primaryOrgId: 'org-1',
+      roles: ['worker'],
+    });
+    const data = result.data as { mySteps: unknown[] };
+    expect(data.mySteps).toEqual([]);
+  });
+
+  it('lets a dispatcher inspect a requested operator person within the org', async () => {
+    const service = createService((cfg) => {
+      if (cfg.table === ewohScheduleTaskStep && !cfg.isCount) {
+        return [{
+          stepId: 'S1',
+          scheduleTaskId: 'WO-1',
+          name: '装配',
+          status: 'in_progress',
+          assignedPersonId: 'P-OTHER',
+          resultJson: null,
+        }];
+      }
+      return [];
+    });
+
+    const result = await service.getWorkbench('operator', 'P-OTHER', {
+      userId: 'auth-dispatcher',
+      personId: null,
+      primaryOrgId: 'org-1',
+      roles: ['dispatcher'],
+    });
+    const data = result.data as { mySteps: Array<{ stepId: string }> };
+    expect(data.mySteps).toHaveLength(1);
   });
 
   it('allows an admin to simulate another role', async () => {

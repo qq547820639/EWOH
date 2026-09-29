@@ -8,8 +8,8 @@
 -- DecisionRecord 留痕（decision_json 列；active 翻转与决策记录同一 UPDATE
 -- 原子写入）。§12 Decision History 自此覆盖策略激活决策；旧行 NULL =
 -- 未投影（读回兼容，additive）。既有受管表原地加固：managed_count/
--- physical_create_count 不变（74/77）。投影缺口/契约门失败 → 服务层 log
--- 显式 + 留 NULL（§33 绝不静默丢弃、绝不伪造；绝不阻断激活主流程 §2）。
+-- physical_create_count 不变（74/77）。投影契约门失败 → 服务层记录错误
+-- 并 fail-closed 拒绝激活。
 
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 

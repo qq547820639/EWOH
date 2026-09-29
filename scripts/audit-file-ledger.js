@@ -434,6 +434,14 @@ function cmdMerge(input) {
   console.log(`merge: ${mergedPaths.size} entries updated`);
 }
 
+function cmdPaths() {
+  // 只读子命令：把「现扫总体」原样交出去，供外部对账量具复用同一条枚举器
+  // （另写一份目录遍历会让两套读数不可比，本次读数即作废）。
+  const files = collectActiveFiles();
+  const ledger = readLedger();
+  console.log(JSON.stringify({ active: files.length, ledger: ledger.size, files }));
+}
+
 function inspectCoverage() {
   const ledger = readLedger();
   const files = collectActiveFiles();
@@ -518,7 +526,8 @@ try {
   else if (cmd === 'merge') withLedgerLock(() => cmdMerge(process.argv[3]));
   else if (cmd === 'report') cmdReport();
   else if (cmd === 'stats') cmdStats();
-  else { console.error('usage: audit-file-ledger.js generate|merge <input>|report|stats'); process.exitCode = 2; }
+  else if (cmd === 'paths') cmdPaths();
+  else { console.error('usage: audit-file-ledger.js generate|merge <input>|report|stats|paths'); process.exitCode = 2; }
 } catch (error) {
   console.error(`audit ledger: ${error.message}`);
   process.exitCode = 1;

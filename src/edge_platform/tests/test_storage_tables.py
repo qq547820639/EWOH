@@ -36,6 +36,43 @@ class _BaseStorageTest(unittest.TestCase):
         self.storage.close()
 
 
+class StoragePermissionTest(unittest.TestCase):
+    """WAL/SHM 与主库同样承载敏感事实；旧库权限异常必须在打开时收敛。"""
+
+    def test_wal_and_shm_are_restricted_for_legacy_loose_permissions(self):
+        tmp = tempfile.mkdtemp(prefix="ewoh_storage_perm_")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        db_path = os.path.join(tmp, "legacy.db")
+
+        # 构造一个已启用 WAL、且伴生文件权限异常的“旧库”。
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("CREATE TABLE legacy(x)")
+        conn.commit()
+        conn.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = db_path + suffix
+            if os.path.exists(path):
+                os.chmod(path, 0o644)
+
+        storage = Storage(db_path)
+        self.addCleanup(storage.close)
+        for suffix in ("", "-wal", "-shm"):
+            path = db_path + suffix
+            if os.path.exists(path):
+                self.assertEqual(oct(os.stat(path).st_mode & 0o777), "0o600", path)
+
+    def test_close_is_serialized_against_active_write(self):
+        tmp = tempfile.mkdtemp(prefix="ewoh_storage_close_")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        storage = Storage(os.path.join(tmp, "close.db"))
+        with storage._lock:
+            # close 请求必须等待已持锁的写路径完成，不能抢在事务中间关闭连接。
+            storage.close()
+        with self.assertRaises(sqlite3.ProgrammingError):
+            storage._db.execute("SELECT 1")
+
+
 class AuditLogTest(_BaseStorageTest):
     def test_insert_and_list(self):
         rec = self.storage.insert_audit_log(

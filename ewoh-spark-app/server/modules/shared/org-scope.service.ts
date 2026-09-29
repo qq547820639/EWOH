@@ -32,6 +32,17 @@ export interface OrgScopeResolution {
 
 export type OrgInvalidationListener = (orgId: string | null) => void;
 
+/** 组织层级出现环：继承事实不可信，调用方必须 fail-closed。 */
+export class OrgScopeHierarchyCycleError extends Error {
+  readonly cyclePath: string[];
+
+  constructor(cyclePath: string[]) {
+    super(`Organization hierarchy cycle detected: ${cyclePath.join(' -> ')}`);
+    this.name = 'OrgScopeHierarchyCycleError';
+    this.cyclePath = cyclePath;
+  }
+}
+
 /**
  * DB-backed org hierarchy provider backed by ewoh_organization.
  *
@@ -212,11 +223,17 @@ export class OrgScopeService {
   private async loadEffectiveConfig(
     orgId: string,
     seen: Set<string>,
+    path: string[] = [],
   ): Promise<{ config: Record<string, unknown>; ancestorIds: string[] }> {
     if (seen.has(orgId)) {
-      return { config: {}, ancestorIds: [] };
+      const cycleStart = path.indexOf(orgId);
+      throw new OrgScopeHierarchyCycleError([
+        ...path.slice(cycleStart),
+        orgId,
+      ]);
     }
     seen.add(orgId);
+    const pathToOrg = [...path, orgId];
 
     const org = await this.loadOrgOrThrow(orgId);
     const own = org.config ?? {};
@@ -224,7 +241,7 @@ export class OrgScopeService {
       return { config: { ...own }, ancestorIds: [] };
     }
 
-    const parent = await this.loadEffectiveConfig(org.parentId, seen);
+    const parent = await this.loadEffectiveConfig(org.parentId, seen, pathToOrg);
     return {
       config: { ...parent.config, ...own },
       ancestorIds: [...parent.ancestorIds, org.parentId],

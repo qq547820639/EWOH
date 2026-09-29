@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { sign, verify, type JwtPayload } from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import { RedisService } from '../shared/redis.service';
+import { RequestDatabaseContext } from '../../database/request-database-context';
 
 export interface AuthUser {
   userId: string;
@@ -136,6 +137,16 @@ export class AuthService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     @Optional() redis?: RedisService,
+    /**
+     * CFG-01（2026-09-22 链行为基线）：登录/令牌复核发生在**身份与租户上下文建立之前**，
+     * `OrgContextInterceptor` 只在有 `userContext` 时才把请求包进事务，所以这条读
+     * 天然落在"请求上下文内无事务 store"的格子里 —— `EWOH_DB_REQUIRE_TX=1`（生产建议
+     * 开启的租户隔离兜底）一开就 503，兜底形同虚设。
+     * 这里显式给它一个**系统事务**（无 GUC，走 SECURITY DEFINER 的 `ewoh_find_active_user`，
+     * 与 systemTransaction 的约定一致：不依赖 RLS 的表/函数），而不是给整条路由开后门。
+     * 缺省（未注入，如单测直接 new）时退回原句柄行为。
+     */
+    @Optional() private readonly requestDatabaseContext?: RequestDatabaseContext,
   ) {
     this.redis = redis ?? new RedisService();
   }
@@ -370,11 +381,15 @@ export class AuthService {
 
   private async findUser(username: string): Promise<AuthUser | null> {
     try {
-      const rows = await (this.db as {
-        execute: (query: unknown) => Promise<Array<Record<string, unknown>>>;
-      }).execute(
-        sql`select username, password_hash, org_id::text, roles, is_global_admin, person_id from ewoh_find_active_user(${username})`,
-      );
+      const lookup = () =>
+        (this.db as {
+          execute: (query: unknown) => Promise<Array<Record<string, unknown>>>;
+        }).execute(
+          sql`select username, password_hash, org_id::text, roles, is_global_admin, person_id from ewoh_find_active_user(${username})`,
+        );
+      const rows = this.requestDatabaseContext
+        ? await this.requestDatabaseContext.systemTransaction(lookup)
+        : await lookup();
       const row = rows[0];
       if (!row) {
         return null;
@@ -391,7 +406,13 @@ export class AuthService {
         orgId: String(row.org_id),
         personId: row.person_id == null ? null : String(row.person_id),
       };
-    } catch {
+    } catch (error) {
+      // CFG-01：这里过去是裸 catch —— 兜底开关（EWOH_DB_REQUIRE_TX=1）抛的
+      // "必须经 runInTransaction" 被改写成一句「Authentication store is unavailable」，
+      // 于是"配置错误/隔离兜底被触发"在运维面上看起来像数据库故障。HTTP 契约不变，
+      // 但成因必须留在日志里。
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`登录用户查找失败（含 EWOH_DB_REQUIRE_TX fail-closed）：${reason}`);
       throw new ServiceUnavailableException('Authentication store is unavailable');
     }
   }

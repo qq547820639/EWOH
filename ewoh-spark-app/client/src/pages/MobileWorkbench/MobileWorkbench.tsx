@@ -45,7 +45,10 @@ interface FailedMutationRecord {
 
 const MobileWorkbench = (): React.ReactElement => {
   const queryClient = useQueryClient();
-  const personId = getAuthUser()?.userId ?? '';
+  const authUser = getAuthUser();
+  const authUserId = authUser?.userId ?? '';
+  // Tasks and on-device field audits use the signed personnel-domain binding.
+  const personId = authUser?.personId?.trim() ?? '';
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [failedMutation, setFailedMutation] = useState<
@@ -87,7 +90,7 @@ const MobileWorkbench = (): React.ReactElement => {
     pendingStatuses: pendingActions.map((item) => item.status),
   });
 
-  const { settings, update: updateSettings } = useOfflineSettings(personId);
+  const { settings, update: updateSettings } = useOfflineSettings(authUserId);
 
   const workbenchQuery = useQuery({
     queryKey: queryKeys.mobileWorkbench(personId),

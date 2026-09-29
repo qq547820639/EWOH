@@ -242,6 +242,21 @@ export class IdempotencyService {
    * mutated offline body can never ride on a previously recorded outcome. The
    * side effect (`operation`) runs exactly once per key.
    */
+  private async rejectIfPayloadMismatch(
+    key: string,
+    fingerprint: string,
+  ): Promise<void> {
+    const recordedFingerprint = await this.payloadStore.get(key);
+    if (recordedFingerprint !== undefined && recordedFingerprint !== fingerprint) {
+      throw new ConflictException({
+        message: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+        idempotencyKey: key,
+        detail:
+          'The idempotency key was already used with a different payload and cannot be reused.',
+      });
+    }
+  }
+
   async executeWithPayload<T>(
     key: string,
     payload: unknown,
@@ -250,20 +265,14 @@ export class IdempotencyService {
     const fingerprint = computeFingerprint(payload ?? {});
     const existing = await this.lookup<T>(key);
     if (existing !== undefined) {
-      const recordedFingerprint = await this.payloadStore.get(key);
-      if (
-        recordedFingerprint !== undefined &&
-        recordedFingerprint !== fingerprint
-      ) {
-        throw new ConflictException({
-          message: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
-          idempotencyKey: key,
-          detail:
-            'The idempotency key was already used with a different payload and cannot be reused.',
-        });
-      }
+      await this.rejectIfPayloadMismatch(key, fingerprint);
       return existing;
     }
+    // A failed attempt leaves the payload binding behind on purpose: the key
+    // has been “spent” for that payload even though no response was recorded.
+    // This also closes the retry path where a caller mutates the payload after
+    // a failed side effect.
+    await this.rejectIfPayloadMismatch(key, fingerprint);
     // R2-SDB-005：占位式 exactly-once（同 execute）；并发不同 payload 的极端
     // 窗口（占位方尚未写指纹）读回占位方终值而非 409——指纹 409 对顺序重放
     // （离线重放主威胁）仍然成立，注释声明该并发窗口语义。
@@ -272,33 +281,25 @@ export class IdempotencyService {
       const won = await store.claim(key);
       if (!won) {
         const settled = await this.awaitSettled<T>(key);
-        const recordedFingerprint = await this.payloadStore.get(key);
-        if (
-          recordedFingerprint !== undefined &&
-          recordedFingerprint !== fingerprint
-        ) {
-          throw new ConflictException({
-            message: 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
-            idempotencyKey: key,
-            detail:
-              'The idempotency key was already used with a different payload and cannot be reused.',
-          });
-        }
+        await this.rejectIfPayloadMismatch(key, fingerprint);
         return settled;
       }
+      // Bind the payload BEFORE the side effect. The response/result stores are
+      // separate, so writing them afterwards would leave a crash or concurrent
+      // reader in a window where the mismatch check silently passed.
+      await this.payloadStore.set(key, fingerprint);
       try {
         const response = await operation();
         await this.idempotencyStore.set<T>(key, response);
-        await this.payloadStore.set(key, fingerprint);
         return response;
       } catch (err) {
         await store.release?.(key);
         throw err;
       }
     }
+    await this.payloadStore.set(key, fingerprint);
     const response = await operation();
     await this.idempotencyStore.set<T>(key, response);
-    await this.payloadStore.set(key, fingerprint);
     return response;
   }
 }

@@ -280,7 +280,7 @@ describe('Agent Policy TCK（NO-06c 决策表）', () => {
       command: 'propose_plan',
       payload: {},
     });
-    const rejected = await service.resolveApproval('ORG-TCK', proposed2.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] });
+    const rejected = await service.resolveApproval('ORG-TCK', proposed2.approvalId!, false, { userId: 'lead.chen', roles: ['workshop_lead'] }, '现场条件不满足');
     expect(rejected.outcome).toBe('rejected');
   });
 });

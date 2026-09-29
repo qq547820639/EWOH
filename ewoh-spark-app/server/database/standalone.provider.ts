@@ -114,6 +114,34 @@ const PG_CONNECTION_ERROR_CODES = new Set([
   'CONNECT_TIMEOUT',
 ]);
 
+/**
+ * PostgreSQL **服务端**发出的 Class 57（operator_intervention）会话/连接级 SQLSTATE。
+ * 名字与语义取自官方文档附录 A.1（"PostgreSQL Error Codes"，Table A.1）：
+ *   57P01 admin_shutdown · 57P02 crash_shutdown · 57P03 cannot_connect_now · 57P05 idle_session_timeout
+ *
+ * 为什么单独一组、且为什么敢让它活下来：通用 socket 码（ECONNRESET）可能来自任何出站调用，
+ * 拿它判"数据库抖动"会张冠李戴；而五字符 SQLSTATE **只可能由 PostgreSQL 自己产出**，
+ * 这四条码说的都是"这条连接／这个实例此刻不可用"，不是任何业务事实。CRASH-01 的实测形状
+ * 就是 57P01：终止一个在飞后端 ⇒ 该 FATAL 以 unhandledRejection 形态到顶层，被旧判据归成
+ * "非连接类"⇒ 摘监听后原样抛出 ⇒ 整个 API 一起消失（tmp/v196-killall.log 的 killall-2）。
+ *
+ * 刻意**不收**：57P04 database_dropped（这个库真没了，不是抖动，交给编排层重启才是正解）、
+ * 57014 query_canceled（语句级取消，属请求侧事实，应在请求路径里被判掉），
+ * 以及其余一切 SQLSTATE（23505／40P01…都是业务或完整性事实）。
+ */
+const PG_SERVER_TERMINATION_CODES = new Set([
+  '57P01',
+  '57P02',
+  '57P03',
+  '57P05',
+]);
+
+/** 是否为 PostgreSQL 服务端发出的会话终止类 SQLSTATE（只认上面那四条）。 */
+export function isPgServerTerminationFault(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== null && PG_SERVER_TERMINATION_CODES.has(code);
+}
+
 function errorCode(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) {
     return null;
@@ -122,16 +150,20 @@ function errorCode(error: unknown): string | null {
   return typeof code === 'string' && code.trim() ? code : null;
 }
 
-/** 是否为连接级故障（驱动竞态崩溃 或 驱动连接错误码）。 */
+/** 是否为连接级故障：驱动自有码、服务端 Class 57 会话终止码，或驱动写/关竞态。 */
 export function isPgConnectionFault(error: unknown): boolean {
-  if (isPgWriteRaceFault(error)) {
+  if (isPgWriteRaceFault(error) || isPgServerTerminationFault(error)) {
     return true;
   }
   const code = errorCode(error);
   return code !== null && PG_CONNECTION_ERROR_CODES.has(code);
 }
 
-export type PgFaultKind = 'pg-write-race' | 'pg-connection' | 'unclassified';
+export type PgFaultKind =
+  | 'pg-write-race'
+  | 'pg-connection'
+  | 'pg-server-terminate'
+  | 'unclassified';
 
 export interface ProcessFaultClassification {
   kind: PgFaultKind;
@@ -152,6 +184,13 @@ export function classifyProcessFault(error: unknown): ProcessFaultClassification
     };
   }
   const code = errorCode(error);
+  if (code !== null && PG_SERVER_TERMINATION_CODES.has(code)) {
+    return {
+      kind: 'pg-server-terminate',
+      recoverable: true,
+      reason: `PostgreSQL 服务端会话终止码 code=${code}（Class 57，只可能来自数据库本身）`,
+    };
+  }
   if (code !== null && PG_CONNECTION_ERROR_CODES.has(code)) {
     return {
       kind: 'pg-connection',

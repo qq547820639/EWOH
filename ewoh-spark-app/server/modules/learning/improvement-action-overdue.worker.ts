@@ -13,6 +13,29 @@ import { AuditService } from '../shared/audit.service';
  *   · 单次失败只留痕不退出；
  *   · 默认 30 分钟一次，`IMPROVEMENT_ACTION_OVERDUE_WORKER_DISABLED=1` 可关。
  */
+/**
+ * 巡检间隔解析：正有限数才接受，非法/缺失回退默认（invalid 时回调留痕）。
+ *
+ * 与 `control-delivery-backlog.worker.ts#backlogIntervalMs` 同一条纪律：Node 把
+ * `setInterval(fn, NaN)` 当成 **1ms**（本机实测 120ms 窗口内回调 96 次），所以
+ * "把表达式写进 env"这类手误会让 30 分钟巡检变成每毫秒扫一次库的热循环。
+ * 配置错误必须可见，不许静默变成最坏值。
+ */
+export function overdueIntervalMs(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  fallback = 30 * 60_000,
+  onInvalid?: (message: string) => void,
+): number {
+  const raw = env.IMPROVEMENT_ACTION_OVERDUE_WORKER_INTERVAL_MS;
+  if (raw == null || String(raw).trim() === '') return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    onInvalid?.(`非法 IMPROVEMENT_ACTION_OVERDUE_WORKER_INTERVAL_MS "${raw}"，回退默认 ${fallback}ms（配置错误必须可见）`);
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
 @Injectable()
 export class ImprovementActionOverdueWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImprovementActionOverdueWorkerService.name);
@@ -30,7 +53,7 @@ export class ImprovementActionOverdueWorkerService implements OnModuleInit, OnMo
       this.logger.log('改进行动项逾期 worker 已禁用（IMPROVEMENT_ACTION_OVERDUE_WORKER_DISABLED=1）');
       return;
     }
-    const intervalMs = Number(process.env.IMPROVEMENT_ACTION_OVERDUE_WORKER_INTERVAL_MS ?? 30 * 60_000);
+    const intervalMs = overdueIntervalMs(process.env, 30 * 60_000, (message) => this.logger.warn(message));
     this.timer = setInterval(() => void this.tick(), intervalMs);
     this.timer.unref?.();
     this.logger.log(`改进行动项逾期 worker 已启动（interval=${intervalMs}ms）`);

@@ -21,6 +21,14 @@ export function toOrgContext(actor?: OrgContext): OrgContext {
     userId: actor?.userId ?? 'system',
     primaryOrgId: actor?.primaryOrgId ?? '',
     role: actor?.role,
+    // RCPTCTX-01（V265）：`roles`（JWT 角色集）与 `personId`（账号↔人员绑定）此前在这一步被丢掉，
+    // 于是 POST /api/scheduler/feedback/actuals 这条回执腿读不到任何特权角色、也读不到绑定人员，
+    // 除 global_admin 外一律 ACTUALS_ADVANCEMENT_FORBIDDEN —— 而同一谓词的姊妹腿
+    // （POST /api/scheduler/executions/:assignmentId/update）原样透传 ctx，同一账号可通行。
+    // 这两个字段只进料"谁能推进回执"的判定，不进 buildGucSettings（那里只用 userId/orgIds/isGlobalAdmin），
+    // 因此转发它们不改变 GUC 与行级可见性。
+    roles: actor?.roles,
+    personId: actor?.personId,
     accessibleOrgIds:
       actor?.accessibleOrgIds ??
       (actor?.primaryOrgId ? [actor.primaryOrgId] : []),

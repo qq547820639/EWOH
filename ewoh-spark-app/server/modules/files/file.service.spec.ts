@@ -55,8 +55,8 @@ class FakeDriver implements StorageDriver {
   }
 }
 
-const orgA = 'org-a';
-const orgB = 'org-b';
+const orgA = '11111111-1111-4111-8111-111111111111';
+const orgB = '22222222-2222-4222-8222-222222222222';
 const userA: FileAccessContext = { orgId: orgA, userId: 'user-1' };
 const admin: FileAccessContext = { orgId: orgA, userId: 'admin', isGlobalAdmin: true };
 const UUID_1 = '00000000-0000-4000-8000-000000000001';

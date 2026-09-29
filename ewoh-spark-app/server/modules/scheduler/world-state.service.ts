@@ -569,6 +569,7 @@ export class WorldStateSnapshotService {
       .entityContentVersions;
     const evidence = (currentState as { entityEvidence?: WorldStateSnapshot['entityEvidence'] })
       .entityEvidence ?? {};
+    const beforeEvidence = snapshot.entityEvidence ?? {};
     // 老快照/老采集（缺内容版本）→ 严格口径。
     const strict = !beforeContent || !afterContent;
 
@@ -582,11 +583,30 @@ export class WorldStateSnapshotService {
         beforeContent?.[key] === undefined ||
         afterContent?.[key] === undefined ||
         beforeContent[key] !== afterContent[key];
-      if (contentDiffers) {
+      /**
+       * FR-01（V67c 实测定因）：内容版本里混着**新鲜度派生值**——设备没有权威 status 列
+       * （投影状态 = faultCode ∧ 新鲜度，`resource-projection.service.ts:337-343`），人员过期即
+       * UNKNOWN（`:231-233`），而非 FRESH 时 `freshnessAwareStatus` 又返回哨兵串（本文件 :1283-1286）。
+       * 于是"心跳过了 60 秒"会把内容版本改掉，伪装成"事实变了"，并绕过下面那道 `used` 闸门
+       * ——一台与方案无关的沉默设备就能让所有在批方案不可审批，违反本方法顶部 545-547 的自述不变量。
+       *
+       * 处置：能**完全由新鲜度迁移解释**的内容差异（两侧 `dataQuality` 不同、且至少一侧已不新鲜）
+       * 改判到证据通道，按"方案是否依赖该实体"分流。这与既有用例
+       * 「NO-64a 设备沉默但方案**不依赖**它 → 不阻断审批」同一口径，不是新发明的规则。
+       * 边界（诚实）：若某实体同时发生"权威列变化 + 新鲜度迁移"，这里会被并入证据通道——
+       * 方案依赖它时仍然拒绝（`used && !FRESH` → EVIDENCE_STALE），不依赖时放行；
+       * 而安全封锁/工位容量/任务可派发性/预占冲突在派工路径另有实时复核（见 `assertFreshForWave` 注释）。
+       * `strict`（老快照缺内容版本）一律按事实变化处理，不因本条放宽。
+       */
+      const qBefore = beforeEvidence[key]?.dataQuality;
+      const qAfter = evidence[key]?.dataQuality;
+      const freshnessExplained =
+        !strict && qBefore !== qAfter && (qBefore !== 'FRESH' || qAfter !== 'FRESH');
+      if (contentDiffers && !freshnessExplained) {
         contentChanged.push(key);
         continue;
       }
-      // 只有证据变化：看方案是否依赖它、以及它现在还可不可信。
+      // 只有证据变化（或内容变化可完全由新鲜度迁移解释）：看方案是否依赖它、以及它现在还可不可信。
       const quality = evidence[key]?.dataQuality ?? 'UNKNOWN';
       const used = planKeys === null ? false : planKeys.has(key);
       if (used && quality !== 'FRESH') {

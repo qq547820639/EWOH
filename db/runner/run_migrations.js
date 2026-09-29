@@ -274,6 +274,12 @@ const FILES = {
   standalone_dead_letter_reason_registry: path.join(root, 'db/migrations/standalone_101_dead_letter_reason_registry.sql'),
   standalone_dead_letter_reason_registry_rollback: path.join(root, 'db/migrations/standalone_101_dead_letter_reason_registry.rollback.sql'),
   standalone_dead_letter_reason_registry_verify: path.join(root, 'db/verify/standalone_101_dead_letter_reason_registry.verify.sql'),
+  standalone_control_sent_state_pair: path.join(root, 'db/migrations/standalone_106_control_sent_state_pair.sql'),
+  standalone_control_sent_state_pair_rollback: path.join(root, 'db/migrations/standalone_106_control_sent_state_pair.rollback.sql'),
+  standalone_control_sent_state_pair_verify: path.join(root, 'db/verify/standalone_106_control_sent_state_pair.verify.sql'),
+  standalone_control_request_status_contract: path.join(root, 'db/migrations/standalone_107_control_request_status_contract.sql'),
+  standalone_control_request_status_contract_rollback: path.join(root, 'db/migrations/standalone_107_control_request_status_contract.rollback.sql'),
+  standalone_control_request_status_contract_verify: path.join(root, 'db/verify/standalone_107_control_request_status_contract.verify.sql'),
   standalone_control_command_delivered_at: path.join(root, 'db/migrations/standalone_095_control_command_delivered_at.sql'),
   standalone_control_command_delivered_at_rollback: path.join(root, 'db/migrations/standalone_095_control_command_delivered_at.rollback.sql'),
   standalone_control_command_delivered_at_verify: path.join(root, 'db/verify/standalone_095_control_command_delivered_at.verify.sql'),
@@ -724,6 +730,12 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-open-quality-alert-orgs',
   '--rollback-standalone-open-quality-alert-orgs',
   '--verify-standalone-open-quality-alert-orgs',
+  '--apply-standalone-control-sent-state-pair',
+  '--rollback-standalone-control-sent-state-pair',
+  '--verify-standalone-control-sent-state-pair',
+  '--apply-standalone-control-request-status-contract',
+  '--rollback-standalone-control-request-status-contract',
+  '--verify-standalone-control-request-status-contract',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
@@ -817,6 +829,8 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-runtime-role': ['standalone_runtime_role_verify', 'standalone_003_verified', 'standalone_003 runtime role (ewoh_api 最小权限 + service_role 成员 + search_path 固定)'],
   '--verify-standalone-scheduling-persistence': ['standalone_scheduling_persistence_verify', 'standalone_007_verified', 'standalone_007 scheduling persistence (plan/assignment V2 元数据列)'],
   '--verify-standalone-phase2-realtime': ['standalone_phase2_realtime_verify', 'standalone_008_verified', 'standalone_008 phase2 realtime (outbox entity 列 + sequence 索引)'],
+  '--verify-standalone-control-sent-state-pair': ['standalone_control_sent_state_pair_verify', 'standalone_106_verified', 'standalone_106 control sent state pair (status=sent requires sent_at)'],
+  '--verify-standalone-control-request-status-contract': ['standalone_control_request_status_contract_verify', 'standalone_107_verified', 'standalone_107 control request status contract (draft 别名清零 + ck_control_request_status_contract 约束生效)'],
 };
 
 /** 复杂型 verify 命令（多字段断言 / DO 块自证，保留独立 handler 分支）。 */
@@ -971,6 +985,9 @@ function renderAdminSeed(sqlText) {
   const displayName = process.env.EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME || username;
   if (!username || !/^[A-Za-z0-9_.@-]{3,128}$/.test(username)) {
     throw new Error('EWOH_BOOTSTRAP_ADMIN_USERNAME must be 3-128 safe characters');
+  }
+  if (displayName.length > 128) {
+    throw new Error('EWOH_BOOTSTRAP_ADMIN_DISPLAY_NAME must be at most 128 characters');
   }
   if (!password || password.length < 12) {
     throw new Error('EWOH_BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters');
@@ -1856,7 +1873,16 @@ function main() {
       '--rollback-standalone-learning-signal': 'standalone_learning_signal_rollback',
       '--apply-standalone-open-quality-alert-orgs': 'standalone_open_quality_alert_orgs',
       '--rollback-standalone-open-quality-alert-orgs': 'standalone_open_quality_alert_orgs_rollback',
+      '--apply-standalone-control-sent-state-pair': 'standalone_control_sent_state_pair',
+      '--rollback-standalone-control-sent-state-pair': 'standalone_control_sent_state_pair_rollback',
+      '--verify-standalone-control-sent-state-pair': 'standalone_control_sent_state_pair_verify',
+      '--apply-standalone-control-request-status-contract': 'standalone_control_request_status_contract',
+      '--rollback-standalone-control-request-status-contract': 'standalone_control_request_status_contract_rollback',
+      '--verify-standalone-control-request-status-contract': 'standalone_control_request_status_contract_verify',
     }[command];
+    if (!which) {
+      throw new Error(`No migration file mapped for command: ${command}`);
+    }
     let sqlText = substitute(read(FILES[which]), schema);
     if (['--seed-users', '--seed-standalone-admin'].includes(command)) {
       sqlText = renderAdminSeed(sqlText);

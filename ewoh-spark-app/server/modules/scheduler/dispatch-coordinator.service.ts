@@ -24,6 +24,7 @@ import { AuditService } from '../shared/audit.service';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { WorldStateSnapshotService } from './world-state.service';
+import { dispatchAssignmentByCAS } from './scheduling-assignment.lifecycle';
 import { ResourceReservationService, type ReservationInput } from './resource-reservation.service';
 import {
   projectDispatchDecision,
@@ -387,8 +388,8 @@ export class DispatchCoordinatorService {
           }
         }
         const dispatchedIds = new Set(assignments.map((a) => a.assignmentId));
-        const remaining = proposed.filter((a) => !dispatchedIds.has(a.assignmentId));
-        waveRemaining = remaining;
+        // WAVE-01：这里**不再**算 remaining——那是一次锁外读得出的结论（见下面 :526 一段的说明）。
+        // 波次边界一律以资源锁／事务内复查之后的那次重读为准。
         assignmentsDispatched = [...dispatchedIds];
         assignmentCount = assignments.length;
 
@@ -522,10 +523,33 @@ export class DispatchCoordinatorService {
           });
         }
 
+        // WAVE-01：波次收敛判据必须取**资源锁之后**的真值，不能沿用 :367 那次锁外读。
+        // 上面那个 `remaining` 是在设备行锁（:437）与事务内复查之前算出来的：并发的另一波
+        // 完全可能在这中间把剩下的 assignment 派完并提交。父行的 CAS 谓词只看
+        // `plan.status='approved'`（不含任何子表列）⇒ 它挡不住这种交错，实测末态是
+        // 「全部 assignment 都已 dispatched、方案停在 approved」，且响应里的
+        // `remainingAssignmentIds` 还指着一条形同"已派完"的 assignment（V327 复现，串行对照不红）。
+        // 修法与链上那五处同口径：锁 → 读 → 写——在锁与复查都过完之后重读一次待派工集合，
+        // 再决定要不要进契约终态；本波自己那几条从差集里扣掉，不依赖子表写入的先后。
+        //
+        // 重读的**形状**照 :367：取回本方案全部 assignment、在代码里显式分区，
+        // 不写 `where(status='approved')`。理由不是风格：单测替身的假 DB 对这个谓词不生效
+        // （见 `__tests__/dispatch-wave.spec.ts:18-26` 的保真度记录——上一轮正是因此把波次边界
+        // 从 SQL 谓词改成代码分区），写出来的话"分两波派完"那条用例会在**产品正确**的情况下红，
+        // 并把这一族重新变成"只有真库才验得到"。
+        const afterLockRows = await this.db
+          .select()
+          .from(ewohSchedulingPlanAssignment)
+          .where(and(eq(ewohSchedulingPlanAssignment.planId, planId), assignmentOrgCond));
+        const remainingAfterLocks = afterLockRows
+          .filter((row) => row.status === 'approved' && !dispatchedIds.has(row.assignmentId))
+          .map((row) => ({ assignmentId: String(row.assignmentId) }));
+        waveRemaining = remainingAfterLocks;
+
         // 5. CAS 更新方案状态（double-dispatch 守卫）。
         // 分波次语义：只有本波覆盖全部待派工 assignment 时才进入契约终态
         // `dispatched`；否则保持 `approved`（方案尚未全部转任务）。
-        if (remaining.length === 0) {
+        if (remainingAfterLocks.length === 0) {
           const updated = await this.db
             .update(ewohSchedulePlan)
             .set({ status: 'dispatched' })
@@ -655,19 +679,12 @@ export class DispatchCoordinatorService {
         // 在提交前被并发取消/变更，本波必须整体失败，而不是把新状态覆盖回去。
         for (const a of assignments) {
           const assignmentVersion = a.version ?? 1;
-          const [updatedAssignment] = await this.db
-            .update(ewohSchedulingPlanAssignment)
-            .set({
-              status: 'dispatched',
-              version: assignmentVersion + 1,
-            })
-            .where(and(
-              eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId),
-              assignmentOrgCond,
-              eq(ewohSchedulingPlanAssignment.status, a.status),
-              eq(ewohSchedulingPlanAssignment.version, assignmentVersion),
-            ))
-            .returning({ id: ewohSchedulingPlanAssignment.id });
+          const [updatedAssignment] = await dispatchAssignmentByCAS(this.db, {
+            assignmentId: a.assignmentId,
+            orgCondition: assignmentOrgCond,
+            fromStatus: a.status,
+            expectedVersion: assignmentVersion,
+          });
           if (!updatedAssignment) {
             throw new ConflictException(
               `ASSIGNMENT_CONCURRENT_UPDATE: assignment=${a.assignmentId} changed during dispatch`,

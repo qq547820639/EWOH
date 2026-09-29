@@ -15,7 +15,9 @@ import { ReplanCoordinatorService } from '../replan-coordinator.service';
 import { TriggerService } from '../trigger.service';
 import { ewohReplanTrigger, ewohSchedulingRun } from '@server/database/schema';
 import type { WorldStateSnapshot } from '@shared/api.interface';
-import { buildSnapshot } from './scheduler-test-helpers';
+import {
+  buildSnapshot, fakeRunWhereBuilder
+} from './scheduler-test-helpers';
 
 /** 构造带可配置 replan 风暴配置的 ReplanCoordinatorService（每个实例独立内存态）。 */
 function makeReplanInstance(opts: {
@@ -115,7 +117,7 @@ const SHORT_CONFIG = {
 /** db.update 最小链（handleTrigger 成功路径 run 状态闭合）。 */
 function makeUpdateChain() {
   return jest.fn(() => ({
-    set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
+    set: jest.fn(() => ({ where: jest.fn(() => fakeRunWhereBuilder()) })),
   }));
 }
 
@@ -270,7 +272,7 @@ describe('P0-5 durable 幂等（ewoh_replan_trigger.triggerKey 唯一键）', ()
         },
       })),
       update: jest.fn(() => ({
-        set: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
+        set: jest.fn(() => ({ where: jest.fn(() => fakeRunWhereBuilder()) })),
       })),
     };
     return { db, triggerRows };

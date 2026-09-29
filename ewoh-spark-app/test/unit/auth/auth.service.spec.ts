@@ -33,6 +33,77 @@ describe('standalone JWT auth', () => {
     return { service: new AuthService({ execute } as never), execute };
   }
 
+  /**
+   * CFG-01（2026-09-22 链行为基线 §5.4）：`EWOH_DB_REQUIRE_TX=1` 是注释里写着
+   * "生产建议开启"的租户隔离兜底，但登录发生在身份/租户上下文建立之前，
+   * 请求没有被包进事务 ⇒ 兜底一开就把整条链打在 503 上（实测 D 段 10/10 红）。
+   * 修法不是给路由开后门，而是给这条读一个**显式系统事务**。
+   */
+  const userRow = () => [
+    {
+      username: 'admin',
+      password_hash: passwordHash,
+      org_id: 'f3bdfae3-88d0-49f7-9088-fd7b8df80b8c',
+      roles: ['operator'],
+      is_global_admin: true,
+    },
+  ];
+
+  it('CFG-01：登录读必须走显式系统事务（而不是在请求上下文里回落根句柄）', async () => {
+    const execute = jest.fn().mockResolvedValue(userRow());
+    const systemTransaction = jest.fn((op: () => Promise<unknown>) => op());
+    const service = new AuthService(
+      { execute } as never,
+      undefined,
+      { systemTransaction } as never,
+    );
+
+    const tokens = await service.login('admin', 'correct-password');
+
+    expect(tokens.user.userId).toBe('admin');
+    expect(systemTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  /** 未注入上下文（单测/旧装配）时退回原句柄行为——不能因为兜底改造而拒绝服务。 */
+  it('CFG-01 对照：无 RequestDatabaseContext 时仍按原路径查库', async () => {
+    const execute = jest.fn().mockResolvedValue(userRow());
+    const service = new AuthService({ execute } as never);
+
+    await expect(service.login('admin', 'correct-password')).resolves.toBeTruthy();
+    expect(execute).toHaveBeenCalled();
+  });
+
+  /**
+   * 同一处的第二半：裸 catch 会把兜底抛错改写成「Authentication store is unavailable」，
+   * 运维面看到的就是"数据库故障"。HTTP 契约保持 503，但**成因必须留在日志里**。
+   */
+  it('CFG-01：fail-closed 的成因必须留痕，不能只报"存储不可用"', async () => {
+    const service = new AuthService(
+      { execute: jest.fn() } as never,
+      undefined,
+      {
+        systemTransaction: jest.fn(() =>
+          Promise.reject(
+            new Error('RequestDatabaseContext: HTTP 请求路径必须经 runInTransaction（fail-closed）'),
+          ),
+        ),
+      } as never,
+    );
+    const logged: string[] = [];
+    (service as unknown as {
+      logger: { error: (m: string) => void };
+    }).logger = {
+      error: (m: string) => {
+        logged.push(m);
+      },
+    };
+
+    await expect(service.login('admin', 'correct-password')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(logged.join(' ')).toContain('必须经 runInTransaction');
+  });
+
   it('accepts a bcrypt password and rejects an incorrect password', async () => {
     const { service } = createService();
 

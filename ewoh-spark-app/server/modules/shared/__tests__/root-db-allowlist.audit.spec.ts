@@ -13,8 +13,16 @@
  *  - server/database/standalone-database.module.ts        —— @Global 导出处；
  *  - server/database/standalone.provider.ts               —— 工厂提供处；
  *  - server/modules/work-orchestration/domain-persistence.service.ts
- *    —— 唯一业务消费者：经 RequestDatabaseContext.systemTransaction
+ *    —— 业务消费者：经 RequestDatabaseContext.systemTransaction
  *      （显式系统事务 API，7.1/7.2）访问根句柄；
+ *  - server/modules/auth/auth.service.ts
+ *      —— 业务消费者（CFG-01，2026-09-22）：登录/令牌复核在身份与租户建立之前，
+ *      读 SECURITY DEFINER 函数 ewoh_find_active_user；不开兜底时它落在
+ *      「请求上下文内无事务 store」的格子，开兜底则整条链起不来（见基线文档 §5.3q）。
+ *  - server/modules/health/health.controller.ts
+ *      —— 业务消费者（CFG-01b，2026-09-22 链外普查）：`@Public` 就绪探针同样落在
+ *      「有请求上下文、无事务 store」的格子里，读的是 `select 1`（不涉租户数据）。
+ *      不开显式系统事务 ⇒ 打开推荐兜底后就绪探针恒 503（见基线文档 §5.3u）。
  *  - test/helpers/e2e-app.ts                              —— 测试助手（关闭连接池）。
  *
  * 新增任何其他模块引用根句柄 → 测试失败（回归捕获，可靠）。
@@ -164,6 +172,27 @@ describe('D7 根数据库句柄访问白名单审计（STANDALONE_ROOT_DATABASE�
     const systemTxAallowlist = new Set([
       'server/database/request-database-context.ts',
       'server/modules/work-orchestration/domain-persistence.service.ts',
+      // CFG-01（2026-09-22）：登录/令牌复核发生在**身份与租户上下文建立之前**，
+      // 而读的是 SECURITY DEFINER 的 ewoh_find_active_user（standalone_078，本就设计为
+      // 跨租户可调）——这正是 systemTransaction 的约定用途。
+      // 刻意不用 systemGlobalAdminTransaction：那会在一个尚未鉴权完成的请求里
+      // 打开 app.is_global_admin=true，比所需权限更大。
+      'server/modules/auth/auth.service.ts',
+      // CFG-01b（2026-09-22 链外普查）：`/health/ready` 是 `@Public` 探活——OrgContextInterceptor
+      // 只在 request.userContext 存在时建事务，所以它天然落在"有请求上下文、无事务 store"的格子里。
+      // 读的是 `select 1`（无任何租户数据），属"进程/基础设施跨切面"用法 ⇒ 显式系统事务是正解；
+      // 不开它就等于：按注释建议打开 EWOH_DB_REQUIRE_TX=1 后，就绪探针永远 503（实测 A/B：
+      // 同一 spec 关=32 passed、开=health/ready 503）。刻意仍不用 systemGlobalAdminTransaction
+      // ——匿名探活不需要、也不该拿到 `app.is_global_admin=true` 这种更大权限。
+      'server/modules/health/health.controller.ts',
+      // AUTH-02（2026-09-24 链行为基线 §5.3em）：AccessTokenGuard 的 org 层级解析发生在
+      // 身份与租户上下文建立之前——守卫先于 TracingInterceptor（请求上下文建立点）与
+      // OrgContextInterceptor（请求事务建立点）执行，读的是 SECURITY DEFINER 的
+      // ewoh_find_org*（本就设计为身份前可调）⇒ 与 auth.service.ts 同款收口：
+      // 显式 systemTransaction（无 GUC），不用 systemGlobalAdminTransaction（授权面
+      // 解析不需要、也不该在鉴权完成前打开 is_global_admin）。V189 实测（隔离集群
+      // Bearer → /api/auth/me 两档开关）：授权面在两档下都是全层级，零行为变化。
+      'server/modules/shared/access-token.guard.ts',
       'server/modules/shared/__tests__/root-db-allowlist.audit.spec.ts',
     ]);
     const violations: string[] = [];

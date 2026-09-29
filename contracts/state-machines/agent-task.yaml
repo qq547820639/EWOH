@@ -8,11 +8,11 @@ states:
   - failed
   - cancelled
 transitions:
-  - { from: created, to: dispatched, role: orchestrator, condition: dispatch }
-  - { from: dispatched, to: in_progress, role: agent, condition: start }
-  - { from: in_progress, to: completed, role: agent, condition: complete }
-  - { from: in_progress, to: failed, role: agent, condition: fail }
-  - { from: created, to: cancelled, role: orchestrator, condition: cancel }
-  - { from: dispatched, to: cancelled, role: orchestrator, condition: cancel }
-  - { from: in_progress, to: cancelled, role: orchestrator, condition: cancel }
+  - { from: created, to: dispatched, role: orchestrator, condition: dispatch, kind: action }
+  - { from: dispatched, to: in_progress, role: agent, condition: start, kind: action }
+  - { from: in_progress, to: completed, role: agent, condition: complete, kind: action }
+  - { from: in_progress, to: failed, role: agent, condition: fail, kind: action }
+  - { from: created, to: cancelled, role: orchestrator, condition: cancel, kind: action }
+  - { from: dispatched, to: cancelled, role: orchestrator, condition: cancel, kind: action }
+  - { from: in_progress, to: cancelled, role: orchestrator, condition: cancel, kind: action }
 terminal: [completed, failed, cancelled]

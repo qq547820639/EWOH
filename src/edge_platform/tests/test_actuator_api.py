@@ -17,6 +17,8 @@
 import os
 import sys
 import unittest
+from contextlib import contextmanager
+from unittest import mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _fixtures import _ServerFixture  # noqa: E402
 
 from edge_platform.edge.adapters.actuator import ACTUATOR_STATES, ActuatorAdapter  # noqa: E402
+from edge_platform.edge.adapters.actuator.protocol import authorization_fingerprint_v2  # noqa: E402
 
 
 class ActuatorApiTest(unittest.TestCase):
@@ -157,6 +160,137 @@ class ActuatorApiTest(unittest.TestCase):
         )
         self.assertEqual(status, 404)
         self.assertEqual(body["error"], "unknown actuator")
+
+
+class ProductionActuatorAuthorizationTest(unittest.TestCase):
+    """Production high-risk HTTP commands cannot be driven by a shaped-but-unapproved ref."""
+
+    SECRET = "edge-control-test-secret"
+
+    def setUp(self):
+        self.fx = _ServerFixture(prefix="ewoh_agv_prod_auth_")
+        self.adapter = ActuatorAdapter("AGV-PROD", source_type="simulated", station_id="ST-0")
+        self.adapter.start()
+        self.adapter.transport.register_station("ST-1", 2.0, 0.0)
+        self.fx.ctx.manager.register(self.adapter)
+        self.responses = []
+
+        class Handler:
+            headers = {}
+            def send_json(inner_self, payload, status=200):
+                self.responses.append((status, payload))
+                return payload
+
+        self.h = Handler()
+
+    def tearDown(self):
+        self.fx.stop()
+
+    @contextmanager
+    def _production(self):
+        from edge_platform.routes import actuators as route
+        with mock.patch.object(route, "runtime_mode", return_value="production"), mock.patch.dict(
+            os.environ, {"EWOH_CONTROL_FINGERPRINT_SECRET": self.SECRET}
+        ):
+            yield
+
+    def _request(self, body):
+        from edge_platform.routes import ReqMeta
+        from edge_platform.routes.actuators import api_actuator_command
+        return api_actuator_command(
+            self.fx.ctx,
+            self.h,
+            ReqMeta(
+                method="POST",
+                path="/api/actuators/AGV-PROD/commands",
+                path_parts=["api", "actuators", "AGV-PROD", "commands"],
+                query={},
+                body=body,
+                headers={},
+                client=("127.0.0.1", 12345),
+            ),
+        )
+
+    def _proof(self, request_id="CR-PROD-1", approval=None):
+        payload = {"targetStationId": "ST-1", "taskId": "T-PROD-1"}
+        scope = {
+            "requestId": request_id,
+            "deviceId": "AGV-PROD",
+            "commandKey": "dispatch_task",
+            "approvalInstanceId": approval,
+        }
+        fingerprint = authorization_fingerprint_v2(
+            request_id, "AGV-PROD", "dispatch_task", approval, payload, self.SECRET
+        )
+        return payload, scope, fingerprint
+
+    def test_high_risk_requires_signed_scope_and_rejects_replay(self):
+        payload, scope, fingerprint = self._proof()
+        base = {
+            "requestId": "CR-PROD-1",
+            "commandKey": "dispatch_task",
+            "authorizationRef": "control:CR-PROD-1",
+            "authorizationFingerprint": fingerprint,
+            "authorizationScope": scope,
+            "payload": payload,
+        }
+        with self._production():
+            self._request(dict(base))
+            status, result = self.responses[0]
+            self.assertEqual(status, 202)
+            self.assertTrue(result["accepted"])
+            self._request(dict(base))
+        status, replay = self.responses[1]
+        self.assertEqual(status, 409)
+        self.assertEqual(replay["reason"], "duplicate_command")
+
+        self.responses.clear()
+        forged = dict(base)
+        forged.pop("authorizationFingerprint")
+        with self._production():
+            self._request(forged)
+        status, denied = self.responses[0]
+        self.assertEqual(status, 403)
+        self.assertEqual(denied["reason"], "authorization_proof_invalid")
+
+    def test_audit_intent_failure_prevents_high_risk_send(self):
+        from unittest.mock import patch
+        payload, scope, fingerprint = self._proof("CR-AUDIT-FAIL")
+        request = {
+            "requestId": "CR-AUDIT-FAIL",
+            "commandKey": "dispatch_task",
+            "authorizationRef": "control:CR-AUDIT-FAIL",
+            "authorizationFingerprint": fingerprint,
+            "authorizationScope": scope,
+            "payload": payload,
+        }
+        with self._production(), patch.object(
+            self.fx.storage, "insert_audit_log", side_effect=RuntimeError("audit store down")
+        ):
+            self._request(request)
+        status, body = self.responses[0]
+        self.assertEqual(status, 503)
+        self.assertEqual(body["reason"], "audit_unavailable")
+        self.assertFalse(any(entry.get("accepted") for entry in self.adapter.command_log))
+
+    def test_missing_production_secret_fails_closed(self):
+        payload, scope, fingerprint = self._proof("CR-NO-SECRET")
+        from edge_platform.routes import actuators as route
+        with mock.patch.object(route, "runtime_mode", return_value="production"), mock.patch.dict(
+            os.environ, {}, clear=False
+        ):
+            os.environ.pop("EWOH_CONTROL_FINGERPRINT_SECRET", None)
+            self._request({
+                "requestId": "CR-NO-SECRET",
+                "commandKey": "dispatch_task",
+                "authorizationRef": "control:CR-NO-SECRET",
+                "authorizationFingerprint": fingerprint,
+                "authorizationScope": scope,
+                "payload": payload,
+            })
+        status, body = self.responses[0]
+        self.assertEqual(status, 503)
+        self.assertEqual(body["reason"], "authorization_secret_unconfigured")
 
 
 if __name__ == "__main__":

@@ -33,10 +33,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: 安装 ruff（3.12 才装 asyncua 跑真栈用例）
+      - name: 安装开发依赖（3.12 才装 asyncua 跑真栈用例）
+        # 改为按 requirements-dev.txt 安装：该 job 跑的正是 `make test-gated` 的全量口径，
+        # 其中 tests/test_event_envelope.py 等模块 `import yaml`——原先只装 ruff 时，
+        # 缺 PyYAML 会让整个 run 在收集期 Interrupted（本机 pytest 9.1.1 实测 V41）。
         run: |
           python -m pip install --upgrade pip
-          python -m pip install ruff
+          python -m pip install -r requirements-dev.txt
           if [ "${{ matrix.python-version }}" = "3.12" ]; then
             python -m pip install "asyncua>=2.0,<3"
           fi
@@ -44,8 +47,12 @@ jobs:
       - name: Ruff（边缘平台 + 工具链）
         run: PYTHONPATH=src python -m ruff check src/edge_platform tools
 
-      - name: Python 测试套件（标准链：src/edge_platform tests tools）
-        run: PYTHONPATH=src python -m pytest -q src/edge_platform tests tools
+      # CI-01：原来这一步是裸 pytest——被跳过的用例（CP-SAT 求解/预约、OPC-UA 真栈）
+      # 退出码仍为 0，"求解路径全跳"与"求解路径全跑通"在 CI 里长得一模一样。
+      # 改为 make test-gated：pytest 自身失败优先，其次要求每一次跳过都在
+      # tests/ci-skip-baseline.txt 登记过且未超登记数（基线只允许缩小）。
+      - name: Python 测试套件（标准链：src/edge_platform tests tools，skip 棘轮门禁）
+        run: make test-gated
 
   node:
     runs-on: ubuntu-latest

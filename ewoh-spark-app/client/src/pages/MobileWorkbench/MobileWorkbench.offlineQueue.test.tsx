@@ -188,7 +188,7 @@ jest.mock('../../api/mobile', () => ({
 }));
 
 jest.mock('../../lib/auth', () => ({
-  getAuthUser: () => ({ userId: 'u-1', username: 'worker-1', roles: ['worker'], orgId: 'org-1' }),
+  getAuthUser: () => ({ userId: 'auth-1', personId: 'u-1', username: 'worker-1', roles: ['worker'], orgId: 'org-1' }),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

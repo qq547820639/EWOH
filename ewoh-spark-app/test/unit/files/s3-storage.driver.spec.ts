@@ -9,8 +9,36 @@ import { S3StorageDriver } from '../../../server/modules/files/storage/s3-storag
 import type { FileRecord } from '../../../server/modules/files/storage/storage-driver';
 
 const FILE_ID = 'f3bdfae3-88d0-49f7-9088-fd7b8df80b8c';
+const ORG_A = '11111111-1111-4111-8111-111111111111';
+const ORG_B = '22222222-2222-4222-8222-222222222222';
 
 describe('S3 storage driver', () => {
+  it('rejects non-uuid organization scopes before object commands', async () => {
+    const send = jest.fn();
+    const driver = new S3StorageDriver(
+      { bucket: 'ewoh-files' },
+      { send } as unknown as S3Client,
+    );
+    const record: FileRecord = {
+      id: FILE_ID,
+      orgId: '../../escape',
+      uploadedBy: 'user-a',
+      filename: 'a.png',
+      contentType: 'image/png',
+      size: 1,
+      createdAt: '2026-08-03T00:00:00.000Z',
+    };
+
+    await expect(driver.save(FILE_ID, Buffer.from('x'), record)).rejects.toThrow(
+      /invalid org id/,
+    );
+    await expect(driver.list('../../escape')).rejects.toThrow(/invalid org id/);
+    await expect(driver.findByIdempotencyKey('ik-1', '../../escape')).rejects.toThrow(
+      /invalid org id/,
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('saves, lists, downloads, and removes objects', async () => {
     const store = new Map<string, Buffer>();
     const send = jest.fn(async (command: unknown) => {
@@ -51,7 +79,7 @@ describe('S3 storage driver', () => {
 
     const record: FileRecord = {
       id: FILE_ID,
-      orgId: 'org-a',
+      orgId: ORG_A,
       uploadedBy: 'user-a',
       filename: 'scan.ply',
       contentType: 'application/octet-stream',
@@ -61,8 +89,8 @@ describe('S3 storage driver', () => {
     await driver.save(record.id, Buffer.from('data'), record);
 
     // NEST-306：新写入按 org 前缀分桶 `{prefix}/{orgId}/{id}`（+ .meta.json）。
-    expect(store.has(`files/org-a/${FILE_ID}`)).toBe(true);
-    expect(store.has(`files/org-a/${FILE_ID}.meta.json`)).toBe(true);
+    expect(store.has(`files/${ORG_A}/${FILE_ID}`)).toBe(true);
+    expect(store.has(`files/${ORG_A}/${FILE_ID}.meta.json`)).toBe(true);
     expect((await driver.readMeta(record.id)).filename).toBe('scan.ply');
     expect((await driver.readContent(record.id)).toString()).toBe('data');
     expect((await driver.list())[0].id).toBe(record.id);
@@ -90,7 +118,7 @@ describe('S3 storage driver', () => {
       { send } as unknown as S3Client,
     );
     // list() returns nothing, so no record exists yet.
-    await expect(driver.findByIdempotencyKey('ik-1', 'org-a')).resolves.toBeNull();
+    await expect(driver.findByIdempotencyKey('ik-1', ORG_A)).resolves.toBeNull();
   });
 
   it('finds a record by idempotency key across stored metadata', async () => {
@@ -127,7 +155,7 @@ describe('S3 storage driver', () => {
     );
     const record: FileRecord = {
       id: FILE_ID,
-      orgId: 'org-a',
+      orgId: ORG_A,
       uploadedBy: 'user-a',
       filename: 'a.png',
       contentType: 'image/png',
@@ -136,9 +164,9 @@ describe('S3 storage driver', () => {
       idempotencyKey: 'ik-dup',
     };
     await driver.save(FILE_ID, Buffer.from('x'), record);
-    await expect(driver.findByIdempotencyKey('ik-dup', 'org-a')).resolves.toMatchObject({ id: FILE_ID });
+    await expect(driver.findByIdempotencyKey('ik-dup', ORG_A)).resolves.toMatchObject({ id: FILE_ID });
     // Same key under a different org must not match.
-    await expect(driver.findByIdempotencyKey('ik-dup', 'org-b')).resolves.toBeNull();
+    await expect(driver.findByIdempotencyKey('ik-dup', ORG_B)).resolves.toBeNull();
   });
 
   it('generates a presigned GET URL with clamped lifetime and immutable object key', async () => {
@@ -146,7 +174,7 @@ describe('S3 storage driver', () => {
       return `https://ewoh-files.s3.example/${command.input.Key}?expires=${options.expiresIn}&type=${command.input.ResponseContentType ?? 'none'}`;
     });
     // NEST-306/338：presigned 先经 meta 定位内容键（org 前缀布局）。
-    const metaKey = `files/org-a/${FILE_ID}.meta.json`;
+    const metaKey = `files/${ORG_A}/${FILE_ID}.meta.json`;
     const send = jest.fn(async (command: unknown) => {
       if (command instanceof GetObjectCommand) {
         if (command.input.Key === metaKey) {
@@ -167,15 +195,15 @@ describe('S3 storage driver', () => {
       signer,
     );
 
-    const result = await driver.createPresignedUrl(FILE_ID, 'org-a', {
+    const result = await driver.createPresignedUrl(FILE_ID, ORG_A, {
       expiresInSeconds: 999999, // exceeds the 24h cap -> clamped
       contentType: 'image/png',
     });
 
     // Object key is the immutable UUID under the org-scoped prefix (no
     // traversal / no user-controlled path components).
-    expect(result.key).toBe(`files/org-a/${FILE_ID}`);
-    expect(result.url).toContain(`files/org-a/${FILE_ID}`);
+    expect(result.key).toBe(`files/${ORG_A}/${FILE_ID}`);
+    expect(result.url).toContain(`files/${ORG_A}/${FILE_ID}`);
     expect(result.url).toContain('type=image/png');
     // Lifetime is clamped to the max (24h), not the requested ~11 days.
     expect(result.url).toContain('expires=86400');
@@ -188,7 +216,7 @@ describe('S3 storage driver', () => {
     const signer = jest.fn(async (_command: GetObjectCommand, options: { expiresIn?: number }) => {
       return `expires=${options.expiresIn}`;
     });
-    const metaKey = `files/org-a/${FILE_ID}.meta.json`;
+    const metaKey = `files/${ORG_A}/${FILE_ID}.meta.json`;
     const send = jest.fn(async (command: unknown) => {
       if (command instanceof GetObjectCommand) {
         if (command.input.Key === metaKey) {
@@ -208,9 +236,9 @@ describe('S3 storage driver', () => {
       { send } as unknown as S3Client,
       signer,
     );
-    const capped = await driver.createPresignedUrl(FILE_ID, 'org-a', { expiresInSeconds: 0 });
+    const capped = await driver.createPresignedUrl(FILE_ID, ORG_A, { expiresInSeconds: 0 });
     expect(capped.url).toBe('expires=1');
-    const floored = await driver.createPresignedUrl(FILE_ID, 'org-a', { expiresInSeconds: 1.9 });
+    const floored = await driver.createPresignedUrl(FILE_ID, ORG_A, { expiresInSeconds: 1.9 });
     expect(floored.url).toBe('expires=1');
   });
 });

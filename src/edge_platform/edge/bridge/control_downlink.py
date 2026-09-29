@@ -164,6 +164,7 @@ class ReceiptJournal:
 
     def __init__(self, path: str | None):
         self.path = str(path) if path else ""
+        self.warned_not_durable = False
         self.entries: list[dict] = self._load()
 
     @staticmethod
@@ -218,6 +219,17 @@ class ReceiptJournal:
                 os.fsync(stream.fileno())
             self.entries = self._load()
             return
+        # EDGE-02b（V94 实测 A2）：未配置 journal 路径时，这条执行事实只活在内存里——
+        # 进程一退就没了，而命令早已离开 `sent` 面（ack 先于动设备），平台永远收不到结果。
+        # 不改变行为（仍留在内存），只把"这次记账不持久"在**发生的那一刻**说清楚：
+        # 与仓库既有的"配置错误必须可见"同一纪律（NO-68a 间隔解析、NEST-504 回落告警）。
+        if not self.warned_not_durable:
+            self.warned_not_durable = True
+            logger.warning(
+                "失败回执只记在内存中（未配置 receipt journal 路径）：进程重启即永久丢失这条执行事实，"
+                "且该命令不会再次投递（ack 先于动设备）。配置 --receipt-journal / "
+                "EWOH_CONTROL_RECEIPT_JOURNAL 后重启可补投。"
+            )
         self.entries.append(entry)
         self._rewrite(self.entries)
 
@@ -260,8 +272,10 @@ class ControlAgent:
         #: gateway_received 的命令下一轮不会再出现，执行结果就**永久丢失**，
         #: 闭环声称的"绝不静默"在该路径不成立。这里按 (commandId, commandKey,
         #: receipt_body, fingerprint) 记账，每轮 run_once 先重投；平台按
-        #: commandId 幂等接收（重复回执无副作用）。有界（MAX=100，超出丢最旧并
-        #: 计数留痕——绝不让重投队列自己变成无界内存）。
+        #: commandId 幂等接收（重复回执无副作用）。有界：条数上限 = self.receipt_retry_max
+        #: （那是唯一生效的界，注释里不复述字面量，以免数字与实现各自漂移）；溢出
+        #: **不是丢最旧**，而是由 ReceiptJournal.overflow() 转入持久死信
+        #: <journal>.dead-letter.jsonl，并累加 receipt_retry_dropped 留痕。
         self._receipt_retry = ReceiptJournal(receipt_journal_path)
         self.receipt_retry_dropped = 0
         self.receipt_retry_rejected = 0

@@ -301,6 +301,22 @@ const EXEMPTIONS = [
     reason: '同上：模拟器种子装载 GUC 上下文内。',
   },
   {
+    // V322：控制面 revoke 新增一条按 requestId 的命令读 ⇒ 本文件内 ewohControlCommand 的链序号整体后移一位，
+    // 这条登记的序号键随之从 #6 改到 #7（判据与理由文字未变，指的仍是 collectBacklogAggregate 那条链）。
+    // 序号键这种「插入即移号」的脆弱性，连同方法级 orgId 逃逸，一起登记在 ORKEY-01。
+    key: 'ewoh-spark-app/server/modules/control/control.service.ts::ewohControlCommand#7',
+    audit: 'V225/PROJ-06',
+    reason:
+      'collectBacklogAggregate（积压全量聚合，只在明细读满 BACKLOG_SCAN_CAP 时才跑）的 .where(predicate) '
+      + '传入的是同类私有 backlogPredicate(orgId, cutoff, statuses) 生成的条件树，内含 '
+      + 'or(eq(ewohControlCommand.orgId, orgId), isNull(ewohControlCommand.orgId))；'
+      + '链内无字面 orgId 属参数化谓词形态（同 NEST-206/302 簇的既有登记形状）。'
+      + '这条链与 collectBacklogRows 的明细读**共用同一棵条件树**是刻意的：总量与明细必须同口径，'
+      + '把谓词抄两份正是 NO-77a 要避免的那类漂移源，故不改为调用点内联。'
+      + '第二层兜底：ewoh_control_command 开着 RLS（策略 ewoh_org_visible(org_id)），'
+      + '运行时句柄带 org GUC ⇒ 即使应用侧谓词被改坏，读到的也只是本租户行（V207/V208 实测机制）。',
+  },
+  {
     key: 'ewoh-spark-app/server/modules/tracing/tracing.service.ts::ewohTraceSpan#1',
     audit: 'NEST-tracing 裁决',
     reason:

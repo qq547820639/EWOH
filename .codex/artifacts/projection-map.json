@@ -1,0 +1,370 @@
+{
+  "_说明": "链上派生投影的落点清单（V222），供 scripts/chain-baseline/projection-consistency.cjs 机械复算。每格：table＝投影表；sources＝**源侧标记**（权威表名；若源不是表而是'实时算出来的读'，就用该读在断言块里的标记串，如 world_state_snapshot 用 live[taskKey()]）；writers[]＝写入口（file + 该行原文 needle，**不存行号**，行号会随他人改动漂移）；repair＝可机械核的补齐站点（null＝没有可核的补齐站点，不代表'设计上不可补'，见 repair_note）；assertion＝常驻用例（spec + 可选 needle），判据要求**同一个 it() 块**里同时出现投影表与源侧标记且有 expect。",
+  "_范围": "只登记逐条读码核实过的 11 格（V222 建 6 格；V230 按 V222 留在 §5.3fw 的「后续可扩面」再核 6 格；V251 按同一条判据摘掉 OUTBOX 一格，理由见下）。判别标准（V230 写死）：IN＝该表的行是由别的表的行算出来／复制出来的（聚合、rollup、物化当前态、折叠快照、逐事件 fan-out），且必须能点名源表与被派生的列；OUT＝这张表就是某件事的权威记录（原始 ingest 帧、事件当场写的审计行、幂等／去重声明行、运营登记的台账主数据）。V230 按这条判据读码后排除：ewoh_control_result（回执／收敛事实的当场记录，源表行已前进，重算即捏造）、ewoh_telemetry（原始帧）、ewoh_world_state（逐帧观测台账）、ewoh_ingest_event_dedup（传输声明行）、ewoh_idempotency_keys（claim 即事实）、ewoh_schedule_audit（与动作同事务写的审计）、ewoh_event_chain（读路径判定它是权威源：审批步骤从它 hydrate，而 ewoh_event 的聚合才是它的派生）。V251 依同一判据再排除：**ewoh_outbox**——本格 V222 登记的 sources `ewoh_scheduling_plan`／`ewoh_assignment` 两个表名在真实树里都不存在（现算：`schema.ts` 里 0 处、`db/migrations` 里无建表处；真名是 `ewoh_schedule_plan`／`ewoh_scheduling_plan_assignment`），而行的 payload 是 12 处生产调用点（分布在 8 个文件；另有 25 处在 spec 里）就地组装的事件帧，两处写入口的实现都只把参数写进 `.values(...)`（`outbox.service.ts:76`），全仓没有一处 SQL 把别的表的列复制进 outbox（`INSERT INTO ewoh_outbox` 0 命中），12 处生产调用点逐处读过、事件族互不相同（execution／conflict／assignment／plan／policy／replan）⇒ 点不出唯一源表与派生列 ⇒ 它就是「待发布事件」的权威记录，源表行早已前进，拿源重算即捏造（与 ewoh_control_result 同一条排除理由）。**摘格不等于销缺陷**：OUTBOX-02（status/published_at 是无写者的死列）仍留在 §5.4 开放行里，它问的是「有没有生产者」，不是「是不是派生投影」。同轮记一处清单卫生更正：SHADOW_OBS 的 table 自 V222 起多写了 `ewoh_` 前缀，真实表名是 `prediction_shadow_observation`——两格（OUTBOX／SHADOW_OBS）的 assertion 都是 null，所以**当期档位并没有因为这个错名而判错**（none 是指针驱动的结果，不是 needle 落空），但谁要给它们补对账指针，错名会让 two-sided 永远升不上档 ⇒ 「清单里的表名必须在 schema.ts 找得到」应当是一条判据，本轮不接（改动在重放覆盖集内，留给下一次量具批次同批付背书）。\n仍待核的候选（未纳入分母，不自行扩）：workbench_export_tasks、saved_views、ewoh_policy_replay。",
+  "_来源": "登记册 §5.3fw（V222）；写入口与断言块的 file:line 由本轮 grep 逐条核实（含对子代理盘点的一次改判：shadow 的持久化不是 `void persistSample` 而是未 await 的 `this.persistSample(...)`，且自带 .catch(warn) ⇒ 不产生 unhandledRejection，但失败即永久丢样本）。；V223：为 assignment_event 补权威状态↔事件末条对账、为 backlog 快照补投影内部自洽对账。 V230：新增 6 格的 writers／repair needle 由预检脚本验证（每条 needle 在目标文件里恰好命中一次，任一不唯一即整体不写盘），再由本件自己复算读法；分母 6→12，四档加总仍须等于分母（本件硬断言）。同时登记本件的一处文法限度：SQL 助手定义在第一个 it() 之前的 spec（plan-cancel-execution-projection、e2e:edge 场景脚本）对块文法不可见 ⇒ 那两格维持 none／existence，不折成 two-sided。",
+  "projections": [
+    {
+      "id": "ASSIGNMENT_EVENT",
+      "table": "ewoh_assignment_event",
+      "sources": [
+        "ewoh_scheduling_plan_assignment"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/plan.service.ts",
+          "needle": "await this.db.insert(ewohAssignmentEvent).values({"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/dispatch-coordinator.service.ts",
+          "needle": "await this.db.insert(ewohAssignmentEvent).values({"
+        }
+      ],
+      "repair": null,
+      "repair_note": "无补齐/对账路径；派生 org 由触发器 trg_assignment_event_derive_org 兜。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/chain-idempotency-restart.e2e.spec.ts",
+        "needle": "// PROJ-02（V223）"
+      },
+      "priority": "P3",
+      "row": "PROJ-02",
+      "note": "V223 补上真对账：每条已派工 assignment 的当前 status 必须等于其最后一条 assignment_event 的 to_status（DISTINCT ON 取末条），并先断 dispatched>0 防恒真。"
+    },
+    {
+      "id": "WORLD_SNAPSHOT",
+      "table": "ewoh_world_state_snapshot",
+      "sources": [
+        "live[taskKey()]"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/world-state.service.ts",
+          "needle": "await this.db.insert(ewohWorldStateSnapshot).values({"
+        }
+      ],
+      "repair": null,
+      "repair_note": "重建＝下一次采集再存一版（不回填历史版本）。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/world-snapshot-collection-window.e2e.spec.ts",
+        "needle": "expect(per.map[taskKey()]).not.toBe(baseline.taskVersion);"
+      },
+      "priority": "P3",
+      "row": null
+    },
+    {
+      "id": "BACKLOG_SNAPSHOT",
+      "table": "ewoh_control_backlog_snapshot",
+      "sources": [
+        "ewoh_control_command"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/control/control.service.ts",
+          "needle": "NO-91a：落**历史快照**"
+        }
+      ],
+      "repair": null,
+      "repair_note": "worker tick 里 best-effort 落一行历史；失败被 catch 吞（'快照落库失败不阻断'）⇒ 缺行不会有人知道。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/backlog-snapshot-failure-boundary.e2e.spec.ts",
+        "needle": "// PROJ-03（V223）"
+      },
+      "priority": "P3",
+      "row": "PROJ-03",
+      "note": "V223 补的是投影内部自洽（devices 数组 vs totals 计数、deviceId 非空、org 真实存在）＋先断 commands>0 防恒真；仍未补的那半是 totals 与 ewoh_control_command 的窗口口径对账——在测试里重抄实现 WHERE 不算对账 ⇒ 该行保持开放。 V225 追记：PROJ-06 闭合后本格的对账断言变成两条（BS-01 自洽 ＋ BS-04 总量对写入侧下界），普查读数因此从 existence 升为 two-sided（命中块 1）；注意方向：BS-04 比的是\"投影总量 ≥ 我自己写进源表的条数\"（一个由写入侧决定的下界），不是\"投影等于对源表重算的窗口聚合\" ⇒ 上面那半仍未补，PROJ-03 继续开放。",
+      "assertion_truncation": {
+        "spec": "ewoh-spark-app/test/e2e/backlog-snapshot-failure-boundary.e2e.spec.ts",
+        "needle": "PROJ-06 位点"
+      }
+    },
+    {
+      "id": "SHADOW_OBS",
+      "table": "prediction_shadow_observation",
+      "sources": [
+        "samplesByOrg"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/prediction/shadow-evaluator.service.ts",
+          "needle": "this.persistSample(orgKey, entry);"
+        }
+      ],
+      "repair": {
+        "file": "ewoh-spark-app/server/modules/scheduler/prediction/shadow-evaluator.service.ts",
+        "needle": "持久化回填入口（fire-and-forget）"
+      },
+      "repair_note": "回填只补 actual（预测 vs 后来真值），不补丢掉的样本行。",
+      "assertion": null,
+      "priority": "P3",
+      "row": "PROJ-04",
+      "name_note": "V251 更正：V222 起本格的 table 多写了 `ewoh_` 前缀；真实表名 prediction_shadow_observation（schema.ts:2575、db/migrations/standalone_029_prediction_shadow_observation.sql）。两格 assertion 都是 null ⇒ 当期档位没被这个名字带错（none 由指针驱动），但表名不符会让将来补的 two-sided needle 永远落空。",
+      "producer_note": "V251 量到的生产者前提：唯一写点 persistSample 在 sampleShadowPredictions 的 `getCanaryFraction(ctx) <= 0` 早退之后；canaryByOrg 只在 setCanaryFraction(:349) 里写，而生产侧两个调用点（solver.service.ts:565、shadow-policy.service.ts:367）都传 0，非零只在 __tests__ 里设 ⇒ 今天产品接口走不到这一跳（PROJ-04 的丢样本面因此是「启用灰度才会遇到」的隐患，不是现行流量下的事实）。"
+    },
+    {
+      "id": "KPI",
+      "table": "ewoh_scheduling_kpi",
+      "sources": [
+        "ewoh_scheduling_execution",
+        "ewoh_scheduling_feedback",
+        "ewoh_scheduling_run"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/kpi.service.ts",
+          "needle": "await tx.insert(ewohSchedulingKpi).values({"
+        }
+      ],
+      "repair": null,
+      "repair_note": "有按 org+period 重算并覆盖的路径（5min 节流＋按需），但输入里混了**进程内 gauge**（SchedulerMetricsService）⇒ 重算不可复现，覆盖会静默改变历史读数。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/kpi-delivery-window-projection.e2e.spec.ts",
+        "needle": "KC-05 三源同块对账："
+      },
+      "priority": "P3",
+      "row": "PROJ-05",
+      "provenance_note": "V253 按块溯源更正：V222 只登记了 ewoh_scheduling_run，而 kpiJson 是四类来源——delivery.*←ewoh_scheduling_execution（窗口内，actual ?? planned 优先规则只活在代码里）；stability 的 replanCount/conflictRate 半←ewoh_scheduling_feedback（但被 :150 的展开覆盖，见 KPIRATE-01）；stability 的 M04 半←run 窗口计数＋SchedulerMetricsService 的 5 个进程内累计/末值字段；dataQuality←调用方经 opts 传入（policy-activation.service.ts）。⇒ 整对象对账写不出等式；可写的只有 delivery 块与 run 窗口计数两块，且要先像 contracts/state-machines/control.yaml 的 delivery_backlog_window 那样把窗口定义提到契约。 V255 实测补两条：①feedback 那一支的 `or(org_id IS NULL, org_id = actor)` 里 IS NULL 是**结构性死分支**（information_schema 读得 org_id is_nullable=NO、库内 NULL 租户行 0 条、直接插一行 NULL 被 23502 拒 ⇒ 不是跨租户旁路，取证 tmp/v255-nullorg.log）；②「整表无窗」是真的：落库快照声明 24h period，solver 两格仍把 30 天前的反馈行算进来（KC-05 前提：窗口内 1 行给 100、无窗 2 行给 500 ⇒ 两个候选值可区分，相等不是恒真）。",
+      "assertion_note": "V254：窗口口径进契约（plan.yaml 的 kpi_delivery_window），KC-01..04 由契约独立重算 delivery 块并与落库逐项比；两侧各一次变异实测都会红（tmp/v254-mutation-impl.log 投影 12000 vs 契约 11000／tmp/v254-mutation-contract.log 镜像 11000 vs 12000），还原后复绿。stability 的 gauge 半与 dataQuality 仍不可重算 ⇒ 本格只覆盖 delivery 块。 V255：feedback 半的口径也提进同一个契约块（`feedback_window: none` ⇒ 这一支没有时间窗），KC-05 在同一个块里把三份源表（execution＋run＋feedback）与落库一次比完 ⇒ 本格升 two-sided；KC-06 给 feedback 半单独补牙齿。三次单向变异各自开火并留整份日志：tmp/v255-m1-contract.log（契约侧放宽分子过滤 ⇒ 报 fallback: 投影 0.5 vs 契约 1）、tmp/v255-m2-impl.log（实现侧两格来源互换 ⇒ latency 与 fallback 双双点名）、tmp/v255-m3-guard.log（契约把 feedback_window 从 none 改成 ts ⇒ 守卫直接抛「要同批改」而不是用例跟着改），还原后 6 passed（tmp/v255-green-restored.log）。仍不覆盖的是 5 个进程内 gauge 与调用方传入的 dataQuality。",
+      "row_extra": "KPIWINDOW-01（V255 新开：同一份快照混两种窗口）"
+    },
+    {
+      "id": "EXECUTION",
+      "table": "ewoh_scheduling_execution",
+      "sources": [
+        "ewoh_scheduling_plan_assignment",
+        "ewoh_schedule_plan",
+        "ewoh_production_task"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/execution.service.ts",
+          "needle": "  async createFromPlan("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/execution.service.ts",
+          "needle": "const [updated] = await this.db.update(ewohSchedulingExecution).set(values).where(and("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/execution.service.ts",
+          "needle": "  async cancelForAssignments(assignmentIds: string[], actor?: OrgContext): Promise<number> {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/execution-receipt-application.service.ts",
+          "needle": "if (row.source !== persistedSource)"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/ingest/device-execution-receipt.service.ts",
+          "needle": "        .update(ewohSchedulingExecution)"
+        }
+      ],
+      "repair": {
+        "file": "ewoh-spark-app/server/modules/scheduler/execution-receipt-application.service.ts",
+        "needle": "Repair a dispatch whose post-dispatch execution initialization previously failed."
+      },
+      "repair_note": "惰性补建：回执先到、建档失败时由回执路径重建。没有任何站点扫「派工之后有没有执行跟踪行」，所以非建档失败型的漏建（派工事务回滚后 execution 未写、旁路派工）不会被任何机制发现。scheduler-plan-application.service.ts 对 createFromPlan 有 3 次重试调用（未列进 writers：同一函数多点）。【V231 实测补一条修法约束】链基线库 51 条派工中 34 条无 execution 行，全部是 proposed（从未派工）；按派工后状态取子集扫描 = 0，副本 planned 字段零漂移 ⇒ 今天无「漏建」生产者，本格的缺口是守卫缺失而非丢失；朴素「assignment 有而 execution 无」在健康库上误报 34/51（67%），补齐对账必须先按派工后状态取子集，且两表状态词表大小写不同（assignment 小写／execution 大写）不许共用同一套字面量。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/dispatch-receipt-concurrency.e2e.spec.ts",
+        "needle": "it(`E-01 派工事务与回执事务重叠"
+      },
+      "assertion_note": "V232 位点＝E-01 用例块（判定单位是 it() 块）：该块内既读 ewoh_scheduling_plan_assignment 又读 ewoh_scheduling_execution，并在 DRC-02 三段里比两侧（人群非空／孤儿=0／手工造孤儿必须报 1）。注意量程：钉的是「派工后必有行」这条集合不变量，不核 execution 的 7 个复制字段与 assignment/plan 当前值是否一致（字段级对账仍缺；V231 量到今天零漂移）。",
+      "priority": "P2",
+      "row": null,
+      "basis": "V230 读码：createFromPlan 从 assignment 复制 assignmentId／taskId／personId／deviceId／stationId／plannedStartAt／plannedTravelMs，并从 plan 复制 snapshotVersion／policyVersion ⇒ 权威行的副本。消费面：planned-vs-actual、learning／improvement-action、learning-signal 只读这张表。V231 前提读数：见 repair_note 末段（孤儿=未派工、派工后扫描 0、副本零漂移）。"
+    },
+    {
+      "id": "FEEDBACK",
+      "table": "ewoh_scheduling_feedback",
+      "sources": [
+        "ewoh_scheduling_execution",
+        "ewoh_scheduling_plan_assignment"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts",
+          "needle": "  async recordBaseline("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/scheduling-feedback.service.ts",
+          "needle": "  async recordActuals("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/scheduler/execution-receipt-application.service.ts",
+          "needle": "await this.db.insert(ewohSchedulingFeedback).values({"
+        }
+      ],
+      "repair": null,
+      "repair_note": "recordActuals 反复覆写 actual_*，但没有站点在重排／作废之后回算 planned_*（那半是 assignment 的旧值），行上也没有来源版本标记 ⇒ 同一行两半来源不同、寿命不同，与 PROJ-03 同族形状。【V231 实测】链基线库 17 行 feedback 的 planned_start 与 assignment 当前值不一致 = 0/17：形状在，漂移今天测不到。对照算式教训：feedback.planned_travel 存秒、execution.planned_travel_ms 存毫秒，两边同源不同单位，第一版对照乘了 1000 于是误报 12/17「漂移」。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/feedback-projection-reconciliation.e2e.spec.ts",
+        "needle": "FC-05 三源同块对账：同一快照下反馈行的两半同时等于各自源表"
+      },
+      "assertion_note": "V265：本格有了第一条字段级常驻对账（同 spec 的 FC-01..08，口径取自契约 plan.yaml 的 feedback_projection，等式由测试自己组装、不重抄实现的 /1000）。two-sided 由 FC-05 撑：它是唯一把三张登记表名写在**同一个 it 块内**的一支——FC-02/03/04 同样做两边比较，但表名留在块外 helper 里，本尺按块内字面判、认不出它们（块内字面盲点，与 V258/V260 同族；不是这几支弱）。牙齿两侧各量一次：契约侧把 actual travel 的 divide_by 1000 改 2000 ⇒ FC-02/05/08 三红（tmp/v265-fc05-tooth-contract.log）；实现侧把 toOrgContext 转发的 roles/personId 收回 ⇒ FC-01/02/05/07/08 五红（tmp/v265-fc05-tooth-impl.log），两遍还原各 8 绿。记一笔自抓的空转：第一版 FC-05 没有非空前提，在实现侧变异遍里照绿（A 腿 403 后两半同为 null，null==null 把等式判成通过；打印读数 actualTravel=null 是证据），补三条非空前提后同一遍才红。旧的 learning-override-copy LR-02 只断聚合动了（量程对照），不是字段级 ⇒ V231/V261 判 none。",
+      "priority": "P3",
+      "row": null,
+      "basis": "V230 读码：actualStart／actualEnd／actualTravel／actualWait 来自 execution，plannedStart／plannedEnd／plannedTravel 来自 assignment。消费面（V231 逐处读码更正）：读该表 actual_* 的只有 duration-model-training.service.ts:89 一带，且带 receipt_source='real' + production_training_eligible=true + provenance_json 三重过滤（standalone_070 设计，模拟／人工回执永不入生产训练，e2e:receipt 常驻钉住；本库 17/17 eligible=false）；learning.service.ts:227 的 overrideRate 聚合不带资格过滤，但只取 override_count 与 count(*)，不读两半 ⇒ 「漂了就是模型错」的消费者按未找到记，不折算成无风险。"
+    },
+    {
+      "id": "DEVICE_LEDGER",
+      "table": "ewoh_device",
+      "sources": [
+        "ewoh_telemetry"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/ingest/ingest.service.ts",
+          "needle": "  private async upsertDevice("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts",
+          "needle": "  async projectActuatorDeviceState(params: {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/ingest/sensor-ingest.service.ts",
+          "needle": "  async registerSensorDevice(params: {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/dashboard/dashboard.service.ts",
+          "needle": "  async createDevice(dto: CreateDeviceDto, actor?: OrgContext): Promise<DeviceInfo> {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/simulator/simulator.service.ts",
+          "needle": "  private async upsertDevice(device: DeviceRuntime, now: Date): Promise<void> {"
+        }
+      ],
+      "repair": null,
+      "repair_note": "无回算站点（V230 结论不变）。V233 把不可对账的原因摆正，三层：①帧参数不留痕（根因，台账列的真身只在一次请求里）；②唯一带同名列的持久化表是 ewoh_telemetry，且是同一次调用写的 ⇒ 近窗对账可写＝台账列 vs 同源 telemetry 最新帧；③telemetry 24h 被删（retention.service.ts:81 拼接表名的 DELETE，静态普查看不见；本库 pg_stat 记 ins=115／del=115／live=0，台账仍有 49 行带 last_telemetry_at）⇒ 远端不可验，属产品裁决。V230/V231 那句「按现有键形态接不回 world_state」仍然真，但它不是近窗不可对账的原因（world_state 本来就没有那些列）。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/control-verification-projection.e2e.spec.ts",
+        "needle": "it('DL-01"
+      },
+      "assertion_note": "无常驻比较（对账 none 不变）。最接近的 e2e:edge step 2h／2i／2j 只核台账自身形状（三类设备在册、online 且 lastTelemetryAt 已更新、传感器电量保持 NULL），不读源表 ⇒ 不算对账。V234 计划：台账列 vs 同源 telemetry 最新帧，牙齿＝事后 UPDATE 台账 battery_pct 一格必须被判据报不一致，再改回。 V234 语义补正：冲突更新是 coalesce(excluded.*, 现值)（批量）／?? undefined（单帧），缺字段帧不改台账而 telemetry 照插 ⇒ 不变量须写成「该列最近一个非空帧」，online 一支是「曾在线」按 60s 新鲜度单判；断言与两帧夹具同批落地。 V235：近窗位点＝DL-01（台账某列 vs 该列最近一个非空帧；两帧夹具＋手工改台账开火对照）；online 一支仍未纳判（语义是「曾在线」，须按 60s 新鲜度另立）。",
+      "priority": "P2",
+      "row": null,
+      "basis": "V233 溯源改写：台账状态列**不是从表投影来的**，`ingest.service.ts` 的 upsertDevice 与 `sensor-ingest.service.ts` 的 projectActuatorDeviceState 都直接写当次请求的帧参数（batteryPct／faultCode／x／y／state／at）；同一次 ingest 调用还会写 ewoh_telemetry（battery_pct／temperature_c／fault_code／ts）⇒ 带可比列的源表只有 ewoh_telemetry，V230 记的 ewoh_world_state 已摘除（实测其 state_json 只有 bbox／action／skeleton／camera_id 或 x／y／z／locator，且复合键 CAM-SIM-xxx:Tyyy-n 按冒号前缀折回也只连得上 16/74 行、可比列数 0）。消费面不变：派工资格与候选集（60s 新鲜度）。"
+    },
+    {
+      "id": "NOTIFICATION_FANOUT",
+      "table": "ewoh_notification",
+      "sources": [
+        "ewoh_event"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/approval/approval-expiry.service.ts",
+          "needle": "if (requester && requester !== 'system') {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/notification/deterministic-notifications.ts",
+          "needle": "export async function insertDeterministicNotifications("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/agent/agent.service.ts",
+          "needle": "private async notifyApprovalPending("
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/exo/exo-session-reminder.service.ts",
+          "needle": "const notificationId = `NTF-EXO-"
+        }
+      ],
+      "repair": {
+        "file": "ewoh-spark-app/server/modules/exo/exo-session-reminder.service.ts",
+        "needle": "  async sweepAllActiveOrgs(options: { now?: Date } = {}): Promise<{"
+      },
+      "repair_note": "到期提醒这条腿是可重复跑的幂等 sweep（可核的补齐站点）；投递状态那半只由 channel-dispatcher 的 CAS 前进，没有重算站点。代码自陈层级：审批台账行才是权威事实，通知是旁路证据（agent.service.ts）。",
+      "assertion": {
+        "spec": "ewoh-spark-app/test/e2e/andon-notification-identity.e2e.spec.ts",
+        "needle": "it('AND-02 开灯等式"
+      },
+      "assertion_note": "V270 改指针：本格有两条契约派生等式，分属两条腿——① 授权到期腿 AE-03（契约 approval.yaml 的 expiry_notification_identity，实质是等式，但它在 it() 块里经变量读表，projection-consistency 的\"块内字面表名\"判据看不见 ⇒ 那条腿当时只能记 existence，V261 明写过不为升档把读表搬进块内）；② 安灯腿 AND-02（契约 alert.yaml 的 andon_notification_identity，表名写成字面量，且同块还核\"每条提醒 exist 一条 AndonRaised 主事实行\"）⇒ 本格的 two-sided 由**安灯腿**撑，引用时要点名是哪条腿。**本格仍只覆盖两条腿**：同一张表另有 NTF-EXO／NTF-AGENT／通用 helper 三套 id 形状 ⇒ 见 §5.4 NOTIFYID-01。（V273 补第三条腿：控制命令的零时钟两桶＝契约 control.yaml 的 control_notification_identity ＋ 常驻用例 ctrl-notification-identity 的 CC-02/CC-03，块内字面读 ewoh_notification 与 ewoh_control_command 并集合相等；本格机器读数仍由安灯腿 AND-02 撑——本格 sources 是单值，把 ewoh_control_command 并进来源会让安灯腿凑不齐两边，\"源表按腿登记\"记在 V274。）（V274 再补一条腿：数据质量的角色半＝契约 alert.yaml 的 data_quality_notification_identity ＋ 常驻用例 dq-notification-identity 的 DQ-02/03/04，块内字面读 ewoh_notification 与 ewoh_event 并集合相等，前提是该设备在 ewoh_device_responsibility 里 0 行 ⇒ user 半为空；机器读数仍由安灯腿 AND-02 撑。）（V276 补第五条腿：改进行动的逾期提醒＝契约 alert.yaml 的 action_notification_identity ＋ 常驻用例 act-notification-identity 的 AC-02/AC-03，块内字面读 ewoh_notification 与 ewoh_improvement_action 并集合相等，另核 AC-05 的\"完成与提醒了结同一事务\"。V271 把这一支归进\"挂在 now 上、事后不可重算\"一族，本轮实测改判：逾期谓词 due_at < 扫描时刻是**单调**的，落库后可事后重算 ⇒ 不可重算的只有负责人账号那半。本格机器读数仍由安灯腿 AND-02 撑。）",
+      "priority": "P3",
+      "row": null,
+      "basis": "V230 读码：notificationId 由 approvalId＋bucket＋recipient＋channel 拼出，title／body 由台账字段组成，externalRef 指回台账行 ⇒ 逐事件 fan-out。消费面：审批关闭度量（approval-persistence JOIN 它）与工作台待办计数读它。",
+      "provenance_note": "V261 按列溯源改 sources：到期腿的权威事实是 ewoh_event 里 event_type=approval_instance 的行（AE-03 读它并断发起人在里面）；旧登记的 ewoh_agent_approval／ewoh_control_command 是**别的腿**的源，不属本格，故移出（不是删缺陷，是修归属）。writers 由 2 处补到实测 4 处生产 INSERT。",
+      "row_extra": "NOTIFYID-01（一条表四套身份、两份渠道清单；到期腿 AE-03 与安灯腿 AND-02 各有等式，EXO／agent／helper 三腿仍无）",
+      "legs": [
+        {
+          "name": "安灯腿",
+          "spec": "ewoh-spark-app/test/e2e/andon-notification-identity.e2e.spec.ts",
+          "needle": "it('AND-02 开灯等式",
+          "sources": [
+            "ewoh_event"
+          ],
+          "note": "契约 alert.yaml 的 andon_notification_identity；块内字面读 ewoh_notification 与 ewoh_event"
+        },
+        {
+          "name": "控制命令腿",
+          "spec": "ewoh-spark-app/test/e2e/ctrl-notification-identity.e2e.spec.ts",
+          "needle": "it('CC-02 delivery_revoked 等式",
+          "sources": [
+            "ewoh_control_command"
+          ],
+          "note": "契约 control.yaml 的 control_notification_identity；零时钟两桶"
+        },
+        {
+          "name": "数据质量腿",
+          "spec": "ewoh-spark-app/test/e2e/dq-notification-identity.e2e.spec.ts",
+          "needle": "it('DQ-02 等式",
+          "sources": [
+            "ewoh_event"
+          ],
+          "note": "契约 alert.yaml 的 data_quality_notification_identity；只覆盖角色半（前提＝该设备无责任关系）"
+        },
+        {
+          "name": "行动项腿",
+          "spec": "ewoh-spark-app/test/e2e/act-notification-identity.e2e.spec.ts",
+          "needle": "it('AC-02 等式（priority=medium）",
+          "sources": [
+            "ewoh_improvement_action"
+          ],
+          "note": "契约 alert.yaml 的 action_notification_identity（V276）；块内字面读 ewoh_notification 与 ewoh_improvement_action 并集合相等。前提＝负责人存在但无可绑定账号（accepted 必带 owner，库内 check 拦得住；等式只覆盖角色半）。"
+        }
+      ],
+      "legs_note": "V275 起一格可登记多腿：腿各自带 sources，命中块按腿求和。在此之前 sources 是单值，把第二腿的表并进去会让第一腿凑不齐两边、整格从 two-sided 掉到 existence（V273/V274 两次实测到同一个形状）。 行动项腿见 V276。"
+    },
+    {
+      "id": "WORLD_CURSOR_SNAPSHOT",
+      "table": "ewoh_world_snapshot",
+      "sources": [
+        "ewoh_world_delta_log"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/world-cursor/world-cursor.service.ts",
+          "needle": "      await this.db.insert(ewohWorldSnapshotCursor).values({"
+        }
+      ],
+      "repair": {
+        "file": "ewoh-spark-app/server/modules/world-cursor/world-cursor.service.ts",
+        "needle": "    const entityMap = new Map(entities.map((entity) => [entity.id, entity]));"
+      },
+      "repair_note": "补齐是读时重折叠：上一份快照 ∪ seq > lastSeq 的 delta 行，checksum 现算 ⇒ 一致性由读路径自己保证，没有独立修复作业。",
+      "assertion": null,
+      "assertion_note": "ewoh-http 的 it() 断的是版本单调与游标过期 410，没有把 payload 与快照∪delta 的折叠结果比 ⇒ 判 existence。",
+      "priority": "P3",
+      "row": null,
+      "basis": "V263 定案（V230 的读码仍对，这里补三件）：payload／entities 与 entityCount／checksum 都是派生列，折叠式＝**上一行 payload.entities ∪ delta 中 seq∈(prev.lastSeq, 新 lastSeq] 的 upsert/removal**，snapshot_version＝上一行+1（:199-218）——所以它的源除 delta 之外还有**自身上一行**，清单的 sources 只能列表名，这层自折叠记在本字段。写入口不是后台作业而是**读端点自己的副作用**：GET /api/world/snapshot（controller.ts:18）→ getSnapshot 在 :221 落新行（NEST-638 无变更不落新行；23505 冲突时重读胜者）⇒ 本表生产可达，V230／repository-truth 那句「二表生产零写入者」只对 ewoh_world_delta_log 成立。checksum 列无读者（三处 select 列表都不含它：:154-158／:269-272／:294-296；对外契约 openapi/ewoh.yaml:14025 的 WorldSnapshot 只有 snapshotVersion／cursor／entities／generatedAt 且 additionalProperties:false）；而且 payload 是 jsonb（schema.ts:1555）、checksum 是入库前字符串的 sha256（:214-219）⇒ 事后重算不出同一串，任何常驻对账都不许把它写进等式。"
+    },
+    {
+      "id": "WORLD_DELTA_LOG",
+      "table": "ewoh_world_delta_log",
+      "sources": [
+        "argument[entity]"
+      ],
+      "writers": [
+        {
+          "file": "ewoh-spark-app/server/modules/world-cursor/world-cursor.service.ts",
+          "needle": "  async applyUpsert(entity: WorldEntity, orgId?: string): Promise<void> {"
+        },
+        {
+          "file": "ewoh-spark-app/server/modules/world-cursor/world-cursor.service.ts",
+          "needle": "  async applyRemoval(id: string, orgId?: string): Promise<void> {"
+        }
+      ],
+      "repair": null,
+      "repair_note": "没有站点回算 seq／snapshot_version。应用侧两个写入口（:118/:135）生产不可达：world-cursor.controller.ts 只暴露 GET snapshot|delta，全仓 applyUpsert／applyRemoval 的命中只有定义、单测与场景包 ⇒ 业务写路径今天不产行；但**运维侧有一个真实写入者** scripts/post-restore-smoke.mjs:14（恢复后插一行验 identity 序列可推进，见 docs/delivery/deployment-runbook.md:140）⇒ V230 那句「只由测试写入」按 V263 收窄为「测试＋恢复 smoke」。docs/audit/current/repository-truth.md 的 world-cursor＝Dead／空转协议面一行仍指本表的业务写入口，不另开缺陷行。",
+      "assertion": null,
+      "assertion_note": "同 WORLD_CURSOR_SNAPSHOT 那一块：只断版本单调 ⇒ none。",
+      "priority": "P3",
+      "row": null,
+      "basis": "V263 按表血缘定案：entity_type／entity_id／delta_type／payload 全部来自 applyUpsert／applyRemoval 的**入参**（world-cursor.service.ts:124-148），本表不是任何表的派生；唯一由表读出的列是 snapshot_version＝coalesce(max(ewoh_world_snapshot.snapshot_version),0) 这枚**写入时水印**，而该列无任何读者（服务端两处 delta 查询只取 seq／entity_id／delta_type／payload，:174-177 与 :311-314；对外契约 WorldDelta 也没有这个字段）⇒ 旧登记的 sources＝[ewoh_world_snapshot] 是把水印当成了源，已摘。为什么留 sources=[argument[entity]] 而不留空：量具 projection-consistency.cjs:96 把「没有登记权威源表」做成判红形状，而本表实情恰好是「内容不来自任何表」⇒ 用 V252 的源侧标记通道说清，比摘格（动分母）或谎报源都诚实。"
+    }
+  ]
+}

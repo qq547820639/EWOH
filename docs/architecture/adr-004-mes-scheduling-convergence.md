@@ -48,6 +48,16 @@ Dispatch → Reservation / Assignment
 
 ### 4. 表语义澄清
 
+> 现行口径（2026-09-29 补）：下表的「拥有者」列记的是 2026-08-08 决策当时的**类名**，此后 V279/V280 的模块化试点
+> 把 scheduling 域的状态写者收进了生命周期文件，域没有变、名字变了。当期写者站点以
+> `tmp/chain-baseline/status-write-guard-census.json` 的 `prod` 清单为准（AST 扫 drizzle 写点，表名由
+> `server/database/schema.ts` 的 `pgTable("物理名")` 反解；raw SQL 写点不在普查面内，故该清单是**下界**）：
+> `ewoh_schedule_plan` 今天的 drizzle 写者是 `dispatch-coordinator.service.ts`／`plan.service.ts`／
+> `scheduler-plan-application.service.ts`／`scheduling-plan.lifecycle.ts` 四处；
+> `ewoh_scheduling_plan_assignment` 的写者已收进 `scheduling-assignment.lifecycle.ts` 单入口。
+> 因此第 5 节那条不变量（写入必须来自 scheduler 域）**仍然成立**，只是不能再按 `SchedulerService` 这个类名去找写者。
+> 机器对账入口见《链级行为基线》§5.3n45（第五类 `facts` 条目 `mes_adr_writers`）。
+
 | 表 | 角色 | 拥有者 | 状态 |
 | -- | ---- | ------ | ---- |
 | `ewoh_schedule_task` | **MES 工单 / Production Task Canonical** | `MesService` | 保留（事实源） |

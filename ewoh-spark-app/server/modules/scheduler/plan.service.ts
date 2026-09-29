@@ -32,6 +32,11 @@ import type {
   PlanStatus,
 } from '@shared/api.interface';
 import { RequestDatabaseContext } from '../../database/request-database-context';
+import {
+  cancelAssignmentByCAS,
+  projectAssignmentsApproved,
+  projectAssignmentsCancelled,
+} from './scheduling-assignment.lifecycle';
 import { AuditService } from '../shared/audit.service';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import type { PostgresJsDatabase as PostgresJsDatabaseType } from '@lark-apaas/fullstack-nestjs-core';
@@ -462,17 +467,8 @@ export class PlanService {
           throw new ConflictException('PLAN_CONCURRENT_TRANSITION');
         }
 
-        await this.db
-          .update(ewohSchedulingPlanAssignment)
-          .set({ status: 'approved' })
-          .where(
-            plan.orgId == null
-              ? eq(ewohSchedulingPlanAssignment.planId, planId)
-              : and(
-                eq(ewohSchedulingPlanAssignment.planId, planId),
-                eq(ewohSchedulingPlanAssignment.orgId, plan.orgId),
-              ),
-          );
+        // V279：审批决策向分配行的投影写入收进具名入口（谓词与状态值形状逐字保持）。
+        await projectAssignmentsApproved(this.db, { planId, orgId: plan.orgId ?? null });
 
         await this.insertAudit(planId, 'approve', op, approvalReason, now, ctx.primaryOrgId);
       },
@@ -815,17 +811,8 @@ export class PlanService {
           throw new ConflictException('PLAN_CONCURRENT_TRANSITION');
         }
 
-        await this.db
-          .update(ewohSchedulingPlanAssignment)
-          .set({ status: 'cancelled' })
-          .where(
-            plan.orgId == null
-              ? eq(ewohSchedulingPlanAssignment.planId, planId)
-              : and(
-                eq(ewohSchedulingPlanAssignment.planId, planId),
-                eq(ewohSchedulingPlanAssignment.orgId, plan.orgId),
-              ),
-          );
+        // V279：拒绝决策向分配行的投影写入收进具名入口（同上，行为零变化）。
+        await projectAssignmentsCancelled(this.db, { planId, orgId: plan.orgId ?? null });
 
         await this.insertAudit(planId, 'reject', op, rejectReason, now, ctx.primaryOrgId);
       },
@@ -908,20 +895,19 @@ export class PlanService {
         }
 
         const returnedTaskIds: string[] = [];
-        for (const a of cancelled) {
+        // 遍历快照而非数组本身：下面 CAS 落空的那一项要从 cancelled 里摘掉。
+        // 不剪枝 ⇒ cancelledAssignmentIds 同时含"真取消成"与"没取消成"两种项，
+        // 而 `scheduler-plan-application.service.ts:345-348` 拿这份清单去标执行跟踪，
+        // 于是库里留下 assignment=executing 而 execution=CANCELLED 的投影分叉（CCAS-01，V320）。
+        for (const a of [...cancelled]) {
           // assignment → cancelled（逐条 CAS：状态已变则该条不可回退，转入 irreversible）。
-          const updated = await this.db
-            .update(ewohSchedulingPlanAssignment)
-            .set({ status: 'cancelled' })
-            .where(
-              and(
-                eq(ewohSchedulingPlanAssignment.assignmentId, a.assignmentId),
-                eq(ewohSchedulingPlanAssignment.status, a.status),
-              ),
-            )
-            .returning();
+          const updated = await cancelAssignmentByCAS(this.db, {
+            assignmentId: a.assignmentId,
+            fromStatus: a.status,
+          });
           if (updated.length === 0) {
             irreversible.push(a);
+            cancelled.splice(cancelled.indexOf(a), 1);
             continue;
           }
           await this.db.insert(ewohAssignmentEvent).values({

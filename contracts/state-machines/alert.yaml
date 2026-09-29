@@ -7,12 +7,217 @@ states:
   - closed
   - reopened
 transitions:
-  - { from: open, to: acknowledged, role: handler, condition: confirm }
-  - { from: acknowledged, to: processing, role: handler, condition: start_handling }
-  - { from: processing, to: closed, role: handler, condition: complete }
-  - { from: closed, to: reopened, role: safety_admin, condition: reopen }
-  - { from: reopened, to: acknowledged, role: handler, condition: confirm_reopen }
-  - { from: reopened, to: processing, role: handler, condition: direct_handling }
+  - { from: open, to: acknowledged, role: handler, condition: confirm, kind: action }
+  - { from: acknowledged, to: processing, role: handler, condition: start_handling, kind: action, writer: ewoh-spark-app/shared/alert-state-machine.ts#process }
+  - { from: processing, to: closed, role: handler, condition: complete, kind: action }
+  - { from: closed, to: reopened, role: safety_admin, condition: reopen, kind: action }
+  - { from: reopened, to: acknowledged, role: handler, condition: confirm_reopen, kind: action, writer: ewoh-spark-app/shared/alert-state-machine.ts#acknowledge }
+  - { from: reopened, to: processing, role: handler, condition: direct_handling, kind: action, writer: ewoh-spark-app/shared/alert-state-machine.ts#process }
 # NEST-626：closed 可经 safety_admin reopen 复开（closed→reopened 出边），
 # 告警生命周期为环状——terminal 为空集，与 transitions 声明一致。
 terminal: []
+
+# ── 安灯提醒的身份与桶（V270 提出）────────────────────────────────────────────
+# 为什么写在契约里：`ewoh_notification` 的这批行是**派生投影**（由安灯主事实 + 桶规则 +
+# 收件人规则 + 渠道开关算出）。口径只写在服务里时，"改了收件人规则/桶序号会不会红"没有落点；
+# 提出来之后常驻用例可以独立重算期望集合再与落库行逐项比（等式，不是存在）。
+# 拼接纪律（V229 立的规矩）：消费方借用本块里的任何 SQL 片段都必须**各自加括号**。
+andon_notification_identity:
+  version: 1
+  projection_table: ewoh_notification
+  authority_table: ewoh_event            # event_type='AndonRaised' 的那些行＝安灯主事实
+  prefix_shape: 'NTF-ANDON-<sanitize(event_id, 80)>-'
+  id_shape: '<prefix><bucket>-<recipient_type>-<sanitize(recipient_id, 40)>-<channel>'
+  id_slice_chars: 250                    # 整号截断长度
+  sanitize: '去掉 [^A-Za-z0-9_.-] 之外的字符后再截断'
+  uniqueness: >-
+    (org_id, notification_id) 唯一（standalone_100）＋ ON CONFLICT DO NOTHING
+    ⇒ 同租户下同「桶 × 收件人 × 渠道」只会落一行；重复写入只累加 duplicates。
+  buckets:
+    raised:
+      emitted_by: 'POST /api/oee/andons（oee.openAndon）'
+      recipients:
+        - { type: role, id_from: assignee, default: dispatcher }
+      recipients_note: >-
+        实现还会并上「设备责任人」的 user 半（resolveAlertRecipients）。那半要过班次解析
+        （resolveCurrentShiftId 默认取 new Date()），事后重算会翻档 ⇒ 本契约的等式只覆盖
+        表可重算的 role 半；user 半见 not_recomputable.raised_user_half。
+        等式的成立前提因此是**该设备没有登记责任关系**（常驻用例用不存在于责任表的 deviceId 来钉这个前提）。
+      severity: { id_from: severity, default: high }
+    reopened:
+      emitted_by: "action=reopen 且来源态为 closed（角色 safety_admin，或 global_admin 豁免）"
+      bucket_rule: >-
+        第 k 次重开：k=1 ⇒ 'reopened'；k>=2 ⇒ 'reopened-<k>'。
+        k ＝ ewoh_event.evidence_json 的 timeline 数组里 type=='reopen' 的条数（本次转移先 push 再数，故必然 >=1）。
+        为什么必须带序号：桶若恒为 'reopened'，第二次重开算出的 id 与第一次逐字相同
+        ⇒ 被 (org_id, notification_id) 唯一键 ＋ ON CONFLICT DO NOTHING 静默吞掉，第二次重开无人被告知。
+      recipients:
+        - { type: role, id_from: assignee, default: dispatcher }
+        - { type: role, id: workshop_lead }
+      severity: { id_from: row_severity, default: high }
+  channels:
+    - name: app
+      enabled_when: always
+    - name: lark
+      enabled_when: 'EWOH_LARK_WEBHOOK_URL 非空'
+    - name: email
+      enabled_when: 'EWOH_SMTP_HOST 非空 且 EWOH_SMTP_FROM 非空 且 EWOH_SMTP_TO 至少一个地址 且 EWOH_SMTP_PORT（缺省 587）是 1..65535 的整数'
+  resolution:
+    rule: >-
+      关灯（→closed）按「prefix + external_ref」双重限定把这条安灯**全部桶**未处置的提醒一并了结
+      （resolution='andon_cleared'）；重开不复活旧提醒——重开是新事实，由新桶自己说话。
+    row_lifecycle: >-
+      了结只改处置列，不删行 ⇒ 一条安灯的提醒行按桶**累加**（raised + 每一次重开各自一组）。
+      因此等式的期望集合＝ raised ∪ (第 1..k 次重开重算出的集合)，不是"当前未处置"那一子集。
+  not_recomputable:
+    raised_user_half: '设备责任人那半挂在班次解析的 now 上 ⇒ 事后不可重算'
+    sla_legs: "sla_escalation / sla_breach_l1 / sla_breach_l2 全部挂在 ageSeconds = now − openedAt vs slaSeconds ⇒ 事后重算会翻档（与 EXO 的 now 桶同族）"
+  reconciliation:
+    equation: >-
+      对一条安灯：{notification_id LIKE '<prefix_shape 实值>%'} 在 ewoh_notification 里的行集合
+      ＝ 由上面 buckets × recipients × channels 重算出的期望 id 集合（**集合相等**，同时核条数）。
+    teeth:
+      - "实现侧：把 andonReopenedBucket 恒置 'reopened' ⇒ 第二次重开那批行必须缺 ⇒ 等式红"
+      - "实现侧：从 reopened 的收件人清单里摘掉 workshop_lead ⇒ 等式红"
+      - "契约侧：改本块的 id_shape / recipients / channels 而不同步改实现 ⇒ 等式红"
+
+# ── 数据质量提醒的身份（V274：NOTIFICATION_FANOUT 格的数据质量腿）───────────────────
+# 与上面 `andon_notification_identity` 同族：同一张派生表（`ewoh_notification`）、同一套 id 形状纪律，
+# 但**权威事实是 `ewoh_event` 里 `event_type='DataQualityAlert'` 的行**，收件人规则也不同：
+# 角色半是"严重度→角色清单"的纯函数（下表 `role_rule`），责任人半要过**班次解析**（挂在 now 上）。
+# 因此本块的等式**只覆盖角色半**，且成立前提是那条告警的设备在 `ewoh_device_responsibility` 里 0 行
+# （`device-responsibility.service.ts:453-463` 的零行分支：`users: []`，且账号查表被
+#  `personKeys.length > 0` 挡在后面 ⇒ 没有任何旁路能补进 user 收件人）。
+# 既有覆盖（按断言语义搜 `NTF-DQ`／两个桶名／`gap-sweep`，不是按登记位点查）：
+#   · `test/unit/data-quality/data-quality-notification.service.spec.ts:127／:213` 断过 id 前缀与 aging，**mock db**；
+#   · `test/e2e/data-quality-notification-leg.mjs:207-216` 真实库读 `ewoh_notification`，但只断
+#     "存在一条 role:workshop_lead 且前缀对"——**不是集合相等**，且该脚本不在重放的场景清单里（verify.sh 无引用）；
+#   · 没有任何 `*.e2e.spec.ts` 覆盖 DQ 提醒身份。
+# 消费方：`ewoh-spark-app/test/e2e/dq-notification-identity.e2e.spec.ts`（DQ 系列）。改本块＝改口径。
+data_quality_notification_identity:
+  version: 1
+  projection_table: ewoh_notification
+  authority_table: ewoh_event            # event_type='DataQualityAlert' 且 status='open' 的那些行
+  emitted_by: "POST /api/data-quality/gap-sweep（DataQualityNotificationService.sweep）与同名 worker tick"
+  prefix_shape: 'NTF-DQ-<sanitize(event_id, 80)>-'
+  id_shape: '<prefix><bucket>-<recipient_type>-<sanitize(recipient_id, 40)>-<channel>'
+  id_slice_chars: 250
+  sanitize: '去掉 [^A-Za-z0-9_.-] 之外的字符后再截断（shared/data-quality-notification.ts:17-19）'
+  uniqueness: >-
+    (org_id, notification_id) 唯一（standalone_100）＋ ON CONFLICT DO NOTHING
+    ⇒ 同租户下同「桶 × 收件人 × 渠道」只会落一行；重复扫描只累加 duplicates。
+  external_ref: event_id
+  # 角色半：severity 取自**权威行的 severity 列**（不是请求参数），故期望集合可由库内事实重算。
+  role_rule:
+    critical_or_high: [safety_admin, workshop_lead]
+    otherwise: [workshop_lead]
+    source: 'shared/data-quality-notification.ts:63-67（摄入侧写的是 L2 ⇒ 生产半只到 workshop_lead）'
+  buckets:
+    quality_alert:
+      when: always            # 扫描到的每条 open 告警都发（requiresHumanVerification 今天恒真，见 not_recomputable）
+      severity_column: { critical_or_high: high, otherwise: medium }   # data-quality-notification.service.ts:176
+      recipients: 'role_rule 的角色清单（前提：该设备无责任关系 ⇒ user 半为空）'
+    quality_aging:
+      when: 'now − ewoh_event.created_at >= DATA_QUALITY_AGING_THRESHOLD_MS（24h，shared:30）'
+      severity_column: { critical_or_high: high, otherwise: medium }   # :162 与 :176 同规则
+      recipients: '与 quality_alert 同一份清单 ⇒ 两桶只差桶名'
+      note: >-
+        这一支的**触发**挂在 now 上，但 once created_at 已落库，事后再算只需比较 created_at 与阈值；
+        用例把 created_at 钉在 25h 前（留 1h 余量）⇒ 期望集合可事后重算。别把"扫描发生的时刻"当成前提。
+  channels:
+    - name: app
+      enabled_when: always
+    - name: lark
+      enabled_when: 'EWOH_LARK_WEBHOOK_URL 非空'
+    - name: email
+      enabled_when: 'EWOH_SMTP_HOST 非空 且 EWOH_SMTP_FROM 非空 且 EWOH_SMTP_TO 至少一个地址 且 EWOH_SMTP_PORT（缺省 587）是 1..65535 的整数'
+  resolution:
+    rule: >-
+      人工判定 POST /api/data-quality/confirmations（verdict=confirmed|contested）经
+      resolveNotificationsFor 落 `resolution='data_quality_confirmed'|'data_quality_contested'` 与 resolved_at
+      （data-quality.service.ts:227）；了结不删行 ⇒ 期望集合仍按桶累加。
+  not_recomputable:
+    responsible_user_half: >-
+      设备责任人那半要过 resolveCurrentShiftId(orgId, new Date())（班次随时刻翻档）⇒ 不进等式；
+      用例改用"该设备在 ewoh_device_responsibility 里 0 行"把这个前提钉死。
+    requires_human_verification: >-
+      `requiresHumanVerification` 今天两个 return 都是 true ⇒ "计数类码不打扰"只是注释里的意图。
+      本块不把它写成 `notify_when` 字段（写了就是装饰性的第二条真值源）。
+  reconciliation:
+    equation: >-
+      对一条告警：{notification_id LIKE '<prefix_shape 实值>%'} 在 ewoh_notification 里的行集合
+      ＝ 由「本轮该发的桶」× role_rule × channels 重算出的期望 id 集合（**集合相等**，同时核条数），
+      并核 external_ref＝该 event_id、severity 列＝本块 severity_column 算出的值。
+    no_phantom: >-
+      对照组：一条**已了结**（status 非 open）或不存在的告警 ⇒ 它的前缀下不得被扫描新增行。
+    teeth:
+      - "契约侧：把 role_rule.otherwise 改成 [dispatcher]（或摘掉一条角色）而不同步改实现 ⇒ 等式红"
+      - "实现侧：把 dataQualityRoleRecipients 的 critical/high 分支改成只回 workshop_lead ⇒ critical 那条等式红"
+      - "实现侧：把 quality_aging 的桶名写死成 quality_alert ⇒ aging 那支等式红（两桶塌成一桶）"
+
+# ── 改进行动"逾期"提醒的身份（V276：NOTIFICATION_FANOUT 格的行动项腿）──────────────
+# 为什么放在本文件：这是"到期主动叫人"一族（与上面 `andon_notification_identity`、
+# `data_quality_notification_identity` 同一纪律、同一张派生表）。`contracts/learning/` 只有 JSON Schema
+# ＋测试向量，新建一份 state-machine yaml 会动到契约箭头／六场景矩阵等门禁的分母 ⇒ 不为一条腿去扩契约面。
+# 与 DQ 的关键差别（V271 曾把它整族判成"挂 now 因而不可事后重算"，本轮按单调性改判）：
+# `action_overdue` 的谓词是 `status='accepted' AND due_at IS NOT NULL AND due_at < now`，
+# **一旦过期就不会反转** ⇒ `due_at` 落库后，"该不该发"可以事后重算；仍不可重算的只有负责人账号那半
+# （要经受控函数按当下有效用户反查），所以等式钉在"owner 为空 ⇒ 该半为空"的前提上。
+action_notification_identity:
+  version: 1
+  projection_table: ewoh_notification
+  authority_table: ewoh_improvement_action
+  emitted_by: "POST /api/learning/actions/overdue-sweep（ImprovementActionService.sweepOverdue）与同名 worker"
+  prefix_shape: 'NTF-ACT-<sanitize(action_id, 80)>-'
+  sanitize: '去掉 [^A-Za-z0-9_.:-] 之外的字符后再截断（shared/improvement-action-notification.ts:21-23，比别族多留一个冒号）'
+  id_shape: '<prefix><bucket>-<recipient_type>-<sanitize(recipient_id, 40)>-<channel>'
+  id_slice_chars: 250
+  uniqueness: >-
+    (org_id, notification_id) 唯一（standalone_100）＋ ON CONFLICT DO NOTHING ⇒ 重复扫描只累加 duplicates。
+  external_ref: action_id
+  buckets:
+    action_overdue:
+      when: "status='accepted' AND due_at IS NOT NULL AND due_at < 扫描时刻（improvement-action.service.ts:362-372）"
+      monotone: true            # due_at 已过 ⇒ 之后再扫仍然逾期；等式因此可事后重算
+      recipients: [ { type: role, id: workshop_lead } ]
+      recipients_note: >-
+        实现还会并上"负责人账号"那半（owner 经受控函数反查；查不到就进 unresolvedOwners 如实报，不假装叫到了）。
+        本块的等式只覆盖角色半。**成立前提不是「owner 为空」**——`chk_ewoh_improvement_action_accepted`
+        （standalone_088:74-80）规定 accepted 必须同时带 owner／due_at／acceptance_criteria／accepted_by／accepted_at
+        ⇒「没有负责人的 accepted 行动项」在库里写不出来。可落的前提只有**负责人存在但没有可用账号绑定**：
+        实现会把它记进 `unresolvedOwners`（如实报「没叫到人」），且**不产出** user 收件人行
+        （improvement-action.service.ts:296）。
+      severity_column: { priority_high: high, otherwise: medium }   # :318，取自权威行的 priority 列
+  channels:
+    - name: app
+      enabled_when: always
+    - name: lark
+      enabled_when: 'EWOH_LARK_WEBHOOK_URL 非空'
+    - name: email
+      enabled_when: 'EWOH_SMTP_HOST 非空 且 EWOH_SMTP_FROM 非空 且 EWOH_SMTP_TO 至少一个地址 且 EWOH_SMTP_PORT（缺省 587）是 1..65535 的整数'
+  resolution:
+    rule: >-
+      完成/放弃时按前缀把提醒落到终态（`action_completed`／`action_dropped`），且与主事实变更**同一事务**
+      （:539-549／:601-602）——分开提交会出现"事已办完提醒还挂着"。了结不删行 ⇒ 期望集合仍按桶累加。
+  not_recomputable:
+    owner_account_half: '负责人账号那半要按当下有效用户反查（受控函数）⇒ 不进等式；用例钉的前提是**负责人存在但无可绑定账号**（V276 实测：owner 置空在库里写不出来）'
+    overdue_text_days: '正文里的"已逾期 N 天"随扫描时刻变 ⇒ 等式只核 id 集合与 severity 列，不核正文'
+  gap_reporting:
+    # V276 实测的两条读取面，等式不依赖但消费方会读，故记在这里防止下一轮按字面误读：
+    unresolved_owner_ref: '`unresolvedOwners` 登记的是 normalizePersonRef(owner)——`person:` 前缀被剥掉后的规范引用（shared/identity.ts:172-176），不是 owner 列的原字符串'
+    notified_recipients_shape: '响应 `notified[].recipients` 是**裸 recipientId**（服务侧 map 掉了 recipientType，:322），不带 `role:`／`user:` 前缀；键名是 `notified` 而不是 `notifications`'
+    evidence_check_is_weaker_than_record_contract: >-
+      `chk_ewoh_improvement_action_evidence` 只要求 jsonb 数组且 ≥1 项，而 `ImprovementEvidenceRef`
+      要求每项带非空 id（shared/improvement-action.ts:115-120）——后者要到 complete() 的
+      validateImprovementAction（service:458）才拦 ⇒ 直写库能插进一条"缺 id"的行动项，
+      它一切完成就 400（V276 实测）。
+  reconciliation:
+    equation: >-
+      对一条行动项：{notification_id LIKE '<prefix_shape 实值>%'} 在 ewoh_notification 里的行集合
+      ＝ 由 buckets × recipients × channels 重算出的期望 id 集合（**集合相等**，同时核条数），
+      并核 external_ref＝该 action_id、severity 列＝severity_column 按权威行 priority 算出的值。
+    no_phantom: '对照组：due_at 还在将来（或状态非 accepted）的行动项 ⇒ 它的前缀下 0 行。'
+    teeth:
+      - "契约侧：把 recipients 换成 [dispatcher]（或摘掉 workshop_lead）而不动实现 ⇒ 等式红"
+      - "实现侧：把 severity_column 的 priority_high 分支改成恒 medium ⇒ high 那条等式红"
+      - "实现侧：把桶名写成 action_overdue2 ⇒ 等式红（证明读的是真实行而不是自算集合）"

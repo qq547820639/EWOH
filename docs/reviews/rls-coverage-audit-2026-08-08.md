@@ -15,6 +15,13 @@
 
 ### 未启用 RLS（调度 V2 运行时表，9 张）
 
+> 现行口径（2026-09-29 补，依 `standalone_057_rls_null_reject.sql` 更正；当期真相以 `tmp/chain-baseline/schema-facts.txt`
+> 的「RLS 开关」小节为准）：本表记的是 2026-08-08 走查当时的隔离方式，其时调度 V2 运行时表确实只靠应用层过滤。
+> 此后 `standalone_025_scheduler_rls.sql` 起这批表已 `ENABLE ROW LEVEL SECURITY`，`standalone_057` 又去掉 policy 的
+> `org_id IS NULL` 放行分支并把 `org_id` 收紧为 NOT NULL。另两行「org_id 列 ❌」同样过期——
+> `ewoh_world_state_snapshot`／`ewoh_assignment_event` 今天都有**可空** `org_id` 列（只作血缘写入，不是隔离边界）。
+> 机器对账入口见《链级行为基线》§5.3n45（第五类 `facts` 条目 `rls_audit_isolation`）。
+
 | 表 | org_id 列 | 建表位置 | 隔离方式 |
 |----|-----------|----------|----------|
 | `ewoh_outbox` | ✅ varchar(255) | standalone_001 ADD COLUMN | 应用层 |

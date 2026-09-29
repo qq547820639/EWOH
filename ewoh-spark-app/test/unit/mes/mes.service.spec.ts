@@ -791,7 +791,39 @@ describe('MesService step exception lifecycle', () => {
         'S1',
         'report',
         { quantity: 1 },
-        { userId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
+        { userId: 'worker-1', personId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
+      ),
+    ).rejects.toThrow('WORKER_STEP_ASSIGNMENT_REQUIRED');
+  });
+
+  it('rejects an unbound worker even if the auth userId matches the assignment', async () => {
+    const workOrder = {
+      scheduleTaskId: 'WO-1',
+      title: '装配',
+      status: 'in_progress',
+    };
+    const step = {
+      stepId: 'S1',
+      status: 'in_progress',
+      progress: 10,
+      actualStart: null,
+      actualEnd: null,
+      assignedPersonId: 'worker-1',
+      resultJson: null,
+    };
+    const { dbWithUpdate } = createStepTransitionDb(workOrder, step);
+    const service = new MesService(
+      dbWithUpdate as never,
+      { appendAuditLog: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    await expect(
+      service.transitionStep(
+        'WO-1',
+        'S1',
+        'report',
+        { quantity: 1 },
+        { userId: 'worker-1', personId: null, primaryOrgId: 'org-1', roles: ['worker'] },
       ),
     ).rejects.toThrow('WORKER_STEP_ASSIGNMENT_REQUIRED');
   });
@@ -822,7 +854,7 @@ describe('MesService step exception lifecycle', () => {
       'S1',
       'report',
       { quantity: 1 },
-      { userId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
+      { userId: 'auth-worker-1', personId: 'worker-1', primaryOrgId: 'org-1', roles: ['worker'] },
     );
 
     expect(result.status).toBe('reported');

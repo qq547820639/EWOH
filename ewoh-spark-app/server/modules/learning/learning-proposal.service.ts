@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, Logger, BadRequestException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
@@ -311,7 +311,7 @@ export class LearningProposalService {
       );
     }
     const now = new Date();
-    // NO-13n / ADR-063：激活决策与状态终态同 UPDATE 原子落库（缺口显式不阻断）。
+    // NO-13n / ADR-063：激活决策与状态终态同 UPDATE 原子落库；投影失败 fail-closed。
     const decisionJson = this.projectActivationDecision(
       current, 'approved', approvedBy, undefined, orgId, now,
     );
@@ -353,7 +353,7 @@ export class LearningProposalService {
     this.requireTransition(current.status, 'rejected');
     if (!rejectedBy?.trim()) throw new BadRequestException('reject 必须带非空 rejectedBy');
     if (!reason?.trim()) throw new BadRequestException('reject 必须带非空 rejectedReason（§33 不静默拒绝）');
-    // NO-13n / ADR-063：拒绝决策与状态终态同 UPDATE 原子落库（缺口显式不阻断）。
+    // NO-13n / ADR-063：拒绝决策与状态终态同 UPDATE 原子落库；投影失败 fail-closed。
     const decisionJson = this.projectActivationDecision(
       current, 'rejected', rejectedBy, reason, orgId, new Date(),
     );
@@ -395,7 +395,7 @@ export class LearningProposalService {
     this.requireTransition(current.status, 'rolled_back');
     if (!rolledBackBy?.trim()) throw new BadRequestException('rollback 必须带非空 rolledBackBy');
     if (!reason?.trim()) throw new BadRequestException('rollback 必须带非空 rolledBackReason（§33 不静默回滚）');
-    // NO-13n / ADR-063：回滚决策与状态终态同 UPDATE 原子落库（缺口显式不阻断）。
+    // NO-13n / ADR-063：回滚决策与状态终态同 UPDATE 原子落库；投影失败 fail-closed。
     const decisionJson = this.projectActivationDecision(
       current, 'rolled_back', rolledBackBy, reason, orgId, new Date(),
     );
@@ -563,8 +563,8 @@ export class LearningProposalService {
 
   /**
    * NO-13n / ADR-063：激活/拒绝/回滚决策投影（契约门内）。
-   * 缺口/契约失败 → log 显式 + 返回 null（decision_json 不写，留 NULL），
-   * 绝不阻断提案主流程（§2/§33）。
+   * 投影失败 → 记录错误并 fail-closed 抛出 500；没有可追溯决策记录时
+   * 不允许提案终态转移。
    */
   private projectActivationDecision(
     current: typeof ewohLearningProposal.$inferSelect,
@@ -573,7 +573,7 @@ export class LearningProposalService {
     reason: string | undefined,
     orgId: string,
     now: Date,
-  ): DecisionRecord | null {
+  ): DecisionRecord {
     const { record, issues } = projectLearningProposalActivationDecision({
       proposalId: current.proposalId,
       kind: String(current.kind ?? ''),
@@ -584,10 +584,12 @@ export class LearningProposalService {
       now,
     });
     if (!record) {
-      this.logger.warn(
-        `learning proposal 决策投影缺口 ${current.proposalId}（不阻断提案主流程）：${issues.join(',')}`,
+      this.logger.error(
+        `learning proposal 决策投影失败 ${current.proposalId}（fail-closed）：${issues.join(',')}`,
       );
-      return null;
+      throw new InternalServerErrorException(
+        `DECISION_PROJECTION_FAILED: learning proposal ${current.proposalId} 的授权决策无法留痕，已拒绝转移`,
+      );
     }
     return record;
   }

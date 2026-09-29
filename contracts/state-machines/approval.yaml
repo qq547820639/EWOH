@@ -8,10 +8,39 @@ states:
   - expired
   - bypassed
 transitions:
-  - { from: pending, to: approved, condition: all_steps_approved }
-  - { from: pending, to: rejected, condition: any_step_rejected }
-  - { from: pending, to: cancelled, role: initiator, condition: withdraw }
-  - { from: pending, to: expired, condition: deadline_passed }
-  - { from: pending, to: bypassed, role: high_privilege_admin, condition: emergency, audit: high_risk }
+  - { from: pending, to: approved, condition: all_steps_approved, kind: guard }
+  - { from: pending, to: rejected, condition: any_step_rejected, kind: guard }
+  - { from: pending, to: cancelled, role: initiator, condition: withdraw, kind: action, writer: ewoh-spark-app/server/modules/approval/approval.controller.ts#cancel }
+  - { from: pending, to: expired, condition: deadline_passed, kind: guard }
+  - { from: pending, to: bypassed, role: high_privilege_admin, condition: emergency, audit: high_risk, kind: action }
 terminal: [approved, rejected, cancelled, expired, bypassed]
 step_states: [pending, delegated, skipped, approved, rejected, expired]
+
+# ── 到期提醒的「通知身份」口径（V261 追加）────────────────────────────────
+# 这里是 ewoh_notification 里**授权到期**那一批行的唯一权威写法：
+# 常驻用例 approval-expiry-worker-tick 的 AE-03 由本块自己重算期望集合，再与实现落库的行逐项比。
+# 改实现不改这里、或改这里不改实现 ⇒ AE-03 会红（两侧各有一支牙齿，见该用例注释）。
+# 刻意用**新的顶层键**，不并入上面的 states:——主线9 的 parseDeclaredStates 只锚 `^states:` 块，
+# 把渠道/桶名塞进去会顶开那条"词表只许缩小"的棘轮（V229 在 control.yaml 上已撞过一次）。
+expiry_notification_identity:
+  # 被核对的投影行 与 它的权威来源（审批实例落在通用事件表；业务键是 event_id，不是行主键 id）
+  projection_table: ewoh_notification
+  authority_table: ewoh_event
+  authority_type: approval_instance
+  # 幂等键形状：整串截断到 id_slice_chars；recipient_tag 只在 user 那一条上存在，
+  # 且收件人先清洗为 [A-Za-z0-9_.-] 再取前 40 字符（实现：approval-expiry.service.ts:136-141）
+  id_shape: "NTF-EXPR-{approvalId}-{bucket}{recipient_tag}-{channel}"
+  recipient_tag_shape: "-user-{cleaned_recipient}"
+  id_slice_chars: 250
+  # 收件人规则：角色一条恒定；发起人非空且不是 'system' 时**再各发一条**（NO-32a：等在现场的人不能收不到）
+  recipient_rule: "role:safety_admin 恒定一条；createdBy 非空且 !== 'system' 时追加 user:<createdBy>"
+  # 桶与严重度：剩余 ≤ bucket_window_hours 记 expiring，否则 expired（严重度由桶唯一决定）
+  bucket_window_hours: 2
+  severity_by_bucket: { expiring: high, expired: medium }
+  # 渠道清单：每个渠道的启用条件写成**环境变量谓词**，不是函数名——测试据此自己判，不许调用实现的开关函数
+  channels:
+    - { name: app, enabled_when: always }
+    - { name: lark, enabled_when: "env:EWOH_LARK_WEBHOOK_URL trimmed != ''" }
+    - { name: email, enabled_when: "env:EWOH_SMTP_HOST trimmed != '' && env:EWOH_SMTP_FROM trimmed != '' && env:EWOH_SMTP_TO csv != [] && port(EWOH_SMTP_PORT default 587) in 1..65535" }
+  # 重复扫描的语义：同一 (approvalId, bucket, recipient, channel) 只应有一行
+  idempotency: "insert ... onConflictDoNothing on (org_id, notification_id) ⇒ 重复 sweep 不新增行"

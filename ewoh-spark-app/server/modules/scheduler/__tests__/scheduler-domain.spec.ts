@@ -1096,7 +1096,145 @@ describe('WorldStateSnapshotService.describeStaleness（NO-62c）', () => {
     expect(report.summary).toContain('仅本方案自身的执行效果变化');
   });
 
+  /**
+   * FR-01（V67 全链重放抓到，登记见基线文档 §5.4）：设备**证据老化**不得改写内容版本。
+   *
+   * 为什么这条值得存在：本文件顶部（world-state.service.ts:545-547）写着一条不变量——
+   * "内容版本排除了随时间自然变化的派生字段（设备 status/online、过期后的状态标签），
+   * 所以'只是过了 60 秒'不再被误判为世界变化"。**实测这条不成立**：
+   *  - `freshnessAwareStatus`（:1283-1286）在 `dataQuality !== 'FRESH'` 时返回哨兵串，哨兵本身随时钟翻转；
+   *  - 而投影里的 `status` 本来就已经是新鲜度派生（resource-projection.service.ts:337-343：
+   *    设备无权威 status 列，状态=faultCode ∧ 新鲜度；:231-233 人员过期即 UNKNOWN），
+   *    所以"掩盖"与否都改变同一列。
+   * 后果：`stalenessVerdict` 把任何内容版本差异一律算 `contentChanged`（**不看方案是否依赖该实体**，
+   * 只有"证据档"才按 `used` 分流）⇒ 任意一台设备跨过 60s 新鲜度边界，就把**所有**在批方案一起判过期。
+   * 实测现场：`e2e:fault-replan` 的 ⑥ 审批 409 PLAN_STALE，变化实体恰为 `device:*[content/external]`，
+   * 而方案行仍是 `shadow`、`supersededBy=-`（没有任何真实改动、也没有别处重排）。
+   *
+   * 为什么既有 NO-64a 用例没抓到：它们是**手喂** `entityContentVersions` 来比对判定逻辑的，
+   * 从不经过这道计算口——"设备沉默但方案不依赖它 → 不阻断审批"那条用例的名称正是本条要求，
+   * 却在合成边界处把它绕开了。
+   *
+   * **用例性质：现状钉住**（与 RJ-02/RJ-03、S-05 同一族）。为什么不用 `it.fails`/skip：
+   * skip 会让缺陷从可见面消失（本轮刚给链级 D 段装上"SKIP 不算通过"的门禁），
+   * 而钉住现状能把"今天确实如此"变成可重放的证据。
+   * **已选定的修法（V69）= 判定侧分流**（`stalenessVerdict` 里把"可由新鲜度迁移完全解释"的内容差异
+   * 改判到按 `used` 分流的证据通道），因此**这道计算口的现状不变**：本用例继续钉住"内容版本随时钟翻转"这一事实，
+   * 它是那条分流规则存在理由的永久证据（一旦有人把权威值透出到投影、让内容版本不再随时钟变，
+   * 本用例就会变红——那时把它翻成 `.toBe` 并删掉判定侧的分流分支即可）。
+   * 端到端的验收在下一条用例（`NO-64a + FR-01：…`，走真实计算口 + 真实判定）。
+   */
+  it('FR-01 现状钉住：设备证据老化会改写内容版本（判定侧据此分流，故保留此事实）', async () => {
+    const deviceOf = (quality: 'FRESH' | 'STALE', status = 'AVAILABLE') => ({
+      id: 'DA-1',
+      entityId: 'device:DA-1',
+      status,
+      // online 与心跳同源：真实投影里"过期即 false"，因此这里同样随时钟翻
+      online: quality === 'FRESH',
+      batteryPct: 80,
+      capabilities: ['LIFT'],
+      x: 1,
+      y: 2,
+      locationStationId: 'ST-1',
+      locationConfidence: 'HIGH',
+      dataQuality: quality,
+      sourceTs: 1_000,
+      telemetryUpdatedAt: quality === 'FRESH' ? 1_000 : 9_000_000,
+    });
+    const contentVersionOf = async (device: Record<string, unknown>) => {
+      const service = new WorldStateSnapshotService(
+        makeApprovalDb({ snapshot: null }).db as never,
+        { runInTransaction: jest.fn() } as never,
+        {
+          projectForSnapshot: jest
+            .fn()
+            .mockResolvedValue({ persons: [], devices: [device], stations: [] }),
+        } as never,
+      );
+      const state = await service.getCurrentWorldState({ primaryOrgId: 'ORG-1' } as never);
+      return (state as { entityContentVersions: Record<string, number> })
+        .entityContentVersions['device:DA-1'];
+    };
+
+    // 现状（缺陷）：同一权威列、只是心跳过期 ⇒ 内容版本**竟然不同**。
+    // 修复后这一条必须翻成 .toBe（见上方用例性质）。
+    expect(await contentVersionOf(deviceOf('STALE'))).not.toBe(await contentVersionOf(deviceOf('FRESH')));
+    // 权威列真的变了（人工停用）⇒ 内容版本必须不同：修法不许把这条一起削弱
+    expect(await contentVersionOf(deviceOf('FRESH', 'UNAVAILABLE')))
+      .not.toBe(await contentVersionOf(deviceOf('FRESH')));
+  });
+
   /* ── NO-64a：事实变化 vs 证据老化（审批/派工共用同一判定） ── */
+
+  /**
+   * FR-01 修复的验收（走**真实计算口**，不手喂内容版本）：
+   * 快照与"当前状态"都由 `getCurrentWorldState` 真算出来，只差设备心跳是否过期。
+   * 这是这道缺陷能被抓到的唯一形状——上面那批 NO-64a 用例直接喂 `entityContentVersions`，
+   * 恰好绕开了"内容版本随时钟翻转"这一步。
+   */
+  async function agedDevicePair() {
+    const deviceOf = (quality: 'FRESH' | 'STALE') => ({
+      id: 'DA-1',
+      entityId: 'device:DA-1',
+      status: 'AVAILABLE',
+      online: quality === 'FRESH',
+      batteryPct: 80,
+      capabilities: ['LIFT'],
+      x: 1,
+      y: 2,
+      locationStationId: 'ST-1',
+      locationConfidence: 'HIGH',
+      dataQuality: quality,
+      sourceTs: 1_000,
+      telemetryUpdatedAt: quality === 'FRESH' ? 1_000 : 9_000_000,
+    });
+    const collect = async (quality: 'FRESH' | 'STALE') => {
+      const service = new WorldStateSnapshotService(
+        makeApprovalDb({ snapshot: null }).db as never,
+        { runInTransaction: jest.fn() } as never,
+        {
+          projectForSnapshot: jest.fn().mockResolvedValue({
+            persons: [], devices: [deviceOf(quality)], stations: [],
+          }),
+        } as never,
+      );
+      return await service.getCurrentWorldState({ primaryOrgId: 'ORG-1' } as never);
+    };
+    return { fresh: await collect('FRESH'), stale: await collect('STALE') };
+  }
+
+  it('NO-64a + FR-01：设备只是心跳过期 ⇒ 不阻断"不依赖它"的审批；依赖它则按 EVIDENCE_STALE 拒绝', async () => {
+    const { fresh, stale } = await agedDevicePair();
+    // 前提（本用例成立的条件）：真实计算口确实让内容版本随时钟变了——这正是 FR-01 的成因。
+    expect(
+      (stale as { entityContentVersions: Record<string, number> }).entityContentVersions['device:DA-1'],
+    ).not.toBe(
+      (fresh as { entityContentVersions: Record<string, number> }).entityContentVersions['device:DA-1'],
+    );
+
+    // 依赖关系沿用既有 NO-64a 用例的形状（由 assignment 行喂进来），不去 spy 私有方法。
+    const makeSvc = (deviceIdOfAssignment: string | null) => makeService(
+      makeApprovalDb({
+        snapshot: fresh as never,
+        assignments: deviceIdOfAssignment
+          ? [{ taskId: 'T-9', personId: 'P-1', deviceId: deviceIdOfAssignment, stationId: 'S-1' }]
+          : [],
+        reservations: [],
+      }).db,
+      stale,
+    );
+    const ctx = { primaryOrgId: 'ORG-1' } as never;
+
+    // ① 方案不依赖这台设备：老化不是世界变化 ⇒ 审批必须放行
+    await expect(
+      makeSvc(null).assertFreshForApprove('WS-1', ctx, 'PLAN-1'),
+    ).resolves.toBeUndefined();
+
+    // ② 方案依赖这台设备：仍然必须拒绝，但原因要是 EVIDENCE_STALE（不再冒充"内容变了"）
+    await expect(
+      makeSvc('DA-1').assertFreshForApprove('WS-1', ctx, 'PLAN-1'),
+    ).rejects.toThrow(/PLAN_STALE:EVIDENCE_STALE/);
+  });
 
   function makeApprovalDb(options: {
     snapshot: WorldStateSnapshot | null;

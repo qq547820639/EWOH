@@ -150,6 +150,31 @@ describe('resumableUpload', () => {
     expect(result.bytesUploaded).toBe(blob.size);
   });
 
+  it('re-uploads chunks whose persisted indexes are corrupt or out of range', async () => {
+    const blob = new Blob([new Uint8Array(2 * DEFAULT_CHUNK_SIZE_BYTES)]);
+    const uploaded: number[] = [];
+    const result = await runResumableUpload(blob, {
+      idempotencyKey: 'ik-corrupt',
+      fileIdentifier: 'a.bin',
+      resumeState: async () => [-1, 0.5, 2, '0' as never],
+      uploadChunk: (chunk) => {
+        uploaded.push(chunk.index);
+        return Promise.resolve({ ok: true as const, chunkId: `c${chunk.index}` });
+      },
+    });
+
+    expect(uploaded).toEqual([0, 1]);
+    expect(result.uploadedChunks).toBe(2);
+    expect(result.bytesUploaded).toBe(blob.size);
+  });
+
+  it('rejects invalid chunk sizes instead of creating an infinite chunk loop', () => {
+    const blob = new Blob([new Uint8Array(8)]);
+    expect(() => createChunks(blob, 0)).toThrow('chunkSizeBytes');
+    expect(() => createChunks(blob, -1024)).toThrow('chunkSizeBytes');
+    expect(() => createChunks(blob, Number.POSITIVE_INFINITY)).toThrow('chunkSizeBytes');
+  });
+
   it('finalize receives only chunks uploaded in this run', async () => {
     const blob = new Blob([new Uint8Array(DEFAULT_CHUNK_SIZE_BYTES * 2)]);
     const results: string[] = [];

@@ -21,6 +21,23 @@ import re
 CONTRACTS_DIR = "contracts/state-machines"
 
 
+def strip_comment(raw: str) -> str:
+    """按 YAML 规范判定注释起点：`#` 只有在**行首**或**前面是空白**时才开启注释。
+
+    YLOAD-03（V332）：旧写法 `raw.split("#", 1)[0]` 把值里的 `#` 也当注释 ⇒
+    `writer: 路径#标识符` 这类带锚点的值会在行中间被截断，内联映射丢掉右花括号后
+    fail-closed 抛 ValueError（V332 实测：`plan`／`alert` 两份契约整体读不到，5 条常驻用例红）。
+    js-yaml 侧一直按规范处理，所以这是两个运行时解析同一份契约的真实分歧，不是契约写错了
+    ——修在解析器，契约里的 `#` 写法保留。
+    """
+    if "#" not in raw:
+        return raw
+    for i, ch in enumerate(raw):
+        if ch == "#" and (i == 0 or raw[i - 1].isspace()):
+            return raw[:i]
+    return raw
+
+
 def parse_simple_yaml(text: str) -> dict:
     """极简 YAML 子集解析器（仅支持本仓库 state-machines 的结构）。
 
@@ -31,12 +48,27 @@ def parse_simple_yaml(text: str) -> dict:
     （``- {from: a, to: b}``）；多行块样式 dict（``- from: a`` 换行续写）
     不支持，遇到即抛 ValueError（fail-closed，绝不猜结构）。
     contracts/state-machines/*.yaml 全部使用内联格式，为既定约定。
+
+    YLOAD-01（V331）：状态机文件里还有**与状态机无关的兄弟块**（派生投影口径、通知身份、
+    波次判据这类），它们是嵌套 mapping/list，本加载器不建模。原先这些行会一路走到
+    else 分支抛 ValueError ⇒ 契约每加一个兄弟块，边缘侧就读不到状态机（V331 实测：
+    plan/alert/approval/control 四个文件全读不到，`tests/test_state_machine_contract.py`
+    两条用例红）。现在的规则：顶层不认识的键 ⇒ 连它缩进的子行一起跳过，并把键名记进
+    `sibling_top_level_keys` 供调用方核对"跳过了什么"——跳过是**可见**的，不是静默丢。
+    fail-closed 只保留在被建模的三键（states/transitions/terminal）内部。
+
+    YLOAD-03（V332）：行内注释一律由 `strip_comment` 按规范判定后剥离，值里的 `#`
+    （如 `writer: 路径#标识符`）不再截行——本函数的 fail-closed 判据本身没有放宽。
     """
+    MODELED = ("states", "transitions", "terminal")
+    META = ("version", "owner")
     result: dict[str, object] = {}
     states: list[str] = []
     transitions: list[dict] = []
     terminal: list[str] = []
     meta: dict[str, str] = {}
+    siblings: list[str] = []
+    current_top: str | None = None
 
     def _parse_inline(line: str) -> dict:
         line = line.strip()
@@ -75,17 +107,30 @@ def parse_simple_yaml(text: str) -> dict:
         return parts
 
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        body = strip_comment(raw)
+        line = body.strip()
         if not line:
             continue
+        indent = len(body) - len(body.lstrip())
+        top_key = line.split(":", 1)[0].strip() if indent == 0 and ":" in line else None
+        if indent == 0 and top_key is not None and top_key not in MODELED and top_key not in META:
+            current_top = top_key
+            if top_key not in siblings:
+                siblings.append(top_key)
+            continue          # 兄弟块的顶层键（无论 `k:` 还是 `k: v`）都不建模
+        if indent > 0 and current_top is not None and current_top not in MODELED:
+            continue          # 兄弟块的缩进子行／续行，随它一起跳过
         if line.startswith("version:") or line.startswith("owner:"):
             k, _, v = line.partition(":")
             meta[k.strip()] = v.strip()
         elif line.startswith("states:"):
+            current_top = "states"
             continue
         elif line.startswith("transitions:"):
+            current_top = "transitions"
             continue
         elif line.startswith("terminal:"):
+            current_top = "terminal"
             raw = line.split(":", 1)[1].strip()
             raw = raw.strip("[]").strip()
             terminal = [x.strip().strip('"').strip("'") for x in raw.split(",") if x.strip()]
@@ -103,6 +148,7 @@ def parse_simple_yaml(text: str) -> dict:
     result["states"] = states
     result["transitions"] = transitions
     result["terminal"] = terminal
+    result["sibling_top_level_keys"] = siblings
     return result
 
 

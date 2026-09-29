@@ -92,6 +92,13 @@ export class S3StorageDriver implements StorageDriver {
     }
   }
 
+  /** Organization IDs are database UUIDs and therefore safe object-key scopes. */
+  private assertValidOrgId(orgId: string): void {
+    if (!isValidUuid(orgId)) {
+      throw new BadRequestException('invalid org id (uuid required)');
+    }
+  }
+
   private orgContentKey(orgId: string, id: string): string {
     return `${this.prefix}/${orgId}/${id}`;
   }
@@ -111,6 +118,7 @@ export class S3StorageDriver implements StorageDriver {
 
   async save(id: string, buffer: Buffer, record: FileRecord): Promise<void> {
     this.assertValidId(id);
+    this.assertValidOrgId(record.orgId);
     await this.client.send(new PutObjectCommand({
       Bucket: this.bucket,
       Key: this.orgContentKey(record.orgId, id),
@@ -228,6 +236,9 @@ export class S3StorageDriver implements StorageDriver {
     let continuationToken: string | undefined;
     // NEST-306/307：org 作用域仅列举 `{prefix}/{orgId}/` 前缀；全量
     // （global admin）列举 `{prefix}/`（兼容旧平铺键 + org 布局键）。
+    if (orgId) {
+      this.assertValidOrgId(orgId);
+    }
     const scopePrefix = orgId ? `${this.prefix}/${orgId}/` : `${this.prefix}/`;
     do {
       const response = await this.client.send(new ListObjectsV2Command({
@@ -288,6 +299,7 @@ export class S3StorageDriver implements StorageDriver {
 
   async findByIdempotencyKey(key: string, orgId: string): Promise<FileRecord | null> {
     if (!key) return null;
+    this.assertValidOrgId(orgId);
     const records = await this.list(orgId);
     return (
       records.find(
@@ -301,6 +313,7 @@ export class S3StorageDriver implements StorageDriver {
     _orgId: string,
     request: PresignedUrlRequest,
   ): Promise<PresignedUrlResult> {
+    this.assertValidOrgId(_orgId);
     const expiresIn = clampLifetime(request.expiresInSeconds);
     const key = await this.resolveContentKey(id);
     const command = new GetObjectCommand({

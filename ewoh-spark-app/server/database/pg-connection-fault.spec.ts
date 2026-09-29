@@ -43,6 +43,7 @@ import {
   classifyProcessFault,
   installPgConnectionFaultGuard,
   isPgConnectionFault,
+  isPgServerTerminationFault,
   isPgWriteRaceFault,
   pgConnectionClosedSnapshot,
   pgProcessFaultSnapshot,
@@ -61,6 +62,17 @@ function pgWriteRaceError(): TypeError {
 
 function driverConnectionError(code: string): Error {
   return Object.assign(new Error(`write ${code} 127.0.0.1:55432`), { code });
+}
+
+/**
+ * PostgreSQL **服务端**发出的 FATAL（形状取自 CRASH-01 实测：`pg_terminate_backend`
+ * 之后驱动把 ErrorResponse 原样抛出，`code` 是五字符 SQLSTATE、不是驱动自有码）。
+ */
+function serverFatalError(code: string): Error {
+  return Object.assign(
+    new Error('terminating connection due to administrator command'),
+    { code, severity: 'FATAL', severity_local: 'FATAL' },
+  );
 }
 
 /** 真实安装兜底并取出它注册到 process 上的监听器（不 mock process.on）。 */
@@ -120,6 +132,30 @@ describe('R-4 崩溃签名识别', () => {
     });
     expect(classifyProcessFault(new Error('some business bug')).recoverable).toBe(false);
     expect(classifyProcessFault(undefined).recoverable).toBe(false);
+  });
+
+  /**
+   * CRASH-01（V196）：兜底原来只认驱动自有码，于是数据库自己发出的 57P01 被判成"非连接类"
+   * ⇒ 摘监听后原样抛出 ⇒ 终止一个在飞后端带走整个 API。这里同时钉住**放宽的边界**：
+   * 只有"这条连接/这个实例此刻不可用"的四条 Class 57 码进可恢复集，库里真没了（57P04）、
+   * 语句被取消（57014）、业务与完整性事实（23505/40P01）、通用 socket 码一律照旧退出。
+   */
+  it('服务端 Class 57 会话终止码算连接级故障；同族其它码不算', () => {
+    for (const code of ['57P01', '57P02', '57P03', '57P05']) {
+      expect(isPgServerTerminationFault(serverFatalError(code))).toBe(true);
+      expect(isPgConnectionFault(serverFatalError(code))).toBe(true);
+      expect(classifyProcessFault(serverFatalError(code))).toMatchObject({
+        kind: 'pg-server-terminate',
+        recoverable: true,
+      });
+    }
+    for (const code of ['57P04', '57014', '23505', '40P01', 'ECONNRESET', 'ECONNREFUSED']) {
+      expect(isPgServerTerminationFault(serverFatalError(code))).toBe(false);
+      expect(classifyProcessFault(serverFatalError(code))).toMatchObject({
+        kind: 'unclassified',
+        recoverable: false,
+      });
+    }
   });
 });
 
@@ -183,6 +219,33 @@ describe('R-4 进程级兜底（进程存活 / 留痕 / 不掩盖）', () => {
     try {
       rejection(pgWriteRaceError());
       expect(onRecoverable.mock.calls[0][0]).toMatchObject({ phase: 'unhandledRejection' });
+    } finally {
+      dispose();
+    }
+  });
+
+  /**
+   * CRASH-01 的实测形状：`pg_terminate_backend` 之后 57P01 以 **unhandledRejection** 到顶层。
+   * 修前这条会走 onUnclassified（默认实现是"摘监听 + 原样抛出" ⇒ 进程退出，见
+   * `tmp/v196-killall.log` 的 killall-2：`code=1 signal=null`）；修后只留痕、进程继续服务。
+   */
+  it('57P01 到顶层时进程不再被带走（只留痕，并计入故障计数）', () => {
+    const onRecoverable = jest.fn();
+    const onUnclassified = jest.fn();
+    const { dispose, rejection } = installAndCapture({ onRecoverable, onUnclassified });
+    try {
+      const before = pgProcessFaultSnapshot();
+      rejection(serverFatalError('57P01'));
+      expect(onUnclassified).not.toHaveBeenCalled();
+      expect(onRecoverable.mock.calls[0][0]).toMatchObject({
+        phase: 'unhandledRejection',
+        kind: 'pg-server-terminate',
+      });
+      expect(pgProcessFaultSnapshot().count).toBe(before.count + 1);
+      expect(pgProcessFaultSnapshot().lastKind).toBe('pg-server-terminate');
+      // 同一条兜底对"真缺陷"仍然不吞：紧接着一条 23505 必须走退出侧。
+      rejection(serverFatalError('23505'));
+      expect(onUnclassified).toHaveBeenCalledTimes(1);
     } finally {
       dispose();
     }

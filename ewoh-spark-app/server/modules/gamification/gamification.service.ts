@@ -34,6 +34,7 @@ import type { OrgContext } from '../shared/org-context.interceptor';
 import { buildGucSettings } from '../shared/org-context.interceptor';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { assertPlanTenantVisible } from '../scheduler/plan-tenant-guard';
+import { markPlanDispatched } from '../scheduler/scheduling-plan.lifecycle';
 
 /**
  * 游戏化玩法 + 具身智能服务（工厂即具身机器人）
@@ -695,17 +696,13 @@ export class GamificationService {
     // T4 加固（2026-08-28，审计 R2-SBZ-014 闭合）：补 status CAS——
     // 读-改-写窗口内并发 double-dispatch 时后到者 0 行命中 → 409，
     // 与 plan.service dispatchPlanV2 的 approved→dispatched CAS 语义对齐。
-    const dispatchedRows = await this.db
-      .update(ewohSchedulePlan)
-      .set({ status: 'dispatched' })
-      .where(
-        and(
-          eq(ewohSchedulePlan.planId, planId),
-          eq(ewohSchedulePlan.status, 'confirmed'),
-        ),
-      )
-      .returning({ id: ewohSchedulePlan.id });
-    if (dispatchedRows.length === 0) {
+    // V79：CAS 本身收进 `markPlanDispatched`（与正统派工共用唯一写入口），
+    // 本轨道的前置状态仍是 confirmed，对外 409 文案不变。
+    const dispatched = await markPlanDispatched(this.db, {
+      planId,
+      fromStatus: 'confirmed',
+    });
+    if (!dispatched) {
       throw new ConflictException(
         `Schedule plan ${planId} concurrently dispatched or no longer confirmed`,
       );

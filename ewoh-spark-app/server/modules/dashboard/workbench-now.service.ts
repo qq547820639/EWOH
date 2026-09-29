@@ -109,7 +109,9 @@ export class WorkbenchNowService {
               createdAt: new Date().toISOString(),
               detail:
                 `未交付 ${backlog.totals.undelivered} / 已投未回执 ${backlog.totals.receivedNotExecuted}`
-                + `（SLA ${Math.round(backlog.slaMs / 60_000)} 分钟）`,
+                + `（SLA ${Math.round(backlog.slaMs / 60_000)} 分钟）`
+                // PROJ-06：总量是真总量，但逐设备明细/升级只覆盖被检视的那一批——必须说出来。
+                + (backlog.truncated ? '；积压超过单轮检视上限，明细仅列最久的那一批' : ''),
             },
           ]
         : []),

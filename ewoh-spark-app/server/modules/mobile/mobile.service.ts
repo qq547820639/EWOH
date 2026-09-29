@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ewohScheduleTaskStep } from '@server/database/schema';
 import { MesService } from '../mes/mes.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -61,17 +61,25 @@ export class MobileService {
   ) {}
 
   async listWorkbench(personId: string, actor?: OrgContext) {
-    if (!personId?.trim() || !actor?.primaryOrgId) {
-      return [];
+    // personId 是人员域业务 ID；actor.personId 是签名令牌里的可信绑定。
+    // 缺上下文/绑定不能返回空列表伪装成“没有任务”，必须让调用方看到拒绝原因。
+    const requestedPersonId = personId?.trim() ?? '';
+    if (!requestedPersonId) {
+      throw new BadRequestException('personId is required');
+    }
+    if (!actor?.primaryOrgId || !actor.personId) {
+      throw new ForbiddenException(
+        'workbench queries require trusted organization and person bindings',
+      );
     }
     // NEST-412：水平越权收敛——仅本人（或 global_admin/管理角色）可查工作台，
     // 任意已认证用户传他人 personId 枚举他人工序的面关闭。
-    const roles = actor?.roles ?? [];
+    const roles = actor.roles ?? [];
     const isPrivileged =
       roles.includes('global_admin') ||
       roles.includes('dispatcher') ||
       roles.includes('workshop_lead');
-    if (!isPrivileged && actor.userId !== personId) {
+    if (!isPrivileged && actor.personId !== requestedPersonId) {
       throw new ForbiddenException(
         'workbench queries are limited to the caller (personId mismatch)',
       );
@@ -82,7 +90,7 @@ export class MobileService {
       .from(ewohScheduleTaskStep)
       .where(
         and(
-          eq(ewohScheduleTaskStep.assignedPersonId, personId),
+          eq(ewohScheduleTaskStep.assignedPersonId, requestedPersonId),
           eq(ewohScheduleTaskStep.orgId, actor.primaryOrgId),
           inArray(ewohScheduleTaskStep.status, [
             'pending',
@@ -154,7 +162,7 @@ export class MobileService {
    * 必须让工人在工单卡上看到"另一台还没就绪"。
    */
   private async readAssignedDeviceExecutions(taskId: string, actor?: OrgContext) {
-    if (!this.controlService) return null;
+    if (!this.controlService || !actor?.primaryOrgId) return null;
     try {
       // 多设备协同工单：取**全部**派工设备；执行摘要展示主设备（最新派工），
       // 其余设备数由客户端显示"+N 台"（NO-79a 后续：不静默丢弃协同设备事实）。
@@ -162,15 +170,12 @@ export class MobileService {
         .select({ deviceId: ewohSchedulingPlanAssignment.deviceId })
         .from(ewohSchedulingPlanAssignment)
         .where(
-          actor?.primaryOrgId
-            ? and(
-                eq(ewohSchedulingPlanAssignment.taskId, taskId),
-                or(
-                  eq(ewohSchedulingPlanAssignment.orgId, actor.primaryOrgId),
-                  isNull(ewohSchedulingPlanAssignment.orgId),
-                ),
-              )
-            : eq(ewohSchedulingPlanAssignment.taskId, taskId),
+          and(
+            eq(ewohSchedulingPlanAssignment.taskId, taskId),
+            // standalone_057 后 org_id NOT NULL；移动端不得为可能残留的 NULL
+            // 行打开跨租户旁路。
+            eq(ewohSchedulingPlanAssignment.orgId, actor.primaryOrgId),
+          ),
         )
         .orderBy(desc(ewohSchedulingPlanAssignment.createdAt));
       const deviceIds = [...new Set(assignments.map((a) => String(a.deviceId ?? '').trim()))].filter(Boolean);

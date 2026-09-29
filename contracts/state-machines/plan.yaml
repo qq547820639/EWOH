@@ -9,12 +9,179 @@ states:
   - expired
   - archived
 transitions:
-  - { from: shadow, to: simulating, condition: start_simulation }
-  - { from: simulating, to: shadow, condition: abandon }
-  - { from: simulating, to: pending_review, condition: submit }
-  - { from: pending_review, to: approved, role: approver, condition: approve }
-  - { from: pending_review, to: shadow, role: approver, condition: reject_and_revise }
-  - { from: approved, to: dispatched, condition: convert_to_task }
-  - { from: approved, to: expired, condition: validity_passed }
-  - { from: any, to: archived, condition: archive }
+  - { from: shadow, to: simulating, condition: start_simulation, kind: action, writer: src/edge_platform/scheduler/scheduler_service.py#simulate }
+  - { from: simulating, to: shadow, condition: abandon, kind: action, writer: src/edge_platform/scheduler/scheduler_service.py#simulate }
+  - { from: simulating, to: pending_review, condition: submit, kind: action }
+  - { from: pending_review, to: approved, role: approver, condition: approve, kind: action }
+  - { from: pending_review, to: shadow, role: approver, condition: reject_and_revise, kind: action, writer: unimplemented }
+  - { from: approved, to: dispatched, condition: convert_to_task, kind: action, writer: ewoh-spark-app/server/modules/scheduler/scheduling-plan.lifecycle.ts#markPlanDispatched }
+  - { from: approved, to: expired, condition: validity_passed, kind: guard }
+  - { from: any, to: archived, condition: archive, kind: action }
 terminal: [dispatched, expired, archived]
+
+# ── KPI 的 delivery 窗口（V254，非状态机块）────────────────────────────────
+# 与 control.yaml 的 `delivery_backlog_window` 同一种东西：**一条派生投影的取数口径**。
+# 立它的理由＝登记册 PROJ-05／KPIRATE-01 那条老话——「在测试里重抄实现的 WHERE 不算对账」；
+# 于是 `kpi-delivery-window-projection.e2e.spec.ts`（KC-01..KC-04）的取数条件一条都不写在测试里，
+# 全部由本块解析得来：改实现不改本块、或改本块不改实现，两侧各有一条常驻用例会红。
+# 拼接纪律（V229 实测过的坑）：借用的片段与其它条件用 AND 连接时**必须各自加括号**——
+# `measurable_filter` 顶层是 AND 串，但一旦有片段含 OR，裸拼会按优先级拆错支。
+kpi_delivery_window:
+  version: 1
+  source_table: ewoh_scheduling_execution
+  projection_table: ewoh_scheduling_kpi
+  projection_json_column: kpi_json
+  projection_json_path: delivery
+  # 窗口键是 `_updated_at`（`kpi.service.ts:63-66` 用行的 updatedAt 过滤），**不是**计划/实际时间。
+  # 推论（KC-04 钉的就是它）：同一行被再次写过后会跨窗口移动 ⇒ 落库快照是"读时"的函数，
+  # 只对"读那一刻窗口内的行集"成立。本行钉现状，不主张这就是应然（应然要不要改＝待拍）。
+  window_column: execution._updated_at
+  window_lower_operator: ">= $2::timestamptz"
+  window_upper_operator: "<= $3::timestamptz"
+  default_window_ms: 86400000
+  org_scope: execution.org_id = $1::varchar
+  completion_status: COMPLETED
+  # 「可测量」的四_timestamp 前提（`kpi.service.ts:69-71`）：缺任一列即整行不进 onTime/lateness 分母。
+  measurable_filter: (execution.planned_start_at IS NOT NULL AND execution.planned_end_at IS NOT NULL AND execution.actual_start_at IS NOT NULL AND execution.actual_end_at IS NOT NULL)
+  ontime_predicate: (execution.actual_end_at <= execution.planned_end_at)
+  lateness_ms_expr: (EXTRACT(EPOCH FROM (execution.actual_end_at - execution.planned_end_at)) * 1000)
+  # 两个分母**不同**（这是本块存在的核心理由，实现里差一列就会被测出来）：
+  #   on_time_rate / lateness_* 的分母＝可测量行；completion_rate 的分母＝窗口内全部行。
+  on_time_denominator: measurable_rows
+  completion_denominator: window_rows
+  # 三块分母各是什么（KC-02 逐个核，差一列就红）：
+  #   on_time_rate / lateness_p50 / lateness_p95 / lateness_max ← measurable_rows
+  #   completion_rate / average_waiting / average_travel / average_distance ← window_rows
+  # 平均量**逐列回退方向不同**（实现里 waiting 取 `planned ?? actual`、travel/distance 取 `actual ?? planned`，
+  # 见 `kpi.service.ts:42-50`）——这不是笔误就是历史包袱，但契约必须先如实记下方向，否则测试重抄一次就失真。
+  # 两者都为 NULL 的行被 Number.isFinite 过滤掉，SQL 的 AVG 同样跳过 NULL ⇒ 两侧一致。
+  # 分母＝**窗口内全部行**（`periodExec`），不是可测量行——与 on_time/lateness 的分母不同，见下。
+  averages_denominator: window_rows
+  average_waiting_expr: COALESCE(execution.planned_waiting_ms, execution.actual_waiting_ms)
+  average_travel_expr: COALESCE(execution.actual_travel_ms, execution.planned_travel_ms)
+  average_distance_expr: COALESCE(execution.actual_distance_m, execution.planned_distance_m)
+  # percentile 口径＝JS 侧 `Math.min(Math.ceil(n*p)-1, n-1)` 的**最近秩**（不是 SQL 的 continuous 插值），
+  # 所以这里声明算子与取整式，测试按同一秩自己排序取值；换成分位数算法必须两侧同批改。
+  percentile_method: nearest_rank_ceil
+  percentile_positions: { p50: 0.5, p95: 0.95 }
+  # stability 里**可重算的那半**（run 窗口计数）也一并口径化；另一半（5 个进程内计数与 dataQuality）
+  # 按 PROJ-05／KPIRATE-01 的实测**不可由表重算**，所以块里不给它们的口径，测试也不比它们。
+  replan_run_source: ewoh_scheduling_run
+  replan_run_window_column: run._created_at
+  replan_trigger_excludes: MANUAL
+  # ── feedback 半（V255）：`solver.heuristicFallbackRate` 与 `solver.solverLatencyAvgMs` 的来源 ──
+  # 实现：`kpi.service.ts:95-105` 取 `SchedulingFeedbackService.deriveKpis(orgId)`（`scheduling-feedback.service.ts:560-680`），
+  # 落库字段名与来源对应关系是 heuristicFallbackRate←fallbackRate、solverLatencyAvgMs←solverRuntimeMs。
+  # **这一半没有任何时间窗**：deriveKpis 只按 org 过滤、整表读，而快照头部照样写着 periodStart/periodEnd
+  # ⇒ 同一份 KPI 里 delivery 是窗口内、solver 这两格是全天候。这里如实记下"无窗"，不是为了认可它：
+  # 缺陷行 KPIWINDOW-01 与裁决项 R18 问的正是要不要窗口化；改成有窗必须**同批**改这里与常驻用例 KC-05。
+  feedback_source_table: ewoh_scheduling_feedback
+  feedback_window: none
+  feedback_scope: (feedback.org_id IS NULL OR feedback.org_id = $1::varchar)
+  # `IS NULL` 那一支今天取不到行：`org_id` 自 standalone_057 起 NOT NULL（存量已回填），
+  # 所以它是**结构性死分支**而不是可用的跨租户旁路——登记在此防下轮把它读成"能看见别人的行"。
+  feedback_scope_note: org_id_is_not_null_since_standalone_057
+  fallback_numerator_filter: feedback.solver_fallback = true
+  fallback_denominator: scope_rows
+  runtime_measure_filter: feedback.solver_runtime IS NOT NULL
+  runtime_aggregate: avg
+  runtime_empty_value: 0
+  # 同名不同源的一条事实（KC-05 只比 KPI 实际消费的那两格）：deriveKpis **另**按 feedback 的
+  # planned_end/actual_end 自算一份 onTimeRate/meanLatenessMs/p95LatenessMs，而快照 delivery 的那三格走 execution。
+  # ⇒ 系统里"准时率"有两个同源不同表的名字相同的算法，本块只声明 KPI 消费的那一支。
+  feedback_duplicate_on_time_source: ewoh_scheduling_feedback
+
+
+# ---------------------------------------------------------------------------
+# 反馈行的两半来源与单位口径（V265 契约化；依据＝逐处读码取证，站号写死在此，
+# 移动实现时要同步改这里——常驻对账 ewoh-spark-app/test/e2e/feedback-projection-
+# reconciliation.e2e.spec.ts 会按本块自己组装等式，不许在测试里重抄实现里的 /1000）。
+# ---------------------------------------------------------------------------
+feedback_projection:
+  projection_table: ewoh_scheduling_feedback
+  # ---- planned 半：派工时写，来源两类（列拷贝 ／ 服务内派生）----
+  planned_half:
+    route: "POST /api/scheduler/plans/{planId}/dispatch"
+    source_table: ewoh_scheduling_plan_assignment
+    columns:
+      planned_start: { from: assignment.planned_start, provenance: column_copy, unit: timestamptz }
+      planned_end: { from: assignment.planned_end, provenance: column_copy, unit: timestamptz }
+      planned_travel: { from: assignment.eta_seconds, provenance: column_copy, unit: seconds }
+      # planned_wait **不是列拷贝**：服务自己按同 person 的前一任务算（scheduling-feedback.service.ts:144-152）
+      planned_wait:
+        provenance: derived_in_service
+        unit: milliseconds
+        grouping_key: person_id
+        sort_key: planned_start
+        formula: "max(row.planned_start - previous_same_person.planned_end, 0)"
+        skip_when: "assignmentId 为空、或本行/前一行缺 planned_start、或该 person 无 planned_end"
+    repair: none          # 重排／作废之后没有站点回算这半 ⇒ 两半寿命不同（PROJ-03 同族形状）
+  # ---- actual 半：回执时写；两条 HTTP 腿的**入参单位不同**，落到同一组列 ----
+  actual_half:
+    source_table: ewoh_scheduling_execution
+    routes:
+      - path: "POST /api/scheduler/feedback/actuals"
+        body_type: RecordActualsRequest
+        names_carry_unit: false
+        units: { actualTravel: seconds, actualWait: milliseconds }
+      - path: "POST /api/scheduler/executions/{assignmentId}/update"
+        body_type: ExecutionUpdateRequest
+        names_carry_unit: true
+        units: { actualTravelMs: milliseconds, actualWaitingMs: milliseconds }
+    columns:
+      actual_start: { from: execution.actual_start_at, unit: timestamptz, divide_by: 1 }
+      actual_end: { from: execution.actual_end_at, unit: timestamptz, divide_by: 1 }
+      actual_travel: { from: execution.actual_travel_ms, unit: seconds, divide_by: 1000 }
+      actual_wait: { from: execution.actual_waiting_ms, unit: milliseconds, divide_by: 1 }
+    # 同一行里 travel 存秒、wait 存毫秒；而 `actual_wait`/`planned_wait` 列名不带 _ms 后缀却是毫秒。
+    # 这条约定今天**只写在** execution-receipt-application.service.ts:36 的一行注释里 ⇒ 提到契约层。
+    unit_convention_site: "execution-receipt-application.service.ts:36"
+    idempotency: "同 assignment 已有行则只在 changed 时 update actual 半（:190-192），重复提交为覆盖式"
+  # ---- 恒真筛（写不红的等式不开）----
+  tautology_screen:
+    - "original_resource_json 在新建分支就是 actual_resource_json 的同一份对象（:197）⇒ 不比这两列"
+    - "accepted 由该腿一律写 true ⇒ 不进等式"
+    - "matchedRows 在 assignment 命中后恒为 1 ⇒ 不许把『命中 1 行』当回执生效的证据；生效以列值变化取证"
+  reconciliation:
+    equation_actual: "actual_half.columns 逐列 == 源表对应列 经本块 divide_by 换算（源行取同 assignment/plan/task 的 execution）"
+    equation_planned: "planned_half 的 column_copy 列 == assignment 当前值；planned_wait == 按本块 formula 从 assignment 集合重算值"
+    teeth:
+      - "改实现的换算（例如 actual_travel 不再除 1000）⇒ 等式必须红"
+      - "改本块声明的单位或 divide_by ⇒ 等式必须红（契约与实现各改一次，不抵消）"
+      - "UPDATE assignment.planned_start 而不回算 feedback 行 ⇒ planned 半必须报不一致——这就是『没有补齐站点』的牙"
+
+# ── 派工波次完成前提（V328，PCND-01）──────────────────────────────────────
+# 与上面 `feedback_projection`、KPI 取数窗口块同一种东西：**一条父行终态判定的可机读定义**。
+# 立它的理由与那两处一样：WAVE-01 的应然判据若只写在测试里，就是"在测试里重抄实现的 WHERE"——
+# 改本块不会有人报警。于是 `dispatch-receipt-concurrency` 的 WAVE-01 一支**从本块组装判据**：
+# 待派工集合的表／列／取值、父行迁移的两端、租户谓词的列名全部由这里给出，
+# 测试自己不再出现任何字面状态值或表名（写死的只有契约里已声明的那些值的"来源"）。
+# 语义（与 dispatch-coordinator 的现行实现一致，V328 逐行核对：
+# `dispatch-coordinator.service.ts:540-547` 取回子表全集后在代码里分区）：
+# **一个方案派完 ＝ 它名下不存在仍处 pending_status 的 assignment；只有这时父行才允许进 to_status。**
+wave_completion:
+  parent_table: ewoh_schedule_plan
+  parent_key: plan_id
+  parent_status_column: status
+  child_table: ewoh_scheduling_plan_assignment
+  child_key: assignment_id
+  child_parent_key: plan_id
+  child_status_column: status
+  tenant_column: org_id
+  pending_status: approved
+  from_status: approved
+  to_status: dispatched
+  # 待派工计数（派生判据的唯一来源；测试把参数位留给 $n，不把值拼进 SQL）
+  pending_count_sql: "SELECT count(*)::int AS n FROM {child_table} WHERE {child_parent_key} = $1 AND {tenant_column} = $2 AND {child_status_column} = '{pending_status}'"
+  parent_status_sql: "SELECT {parent_status_column} AS s FROM {parent_table} WHERE {parent_key} = $1"
+  response_field: remainingAssignments
+  response_ids_field: remainingAssignmentIds
+  response_dispatched_field: dispatchedAssignments
+  teeth:
+    - "派完那一波：本块组装的 pending_count 必须为 0，且父行必须等于 to_status、响应的 remainingAssignments 必须为 0"
+    - "没派完时：pending_count > 0 ⇒ 父行必须仍等于 from_status（不许提前进终态）、响应余量必须等于该计数"
+    - "改本块的 pending_status／to_status 而不改实现 ⇒ 上面两根必须有一根红（契约与实现各改一次，不抵消）"
+  # 恒真筛（写不红的判据不开）：
+  tautology_screen:
+    - "响应余量与父行状态**同源**于本块计数才算数；只断响应体等于响应体是自证"
+    - "并发那一臂必须先证明确实在资源锁上排过队（tuple 锁观测），否则『没观测到』会被读成『没有窗口』"

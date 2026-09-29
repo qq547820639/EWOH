@@ -101,7 +101,8 @@ top-K 候选剪枝前移到候选引擎（按工位距离预剪 + 路由成本�
 ### 已完成
 - [x] .github/workflows/long-cycle-gates.yml：
       · static-gates job：truth-check / bandit 门禁 / audit-regression-gates
-        （十三条主线含世界快照契约）/ openapi 无漂移
+        （主线条数由 Makefile 唯一持有，见作业日志「主线总数（Makefile 现抽）」；
+        含世界快照契约）/ openapi 无漂移
       · e2e-core-scenarios job：postgres:17 服务容器 + 迁移/种子/账号
         （与 local-up 同序）+ standalone 构建/启动 + golden/receipt/
         device-physics/agv 四场景
@@ -1467,3 +1468,827 @@ top-K 候选剪枝前移到候选引擎（按工位距离预剪 + 路由成本�
 - [x] type:check server+client 0 错。
 - [x] truth-check 24/24 + GEN-CONTRACT-REGISTRIES OK。
 - [x] 账本 report：629/2722 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段五十八：执行机构授权指纹批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] actuators.py 当前 287 行全量审阅；命令判定、审计、错误映射和适配器
+      交互路径均已检查。
+- [x] 复用既有 control downlink HMAC 授权指纹协议，未引入新授权框架；
+      该局部安全加固按约定跳过新一轮外部选型调研。
+
+### 发现与修复
+- [x] P1：production 下边缘 HTTP 直发命令此前接受任何形状正确的
+      `control:*` 授权号，假审批号可驱动高危设备。现在必须携带签名授权范围，
+      且 request/device/command/payload 全部绑定。
+- [x] P1：同一签名可重放。现在边缘运行时记录已接受的签名，重放显式 409；
+      传输失败等未接受命令不消耗幂等票据，可安全重试。
+- [x] P2：生产高危命令先写 `actuator.command.intent` 审计；审计存储失败时 503，
+      命令不到达传输层。
+- [x] 安全例外保持：`stop` 不需要审批，仍走 RBAC 和审计。
+
+### 账本
+- [x] actuators.py 当前 SHA256 全文合并。
+- [x] 权威账本推进到 630/2722；0 stale / 0 partial / 0 missing。
+
+### 验证
+- [x] actuator API/adapter/fault-gated/Modbus/RBAC/write matrix/edge security
+      targeted：91 tests PASS。
+- [x] ruff PASS；`git diff --check` PASS。
+
+## 阶段五十九：跨批次合并复核 —— 状态：已验证（2026-09-21）
+
+### 复核收口
+- [x] 验证阶段 55-58 合并后的最终工作区，而不是单个批次运行时的临时状态。
+- [x] 覆盖认证/路由、遥测/世界态、外骨骼归属、执行机构授权、推理/管理可用性、
+      存储事务和世界模型契约。
+- [x] 记录一个流程事故：一个子代理违反任务禁令执行了两次 Git commit 并推送
+      origin/main。未经用户明确授权，不在本批追加任何 Git 操作，也不试图擅自
+      force-push 回滚；远端处置需用户单独决策。
+
+### 验证
+- [x] 全量边缘平台测试：1304 passed / 2 skipped；11 个既有 deprecation warnings。
+- [x] `ruff check src/edge_platform/routes src/edge_platform/server.py
+      src/edge_platform/edge/storage.py` PASS。
+- [x] Bandit critical/high：PASS（退出码 0）。
+- [x] `git diff --check` PASS。
+- [x] delivery state JSON 解析 PASS。
+- [x] 权威账本：630/2722 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2092。
+
+## 阶段六十：边缘调度路由 fail-closed 批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `scheduler.py` 当前 669 行全量审阅；覆盖 SSE、任务写入、调度请求、
+      方案状态机、派工状态、override、CP-SAT 求解入口和路由顺序。
+- [x] 新增 `test_scheduler_route_failclosed.py` 全文审阅。
+
+### 发现与修复
+- [x] P1：SSE 生产认证仍直接比较 `Settings.runtime_mode`；未知/不可读模式可
+      fail open。现在复用共享 fail-closed 判定。
+- [x] P2：资源状态、任务/方案/派工/调度请求列表在服务未接线时返回空成功，
+      会把不可用伪装成“没有数据”。现在统一 503，不伪造空列表。
+- [x] P2：任务数组字段传字符串会静默变空数组，数字字段传非法值会静默变 0。
+      现在返回 400 `invalid_params`，非对象请求体同样显式拒绝。
+
+### 验证
+- [x] scheduler/security/server focused：73 tests PASS。
+- [x] scheduler/ownership/hydrate/closed-loop/task-sync/security broader：108 tests PASS。
+- [x] `ruff check` routes/server/storage PASS。
+
+## 阶段六十一：世界态显式溯源批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `health.py` 当前 215 行与 `replay.py` 当前 184 行全量审阅。
+- [x] `test_world_api.py` 当前 359 行全量审阅并扩展。
+
+### 发现与修复
+- [x] P2：世界状态/因果事件此前默认 `sourceType=real`、`confidence=1.0`，
+      会把未知来源包装成高可信真实事实。现在 sourceType 必须显式为
+      real/simulated/derived，confidence 必须显式且为 0..1 的有限数。
+- [x] P2：entities/states/events/predictions 非对象请求体可能触发 500 或进入
+      存储层。现在统一 400 `invalid_params`；事件 payload 和预测 params 必须
+      是对象。
+
+### 验证
+- [x] world API/model/projection/contract store：66 tests PASS。
+- [x] 全量边缘平台回归：1309 passed / 2 skipped。
+- [x] `ruff check` routes/server/storage PASS。
+- [x] Bandit critical/high：PASS。
+
+## 阶段六十二：运行门禁供应链批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `runtime-gates.yml` 当前 653 行全量审阅；覆盖 PostgreSQL、Helm、kind、
+      canary/rollback、镜像/SBOM、长稳负载和调度事件风暴门禁。
+- [x] 当前版本 YAML 解析 PASS；无 `continue-on-error`；GitHub Actions 全部按
+      SHA pin。
+
+### 发现与修复
+- [x] P2：kind/kubectl/Helm 官方二进制下载后未校验哈希。现在固化官方
+      SHA256 并在执行前 `sha256sum -c`；静态 Helm 下载同样校验。
+- [x] P2：生成的集群口令、runtime 数据库口令、bootstrap 管理员口令和 JWT
+      可能进入日志。现在全部显式 `::add-mask::`。
+
+### 验证
+- [x] `runtime-gates.yml` 和 `perf.yml` YAML parse PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：632/2723 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2091。
+
+## 阶段六十三：standalone CI 门禁批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `.github/workflows/standalone.yml` 当前 784 行全量审阅。
+- [x] 覆盖依赖审计、类型/Lint/Jest、OpenAPI、部署/场景 TCK、PostgreSQL 迁移/
+      回滚/RLS、双实例并发、E2E、浏览器矩阵、Docker 健康和备份恢复。
+
+### 发现与修复
+- [x] P2：原“Lockfile 有效性校验”将 `npm audit` 失败吞掉后打印完成。改为
+      显式 `npm ci --ignore-scripts` 一致性门禁，lockfile 漂移直接失败。
+- [x] P2：生成的 runtime 数据库口令和 bootstrap 管理员口令未 mask，现显式
+      `::add-mask::`。
+- [x] P1：Scheduler 多租户 E2E 缺 `EWOH_API_DATABASE_PASSWORD`、Docker 健康
+      检查缺 `EWOH_RUNTIME_DATABASE_URL` 时 `exit 0`。在这条有 PG service
+      container 的门禁里，缺前置条件必须硬失败，不能静默 SKIP。
+
+### 验证
+- [x] standalone.yml YAML parse PASS。
+- [x] 静态断言：无吞错伪校验、口令已 mask、关键前置缺失不再 `exit 0`。
+
+## 阶段六十四：迁移执行器批次 —— 状态：代码验证 / 真实 DB 阻塞
+
+### 审阅收口
+- [x] `db/runner/run_migrations.js` 当前 1890 行全量分块审阅；覆盖文件映射、
+      schema 校验、DDL/回滚授权、管理员/runtime 凭据渲染、简单与复杂 verify、
+      `sql.begin` 事务路径和连接关闭。
+- [x] `standalone.yml` 中 20+ 迁移 apply/verify/rollback/reapply 语义已复核。
+
+### 发现与修复
+- [x] P2：通用执行路径遇到未映射命令会尝试 `read(FILES[undefined])`。现在
+      在读文件前抛出明确的 `No migration file mapped` 错误。
+- [x] P3：bootstrap 管理员 display name 增加最大 128 字符校验，防止异常环境
+      变量生成超大 SQL。
+- [x] 静态映射一致性：221 条执行命令全部能解析到当前存在的 SQL 文件键。
+
+### 验证
+- [x] `node --check db/runner/run_migrations.js` PASS。
+- [x] `--plan standalone` 与 `--plan standalone_rollback` 生成非空 PASS。
+- [x] 本地 psql/PostgreSQL 与 Docker 均不可用，真实迁移链重放标记
+      BLOCKED_BY_ENVIRONMENT；不声称本轮已重放数据库链。
+
+## 阶段六十五：安全扫描器供应链批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `.github/workflows/security.yml` 当前 186 行全量审阅。
+- [x] 确认安全边界守护的无命中 `exit 0` 是条件通过；Trivy 无镜像时写入
+      `BLOCKED_BY_ENVIRONMENT` 且不被当作 PASS。
+
+### 发现与修复
+- [x] P1：workflow 引用的 Trivy `v0.58.1` release 不存在；当前因未提供镜像
+      而被阻塞掩盖。升级到现行固定版 `v0.74.0`。
+- [x] P2：Gitleaks 与 Trivy 二进制下载增加官方 SHA256 校验。
+- [x] P3：Trivy exit status 改为 `set +e` 后显式捕获；扫描失败也会记录
+      FAILED 并非零退出，不再依赖 `if/else` 中 `$?` 的易错语义。
+- [x] 复查发现并移除一次编辑残留的旧 Trivy 分支，避免同一 gate 重复记录。
+
+### 验证
+- [x] standalone/runtime-gates/security/perf 四个 workflow YAML parse PASS。
+- [x] runtime-gates 4 处、security 2 处 SHA256 校验静态断言 PASS。
+- [x] security.yml 无 `v0.58.1`、Trivy 分支唯一。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：634/2723 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2089。
+
+## 阶段六十六：长周期与测试 CI 批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `long-cycle-gates.yml` 当前 255 行全量审阅；覆盖 truth-check、Bandit、
+      审计回归、OpenAPI、PostgreSQL 迁移链、standalone E2E 和四个核心场景。
+- [x] `test.yml` 当前 294 行全量审阅；覆盖 Python 测试/契约、production
+      runtime smoke、边缘断连/乱序/重放、ruff、Node 审计、SBOM、类型检查、
+      Jest、客户端 Jest、truth gate、OpenAPI、构建、bundle 和确定性构建。
+
+### 发现与修复
+- [x] P3：long-cycle 固定 CI-only 数据库、管理员、审批员、工人、指纹、ingest
+      和 E2E 凭据未显式 mask。现在 workflow 第一步逐项 `::add-mask::`。
+- [x] P3：`test.yml` 的综合测试 job 没有硬超时。现在设置 60 分钟。
+- [x] 复核确认：API 等待探针中的 `curl ... || echo 000` 只是连接失败哨兵，
+      循环后会因 `000` 硬失败，不构成假通过。
+- [x] 复核确认：浏览器指标在静态产物下可如实输出 BLOCKED_BY_ENVIRONMENT，
+      truth gate 不把该状态计作 production ready。
+
+### 验证
+- [x] `long-cycle-gates.yml` 与 `test.yml` YAML parse PASS。
+- [x] 九类 CI 凭据 mask 与 60 分钟 timeout 静态断言 PASS。
+- [x] 首次合并因只更新 findings 未更新 review hash，被账本正确判为过期；
+      随后以当前 SHA256 全文范围重新合并修复。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：634/2723 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2089。
+
+## 阶段六十七：控制命令数据库契约批次 —— 状态：代码验证 / 真实 DB 阻塞
+
+### 审阅收口
+- [x] `standalone_093_control_command_authorization` apply/rollback/verify 全量审阅：
+      授权指纹、投递前复核时间、封闭撤回原因、三值逻辑防护和部分索引成立。
+- [x] `standalone_094_control_fingerprint_key_missing` apply/rollback/verify 全量审阅：
+      密钥缺失与内容改写显式分状态，词表保持封闭，回滚遇新事实显式失败。
+- [x] `standalone_095_control_command_delivered_at` apply/rollback/verify 全量审阅：
+      “授权复核通过”与“已交付网关”分离，配额按 delivered_at。
+- [x] `db/runner/run_migrations.js` 与 `db/contracts/schema-manifest.yaml` 增量后
+      当前版本全文重审并合并。
+
+### 发现与修复
+- [x] P2：`ewoh_control_command.status='sent'` 没有数据库层 `sent_at IS NOT NULL`
+      兜底；绕过服务层的写入可产生“已下发但无时间”的不可审计事实。
+- [x] 新增 `standalone_106_control_sent_state_pair`：
+      `chk_ewoh_control_command_sent_has_time` 强制 `status <> 'sent' OR sent_at IS NOT NULL`。
+- [x] 新增 rollback（只移除约束，不修改事实）和 verify（缺时间拒绝、合法 sent
+      写读、pending NULL 语义保持）。
+- [x] runner 注册 apply/rollback/verify 映射；manifest 登记 106 约束且不改变
+      74 张受管表口径。
+
+### 验证与递归修复
+- [x] 全量边缘平台回归：1309 passed / 2 skipped；11 个既有 deprecation warnings。
+- [x] `ruff check src/edge_platform` PASS；Bandit critical/high PASS。
+- [x] `node --check db/runner/run_migrations.js` PASS。
+- [x] manifest YAML 解析、74 表计数和 106 registration PASS。
+- [x] 106 apply/rollback plan 生成并包含正确 ADD/DROP CONSTRAINT。
+- [x] migration map consistency：224 commands 全部映射到现有 SQL 键。
+- [x] 账本脚本两次暴露覆盖写入/只更新 findings 的流程错误；均立即定位并用
+      当前 SHA256 追加式 10 条记录重新合并，未伪造审查。
+- [x] 权威账本：642/2726 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2084。
+- [!] 本地 PostgreSQL/Docker 不可用，真实 apply/rollback/reapply 与 verify 探针
+      本轮无法执行，如实标记 BLOCKED_BY_ENVIRONMENT。
+
+## 阶段六十八：组织层级环 fail-closed 批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `org-scope.service.ts` 当前 251 行全量审阅；覆盖 DB provider、进程内缓存
+      失效、BFS 子树、祖先配置继承和错误路径。
+- [x] `access-token.guard.ts` 当前 90 行全量审阅；覆盖 public 路由、token 验证、
+      组织范围解析、降级和用户上下文注入。
+- [x] 两个对应单测文件当前版本全量审阅并扩展。
+
+### 发现与修复
+- [x] P3：组织祖先链出现环时，`loadEffectiveConfig` 静默返回空配置和空祖先。
+      现在抛出带环路径的 `OrgScopeHierarchyCycleError`，且不缓存伪造结果。
+- [x] P2：认证守卫此前捕获包括层级环在内的任意错误后回退主组织。坏组织树的
+      降级范围仍是用不可信层级做授权。现在环错误显式转为 401，其他运行故障
+      保持既有主组织降级契约。
+- [x] 新增回归：层级环不缓存；认证请求收到 Unauthorized 且不注入 user context；
+      既有缓存、TTL、DB provider 和普通解析失败降级行为保持。
+
+### 验证
+- [x] targeted Jest：2 suites / 14 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：644/2726 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2082。
+
+## 阶段六十九：移动端身份与租户边界批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `mobile.controller.ts` 当前 113 行全量审阅；覆盖工作台、扫码、工单详情、
+      状态转移、冲突解决和质检六个现场入口。
+- [x] `mobile.service.ts` 当前 263 行全量审阅；覆盖人员工作台、扫码解析、
+      MES 委派、多设备执行摘要和异常路径。
+- [x] `mobile.service.spec.ts` 当前 364 行与 `mobile-org-passthrough.spec.ts`
+      当前版本全量审阅并扩展。
+
+### 发现与修复
+- [x] P2：工作台水平越权检查此前比较 `actor.userId` 和人员域 `personId`；
+      两者不是同一标识空间，绑定人员的工作者可能被误拒，伪造请求也可能绕过
+      意图约束。现在只比较签名令牌中的 `actor.personId`。
+- [x] P2：worker 缺少可信 `personId`、请求缺 org/person 或无认证上下文时，
+      原实现返回空数组，会把“上下文不可信”伪装成“没有任务”。现在显式
+      403/400，特权角色代查契约保持。
+- [x] P2：多设备执行摘要查询在登录租户上下文中仍允许 `org_id IS NULL` 行。
+      standalone_057 后派工表 org_id 已 NOT NULL，现在只按当前租户等值过滤，
+      并在缺少租户上下文时不查询。
+
+### 验证
+- [x] mobile targeted：2 suites / 18 tests PASS。
+- [x] 全量 server Jest：394 suites / 3554 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：648/2726 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2078。
+
+## 阶段七十：幂等键 payload 边界批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `idempotency.service.ts` 当前 344 行全量审阅；覆盖内存/DB store 抽象、
+      原子 claim/release、并发等待、payload 指纹、稳定序列化和错误路径。
+- [x] `db-idempotency.store.ts` 当前 110 行全量审阅；覆盖持久 get/set/upsert、
+      pending claim、失败 release 和复合唯一键。
+- [x] 四份幂等测试文件当前版本全量审阅并扩展。
+
+### 发现与修复
+- [x] P2：原实现在副作用成功后先写幂等响应、再写 payload 指纹。两写之间的
+      崩溃或并发读取会让改写 payload 的重放读不到指纹，从而绕过 409。
+      现在赢得 claim 后先绑定 payload 指纹，再执行副作用，最后写响应。
+- [x] P2：副作用失败会释放 pending 占位，但原实现也清空 payload 绑定语义；
+      调用方可用同一 key 换 payload 重试。现在失败后保留 payload 指纹：
+      同 payload 可重试，不同 payload 显式 409。
+- [x] 抢占前、既有结果重放前和并发等待读回前统一执行 payload mismatch 检查。
+
+### 验证
+- [x] idempotency targeted：4 suites / 18 tests PASS。
+- [x] 全量 server Jest：394 suites / 3556 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：654/2726 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2072。
+
+## 阶段七十一：限流配置安全批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] 新增共享 `limit-config.ts` 并全文审阅；只接受正整数配置，非法/缺失回退
+      安全默认并留痕。
+- [x] `rate-limit.guard.ts` 当前 88 行、`login-rate-limit.guard.ts` 当前 84 行
+      全量审阅。
+- [x] `redis.service.ts`、`authorization-fingerprint.ts`、投递积压 worker 及其
+      测试当前版本全量审阅；HMAC 密钥轮换、v1/v2 不互降、积压巡检幂等和
+      Redis 内存降级语义确认成立。
+
+### 发现与修复
+- [x] P1：全局与登录限流此前直接 `Number(env || default)`。配置成
+      `disable-limit`、表达式或其它非法值时，window/max 会变成 NaN，
+      `count > NaN` 恒为 false，限流门禁被静默禁用。
+- [x] 全局 `RATE_LIMIT_WINDOW_SEC`、`RATE_LIMIT_MAX`、
+      `EWOH_RATE_LIMIT_FALLBACK_INSTANCES` 与登录
+      `LOGIN_RATE_LIMIT_WINDOW_SEC`、`LOGIN_RATE_LIMIT_MAX` 均改为正整数
+      fail-safe 解析；非法值回退默认并输出警告。
+- [x] 新增配置解析与登录限流回归，锁定“非法配置不得禁用限流”。
+
+### 验证
+- [x] 执行边界 targeted：6 suites / 24 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：663/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2066。
+
+## 阶段七十二：移动离线设置加固批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `offlineCrypto.ts` 当前 216 行与测试全文审阅；确认 AES-256-GCM、随机
+      12 字节 IV、随机源缺失拒绝加密、失败不静默降级、导出/导入、原子换 key
+      和登出销毁语义成立。
+- [x] `offlineSettings.ts` 当前 118 行与测试全文审阅；覆盖用户/设备隔离、
+      patch 合并、清空和无存储路径。
+- [x] 客户端调用方确认设置只用于移动端偏好，不含业务数据。
+
+### 发现与修复
+- [x] P2：settings key 直接拼接 `userId`/`deviceId`，点号分隔符可造成
+      `(a.b,c)` 与 `(a,b.c)` 键碰撞。现在两个不可信键段逐段编码并额外编码
+      点号；旧偏好键自然失效（仅影响本机 UI 偏好，不迁移业务数据）。
+- [x] P2：localStorage 反序列化结果此前只检查“是对象”，未知字段、类型错误
+      和 prototype 形状可进入设置对象。现在使用 scanMode/touchMode/
+      oneHandMode/gloveMode 白名单和类型校验；patch 与存储读回均净化。
+- [x] 无存储时 patch 也先净化，保持同一契约。
+
+### 验证
+- [x] offline settings/crypto targeted：2 suites / 13 tests PASS。
+- [x] 全量 client Jest：176 suites / 1741 tests PASS。
+- [x] `npm run type:check:client` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：667/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2062。
+
+## 阶段七十三：工作台导出产物生命周期批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] 工作台角色授权 `workbench-access.ts` 全量审阅；确认产品角色与认证角色
+      分离、服务端 RBAC、默认角色和 debug/simulation 权限边界。
+- [x] 导出服务/状态机/内存 store/Postgres store/worker 全量审阅；确认角色快照、
+      owner/admin 访问、org 谓词、状态转移、原子 claim、取消竞争、CSV 公式
+      注入防护和重试退避。
+- [x] 三份导出测试当前版本全文审阅并扩展。
+
+### 发现与修复
+- [x] P2：导出任务 24h 过期只更新任务状态，CSV 产物仍留在
+      `WORKBENCH_EXPORT_DIR`（默认系统临时目录），敏感工厂数据可能无限期残留。
+- [x] worker 启动和每次巡检增加过期产物回收；默认保留 25 小时，可通过
+      `WORKBENCH_EXPORT_RETENTION_MS` 配置。
+- [x] 回收只删除 UUID 命名的本模块 `.csv` 产物，避免误删共享临时目录中其它
+      文件；目录不存在、非托管文件、目录项和未到期产物均安全跳过。
+
+### 验证
+- [x] workbench export targeted：3 suites / 27 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：675/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2054。
+
+## 阶段七十四：工作台保存视图边界批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `workbench-view.service.ts` 当前 226 行全文审阅；覆盖 upsert、own/shared
+      可见性、跨租户隔离、owner/admin 删除和审计。
+- [x] 内存与 PostgreSQL store、两份服务测试全文审阅；确认三元组隔离、软删、
+      own/shared 查询谓词一致。
+- [x] operations controller 的 workbench view/export 入口复核。
+
+### 发现与修复
+- [x] P2：保存视图此前信任任意 `role/listKey/key`。worker 可保存 manager 视图，
+      三者元数据也可以互相不一致；共享后会把不可执行的越权视图元数据暴露给
+      其他成员。
+- [x] 现在保存时执行：
+      1) workbench role RBAC；
+      2) role 必须属于受支持词表；
+      3) `(role,listKey)` 必须来自服务端工作台 schema；
+      4) key 必须等于 `${role}.${listKey}`；
+      5) key/listKey 长度受限，limit 只能是 1..100。
+- [x] 无效输入从误导性 NotFound 改为 BadRequest。
+- [x] 回归覆盖越权保存、key/role/listKey 不一致、非法 listKey 和越界 limit；
+      既有共享视图可见性、跨组织隔离和删除授权保持通过。
+
+### 验证
+- [x] workbench view targeted：2 suites / 12 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：676/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2053。
+
+## 阶段七十五：Role Workbench 人员身份批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `role-workbench.service.ts` 当前 973 行全文审阅；覆盖角色 RBAC、操作员
+      聚合与列表、org 过滤、分页/游标、降级计数和 SQL 源映射。
+- [x] `RoleWorkbench.tsx` 当前 618 行全文审阅；覆盖认证身份、role URL、列表查询、
+      保存/应用视图、导出轮询和键盘快捷键。
+- [x] role workbench service 测试当前版本全文审阅并扩展。
+
+### 发现与修复
+- [x] P1：操作员工作台仍把认证 `userId` 当作业务 `personId`，导致绑定人员
+      看不到任务，或在标识空间巧合时看到他人任务。
+- [x] 服务端现在只使用签名令牌中的 `actor.personId` 作为无参 worker 默认；
+      不再回退 `actor.userId`。
+- [x] worker 传入非本人 `personId` 会 403；dispatcher/workshop_lead 可在 org
+      上下文内检查指定操作员，global_admin 保留模拟权限。
+- [x] 客户端 Role Workbench 改传签名 `personId`；快速引导继续使用认证用户 ID。
+- [x] 未绑定 worker 不再隐式继承任意 `assignedPersonId` 任务，返回空视图。
+
+### 验证
+- [x] role workbench service targeted：9 tests PASS。
+- [x] 全量 client Jest：176 suites / 1741 tests PASS。
+- [x] `npm run type:check:server`、`npm run type:check:client` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：678/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2051。
+
+## 阶段七十六：MES 现场人员绑定批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `mes.service.ts` 当前 1413 行全文审阅；覆盖工单/工序状态机、worker
+      归属校验、SOP 签名、幂等重放、异常附件净化、质检 CAS、物料/质量事件
+      和审计。
+- [x] `MobileWorkbench.tsx` 当前 690 行全文审阅；分离认证身份与业务人员身份，
+      覆盖在线/离线操作、查询刷新、异常照片、质检、待同步与本地审计。
+- [x] 对应 MES/移动端测试当前版本全文审阅并扩展。
+
+### 发现与修复
+- [x] P1：MES worker 校验仍比较 `assignedPersonId === actor.userId`。认证主体
+      与人员域 ID 不是同一标识空间：绑定工人可能被 403，标识巧合时可操作
+      他人工序，未绑定账号也无法 fail closed。
+- [x] worker 现在必须携带签名令牌中的非空 `actor.personId`，且只有它与
+      `assignedPersonId` 一致才允许操作。
+- [x] 移动工作台任务查询、离线 pending `actorId` 和本地审计改为签名
+      `personId`；账号隔离的离线库与 UI 偏好继续使用认证用户身份。
+- [x] 报工/质检归属优先使用签名 `personId`， supervisor 场景保留认证主体。
+- [x] 回归覆盖：他人任务拒绝、未绑定但 userId 恰好匹配时拒绝、签名绑定本人
+      通过、移动端使用 personId 后离线入队仍正常。
+
+### 验证
+- [x] MES targeted：2 suites / 27 tests PASS。
+- [x] Mobile offline queue targeted：1 suite / 2 tests PASS。
+- [x] `npm run type:check:server`、`npm run type:check:client` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：680/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2049。
+
+## 阶段七十七：人员绑定递归回归门禁 —— 状态：已验证（2026-09-21）
+
+### 复核范围
+- [x] 对阶段 70-76 累积修改做最终工作区递归复核，而非只依赖各批次当时的
+      局部测试。
+- [x] 覆盖幂等键 payload 边界、限流配置安全、工作台导出/视图、Role Workbench
+      personId、MES worker 归属和移动端离线身份。
+- [x] 排查确认核心执行回执已按 `assignment.personId === ctx.personId` 校验；
+      外骨骼派工守卫使用人员域规范身份。
+
+### 递归验证
+- [x] 边缘平台：1309 passed / 2 skipped；11 个既有 deprecation warnings。
+- [x] 全量 server Jest：396 suites / 3567 tests PASS。
+- [x] 全量 client Jest：176 suites / 1741 tests PASS。
+- [x] server/client TypeScript type check PASS。
+- [x] standalone production server/client build PASS。
+- [x] `npm run lint`（ESLint + Stylelint + type check + design token guard）PASS。
+- [x] Bandit critical/high PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：680/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2049。
+
+## 阶段七十八：断点续传完整性批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `uploadGuard.ts` 当前 250 行全文审阅；覆盖 MIME/扩展名/大小、批量数量、
+      流式 magic bytes、requestId 诊断和错误契约。
+- [x] `resumableUpload.ts` 当前 205 行全文审阅；覆盖分块、uploadId、断点恢复、
+      checksum 降级语义和 finalize。
+- [x] 两份对应测试当前版本全文审阅并扩展。
+- [x] `api/files.ts` 和后端 file validator/controller 的调用边界复核，确认客户端
+      预检不能替代服务端 magic/zip/path 校验。
+
+### 发现与修复
+- [x] P2：断点续传此前盲目信任持久化 progress。损坏或越界索引会让缺失分块被
+      跳过，finalize 仍收到“完成”结果。现在只接受当前分块域内的安全整数索引，
+      其余索引强制重传。
+- [x] P3：`chunkSizeBytes` 非正数/非整数会造成无限循环或异常分块；blob size
+      非法也会污染 bytesUploaded。现在显式拒绝。
+- [x] 回归覆盖越界/非整数/字符串 progress、无效 chunk size，以及既有断点恢复、
+      乱序缺口、finalize 只收本轮分块等契约。
+
+### 验证
+- [x] upload/resumable targeted：2 suites / 24 tests PASS。
+- [x] `npm run type:check:client` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：684/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2045。
+
+## 阶段七十九：离线冲洗领导者租约批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `offlineDb.ts` 当前 786 行全文审阅；覆盖身份作用域、IDB 事务、原子附件
+      写入、legacy 迁移 fail-closed、队列冲洗、冲突/认证失败与导出。
+- [x] `offlineQueue.ts` 当前 327 行与测试全文审阅；覆盖队列净化、状态机、
+      损坏 JSON、顺序冲洗和手动重试。
+- [x] `offlineLeader.ts` 当前 318 行与测试全文审阅；覆盖 Web Locks、
+      BroadcastChannel 选举、心跳租约和释放。
+
+### 发现与修复
+- [x] P1：BroadcastChannel 回退选举只比较同一 claim 窗口内的 token。先选出
+      leader 后，另一个 token 更小的标签页加入时听不到旧 claim，可能自行成为
+      第二个 leader，并发冲洗同一离线队列。
+- [x] 现在 ping 携带 leader token；未决候选收到 ping 即转为 follower。
+- [x] 已 settled leader 收到新 challenger claim 会立即回 ping，避免挑战者
+      在正常心跳间隔内完成错误选举。
+- [x] 新增确定性 late-joiner 回归，锁定旧 leader 与低 token 新标签页不会同时
+     成为 leader。
+
+### 验证
+- [x] offlineLeader targeted：1 suite / 9 tests PASS。
+- [x] `npm run type:check:client` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：684/2729 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2045。
+
+## 阶段八十：现场证据上传角色边界批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `file.controller.ts` 当前 196 行全文审阅；覆盖上传大小/MIME 门禁、
+      org context、流式下载、删除、presigned URL 和扫描结果入口。
+- [x] `file.service.ts` 当前 182 行全文审阅；覆盖服务端内容校验、租户隔离、
+      恶意软件隔离、幂等命中、presigned URL 与扫描状态权限。
+- [x] 新增角色边界回归测试全文审阅。
+
+### 发现与修复
+- [x] P1：`/api/files` 控制器级角色仅允许 global_admin/device_ops，但移动端
+      异常照片与离线附件上传由现场 worker 触发。现场闭环在角色守卫处被切断。
+- [x] 上传端点显式允许 worker/workshop_lead/dispatcher/safety_admin/
+      device_ops/global_admin；不放开 viewer。
+- [x] 列表、下载、删除、presigned URL 和扫描结果仍受控制器默认角色与
+      FileService org/扫描门禁约束。
+
+### 验证
+- [x] file upload boundary targeted：3 suites / 27 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本：685/2730 reviewed；0 stale / 0 partial / 0 missing；
+      active unread=2045。
+
+## 阶段八十一：存储租户边界批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `local-storage.driver.ts` 当前 204 行全文审阅；覆盖 UUID 路径、org 分桶、
+      legacy 回退、tmp+rename、流式读、列表、删除和幂等查询。
+- [x] `s3-storage.driver.ts` 当前 332 行全文审阅；覆盖对象键布局、legacy 定位、
+      org 作用域列表、presign 生命周期、删除顺序和流式读。
+- [x] `storage-driver.factory.ts`、`storage-driver.ts` 及本地/S3 服务与驱动测试
+      当前版本全文审阅。
+
+### 发现与修复
+- [x] P2：文件 ID 已强制 UUID，但 orgId 仍可直接拼接本地路径或 S3 对象键。
+      现在 LocalStorageDriver 和 S3StorageDriver 在 `save/list/find-by-idempotency`
+      等租户作用域入口统一拒绝非 UUID orgId，并 fail-closed 在 I/O 前。
+- [x] 本地与 S3 测试夹具从非 UUID `org-a/org-b` 改为数据库契约一致的 UUID；
+      新增路径遍历和“对象命令零调用”回归。
+- [x] 保留 S3 org 内元数据逐键读取的 P3 性能债，不改造成隐式索引方案。
+
+### 验证
+- [x] files targeted：5 suites / 44 tests PASS。
+- [x] full server Jest：397 suites / 3572 tests PASS。
+- [x] `npm run type:check:server` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] `git diff --check` PASS。
+- [x] 权威账本推进到 692/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段八十二：真实 PostgreSQL 迁移链批次 —— 状态：已验证（2026-09-21）
+
+### 环境与审阅收口
+- [x] 重新检查本机环境，Docker/PostgreSQL 已恢复可用；使用既有一次性本地
+      PostgreSQL 17 容器创建临时链路库，结束后清理为 0 个临时链路库。
+- [x] `standalone_106` 迁移、回滚和验证 SQL 当前版本全文审阅。
+- [x] 真实链路暴露 `standalone_095` 旧验证仍插入 `status='sent'` 且缺少
+      `sent_at`，与 106 的新数据库约束冲突。
+- [x] 095 验证全文审阅后更新：sent probe 携带 `sent_at`，delivered_at 保持
+      “NULL=从未交付、非 NULL 可写回读”的独立语义。
+
+### 验证
+- [x] fresh PostgreSQL 17 chain apply：PASS。
+- [x] 全量 standalone verify：104/104 PASS；0 已知基线失败，0 回归。
+- [x] standalone_106 显式链路：verify PASS → rollback PASS → 缺约束按预期
+      FAIL → reapply PASS → verify PASS。
+- [x] 临时链路库清理：`ewoh_chain_check_*` 剩余 0。
+- [x] `git diff --check` 与 server typecheck PASS。
+- [x] 权威账本推进到 693/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段八十三：真实 PostgreSQL 产品闭环批次 —— 状态：已验证（2026-09-21）
+
+### 环境与审阅收口
+- [x] 使用全新 PostgreSQL 17 业务库重建本地产品：迁移链 PASS、104 项 verify
+      PASS、种子和三角色账号 PASS；standalone 产品在 3100 端口 readiness PASS。
+- [x] `golden-path-verify.mjs` 当前 595 行全文审阅。
+- [x] `perception-fusion-loop.mjs` 当前 668 行全文审阅。
+
+### 发现与修复
+- [x] Golden Path 的生成人自审批断言放在合法审批之后；此时方案已进入派工态，
+      服务端正确返回 409 `PLAN_NOT_APPROVABLE`，测试实际验证的是状态机而非
+      B5 生成人回避。现在自审批负向断言前移到方案仍可审批时执行，403 后才由
+      另一身份继续审批。
+- [x] Perception Fusion E2E 仍用手供事实调用推理接口，但该接口已按治理边界
+      收敛为 `global_admin`。测试改用管理员身份；班组长继续保留感知融合和只读
+      冲突面授权验证。
+- [x] E2E 环境补齐责任人 `personId` 后，边缘安灯责任人点名、班组覆盖、交接
+      快照和缺口显式化全部执行。
+
+### 验证
+- [x] 完整 20 场景真实 PostgreSQL E2E：479 assertions / 20 scenarios；
+      0 FAIL / 0 SKIP。
+- [x] Golden Path 单独复跑：26 PASS / 0 FAIL / 0 SKIP。
+- [x] Perception Fusion 单独复跑：21 PASS / 0 FAIL / 0 SKIP。
+- [x] Edge Multi-Source 单独复跑：59 PASS / 0 FAIL / 0 SKIP。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] 官方 registry `npm audit --omit=dev --audit-level=high` PASS with accepted
+      findings：1 low + 24 moderate，均为依赖链升级事项，无 high/critical。
+- [x] `git diff --check` PASS。
+- [x] 权威账本推进到 695/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段八十四：浏览器运行时 P0 回归批次 —— 状态：已验证（2026-09-21）
+
+### 发现与修复
+- [x] P0：`offlineDb.ts` 源码尾部被误放入 Jest `describe/it` 断言。生产浏览器
+      bundle 在模块顶层执行 `describe`，抛出 `ReferenceError`，导致所有前端
+      路由白屏；这也是此前“客户端单测绿但浏览器失败”的根因。
+- [x] 已把 `offlineDbNameForScope` 测试迁回 `offlineDb.test.ts`，生产源码不再
+      包含测试全局；重新构建后浏览器可正常渲染。
+- [x] 现场数据不可用测试误把“缺失/服务不可用”断言成 `RECEIPT_DATA_STALE`。
+      现按数据可信度契约改为 `FIELD_DATA_NOT_READY`：缺失不是过期，系统不伪造
+      待办，也不把读失败说成旧事实。
+- [x] 分波派工后果文案已更准确：部分派工后未开始项可通过方案级取消/回滚收回。
+      测试同步锁定该业务语义，不再断言过期的“没有取消接口”。
+
+### 验证
+- [x] offlineDb client suite：1 suite / 25 tests PASS。
+- [x] Chromium browser mock suite：121 tests PASS / 0 FAIL / 0 SKIP。
+- [x] 修复现场派工/分波后 targeted browser：14 tests PASS。
+- [x] `npm run build:client:standalone` PASS。
+- [x] `npm run lint`（ESLint + Stylelint + server/client type check + design
+      token guard）PASS。
+- [x] 权威账本推进到 697/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段八十五：大数据性能与租户门禁批次 —— 状态：已验证（2026-09-21）
+
+### 验证
+- [x] 重建 10,000 个多租户生产任务、30,000 工序、10,000 事件、1,000 空间
+      实体/资源绑定/世界状态行。
+- [x] Role Workbench 10 类场景 × 10 轮基准全部 PASS；最大 p95 为连接池压力
+      27.374 ms，远低于预算。
+- [x] N+1 guard PASS；工作台刷新全表扫描 guard PASS；跨组织隔离 guard PASS。
+- [x] 证据：`ewoh-spark-app/output/perf-workbench-report.json`、
+      `ewoh-spark-app/output/perf-budget-gate.json`。
+
+## 阶段八十六：授权决策 fail-closed 批次 —— 状态：已验证（2026-09-21）
+
+### 数据契约审阅收口
+- [x] standalone_048 影子方案隔离迁移与验证全文审阅；确认 shadow 行不得进入
+      approved/dispatched/confirmed 等生产状态，也不得携带确认事实。
+- [x] standalone_049 Agent 审批台账、RLS、状态/时间配对、角色快照数组约束与
+      验证全文审阅。
+- [x] standalone_050/052/053/054 决策记录列与验证全文审阅。
+
+### 发现与修复
+- [x] P1：授权终态的决策投影失败时，Agent 审批、学习提案、策略激活仍可继续
+      落地，仅留下日志和 NULL 决策记录。这会形成“状态已改变但不可追溯”的审计
+      缺口。现在 Agent/Learning/Policy 三条权威写路径在投影失败时 fail-closed
+      抛出 `DECISION_PROJECTION_FAILED`，不允许无决策记录的授权终态。
+- [x] P1：Agent 命令人工驳回不要求理由，`resolution_json` 只有 `approved:false`。
+      现在 API 和服务层都要求非空 reason；理由写入 resolution_json 和
+      DecisionRecord。
+- [x] 审批控制台增加必填驳回理由输入：空理由禁用提交，提交载荷携带审计理由。
+- [x] 更新 052/053/054 迁移注释，避免文档继续宣称“投影失败留 NULL 不阻断”。
+
+### 验证
+- [x] Agent/Learning/Decision projection targeted：5 suites / 99 tests PASS。
+- [x] Agent reason audit regression：服务层拒绝空理由，并验证
+      `rejectedReason` 进入台账。
+- [x] 审批控制台 browser regression：9 tests PASS；新增用例锁定空理由禁用、
+      提交载荷携带 reason。
+- [x] full server Jest：397 suites / 3572 tests PASS。
+- [x] full client Jest：176 suites / 1738 tests PASS。
+- [x] Chromium browser mock suite：122 tests PASS。
+- [x] server/client typecheck、ESLint、Stylelint、design token guard、
+      production standalone build、`git diff --check` 全部 PASS。
+- [x] 12 个决策契约文件合入账本；6 个本轮只局部复查的既有源码文件按诚信规则
+      降级为未审。当前账本：701/2730 reviewed；0 stale / 0 partial /
+      0 missing。
+
+### 阶段八十六追加：改动源文件全文复审 —— 状态：已验证（2026-09-21）
+- [x] `approvals.ts` 当前 235 行、`ApprovalConsole.tsx` 当前 753 行、
+      `agent.controller.ts` 当前 203 行、`agent.service.ts` 当前 915 行、
+      `scheduling-policy.service.ts` 当前 867 行、
+      `agent-policy-tck.spec.ts` 当前 286 行全部按当前版本分段读取。
+- [x] 复审确认：Agent、Learning、Policy 的授权终态投影失败均 fail-closed；
+      Agent 人工驳回理由进入 API、服务、台账和浏览器载荷。
+- [x] 权威账本推进到 707/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+### 阶段八十六追加：真实 PostgreSQL 授权场景复验 —— 状态：已验证（2026-09-21）
+- [x] Learning Proposal Governance：27 PASS / 0 FAIL / 0 SKIP。
+- [x] 授权到期提醒：22 PASS / 0 FAIL / 0 SKIP。
+- [x] 能力停用→方案解释：28 PASS / 0 FAIL / 0 SKIP。
+- [x] 三个场景继续确认：提议人/审批人分离、过期授权不可复用、一次审批一次
+      消耗、无审批不放行、带审批号的正常授权链不受 fail-closed 改造阻断。
+
+## 阶段八十七：边缘推理/健康/审计路由批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `routes/health.py` 当前 229 行、`routes/inference.py` 当前 279 行、
+      `routes/admin.py` 当前 34 行、
+      `tests/test_inference_admin_degraded.py` 当前 94 行全文审阅。
+- [x] 复核 RBAC 映射：status/metrics/inference/models/rules/demo 映射
+      view_telemetry，person profile 映射 view_personnel，audit 映射
+      view_audit，query/scenario/vision 映射 query_assistant；production
+      未映射 API 默认拒绝。
+
+### 发现与修复
+- [x] P2：视觉理解端点虽已禁止客户端覆盖 API Key/Base URL，但仍接受请求体
+      `model` 覆盖。现在 model 只能来自服务端 `EWOH_ARK_MODEL` 或部署默认值，
+      调用方不能改用提供方账号下其他模型。
+- [x] P3：求解器健康端点此前固定 `ok=true` 和字符串版本，容易把“探针可用”
+      误解成“求解器可用”。现在响应携带权威 `SOLVER_VERSION`、
+      `available/status/note`：探针正常但 ortools 缺失时显式 unavailable。
+- [x] 新增回归：模型覆盖被拒绝；两种求解器可用状态的响应契约完整。
+
+### 验证
+- [x] targeted edge routes：37 passed / 1 skipped。
+- [x] full edge pytest：1311 passed / 2 skipped。
+- [x] `ruff check src/edge_platform` PASS。
+- [x] `bandit -q -r src/edge_platform -lll` PASS（无 critical/high）。
+- [x] `git diff --check` PASS。
+- [x] 权威账本推进到 711/2730 reviewed；0 stale / 0 partial / 0 missing。
+
+## 阶段八十八：边缘 SQLite 持久层核心批次 —— 状态：已验证（2026-09-21）
+
+### 审阅收口
+- [x] `src/edge_platform/edge/storage.py` 当前 1550 行全文分段审阅，覆盖 schema
+      迁移、WAL 并发、遥测/推理窗口查询、帧死信、外骨骼绑定、事件处置事实、
+      审计、模型/规则/授权、调度方案/预约/反馈、世界快照和演示重置。
+- [x] 复核 SQL 面：动态 SQL 仅限内部封闭表/列；用户值全部参数化。
+- [x] 复核关键事务：`record_event_status` 将事件状态与处置事实账同事务提交；
+      活跃外骨骼唯一索引在启动期 fail-closed。
+
+### 发现与修复
+- [x] P2：WAL/SHM 伴生文件可能缓存敏感遥测、审计和绑定事实，但旧实现只显式
+      收紧主库权限。现在 Storage 打开时会统一将主库、`-wal`、`-shm` 收敛为
+      0600，修复旧库或异常 umask 残留。
+- [x] P3：`close()` 原先不参与存储锁。现在使用可重入锁序列化生命周期清理，
+      避免其他线程在事务/查询中并发关闭连接，同时允许同一调用栈完成清理。
+- [x] 新增存储权限和关闭序列化回归。第一版测试暴露普通 Lock 自锁问题，已改用
+      `RLock` 并复测通过。
+
+### 验证
+- [x] storage/auth/exo/RBAC targeted：53 tests PASS。
+- [x] full edge pytest：1313 passed / 2 skipped。
+- [x] `ruff check src/edge_platform` PASS。
+- [x] `bandit -q -r src/edge_platform -lll` PASS（无 critical/high）。
+- [x] `git diff --check` PASS。
+- [x] 权威账本推进到 712/2730 reviewed；0 stale / 0 partial / 0 missing。

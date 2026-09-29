@@ -205,17 +205,70 @@ async function main() {
       cam.rows === camSent * 2 && cam.uniq === camSent,
       `rows=${cam.rows}（期望 ${camSent * 2}）distinct_record=${cam.uniq}（期望 ${camSent}）`);
 
+    // 「本轮写入」必须按**落库时刻**筛，不能按 ts：本场景故意注入 30 分钟迟到帧
+    // （`--late-rate`，且 2d 还断言迟到帧必须落库），用 ts 窗口会把本轮真实写入的
+    // 迟到行整体排除——实测：55 条 edge:location 行里 36 条 ts 在 15 分钟窗口外
+    // （ts 11:41:58 / _created_at 12:11:59，正好差 30 分钟）。因此当某轮被接受的
+    // 人员定位帧恰好都是迟到帧时，2g 会以 rows=0 假失败（本轮实测 1/6 次）。
     const locRows = await sql`
-      select count(*)::int as rows, count(distinct state_json->>'record_id')::int as uniq
+      select count(*)::int as rows, count(distinct state_json->>'record_id')::int as uniq,
+             count(*) filter (where ts <= now() - interval '15 minutes')::int as late
       from ewoh_world_state
       where org_id = ${INGEST_ORG} and entity_id = ${PERSON_ID}
         and state_json->>'locator' = 'uwb'
         and state_json->>'record_id' like 'edge:location:%'
-        and ts > now() - interval '15 minutes'`;
+        and _created_at > now() - interval '15 minutes'`;
     const loc = locRows[0];
-    step('2g. UWB 定位落 world_state（人员归属）且不双写',
-      loc.rows > 0 && loc.rows === loc.uniq,
-      `rows=${loc.rows} distinct_record=${loc.uniq}`);
+    // FLAKE-02 根治（V75）：**不再用任何时间窗口当判据**，改成与桥自己记录的"本轮已发送
+    // location 帧 id 集合"逐条对账。
+    //
+    // 为什么原来的判据会假失败（已证实，非推断）：HEAD 版写的是 `ts > now() - interval '15 minutes'`，
+    // 而本场景按 `--late-rate 0.2` 故意注入 30 分钟迟到帧——本轮实测 `rows=3 其中迟到行=1`，
+    // 也就是说人员定位帧每轮只有个位数（实测 3 条），一旦这一轮的样本恰好全是迟到帧，
+    // 按 ts 过滤就会得到 rows=0 ⇒ "至少一条"断言假失败（登记里那次 1/6 就是这么来的）。
+    // 换成"发送集合 ↔ 落库集合"对账之后：迟到与否都不影响判据，且断言**更强**
+    // （原来只要求 >0 且不自相矛盾，现在要求每一条发出去的都必须恰好一行、不许缺也不许多）。
+    // 留痕上界 MAX_RECORD_ID_TRACE=1000（本场景远小于它，实测 3/3 全留在痕里），
+    // 故前提断言要求"留痕非空"是安全的；真被截断会直接红而不是悄悄放过。
+    const tracedLoc = (bridge.stats.sent_record_ids ?? [])
+      .map((id) => String(id))
+      .filter((id) => id.startsWith('edge:location:'));
+    // 前提折进判据：留痕为空 ⇒ 本用例直接红（留痕上界 1000，本场景远小于它，
+    // 为空只可能是"桥没记或发送为 0"，两种都不该被悄悄放过）。
+    const locPerId = await sql`
+      select state_json->>'record_id' as rid, count(*)::int as n
+      from ewoh_world_state
+      where org_id = ${INGEST_ORG} and state_json->>'record_id' = any(${tracedLoc}::text[])
+      group by 1`;
+    const landed = new Map(locPerId.map((r) => [String(r.rid), Number(r.n)]));
+    const missing = tracedLoc.filter((id) => !landed.has(id));
+    const doubled = tracedLoc.filter((id) => (landed.get(id) ?? 0) > 1);
+    // 只作证据打印：同一批数据上"按 ts 数"会得到多少条（旧判据就是被这个数字骗的）。
+    const byTs = await sql`
+      select count(*)::int as rows from ewoh_world_state
+      where org_id = ${INGEST_ORG} and entity_id = ${PERSON_ID}
+        and state_json->>'locator' = 'uwb' and state_json->>'record_id' like 'edge:location:%'
+        and ts > now() - interval '15 minutes'`;
+    step('2g. UWB 定位落 world_state：本轮发出的每条 location 帧恰好一行（不缺一行、不双写）',
+      tracedLoc.length > 0 && missing.length === 0 && doubled.length === 0,
+      `对账 ${tracedLoc.length} 条（location.sent=${locSent}，留痕上界 1000）`
+        + ` 缺失=${missing.length} 重复=${doubled.length} `
+        + `| 旧判据按 ts 窗口数到 ${byTs[0]?.rows ?? byTs[0]?.ROWS ?? '?'} 条、`
+        + `按 _created_at 窗口数到 ${loc.rows} 条（含往轮残留，故已不再当判据）`);
+    // 2g 的判据同样改成**按本轮发送的 id 集合**判定（原来的 `rows>0 && rows===uniq` 有两处弱）：
+    //  ① 窗口是 `_created_at > now()-15min`，会把**往轮**的行一起数进来（实测本轮 sent=3 而 rows=8）
+    //     ⇒ "至少一条"可以靠别的轮次满足，是假绿形状；
+    //  ② 早期版本窗口用的是 `ts`，遇到本轮样本恰好全是迟到帧就得到 rows=0 ⇒ 假红（即 FLAKE-02）。
+    // 人员归属这件事仍要判：本轮发出的每条 location 帧都必须挂在 fixture 的人身上。
+    const locAttribution = await sql`
+      select count(*)::int as n from ewoh_world_state
+      where org_id = ${INGEST_ORG} and entity_id = ${PERSON_ID}
+        and state_json->>'locator' = 'uwb'
+        and state_json->>'record_id' = any(${tracedLoc}::text[])`;
+    step('2g2. 本轮 location 帧人员归属正确（挂在 fixture 的人身上，不挂错实体）',
+      Number(locAttribution[0]?.n ?? locAttribution[0]?.N ?? 0) === tracedLoc.length,
+      `本轮 ${tracedLoc.length} 条中归属 ${PERSON_ID} 的=${locAttribution[0]?.n ?? locAttribution[0]?.N}`
+        + `（窗口口径 rows=${loc.rows} uniq=${loc.uniq} 迟到行=${loc.late} 仅存证，不再当判据）`);
 
     // ---- 2h. 感知层设备进入平台设备台账（此前 ewoh_device 只有外骨骼）----
     const deviceRows = await sql`
@@ -946,8 +999,9 @@ async function main() {
             + `roles=${JSON.stringify(gapEscalation?.recipients ?? null)}`);
 
         // ---- 5i/5j（NO-51a）：班次维度——本班优先、他班只报缺口（不发"不该当班的人"）----
-        // 用接口自己回答"现在是哪个班次"，再挑一个**不是当前班次**的班次登记责任人，
-        // 因此本检查与运行时刻无关（不需要把系统时间调来调去）。
+        // 用接口自己回答"现在是哪个班次"，再挑一个**不是当前班次**的班次登记责任人。
+        // V66 起这两条前提在缺失时由场景自己构造（见下方 REPRO-01 注释），因此本检查
+        // 与运行时刻无关——原先在班次空档里只能声明式 SKIP，会让一键重放随本地时钟变红。
         const currentShiftRes = await fetch(`${BASE}/api/shifts/current`, {
           headers: { Authorization: `Bearer ${andonToken}` },
         }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }))
@@ -956,9 +1010,68 @@ async function main() {
           headers: { Authorization: `Bearer ${andonToken}` },
         }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }))
           .catch(() => ({ status: 0, body: null }));
-        const currentShiftId = currentShiftRes.body?.current?.shiftId ?? null;
-        const otherShift = (Array.isArray(allShiftsRes.body) ? allShiftsRes.body : [])
-          .find((shift) => shift.shiftId !== currentShiftId);
+        /**
+         * REPRO-01（V66）：这里两条前提——"当前时刻有班次覆盖"与"存在另一个班次"——
+         * 原本由**本地时钟**决定。在无覆盖窗口（实测 22:18 本地）里 5i 只能声明式 SKIP，
+         * 而 harness 按"SKIP 不算通过"记未通过 ⇒ 一键重放在那些时刻必然非 0，
+         * 与代码好坏无关。修法是把前提**构造**出来，而不是放宽规则或绕过断言：
+         *  缺当班 → 登记一条覆盖现在的班次（now±60min，跨零点由服务端判定）；
+         *  缺他班 → 登记一条必然不覆盖现在的班次（now+6h → now+7h）。
+         * 窗口按当次时刻计算 ⇒ 任何时刻跑都成立。原来的 SKIP 分支保留：只有**构造失败**
+         * （写权限被收、接口异常）时才走到，那时它表达的是真实的不确定，而不是时钟运气。
+         */
+        const hhmm = (d) =>
+          `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const ensureShift = async (shiftId, start, end) => {
+          const res = await fetch(`${BASE}/api/shifts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${andonToken}` },
+            body: JSON.stringify({ shiftId, name: shiftId, startTime: start, endTime: end }),
+          }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }))
+            .catch(() => ({ status: 0, body: null }));
+          return res.status === 200 || res.status === 201;
+        };
+        const readShifts = async (url, opts = {}) =>
+          fetch(url, { headers: { Authorization: `Bearer ${andonToken}`, ...opts } })
+            .then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }))
+            .catch(() => ({ status: 0, body: null }));
+        const listShifts = async () => (await readShifts(`${BASE}/api/shifts`)).body ?? [];
+
+        let currentShiftId = currentShiftRes.body?.current?.shiftId ?? null;
+        let shiftPrecondition = 'seeded';
+        if (!currentShiftId) {
+          const now = Date.now();
+          const made = await ensureShift(
+            `SHIFT-E2E-NOW-${tag}`,
+            hhmm(new Date(now - 3_600_000)),
+            hhmm(new Date(now + 3_600_000)),
+          );
+          if (made) {
+            const refetch = await readShifts(`${BASE}/api/shifts/current`);
+            currentShiftId = refetch.body?.current?.shiftId ?? null;
+            shiftPrecondition = currentShiftId ? 'created-current' : 'create-failed';
+          } else {
+            shiftPrecondition = 'create-rejected';
+          }
+        }
+        let otherShift = (await listShifts()).find((shift) => shift.shiftId !== currentShiftId);
+        if (currentShiftId && !otherShift) {
+          const now = Date.now();
+          if (
+            await ensureShift(
+              `SHIFT-E2E-OFF-${tag}`,
+              hhmm(new Date(now + 6 * 3_600_000)),
+              hhmm(new Date(now + 7 * 3_600_000)),
+            )
+          ) {
+            otherShift = (await listShifts()).find(
+              (shift) => shift.shiftId !== currentShiftId
+              && shift.shiftId !== `SHIFT-E2E-NOW-${tag}`,
+            );
+            shiftPrecondition += '+created-other';
+          }
+        }
+
 
         if (!currentShiftId) {
           /**
@@ -1046,6 +1159,7 @@ async function main() {
               && (shiftEscalation?.recipients ?? []).some((r) =>
                 ['workshop_lead', 'dispatcher', 'safety_admin'].includes(r)),
             `set=${offShiftSet.status} current=${currentShiftId} other=${otherShift.shiftId} `
+              + `pre=${shiftPrecondition} `
               + `shiftId=${shiftEscalation?.shiftId ?? 'none'} `
               + `outOfShift=${JSON.stringify(shiftEscalation?.outOfShiftPersons ?? null)}`);
 

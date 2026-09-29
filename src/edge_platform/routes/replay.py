@@ -13,9 +13,37 @@
 world_store 未装配时全部 fail-closed 返回 503（绝不静默降级/伪造空数据）。
 """
 
+import math
+
 from ..world_model.contract_store import WorldStoreContractError
 from . import Route, dispatch_routes, exact
 from ._util import now_iso
+
+_ALLOWED_SOURCE_TYPES = frozenset({"real", "simulated", "derived"})
+
+
+def _object_body(body):
+    """Return a request object or raise a stable input-contract error."""
+    if not isinstance(body, dict):
+        raise ValueError("请求体必须是 JSON 对象")
+    return body
+
+
+def _provenance(payload):
+    """Require explicit source and bounded confidence; never fabricate trust."""
+    source_type = payload.get("sourceType")
+    if source_type not in _ALLOWED_SOURCE_TYPES:
+        raise ValueError("sourceType 必须显式为 real/simulated/derived")
+    raw_confidence = payload.get("confidence")
+    if raw_confidence is None or isinstance(raw_confidence, bool):
+        raise ValueError("confidence 必须显式为 0..1 的有限数字")
+    try:
+        confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        raise ValueError("confidence 必须显式为 0..1 的有限数字") from None
+    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        raise ValueError("confidence 必须显式为 0..1 的有限数字")
+    return source_type, confidence
 
 
 def _world_store_or_error(ctx, h):
@@ -46,11 +74,12 @@ def api_world_entities(ctx, h, req_meta):
     ws, err = _world_store_or_error(ctx, h)
     if err:
         return err
-    payload = req_meta.body or {}
     try:
+        payload = _object_body(req_meta.body)
         declaration = ws.declare_entity(payload)
-    except WorldStoreContractError as exc:
-        return h._new_error(exc.code, str(exc), 400)
+    except (WorldStoreContractError, ValueError) as exc:
+        code = exc.code if isinstance(exc, WorldStoreContractError) else "invalid_params"
+        return h._new_error(code, str(exc), 400)
     h._audit_target_type = "entity_declaration"
     h._audit_target_id = declaration["entityId"]
     return h.send_json({"ok": True, "declaration": declaration})
@@ -61,16 +90,17 @@ def api_world_states(ctx, h, req_meta):
     ws, err = _world_store_or_error(ctx, h)
     if err:
         return err
-    payload = req_meta.body or {}
-    if not payload.get("entityId") or not payload.get("entityType"):
-        return h._new_error("invalid_params", "entityId/entityType 必填", 400)
     try:
+        payload = _object_body(req_meta.body)
+        if not payload.get("entityId") or not payload.get("entityType"):
+            return h._new_error("invalid_params", "entityId/entityType 必填", 400)
+        source_type, confidence = _provenance(payload)
         state = ws.set_state(
             entity_id=payload["entityId"],
             entity_type=payload["entityType"],
             state_json=payload.get("stateJson") or {},
-            source_type=payload.get("sourceType", "real"),
-            confidence=float(payload.get("confidence", 1.0)),
+            source_type=source_type,
+            confidence=confidence,
             ts=payload.get("validFrom"),
         )
     except WorldStoreContractError as exc:
@@ -98,18 +128,22 @@ def api_world_events(ctx, h, req_meta):
     ws, err = _world_store_or_error(ctx, h)
     if err:
         return err
-    payload = req_meta.body or {}
-    if not payload.get("entityId") or not payload.get("nodeType"):
-        return h._new_error("invalid_params", "entityId/nodeType 必填", 400)
     try:
+        payload = _object_body(req_meta.body)
+        if not payload.get("entityId") or not payload.get("nodeType"):
+            return h._new_error("invalid_params", "entityId/nodeType 必填", 400)
+        source_type, confidence = _provenance(payload)
+        params = payload.get("payload") or {}
+        if not isinstance(params, dict):
+            raise ValueError("payload 必须为 JSON 对象")
         node = ws.record_event(
             entity_id=payload["entityId"],
             node_type=payload["nodeType"],
-            payload=payload.get("payload") or {},
+            payload=params,
             ts=payload.get("ts"),
             parent_id=payload.get("parentId"),
-            source_type=payload.get("sourceType", "real"),
-            confidence=float(payload.get("confidence", 1.0)),
+            source_type=source_type,
+            confidence=confidence,
         )
     except WorldStoreContractError as exc:
         return h._new_error(exc.code, str(exc), 400)
@@ -125,9 +159,12 @@ def api_world_predictions(ctx, h, req_meta):
     ws, err = _world_store_or_error(ctx, h)
     if err:
         return err
-    payload = req_meta.body or {}
     try:
-        prediction = ws.predict(payload.get("kind"), payload.get("params") or {})
+        payload = _object_body(req_meta.body)
+        params = payload.get("params") or {}
+        if not isinstance(params, dict):
+            raise ValueError("params 必须为 JSON 对象")
+        prediction = ws.predict(payload.get("kind"), params)
     except (ValueError, KeyError, TypeError) as exc:
         return h._new_error("invalid_params", str(exc), 400)
     return h.send_json({"ok": True, "prediction": prediction.to_dict() if prediction else None})

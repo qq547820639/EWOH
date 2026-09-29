@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException, Optional, InternalServerErrorException } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -484,7 +484,7 @@ export class SchedulingPolicyService {
           ),
         );
     // 2) 激活目标版本（NO-13o / ADR-064：激活决策与 active 翻转同一
-    // UPDATE 原子写 decisionJson；缺口显式留 NULL 不阻断主流程）。
+    // UPDATE 原子写 decisionJson；投影失败 fail-closed）。
     // R2-SSV-01：UPDATE 叠加 org 可见性条件（本 org + NULL 全局行），且
     // **绝不改写命中行的 orgId**（此前 set({orgId}) 会把他租户/全局行归属
     // 改写为当前租户——租户归属不可经激活漂移）。
@@ -520,15 +520,15 @@ export class SchedulingPolicyService {
 
   /**
    * NO-13o / ADR-064：policy_activation 决策投影（契约门内）。
-   * 缺口/契约失败 → log 显式 + 返回 null（decision_json 不写，留 NULL），
-   * 绝不阻断激活主流程（§2/§33）。
+   * 投影失败 → 记录错误并 fail-closed 抛出 500；没有可追溯决策记录时
+   * 不允许生产策略激活。
    */
   private projectPolicyActivationDecision(
     configVersion: number,
     orgId: string | null,
     approver: string,
     reason?: string,
-  ): DecisionRecord | null {
+  ): DecisionRecord {
     const { record, issues } = projectPolicyActivationDecision({
       configVersion,
       orgId,
@@ -537,10 +537,12 @@ export class SchedulingPolicyService {
       now: new Date(),
     });
     if (!record) {
-      this.logger.warn(
-        `policy activation 决策投影缺口 v${configVersion}（不阻断激活主流程）：${issues.join(',')}`,
+      this.logger.error(
+        `policy activation 决策投影失败 v${configVersion}（fail-closed）：${issues.join(',')}`,
       );
-      return null;
+      throw new InternalServerErrorException(
+        `DECISION_PROJECTION_FAILED: policy v${configVersion} 的激活决策无法留痕，已拒绝激活`,
+      );
     }
     return record;
   }

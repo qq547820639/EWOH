@@ -35,6 +35,7 @@ import { Button } from '@client/src/components/ui/button';
 import ErrorState from '@client/src/components/ErrorState';
 import { track } from '../../lib/telemetry';
 import { toast } from 'sonner';
+import { Textarea } from '@client/src/components/ui/textarea';
 import { parseError } from '@client/src/lib/errorContract';
 
 /**
@@ -83,6 +84,8 @@ const ApprovalConsole = (): React.ReactElement => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [agentRejectingId, setAgentRejectingId] = useState<string | null>(null);
+  const [agentRejectReason, setAgentRejectReason] = useState('');
 
   // Approval caches must use the tenant-scoped approvals prefix. Bare keys can
   // hit the previous account's cache after an org switch (CLI-715 class bug).
@@ -133,8 +136,15 @@ const ApprovalConsole = (): React.ReactElement => {
   };
 
   const resolveAgent = useMutation({
-    mutationFn: ({ approvalId, approved }: { approvalId: string; approved: boolean }) =>
-      resolveAgentApproval(approvalId, approved),
+    mutationFn: ({
+      approvalId,
+      approved,
+      reason,
+    }: {
+      approvalId: string;
+      approved: boolean;
+      reason?: string;
+    }) => resolveAgentApproval(approvalId, approved, reason),
     onError: (err) => {
       toast.error('Agent 审批失败', { description: parseError(err).message });
     },
@@ -324,9 +334,11 @@ const ApprovalConsole = (): React.ReactElement => {
                           size="sm"
                           variant="default"
                           disabled={busy || !agentApprovalActionable(row.agent!)}
-                          onClick={() =>
-                            resolveAgent.mutate({ approvalId: row.approvalId, approved: true })
-                          }
+                          onClick={() => {
+                            setAgentRejectingId(null);
+                            setAgentRejectReason('');
+                            resolveAgent.mutate({ approvalId: row.approvalId, approved: true });
+                          }}
                         >
                           批准
                         </Button>
@@ -334,9 +346,12 @@ const ApprovalConsole = (): React.ReactElement => {
                           size="sm"
                           variant="outline"
                           disabled={busy || !agentApprovalActionable(row.agent!)}
-                          onClick={() =>
-                            resolveAgent.mutate({ approvalId: row.approvalId, approved: false })
-                          }
+                          onClick={() => {
+                            setAgentRejectingId(
+                              agentRejectingId === row.approvalId ? null : row.approvalId,
+                            );
+                            setAgentRejectReason('');
+                          }}
                         >
                           驳回
                         </Button>
@@ -372,6 +387,49 @@ const ApprovalConsole = (): React.ReactElement => {
                     ) : null}
                   </div>
                 </div>
+                {agentRejectingId === row.approvalId && (
+                  <div className="mt-3 w-full space-y-2 border-t pt-3">
+                    <label
+                      htmlFor={`agent-reject-reason-${row.approvalId}`}
+                      className="block text-sm font-medium text-foreground"
+                    >
+                      驳回理由（必填，写入审计）
+                    </label>
+                    <Textarea
+                      id={`agent-reject-reason-${row.approvalId}`}
+                      value={agentRejectReason}
+                      onChange={(event) => setAgentRejectReason(event.target.value)}
+                      placeholder="说明为什么不能执行该 Agent 命令"
+                      rows={3}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAgentRejectingId(null);
+                          setAgentRejectReason('');
+                        }}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        disabled={busy || !agentRejectReason.trim()}
+                        onClick={() =>
+                          resolveAgent.mutate({
+                            approvalId: row.approvalId,
+                            approved: false,
+                            reason: agentRejectReason,
+                          })
+                        }
+                      >
+                        提交驳回
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {row.kind === 'scheduler' && expanded === row.approvalId && (
                   <SchedulerDetail
                     detail={detailQuery.data ?? null}

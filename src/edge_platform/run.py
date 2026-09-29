@@ -396,6 +396,23 @@ def main():
                 print(f"[EWOH] ERROR: 本地世界状态持久化失败: {exc}")
         if sim:
             sim.stop()
+        # EDGE-01（2026-09-21 链行为基线）：四类后台消费者各自有 start()/stop()，
+        # 但关停路径只停 manager，泄漏它们的线程与总线订阅。daemon 线程让进程仍能退出，
+        # 代价是在途 HTTP/退避睡眠被直接切断、订阅不退订——与重启叠加即为重复投递窗口。
+        # 按启动反序停止；单个失败只记录，不得阻断后续关停。
+        for consumer in (
+            ("指标上行", metrics_uplink),
+            ("传感器上行", sensor_uplink),
+            ("事件上行", event_uplink),
+            ("世界投影", world_projection),
+        ):
+            label, worker = consumer
+            if worker is None:
+                continue
+            try:
+                worker.stop()
+            except Exception as exc:  # 显式记录，不静默吞
+                print(f"[EWOH] ERROR: {label}停止失败: {exc}")
         manager.stop()
         print("[EWOH] 已停止")
 

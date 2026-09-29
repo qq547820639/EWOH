@@ -12,6 +12,7 @@
 /// <reference types="jest" />
 import { BadRequestException } from '@nestjs/common';
 import { ApprovalExpiryService, EXPIRY_RETENTION_MS, EXPIRY_WARN_WINDOW_MS } from '@server/modules/approval/approval-expiry.service';
+import { ApprovalExpiryWorkerService } from '@server/modules/approval/approval-expiry.worker';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const ACTOR = { userId: 'safety.zhou', primaryOrgId: ORG, roles: ['safety_admin'] } as never;
@@ -197,28 +198,68 @@ describe('ApprovalExpiryService（NO-30a 授权到期主动提醒）', () => {
     expect(String(inserted[0].body)).toContain('范围未记录');
   });
 
-  it('sweepAllActiveOrgs：逐租户扫描，单租户失败不影响其它（并如实回报失败）', async () => {
+  it('listOrgsWithRecentApprovalInstances：只回非空 org_id（跨租户列出租户是 worker 的职责边界）', async () => {
     const db = {
-      insert: jest.fn(() => ({
-        values: jest.fn(() => ({
-          onConflictDoNothing: jest.fn(() => ({ returning: jest.fn().mockResolvedValue([{ notificationId: 'x' }]) })),
-        })),
-      })),
-      execute: jest.fn().mockResolvedValue([{ org_id: ORG }, { org_id: '22222222-2222-4222-8222-222222222222' }]),
+      execute: jest.fn().mockResolvedValue([
+        { org_id: ORG },
+        { org_id: '22222222-2222-4222-8222-222222222222' },
+        { org_id: null },
+        { org_id: '  ' },
+      ]),
     };
-    const approvals = {
-      listCapabilityAuthorizations: jest
-        .fn()
-        .mockImplementation(async (orgId: string) => {
-          if (orgId.startsWith('2222')) throw new Error('db down');
-          return [authorization()];
-        }),
+    const service = new ApprovalExpiryService(db as never, {} as never);
+    await expect(service.listOrgsWithRecentApprovalInstances()).resolves.toEqual([
+      ORG, '22222222-2222-4222-8222-222222222222',
+    ]);
+  });
+
+  // V207：worker 的 tick **必须自己建立数据库上下文**。`ewoh_event` 开着 RLS，无上下文时
+  // 跨租户列举一律返回 0 行（不报错），于是"到点自己扫"这条恢复路径可以长期什么都不做而日志一片干净。
+  // 下面两支钉的是同一件事的两面：列租户要在全局管理员上下文里、逐租户扫描要各开一个带该租户 org 的上下文。
+  it('worker.tick：列租户走全局管理员事务，逐租户 sweep 各开一个带 app.current_org_id 的事务', async () => {
+    const contexts: Array<{ kind: string; org: string }> = [];
+    const swept: string[] = [];
+    const dbCtx = {
+      systemGlobalAdminTransaction: async (op: () => Promise<string[]>) => {
+        contexts.push({ kind: 'global', org: '' });
+        return op();
+      },
+      runInTransaction: async (settings: Array<{ name: string; value: string }>, op: () => Promise<unknown>) => {
+        const org = settings.find((s) => s.name === 'app.current_org_id')?.value ?? '';
+        contexts.push({ kind: 'per-org', org });
+        // 极性对照：没有该租户的 GUC 就不许扫——放开这一条，本用例必须红。
+        if (!org) throw new Error('per-org 事务缺 app.current_org_id ⇒ RLS 下必然读不到行');
+        return op();
+      },
     };
-    const service = new ApprovalExpiryService(db as never, approvals as never);
-    const result = await service.sweepAllActiveOrgs({ now: NOW });
-    expect(result.orgs).toBe(2);
-    expect(result.created).toBe(2); // 角色 + 发起人
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0].orgId).toContain('2222');
+    const service = {
+      listOrgsWithRecentApprovalInstances: async () => [ORG, '22222222-2222-4222-8222-222222222222'],
+      sweep: async (actor: { primaryOrgId: string }) => {
+        swept.push(actor.primaryOrgId);
+        if (actor.primaryOrgId.startsWith('2222')) throw new Error('db down');
+        return { created: 2, duplicates: 0, resolved: 0, scanned: 1 };
+      },
+    };
+    const worker = new ApprovalExpiryWorkerService(service as never, dbCtx as never);
+    await worker.tick();
+    expect(contexts.filter((c) => c.kind === 'global')).toHaveLength(1);
+    expect(contexts.filter((c) => c.kind === 'per-org').map((c) => c.org)).toEqual([ORG, '22222222-2222-4222-8222-222222222222']);
+    // 单租户失败不中断其它租户（两个租户都要被扫过）
+    expect(swept).toEqual([ORG, '22222222-2222-4222-8222-222222222222']);
+  });
+
+  it('worker.tick：列租户本身失败 ⇒ 不外抛（worker 不许被一次异常带走），且不得退化成"无上下文直接扫"', async () => {
+    let swept = 0;
+    const dbCtx = {
+      systemGlobalAdminTransaction: async () => { throw new Error('listing down'); },
+      runInTransaction: async () => { swept += 1; return null; },
+    };
+    const service = {
+      listOrgsWithRecentApprovalInstances: async () => [ORG],
+      sweep: async () => { swept += 1; return { created: 0 }; },
+    };
+    const worker = new ApprovalExpiryWorkerService(service as never, dbCtx as never);
+    await expect(worker.tick()).resolves.toBeUndefined();
+    expect(swept).toBe(0);
   });
 });

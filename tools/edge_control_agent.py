@@ -110,6 +110,22 @@ def main(argv: list[str] | None = None) -> int:
         receipt_journal_path=args.receipt_journal or None,
     )
 
+    # EDGE-02b（V94 实测）：journal 未配置时失败回执只活在内存里，进程一退就丢，而命令
+    # 早已因 ack 离开待投面——平台永远收不到那次执行结果。默认落点是部署决定（写哪里、
+    # 谁拥有、怎么轮转），这里不替运维选，但必须在启动时把这个姿态说清楚。
+    print(json.dumps({
+        "event": "control_agent_config",
+        "receiptJournal": args.receipt_journal or None,
+        "receiptJournalDurable": bool(args.receipt_journal),
+        "fingerprintSecretConfigured": bool(args.fingerprint_secret),
+        "devices": list(args.device),
+        "transport": args.transport,
+        "warning": (None if args.receipt_journal else
+                    "未配置 --receipt-journal / EWOH_CONTROL_RECEIPT_JOURNAL："
+                    "上行失败的执行结果只在内存中，进程重启即永久丢失且不会重投；"
+                    "配路径后重启可补投"),
+    }, ensure_ascii=False))
+
     exit_code = 0
     while True:
         for device_id in args.device:

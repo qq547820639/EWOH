@@ -8,8 +8,8 @@
 --   （decision_json 列；resolveRow 唯一权威写路径与解析终态同事务原子写入）。
 --   §12 Decision History 自此覆盖 Agent 审批决策；旧行 NULL = 未投影（读回兼容，
 --   additive）。既有受管表原地加固：managed_count/physical_create_count 不变
---   （74/77）。投影缺口/契约门失败 → 服务层 log 显式 + 留 NULL（§33 绝不静默
---   丢弃、绝不伪造；绝不阻断审批主流程 §2）。
+--   （74/77）。投影契约门失败 → 服务层记录错误并 fail-closed 拒绝解析；
+--   不允许无 DecisionRecord 的授权终态落地。
 
 SELECT set_config('search_path', '__EWOH_SCHEMA__, pg_temp', false);
 

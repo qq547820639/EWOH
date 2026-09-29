@@ -76,6 +76,12 @@ export function DeliveryBacklogTable(): React.ReactElement {
             已升级 {snapshot.totals.escalatedDevices} 台
           </Badge>
         )}
+        {snapshot.truncated && (
+          // PROJ-06：数字是真总量，但下面的逐设备明细只列了最久的那一批——不写明就会让人以为表已列全。
+          <Badge variant="outline" className="text-muted-foreground" data-testid="backlog-truncated">
+            明细仅列最久的 {snapshot.devices.length} 台（积压超过单轮检视上限）
+          </Badge>
+        )}
         <span className="text-xs text-muted-foreground">
           SLA {Math.round(snapshot.slaMs / 60_000)} 分钟（升级阈值 {snapshot.escalationMultiplier}×）
         </span>

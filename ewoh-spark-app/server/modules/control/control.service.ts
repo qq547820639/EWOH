@@ -23,7 +23,7 @@ import {
 } from '@shared/actuator';
 import { createFingerprintSigner } from './authorization-fingerprint';
 import { insertDeterministicNotifications } from '../notification/deterministic-notifications';
-import { eq, and, asc, desc, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { eq, and, asc, desc, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import {
   ewohControlRequest,
   ewohControlCommand,
@@ -40,7 +40,10 @@ import {
   RequestDatabaseContext,
   type TransactionSettingLike,
 } from '../../database/request-database-context';
-import { verifyApprovalFreshness } from '@shared/capability-requirements';
+import {
+  CAPABILITY_APPROVAL_VALIDITY_MS,
+  verifyApprovalFreshness,
+} from '@shared/capability-requirements';
 
 export type AttemptStatus =
   | 'pending'
@@ -245,8 +248,9 @@ const TERMINAL_REQUEST_STATUSES = new Set(['executed', 'failed', 'timeout', 'rev
 const NON_RETRYABLE_REQUEST_STATUSES = new Set(['executed', 'timeout', 'revoked']);
 /**
  * NO-62a：**投递前授权复核失败 → 命令撤回**的封闭原因词表。
- * 与 `db/migrations/standalone_093_control_command_authorization.sql` 的
- * CHECK 约束逐项一致（词表漂移会让合法原因被 DB 拒绝，属于契约缺陷）。
+ * 与 `db/migrations/standalone_094_control_fingerprint_key_missing.sql` 的
+ * CHECK 约束逐项一致（093 建约束、094 追加 `fingerprint_key_missing`，现行定义在 094；
+ * 词表漂移会让合法原因被 DB 拒绝，属于契约缺陷）。
  *
  * 为什么需要逐项区分：页面/运维要能区分"审批过期""审批被撤销""授权范围被改写"
  * "审批实例缺失"——都叫"投递失败"现场就无法处置（原则 5/6/7）。
@@ -290,6 +294,14 @@ export interface DeliveryAuthorizationVerdict {
 
 /** 投递扫描上限（一次轮询最多检视的待投递命令数；超出显式标记 truncated）。 */
 const PENDING_SCAN_CAP = 500;
+
+/**
+ * PROJ-06（V225）：投递积压明细的扫描上限。与 `PENDING_SCAN_CAP` 同形，
+ * 但**多一步**：读满即补一条全量聚合，让 `totals` 报真实总量而不是样本量
+ * （聚合与被截断的那次读同量级，且只在读满时才跑 ⇒ 常态路径零额外开销。
+ * 两档底表规模的实测对比见《链级行为基线》§5.3fy／§5.3fz）。
+ */
+const BACKLOG_SCAN_CAP = 500;
 
 /**
  * NO-65b：**在飞运动命令**（已投给设备但还没有执行结果）的封闭词表。
@@ -808,12 +820,117 @@ export class ControlService {
     }
   }
 
+  /**
+   * 写请求行之前先拿它的行锁（`SELECT … FOR UPDATE`）。
+   *
+   * 为什么必需：`withFreshAttemptStatuses` 的重读只有落在**拿锁之后**才有意义——若在锁前读，
+   * 读到的仍是"别人尚未提交"的旧值，之后本事务再阻塞在请求行的写上，写出去的还是那份旧聚合。
+   * RVAGG-02 的第一版修法就错在这个位置（实测调试行：`fresh=[start:executed, stop:sent]`
+   * 而末态 `stop=executed`、请求行停在 pending_gateway）。
+   * 注意：本方法**不**替换 `updateRequestStatus` 的 CAS 前值——前值继续用本事务早先读到的
+   * `request.status`（R2-SMI-009），所以"请求行在别处被改过"仍然 fail-closed 抛 STATE_CONFLICT。
+   */
+  private async lockRequestRow(requestId: string, orgId?: string | null): Promise<void> {
+    const tenantGuard = orgId
+      ? or(isNull(ewohControlRequest.orgId), eq(ewohControlRequest.orgId, orgId))
+      : undefined;
+    await this.db
+      .select({ requestId: ewohControlRequest.requestId })
+      .from(ewohControlRequest)
+      .where(and(eq(ewohControlRequest.requestId, requestId), ...(tenantGuard ? [tenantGuard] : [])))
+      .for('update')
+      .limit(1);
+  }
+
+  /**
+   * 请求级聚合的**锁后真值**读（RVAGG-01／RVAGG-02 共用）：把某次无锁读拿到的命令清单，
+   * 按命令行**当前**状态逐条覆盖后再交给 `aggregateControlStatus`。
+   *
+   * 为什么需要它：命令行的 CAS 谓词由 PostgreSQL 在行锁释放后重判（命令行写不错），
+   * 但请求行的状态是应用层用内存清单算出来的——清单若来自更早的无锁读，重叠窗口里别人已提交的
+   * 改动会被当成"还是旧态"，于是出现「命令全 executed 而请求行停在 pending_gateway」（RVAGG-02）
+   * 或「请求行 failed 而某条命令 executed」（RVAGG-01）。故一律在写请求行**之前**读一次。
+   * 租户谓词与 `transitionCommand` 同口径：org 为 NULL 的 legacy 行放行，有租户的行必须等值命中。
+   */
+  private async withFreshAttemptStatuses(
+    requestId: string,
+    attempts: ControlAttempt[],
+    orgId?: string | null,
+  ): Promise<ControlAttempt[]> {
+    if (attempts.length === 0) return attempts;
+    const tenantGuard = orgId
+      ? or(isNull(ewohControlCommand.orgId), eq(ewohControlCommand.orgId, orgId))
+      : undefined;
+    const rows = await this.db
+      .select({
+        commandId: ewohControlCommand.commandId,
+        status: ewohControlCommand.status,
+      })
+      .from(ewohControlCommand)
+      .where(and(eq(ewohControlCommand.requestId, requestId), ...(tenantGuard ? [tenantGuard] : [])));
+    const freshByAttempt = new Map(rows.map((row) => [String(row.commandId), String(row.status)]));
+    return attempts.map((attempt) => ({
+      ...attempt,
+      status: (freshByAttempt.get(attempt.attemptId) ?? attempt.status) as AttemptStatus,
+    }));
+  }
+
+  /**
+   * 命令行状态推进的**唯一出口**：条件 UPDATE + 「0 行命中时读回真实状态」。
+   *
+   * 试点模块化调整（F-01 后续）：这条 CAS 纪律原先在 3 处各写一遍且写法不一致——
+   * `ackCommand` 带 `status='sent'` 谓词、投递认领带谓词加窗口条件，而 `receiveReceipt`
+   * 完全没有谓词（即 F-01 的直接成因）。谓词散写意味着每加一条迁移都要重新记得写一遍。
+   * 现在三处都只声明「从哪些状态出发」，命中判定与新鲜状态读回集中在此。
+   * 冲突文案仍由各调用方组织：HTTP 语义、状态码与持久化契约均未改变。
+   */
+  private async transitionCommand(input: {
+    commandId: string;
+    requestId?: string | null;
+    /**
+     * 租户谓词。与 `getRequest` 同口径：org_id 为 NULL 的 legacy 行放行，
+     * 有租户的行必须等值命中——命令状态推进不得跨租户。
+     */
+    orgId?: string | null;
+    from: string[];
+    extraWhere?: SQL[];
+    patch: Record<string, unknown>;
+  }): Promise<{ hit: boolean; freshStatus: string | null }> {
+    const tenantGuard = input.orgId
+      ? or(isNull(ewohControlCommand.orgId), eq(ewohControlCommand.orgId, input.orgId))
+      : undefined;
+    const predicates = [
+      eq(ewohControlCommand.commandId, input.commandId),
+      inArray(ewohControlCommand.status, input.from),
+      ...(input.requestId ? [eq(ewohControlCommand.requestId, input.requestId)] : []),
+      ...(tenantGuard ? [tenantGuard] : []),
+      ...(input.extraWhere ?? []),
+    ];
+    const rows = await this.db
+      .update(ewohControlCommand)
+      .set(input.patch as never)
+      .where(and(...predicates))
+      .returning({ commandId: ewohControlCommand.commandId });
+    if (rows && rows.length > 0) return { hit: true, freshStatus: null };
+    const [fresh] = await this.db
+      .select({ status: ewohControlCommand.status })
+      .from(ewohControlCommand)
+      .where(and(eq(ewohControlCommand.commandId, input.commandId), ...(tenantGuard ? [tenantGuard] : [])))
+      .limit(1);
+    return { hit: false, freshStatus: fresh?.status ? String(fresh.status) : null };
+  }
+
   async receiveReceipt(
     requestId: string,
     commandKey: string,
     result: 'executed' | 'failed',
     receipt?: Record<string, unknown>,
     actor?: OrgContext,
+    /**
+     * NO-62a-FIX（F-01）：违规执行分支只登记设备事实，不改变命令的执行态与聚合口径。
+     * 由 `receiveReceiptByCommandId` 在 `revokedAtDelivery || !verdict.ok` 时置真。
+     */
+    keepAuthorizationState?: boolean,
   ): Promise<ControlRequest> {
     // F3：`result` 是人面入参（HTTP body），而 TS 的联合类型在运行时**不存在**
     // （server 侧 tsconfig.node.json 还是 strict:false，NestJS 的 @Body 也是内联接口、
@@ -827,24 +944,6 @@ export class ControlService {
     }
     // NEST-423：读回带 actor（org 守卫；NULL legacy 行放行与getRequest一致）。
     const request = await this.getRequest(requestId, actor);
-    // R2-SMI-009（修正）：行状态 'failed' 放行重试回执（retry_new_attempt 契约）。
-    if (NON_RETRYABLE_REQUEST_STATUSES.has(request.status ?? '')) {
-      throw new BadRequestException(
-        `Cannot record receipt on terminal request ${requestId}`,
-      );
-    }
-    const requestStatus = aggregateControlStatus(request.attempts);
-    if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
-      throw new BadRequestException(
-        `Cannot record receipt on terminal request ${requestId}`,
-      );
-    }
-    // R2-SMI-002：回执路径同样断言设备归属（请求行 org）。
-    await this.assertDeviceInOrg(
-      request.deviceId,
-      request.orgId ?? actor?.primaryOrgId,
-      actor?.isGlobalAdmin === true,
-    );
     const latest = [...request.attempts]
       .filter((attempt) => attempt.commandKey === commandKey)
       .sort((a, b) => b.attemptNo - a.attemptNo)[0];
@@ -856,22 +955,67 @@ export class ControlService {
         `Duplicate receipt for commandKey ${commandKey}`,
       );
     }
+    // F-02：迟到回执——命令已被巡检收敛成 `expired`（聚合终态 `timeout`），但设备可能
+    // **真的动过**。外骨骼这种物理执行体，"平台不认了"不等于"设备没执行"：漏记这条
+    // 事实等于审计面说谎（原则 6，与 F-01/B-02 同族）。因此迟到回执按事实登记、
+    // 不把命令复活成正常执行态——两条终态事实各自成立。
+    // 只放行这一种情形：其余终端请求仍按原样拒绝（不因本缺陷的修复而放宽闸门）。
+    const lateReceipt = latest.status === 'expired';
+    if (!lateReceipt) {
+      // R2-SMI-009（修正）：行状态 'failed' 放行重试回执（retry_new_attempt 契约）。
+      if (NON_RETRYABLE_REQUEST_STATUSES.has(request.status ?? '')) {
+        throw new BadRequestException(
+          `Cannot record receipt on terminal request ${requestId}`,
+        );
+      }
+      const requestStatus = aggregateControlStatus(request.attempts);
+      if (NO_FURTHER_ACTION_STATUSES.has(requestStatus)) {
+        throw new BadRequestException(
+          `Cannot record receipt on terminal request ${requestId}`,
+        );
+      }
+    }
+    // R2-SMI-002：回执路径同样断言设备归属（请求行 org）。
+    await this.assertDeviceInOrg(
+      request.deviceId,
+      request.orgId ?? actor?.primaryOrgId,
+      actor?.isGlobalAdmin === true,
+    );
     const receiptJson = receipt ?? {};
-    await this.db
-      .update(ewohControlCommand)
-      .set({
-        status: result,
-        responseAt: new Date(),
-        responseJson: receiptJson,
-        errorCode: result === 'failed' ? 'COMMAND_FAILED' : null,
-        errorMessage: result === 'failed' ? 'Command failed' : null,
-      })
-      .where(
-        and(
-          eq(ewohControlCommand.requestId, requestId),
-          eq(ewohControlCommand.commandId, latest.attemptId),
-        ),
+    const recordFactOnly = keepAuthorizationState || lateReceipt;
+    // F-01（链行为基线 B-02 实测复现，2026-09-21）：状态写入必须带 CAS 谓词。
+    // 原实现的终态判定只信上面读回的旧快照（只列 executed/failed），UPDATE 的 WHERE
+    // 又只有 requestId+commandId——读-判-写窗口内被撤回（或已被并发改写）的命令
+    // 会被一条迟到/重放的回执直接写成 `executed`：平台"已撤回授权"这一事实从命令行
+    // 消失，`ewoh_control_request` 聚合也随之读成成功。
+    // 违规分支保留设备确实动过的事实（response_* 与 command_receipt 结果行照落），
+    // 但不再改写 status——兑现 `receiveReceiptByCommandId` 里「绝不把它当成一次正常执行」。
+    const cas = await this.transitionCommand({
+      commandId: latest.attemptId,
+      requestId,
+      orgId: request.orgId ?? null,
+      from: keepAuthorizationState
+        // 违规分支同样可能落在已过期的命令上（设备在授权失效后才回话）：
+        // 两种情形都只登记事实、不改终态，故 revoked/expired 都在起始集合里。
+        ? ['revoked', 'expired']
+        : lateReceipt
+          ? ['expired']
+          : ['sent', 'gateway_received'],
+      patch: recordFactOnly
+        ? { responseAt: new Date(), responseJson: receiptJson }
+        : {
+            status: result,
+            responseAt: new Date(),
+            responseJson: receiptJson,
+            errorCode: result === 'failed' ? 'COMMAND_FAILED' : null,
+            errorMessage: result === 'failed' ? 'Command failed' : null,
+          },
+    });
+    if (!cas.hit) {
+      throw new ConflictException(
+        `Command ${latest.attemptId} 回执未被接受：状态已并发变为 ${String(cas.freshStatus ?? 'unknown')}`,
       );
+    }
     // ADR-077：回执行归属 = 请求行 org。
     await this.db.insert(ewohControlResult).values({
       resultId: nextId('res'),
@@ -883,14 +1027,15 @@ export class ControlService {
       success: result === 'executed',
       ...(request.orgId ? { orgId: request.orgId } : {}),
     });
-    const updatedAttempts = request.attempts.map((attempt) =>
-      attempt.attemptId === latest.attemptId
-        ? { ...attempt, status: result, receipt }
-        : attempt,
-    );
+    // RVAGG-02：请求行的聚合必须取「拿锁之后重读」的命令真值。上面那次 `getRequest` 是无锁读，
+    // 重叠窗口里别的回执已提交的命令改动不会出现在旧清单里；只把自己那条补进去（原实现的做法）
+    // 会把请求行覆盖成非终态（实测：两条命令都 executed，请求行停在 pending_gateway）。
+    // 顺序是锁→读→写：先排到请求行的队首，再读命令行，读到的才不会再被并发写翻掉。
+    await this.lockRequestRow(requestId, request.orgId);
+    const freshAttempts = await this.withFreshAttemptStatuses(requestId, request.attempts, request.orgId);
     await this.updateRequestStatus(
       requestId,
-      aggregateControlStatus(updatedAttempts),
+      aggregateControlStatus(freshAttempts),
       request.orgId,
       // R2-SMI-009：以读回的行状态为 CAS 前值。
       request.status ?? undefined,
@@ -918,16 +1063,27 @@ export class ControlService {
           inArray(ewohControlCommand.status, ['pending', 'sent', 'gateway_received']),
         ),
       );
-    const revokedAttempts = request.attempts.map((attempt) =>
-      attempt.status === 'pending' || attempt.status === 'sent' || attempt.status === 'gateway_received'
-        ? { ...attempt, status: 'failed' as const }
-        : attempt,
+    // RVAGG-01：上面那条批量 CAS 的谓词由 PostgreSQL 在行锁释放后重判，所以**命令行**不会写错；
+    // 但请求行的聚合若继续用 `getRequest` 那次无锁读到的清单，就会把"窗口内已被回执推到 executed"
+    // 的命令记成本次的 failed（请求行=failed 而命令行=executed）。故 CAS 之后重读一次当前状态
+    // （READ COMMITTED 下即锁后真值），前提复判与聚合都用这份真值。整段在
+    // `OrgContextInterceptor` 的请求事务内，抛错即回滚本次撤销。
+    await this.lockRequestRow(requestId, request.orgId);
+    const trueAttempts = await this.withFreshAttemptStatuses(
+      requestId,
+      request.attempts,
+      request.orgId,
     );
+    const trueAggregate = aggregateControlStatus(trueAttempts);
+    // 复判（NEST-424 同一句话，挪到锁后）：撤销之后仍留着已执行/部分成功/超时的事实
+    // ⇒ 这次撤销不该被放行，回滚整笔，不把设备已执行的事记成"失败"。
+    if (['executed', 'partial_success', 'timeout'].includes(trueAggregate)) {
+      throw new BadRequestException(`Cannot revoke terminal request ${requestId}`);
+    }
     // R2-SMI-001：control.yaml non_executing→revoked 终态——尚未向网关发出
     // 任何命令的请求（created/pending_approval/approved）撤销后落 revoked，
     // 不再回退为 'created'；已有 in-flight 命令的撤销维持聚合语义（failed）。
-    const nextStatus =
-      request.attempts.length === 0 ? 'revoked' : aggregateControlStatus(revokedAttempts);
+    const nextStatus = request.attempts.length === 0 ? 'revoked' : trueAggregate;
     await this.updateRequestStatus(
       requestId,
       nextStatus,
@@ -1049,7 +1205,7 @@ export class ControlService {
    * 网关掉线、指纹两侧密钥不配对、配额打满、设备一直忙……这些情况下命令会静静地躺在
    * `sent`，现场只会觉得"设备怎么不动"，运维也不知道该去看什么（原则 5/7）。
    *
-   * 语义（只写提醒 + 审计，绝不改命令/设备事实——巡检是只读的）：
+   * 语义（F-02 后：提醒 + 过期收敛 + 审计；仍不改**设备**事实）：
    *   · 逐设备聚合"超过 SLA 仍未交付"的命令（`status='sent'` 且 `sent_at < now-SLA`）；
    *   · 按设备发**确定性提醒**（同一设备同一积压只提醒一次，靠 notificationId 幂等）；
    *   · 提醒内容带：设备号、积压条数、最久等待时长、最早一条的命令键 —— 现场可照着查；
@@ -1061,27 +1217,54 @@ export class ControlService {
     return Number.isFinite(raw) && raw > 0 ? raw : 3;
   }
 
+  /**
+   * F-02：在飞命令的过期时限（下发后多久仍无设备回执就不再视为在飞），可用 env 覆盖。
+   *
+   * 缺省**不发明新数**：取 `CAPABILITY_APPROVAL_VALIDITY_MS`（24h）。命令的授权依据就是那张
+   * 能力审批，而该常量的注释已给出同一口径的理据——跨班次后设备/人员/作业面都可能已变，
+   * 旧审批不再代表当前事实。超过这个窗口，平台继续把命令标成 `sent`/`gateway_received`
+   * 就是在声称"一次已经失去授权基础的执行仍会到来"，那是假事实（原则 6）。
+   */
+  static commandExpiryMs(): number {
+    const raw = Number(process.env.EWOH_CONTROL_COMMAND_EXPIRY_MS ?? CAPABILITY_APPROVAL_VALIDITY_MS);
+    return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : CAPABILITY_APPROVAL_VALIDITY_MS;
+  }
+
   /** NO-77a：积压判定的**唯一实现**（巡检与只读快照共用，不许两套口径漂移）。 */
   private async collectBacklogRows(orgId: string): Promise<{
     rows: Array<{
       commandId: string;
       commandKey: string;
+      requestId: string;
+      deadline: Date | null;
       sentAt: Date | null;
       deliveredAt: Date | null;
       orgId: string | null;
       deviceId: string | null;
       status: string | null;
     }>;
+    /**
+     * PROJ-06：明细被 `BACKLOG_SCAN_CAP` 截断时，这里是**未被截断的**全量聚合；
+     * 没截断时为 null（此时 `rows` 就是全量，聚合与逐行求和必然同数，不必再问一次库）。
+     */
+    aggregate: { commands: number; undelivered: number; devices: number } | null;
+    truncated: boolean;
     slaMs: number;
     escalationMultiplier: number;
   }> {
     const backlogStatuses = ['sent', 'gateway_received'];
     const slaMs = ControlService.deliverySlaMs();
     const cutoff = new Date(Date.now() - slaMs);
+    const predicate = this.backlogPredicate(orgId, cutoff, backlogStatuses);
     const rows = await this.db
       .select({
         commandId: ewohControlCommand.commandId,
         commandKey: ewohControlCommand.commandKey,
+        // F-02：收敛写入需要请求号（CAS 谓词 + 结果行归属），一并取出。
+        requestId: ewohControlCommand.requestId,
+        // F-02：`ewoh_control_request.deadline` 就是契约里 business_deadline 那条边的载体；
+        // 有值时它优先于"授权有效期兜底"（显式业务期限 > 推定时限）。
+        deadline: ewohControlRequest.deadline,
         sentAt: ewohControlCommand.sentAt,
         deliveredAt: ewohControlCommand.deliveredAt,
         orgId: ewohControlCommand.orgId,
@@ -1093,19 +1276,203 @@ export class ControlService {
         ewohControlRequest,
         eq(ewohControlCommand.requestId, ewohControlRequest.requestId),
       )
-      .where(and(
-        inArray(ewohControlCommand.status, backlogStatuses),
-        lt(ewohControlCommand.sentAt, cutoff),
-        // `gateway_received`（已交付）不算"未交付积压"；`sent` 只有在确实未交付时才算。
-        or(
-          and(eq(ewohControlCommand.status, 'sent'), isNull(ewohControlCommand.deliveredAt)),
-          eq(ewohControlCommand.status, 'gateway_received'),
-        ),
-        or(eq(ewohControlCommand.orgId, orgId), isNull(ewohControlCommand.orgId)),
-      ))
+      .where(predicate)
       .orderBy(asc(ewohControlCommand.sentAt))
-      .limit(500);
-    return { rows, slaMs, escalationMultiplier: ControlService.backlogEscalationMultiplier() };
+      .limit(BACKLOG_SCAN_CAP);
+    // PROJ-06：读满一屏＝还有没看见的。此时 totals 必须来自全量聚合，否则"1,200 条积压"
+    // 会被两处投影响力（看板 + 历史快照）同时报成 500——那不是近似值，是**另一个数**。
+    const truncated = rows.length >= BACKLOG_SCAN_CAP;
+    const aggregate = truncated ? await this.collectBacklogAggregate(predicate) : null;
+    return {
+      rows,
+      aggregate,
+      truncated,
+      slaMs,
+      escalationMultiplier: ControlService.backlogEscalationMultiplier(),
+    };
+  }
+
+  /**
+   * PROJ-06：积压谓词只有这一份——capped 明细读与全量聚合一字不差共用同一个条件树
+   * （否则"总量"与"明细"各按一套口径算，正是 NO-77a 当初要避免的那类漂移）。
+   */
+  private backlogPredicate(orgId: string, cutoff: Date, statuses: string[]) {
+    return and(
+      inArray(ewohControlCommand.status, statuses),
+      lt(ewohControlCommand.sentAt, cutoff),
+      // `gateway_received`（已交付）不算"未交付积压"；`sent` 只有在确实未交付时才算。
+      or(
+        and(eq(ewohControlCommand.status, 'sent'), isNull(ewohControlCommand.deliveredAt)),
+        eq(ewohControlCommand.status, 'gateway_received'),
+      ),
+      or(eq(ewohControlCommand.orgId, orgId), isNull(ewohControlCommand.orgId)),
+    );
+  }
+
+  /** PROJ-06：与 capped 明细读同一谓词的全量聚合（只在读满上限时才跑）。 */
+  private async collectBacklogAggregate(predicate: SQL<unknown> | undefined) {
+    const rows = await this.db
+      .select({
+        commands: sql<number>`count(*)::int`,
+        undelivered: sql<number>`count(*) filter (where ${ewohControlCommand.deliveredAt} is null)::int`,
+        devices: sql<number>`count(distinct ${ewohControlRequest.deviceId})::int`,
+      })
+      .from(ewohControlCommand)
+      .innerJoin(
+        ewohControlRequest,
+        eq(ewohControlCommand.requestId, ewohControlRequest.requestId),
+      )
+      .where(predicate);
+    const first = rows[0] as
+      | { commands?: number; undelivered?: number; devices?: number }
+      | undefined;
+    const parsed = {
+      commands: Number(first?.commands),
+      undelivered: Number(first?.undelivered),
+      devices: Number(first?.devices),
+    };
+    // 聚合读不出来就退回"样本是下界"，绝不把 totals 静默改成 0（那比报成 500 更糟）。
+    // 真库聚合三列恒为有限整数；走到这一支说明这条查询没按预期返回。
+    if (![parsed.commands, parsed.undelivered, parsed.devices].every(Number.isFinite)) {
+      this.logger?.warn?.(
+        `collectBacklogAggregate: 全量聚合读数非有限值（${JSON.stringify(first ?? null)}）`
+        + '⇒ totals 退回样本计数（是下界），truncated 仍为 true',
+      );
+      return null;
+    }
+    return parsed;
+  }
+
+  /**
+   * F-02（链行为基线，2026-09-21）：把**永久悬挂的在飞命令**收敛为已声明却从未被写入的
+   * `expired` 终态（`AttemptStatus` 早就有它，`aggregateControlStatus` 也已把它映射成
+   * 请求级 `timeout`，`contracts/state-machines/control.yaml` 的 `business_deadline` 边
+   * 因此一直是死边——全仓没有 writer）。
+   *
+   * 为什么由巡检来写：判定口径只有 `collectBacklogRows` 一份（NO-77a 的原则），
+   * 巡检已经在按设备/按租户读同一批行；再加一个"过期清扫器"就是第二套口径、第二个调度。
+   *
+   * 三条不变量：
+   *   1. **CAS 才写**：`from` 取在飞集合，0 命中即跳过并 warn（并发的 ack/回执赢，
+   *      不是我们覆盖它）；
+   *   2. **一次命令一条事实行**：`delivery_expired` 结果行 + 审计，收敛本身可追溯；
+   *   3. **不动 revoked_* 两列**：`expired`（投出去了但没等到答案）与 `revoked`
+   *      （平台根本没投给设备）是两件事，混用会违反原则 6。
+   *
+   * 采集视野：本方法只看到 `collectBacklogRows` 给它的行，也就是**下发已超过投递 SLA**
+   * 的命令；两条过期判据因此都天然带这段宽限（默认 5 分钟），刚下发的命令不会被就地判死。
+   */
+  private async expireBacklogCommands(
+    orgId: string,
+    rows: Awaited<ReturnType<ControlService['collectBacklogRows']>>['rows'],
+    ctx: OrgContext,
+  ): Promise<{ expired: number; conflicts: number; expiryMs: number; expiredCommandIds: string[] }> {
+    const expiryMs = ControlService.commandExpiryMs();
+    const windowCutoffMs = Date.now() - expiryMs;
+    let expired = 0;
+    let conflicts = 0;
+    const expiredCommandIds: string[] = [];
+    const affectedRequests = new Set<string>();
+    for (const row of rows) {
+      const sentAtMs = row.sentAt ? new Date(row.sentAt as unknown as string).getTime() : NaN;
+      const deadlineMs = row.deadline ? new Date(row.deadline as unknown as string).getTime() : NaN;
+      // 两条规则，优先级明确：
+      //   ① business_deadline——请求行**显式写了**截止时间且已过（契约里那条边的载体，
+      //      此前是一列没人读的死字段）；
+      //   ② authorization_window——没人写期限时，按授权有效期兜底，不允许无限期占据在飞集合。
+      const byDeadline = Number.isFinite(deadlineMs) && deadlineMs <= Date.now();
+      const byWindow = Number.isFinite(sentAtMs) && sentAtMs <= windowCutoffMs;
+      if (!byDeadline && !byWindow) continue;
+      const expiryRule = byDeadline ? 'business_deadline' : 'authorization_window';
+      const commandId = String(row.commandId);
+      const rowOrgId = row.orgId ? String(row.orgId) : orgId;
+      const cas = await this.transitionCommand({
+        commandId,
+        requestId: row.requestId ? String(row.requestId) : null,
+        orgId: rowOrgId,
+        from: [...IN_FLIGHT_ATTEMPT_STATUSES],
+        patch: {
+          status: 'expired',
+          errorCode: 'COMMAND_EXPIRED',
+          errorMessage: byDeadline
+            ? '请求的截止时间（deadline）已过仍未收到设备回执，命令不再视为在飞'
+            : `下发后超过 ${Math.round(expiryMs / 3_600_000)} 小时（授权有效期口径）仍无设备回执，`
+              + '平台不再视为在飞；设备若随后执行，其回执作为事实另行登记',
+        },
+      });
+      if (!cas.hit) {
+        // 并发被 ack/回执改写：让赢的一方留痕，本方不覆盖、不重试。
+        conflicts += 1;
+        this.logger.warn(
+          `命令 ${commandId} 过期收敛未命中（状态已并发变为 ${String(cas.freshStatus ?? 'unknown')}），跳过`,
+        );
+        continue;
+      }
+      expired += 1;
+      expiredCommandIds.push(commandId);
+      affectedRequests.add(String(row.requestId));
+      await this.db.insert(ewohControlResult).values({
+        resultId: nextId('res'),
+        requestId: String(row.requestId),
+        commandId,
+        resultType: 'delivery_expired',
+        resultCode: 'COMMAND_EXPIRED',
+        resultJson: {
+          commandKey: String(row.commandKey),
+          deviceId: row.deviceId ? String(row.deviceId) : null,
+          statusBefore: String(row.status ?? 'sent'),
+          sentAt: row.sentAt ? new Date(row.sentAt as unknown as string).toISOString() : null,
+          deadlineAt: byDeadline
+            ? new Date(deadlineMs).toISOString()
+            : null,
+          expiryRule,
+          ageMs: Number.isFinite(sentAtMs) ? Date.now() - sentAtMs : null,
+          expiryMs,
+          expiredAt: new Date().toISOString(),
+        },
+        success: false,
+        ...(rowOrgId ? { orgId: rowOrgId } : {}),
+      });
+      await this.recordAudit(
+        {
+          action: 'control.command.expired',
+          entityType: 'control_command',
+          entityId: commandId,
+          before: { status: String(row.status ?? 'sent') },
+          after: { status: 'expired', expiryMs, requestId: String(row.requestId) },
+          risk: true,
+        },
+        ctx,
+      );
+    }
+    // 命令行收敛后，请求行的**存储态**必须跟着走：读面/聚合与看板都读 `ewoh_control_request.status`
+    // 判终端，只改命令行的话悬挂只是从 attempt 挪到了 request（同一类缺陷换个位置）。
+    // 口径与 receiveReceipt 完全一致：锁 → 读 → CAS 写回（RVAGG-03）。
+    // 为什么"紧邻写之前读一次"还不够：读与写之间并发方仍可提交，本方 CAS 前值当场失效 ⇒ 0 行 ⇒
+    // 抛 STATE_CONFLICT，而下面这个 catch 为了"不阻断整轮巡检"只留一条 warn——于是命令行已经
+    // expired、请求行却停在别人写的那个态，且命令已是终态、下一轮巡检不再扫到它（实测：二次巡检
+    // 自报 expired=0，请求行永久停在 executed）。先锁住请求行，读到的就是本事务提交前的真值。
+    // 锁序与回执／撤销两条路一致：命令行 → 请求行（本方法已在循环里 CAS 过命令行）。
+    for (const requestId of affectedRequests) {
+      try {
+        await this.lockRequestRow(requestId, orgId);
+        const req = await this.getRequest(requestId, ctx);
+        await this.updateRequestStatus(
+          requestId,
+          aggregateControlStatus(req.attempts),
+          req.orgId ?? orgId,
+          req.status ?? undefined,
+        );
+      } catch (err) {
+        // 并发方已改写请求行（或该请求已不可见）：留痕不覆盖，也不阻断整轮巡检。
+        this.logger.warn(
+          `请求 ${requestId} 的聚合状态收敛未完成（不阻断巡检）：${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+    return { expired, conflicts, expiryMs, expiredCommandIds };
   }
 
   /**
@@ -1126,6 +1493,12 @@ export class ControlService {
       escalatedDevices: number;
       oldestWaitingMs: number | null;
     };
+    /**
+     * PROJ-06：明细被 `BACKLOG_SCAN_CAP` 截断 ⇒ true。此时 `totals` 里的
+     * commands/undelivered/receivedNotExecuted/devices 来自全量聚合（是真总量），
+     * 而 `devices[]` 数组与 escalatedDevices 只覆盖被检视的那一批（越老的越先被看见）。
+     */
+    truncated: boolean;
     devices: Array<{
       deviceId: string;
       commands: number;
@@ -1144,7 +1517,8 @@ export class ControlService {
     if (ttlMs > 0 && cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
-    const { rows, slaMs, escalationMultiplier } = await this.collectBacklogRows(orgId);
+    const { rows, aggregate, truncated, slaMs, escalationMultiplier } =
+      await this.collectBacklogRows(orgId);
     const now = Date.now();
     const byDevice = new Map<string, typeof rows>();
     for (const row of rows) {
@@ -1177,13 +1551,18 @@ export class ControlService {
       slaMs,
       escalationMultiplier,
       totals: {
-        devices: devices.length,
-        commands: total((d) => d.commands),
-        undelivered: total((d) => d.undelivered),
-        receivedNotExecuted: total((d) => d.receivedNotExecuted),
+        // PROJ-06：读满上限时 totals 取全量聚合（真总量）；没读满则 aggregate 为 null，
+        // 下面这些表达式与改前逐字同值 ⇒ 常态路径的读数一个字节都不变。
+        devices: aggregate?.devices ?? devices.length,
+        commands: aggregate?.commands ?? total((d) => d.commands),
+        undelivered: aggregate?.undelivered ?? total((d) => d.undelivered),
+        receivedNotExecuted: aggregate
+          ? aggregate.commands - aggregate.undelivered
+          : total((d) => d.receivedNotExecuted),
         escalatedDevices: devices.filter((d) => d.escalated).length,
         oldestWaitingMs: devices.length > 0 ? devices[0].oldestWaitingMs : null,
       },
+      truncated,
       devices,
       checkedAt: new Date().toISOString(),
     };
@@ -1250,14 +1629,27 @@ export class ControlService {
     duplicates: number;
     slaMs: number;
     escalationMultiplier: number;
+    /** F-02：本轮被收敛为 `expired` 的命令数 / CAS 未命中（被并发改写）数 / 时限。 */
+    expired: number;
+    expiryConflicts: number;
+    expiryMs: number;
     notificationIds: string[];
   }> {
     const orgId = String(ctx?.primaryOrgId ?? '').trim();
     if (orgId === '') throw new BadRequestException('sweepDeliveryBacklog: 缺少租户上下文');
     // NO-77a：判定与快照共用同一实现（collectBacklogRows）——巡检与看板永不两套口径。
-    const { rows, slaMs, escalationMultiplier } = await this.collectBacklogRows(orgId);
+    const { rows, aggregate, truncated, slaMs, escalationMultiplier } =
+      await this.collectBacklogRows(orgId);
+    // F-02：先收敛"已经等不到答案"的命令，再对**仍在等待**的那批发提醒。
+    // 顺序不能反：否则一条早已失去授权基础的命令会永远留在积压里天天叫人，
+    // 而现场点开看到的仍是 `sent`——提醒与事实互相矛盾。
+    const expiry = await this.expireBacklogCommands(orgId, rows, ctx);
+    // 「哪些已经过期」只有一处判定（expireBacklogCommands 的返回集）——
+    // 提醒侧重新算一遍规则就是第二套口径，正是本仓库反复踩到的漂移源。
+    const expiredSet = new Set(expiry.expiredCommandIds);
+    const waiting = rows.filter((row) => !expiredSet.has(String(row.commandId)));
     const byDevice = new Map<string, typeof rows>();
-    for (const row of rows) {
+    for (const row of waiting) {
       const deviceId = String(row.deviceId ?? '');
       if (deviceId === '') continue;
       const list = byDevice.get(deviceId) ?? [];
@@ -1318,20 +1710,26 @@ export class ControlService {
         slaMs,
         escalationMultiplier,
         totals: {
-          devices: byDevice.size,
-          commands: rows.length,
-          undelivered: [...byDevice.values()].reduce(
+          // PROJ-06：截断时 totals 取全量聚合，`sampledCommands` 保留"这一轮实际检视了多少行"，
+          // 提醒/升级仍然只覆盖那一批（越老的越先被看见）——两者各自如实，不再共用一个数冒充对方。
+          devices: aggregate?.devices ?? byDevice.size,
+          commands: aggregate?.commands ?? rows.length,
+          undelivered: aggregate?.undelivered ?? [...byDevice.values()].reduce(
             (acc, cmds) => acc + cmds.filter((c) => c.deliveredAt == null).length,
             0,
           ),
-          receivedNotExecuted: [...byDevice.values()].reduce(
-            (acc, cmds) => acc + cmds.filter((c) => c.deliveredAt != null).length,
-            0,
-          ),
+          receivedNotExecuted: aggregate
+            ? aggregate.commands - aggregate.undelivered
+            : [...byDevice.values()].reduce(
+              (acc, cmds) => acc + cmds.filter((c) => c.deliveredAt != null).length,
+              0,
+            ),
           escalatedDevices,
           oldestWaitingMs: rows.length > 0 && rows[0].sentAt
             ? Math.max(0, now - new Date(rows[0].sentAt as unknown as string).getTime())
             : 0,
+          truncated,
+          sampledCommands: rows.length,
         },
         devices: [...byDevice.entries()].map(([devId, cmds]) => ({
           deviceId: devId,
@@ -1361,10 +1759,19 @@ export class ControlService {
           created,
           duplicates,
           escalationMultiplier,
+          expired: expiry.expired,
+          expiryConflicts: expiry.conflicts,
+          expiryMs: expiry.expiryMs,
         },
       },
       ctx,
     );
+    if (expiry.expired > 0) {
+      this.logger.warn(
+        `F-02 命令过期收敛：${expiry.expired} 条在飞命令超过 ${Math.round(expiry.expiryMs / 3_600_000)}h 无设备回执 → expired`
+        + `（CAS 未命中 ${expiry.conflicts} 条，已被并发改写）`,
+      );
+    }
     return {
       scanned: rows.length,
       devicesWithBacklog: byDevice.size,
@@ -1373,6 +1780,9 @@ export class ControlService {
       duplicates,
       slaMs,
       escalationMultiplier,
+      expired: expiry.expired,
+      expiryConflicts: expiry.conflicts,
+      expiryMs: expiry.expiryMs,
       notificationIds,
     };
   }
@@ -1579,7 +1989,12 @@ export class ControlService {
               : CONTROL_REVOKE_REASON_LABELS[
                   (String(row.revokedReason ?? '') as ControlRevokeReason)
                 ] ?? null
-            : null,
+            : status === 'expired'
+              // F-02：过期 ≠ 失败——平台只是不再等这个答案；设备随后的回执仍作为事实登记。
+              ? row.errorMessage
+                ? String(row.errorMessage)
+                : '超过授权有效期仍未收到设备回执，命令不再视为在飞（过期 ≠ 失败，必要时重新审批后重发新 attempt）'
+              : null,
         sentAt: row.sentAt ? this.toIso(row.sentAt) : null,
         deliveredAt: row.deliveredAt ? this.toIso(row.deliveredAt) : null,
         responseAt: row.responseAt ? this.toIso(row.responseAt) : null,
@@ -1791,18 +2206,17 @@ export class ControlService {
     reason: ControlRevokeReason,
     detail: string,
     actor?: OrgContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     // NO-62a：撤回是**安全决策**，必须比"返回 409"活得更久。
     // 实测缺陷：ack 路径上"撤回 → 抛 409"时，请求事务回滚把撤回写入一起带走，
     // 命令留在 sent，下一轮轮询还会把它投给设备（fail-open 复现）。
     // 因此这里整体放到独立事务里提交（无 requestDatabaseContext 替身时退回同事务）。
     const settings = this.detachedGucSettings(command.orgId, actor);
     if (this.requestDatabaseContext && settings.length > 0) {
-      await this.requestDatabaseContext.runDetachedTransaction(
+      return this.requestDatabaseContext.runDetachedTransaction(
         settings,
         async () => this.revokeUndeliveredCommandWrites(command, reason, detail, actor),
       );
-      return;
     }
     if (this.requestDatabaseContext && settings.length === 0) {
       // 无租户归属（legacy NULL-org 行）：独立事务没有 GUC → RLS 会拒绝写入。
@@ -1811,7 +2225,7 @@ export class ControlService {
         `revoke ${command.commandId} 缺少租户归属：撤回写入与请求事务同生共死（无法独立提交）`,
       );
     }
-    await this.revokeUndeliveredCommandWrites(command, reason, detail, actor);
+    return this.revokeUndeliveredCommandWrites(command, reason, detail, actor);
   }
 
   /**
@@ -1836,15 +2250,22 @@ export class ControlService {
     } as OrgContext);
   }
 
-  /** 撤回的写入体（命令行 + 结果行 + 审计 + 提醒 + 请求聚合状态）。 */
+  /**
+   * 撤回的写入体（命令行 + 结果行 + 审计 + 提醒 + 请求聚合状态）。
+   *
+   * F-09（2026-09-22 实测复现）：命令行 UPDATE 带 `status='sent'` 谓词，但原来不检查命中——
+   * 并发回执先把命令推离 `sent` 时，撤回**并未发生**，代码却照样写 `delivery_rejected` 结果行
+   * 与 `before:sent → after:revoked` 审计，等于在台账上多出一条没有发生过的事实。
+   * 现在：0 行命中 = 什么事实都不写，只留一条 warn，并由返回值告知调用方"本轮没撤回"。
+   */
   private async revokeUndeliveredCommandWrites(
     command: { commandId: string; requestId: string; commandKey: string; attemptNo: number; orgId: string | null },
     reason: ControlRevokeReason,
     detail: string,
     actor?: OrgContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const now = new Date();
-    await this.db
+    const cas = await this.db
       .update(ewohControlCommand)
       .set({
         status: 'revoked',
@@ -1857,7 +2278,15 @@ export class ControlService {
       .where(and(
         eq(ewohControlCommand.commandId, command.commandId),
         eq(ewohControlCommand.status, 'sent'),
-      ));
+      ))
+      .returning({ commandId: ewohControlCommand.commandId });
+    if (!cas || cas.length === 0) {
+      this.logger.warn(
+        `撤回未命中（命令 ${command.commandId} 已不在 sent，reason=${reason}）：`
+        + '不写 delivery_rejected 结果行/审计——撤回这件事没有发生，不能记成事实',
+      );
+      return false;
+    }
     await this.db.insert(ewohControlResult).values({
       resultId: nextId('res'),
       requestId: command.requestId,
@@ -1918,6 +2347,7 @@ export class ControlService {
         latest.status ?? undefined,
       );
     }
+    return true;
   }
 
   /**
@@ -2160,8 +2590,8 @@ export class ControlService {
         actor,
       );
       if (!verification.ok) {
-        revoked += 1;
-        await this.revokeUndeliveredCommand(
+        // F-09：计数只认**真正写成的撤回**（并发方已改写时本轮 0 命中）。
+        if (await this.revokeUndeliveredCommand(
           {
             commandId: String(row.commandId),
             requestId: String(row.requestId),
@@ -2172,7 +2602,9 @@ export class ControlService {
           verification.reason ?? 'approval_not_granted',
           verification.detail ?? CONTROL_REVOKE_REASON_LABELS.approval_not_granted,
           actor,
-        );
+        )) {
+          revoked += 1;
+        }
         continue;
       }
       // 投递闸门：设备上已有在飞的运动命令，且本条也是运动命令（且不是它自己）→ 暂缓。
@@ -2259,32 +2691,26 @@ export class ControlService {
     const deliverable: typeof verified = [];
     for (const item of verified.slice(0, limit)) {
       const claimedAt = new Date();
-      const claimed = (await this.db
-        .update(ewohControlCommand)
-        .set({
-          authorizationVerifiedAt: claimedAt,
-          // NO-67b：**交付时刻**（投递路径唯一写入点）——配额与页面按它计。
-          deliveredAt: claimedAt,
-          ...(item.hadStoredFingerprint ? {} : { authorizationFingerprint: item.authorizationFingerprint }),
-        })
-        .where(and(
-          eq(ewohControlCommand.commandId, item.commandId),
-          // 守卫：只有仍是"待投递"的行才配写投递事实。
-          eq(ewohControlCommand.status, 'sent'),
-          // CAS：本窗口内已投过的不再重复计（并发 poll 只有一个能命中）。
+      const cas = await this.transitionCommand({
+        commandId: item.commandId,
+        orgId: item.orgId ? String(item.orgId) : null,
+        from: ['sent'],
+        // 守卫：只有仍是"待投递"的行才配写投递事实；CAS 用交付时刻窗口，
+        // 并发 poll 只有一个能命中（NO-67b 交付时刻即投递路径唯一写入点）。
+        extraWhere: [
           or(
             isNull(ewohControlCommand.deliveredAt),
             lt(ewohControlCommand.deliveredAt, windowStart),
-          ),
-        ))
-        .returning({ commandId: ewohControlCommand.commandId })) as Array<{ commandId: string }>;
-      if (!claimed || claimed.length === 0) {
-        const [fresh] = await this.db
-          .select({ status: ewohControlCommand.status })
-          .from(ewohControlCommand)
-          .where(eq(ewohControlCommand.commandId, item.commandId))
-          .limit(1);
-        if (String(fresh?.status ?? '') !== 'sent') {
+          ) as SQL,
+        ],
+        patch: {
+          authorizationVerifiedAt: claimedAt,
+          deliveredAt: claimedAt,
+          ...(item.hadStoredFingerprint ? {} : { authorizationFingerprint: item.authorizationFingerprint }),
+        },
+      });
+      if (!cas.hit) {
+        if (String(cas.freshStatus ?? '') !== 'sent') {
           // 并发改写：这条已经不是"待投递"了，本轮绝不能把它投给网关。
           continue;
         }
@@ -2414,6 +2840,7 @@ export class ControlService {
       result,
       receipt,
       actor,
+      violation,
     );
     if (violation) {
       await this.updateRequestStatus(
@@ -2604,35 +3031,28 @@ export class ControlService {
     }
     const nextStatus = delivered ? 'gateway_received' : 'failed';
     const details = input?.details && typeof input.details === 'object' ? input.details : {};
-    const acked = await this.db
-      .update(ewohControlCommand)
-      .set({
+    // F4（与投递/回执 CAS 同一条纪律，现收敛到 `transitionCommand`）：条件 UPDATE
+    // 0 行命中 = 读-改-写窗口内命令已被并发改写（投递前复核撤回 / 执行回执 / 另一网关
+    // ack）。此时绝不能把"没生效的确认"当成功返回，更不能继续写 gateway_ack 结果行——
+    // 那会把一条已撤回/已终态的命令污染成"网关确认过投递"（实测复现：并发撤回后 ack
+    // 仍返回 gateway_received 并落 delivered 结果行，现场事实直接错）。边缘契约把 409
+    // 定义为"本轮 ack 未被接受，不得回执执行成功"（control_downlink.py），显式
+    // 冲突正是边缘侧预期的失败形态。
+    const cas = await this.transitionCommand({
+      commandId: wanted,
+      orgId: row.orgId ? String(row.orgId) : null,
+      from: ['sent'],
+      patch: {
         status: nextStatus,
         responseAt: new Date(),
         responseJson: { ...details, delivered, reason: input.reason ?? null },
         errorCode: delivered ? null : 'GATEWAY_REJECTED',
         errorMessage: delivered ? null : String(input.reason ?? '').slice(0, 500),
-      })
-      .where(and(
-        eq(ewohControlCommand.commandId, wanted),
-        eq(ewohControlCommand.status, 'sent'),
-      ))
-      .returning({ commandId: ewohControlCommand.commandId });
-    if (!acked || acked.length === 0) {
-      // F4（与投递 CAS 同一条纪律）：条件 UPDATE 0 行命中 = 读-改-写窗口内命令已被
-      // 并发改写（投递前复核撤回 / 执行回执 / 另一网关 ack）。此时绝不能把"没生效的
-      // 确认"当成功返回，更不能继续写 gateway_ack 结果行——那会把一条已撤回/已终态的
-      // 命令污染成"网关确认过投递"（实测复现：并发撤回后 ack 仍返回
-      // gateway_received 并落 delivered 结果行，现场事实直接错）。边缘契约把 409
-      // 定义为"本轮 ack 未被接受，不得回执执行成功"（control_downlink.py），显式
-      // 冲突正是边缘侧预期的失败形态。
-      const [fresh] = await this.db
-        .select({ status: ewohControlCommand.status })
-        .from(ewohControlCommand)
-        .where(eq(ewohControlCommand.commandId, wanted))
-        .limit(1);
+      },
+    });
+    if (!cas.hit) {
       throw new ConflictException(
-        `Command ${wanted} 状态已并发变为 ${String(fresh?.status ?? 'unknown')}，投递确认未被接受`,
+        `Command ${wanted} 状态已并发变为 ${String(cas.freshStatus ?? 'unknown')}，投递确认未被接受`,
       );
     }
     await this.db.insert(ewohControlResult).values({

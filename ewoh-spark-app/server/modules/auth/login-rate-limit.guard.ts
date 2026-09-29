@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { readPositiveIntSetting } from '../shared/limit-config';
 import { RedisService } from '../shared/redis.service';
 
 /**
@@ -31,8 +32,19 @@ export class LoginRateLimitGuard implements CanActivate {
       path?: string;
     }>();
 
-    const ttl = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_SEC || 900);
-    const max = Number(process.env.LOGIN_RATE_LIMIT_MAX || 10);
+    const onInvalid = (message: string) => this.logger.warn(message);
+    const ttl = readPositiveIntSetting(
+      process.env.LOGIN_RATE_LIMIT_WINDOW_SEC,
+      900,
+      'LOGIN_RATE_LIMIT_WINDOW_SEC',
+      onInvalid,
+    );
+    const max = readPositiveIntSetting(
+      process.env.LOGIN_RATE_LIMIT_MAX,
+      10,
+      'LOGIN_RATE_LIMIT_MAX',
+      onInvalid,
+    );
     const subject = request.ip ?? 'unknown';
     const bucket = Math.floor(Date.now() / (ttl * 1000));
     const key = `login_ratelimit:ip:${subject}:${bucket}`;
@@ -44,9 +56,11 @@ export class LoginRateLimitGuard implements CanActivate {
     let effectiveMax = max;
     if (fellBack) {
       // Redis 不可用时按实例数收紧限额
-      const instances = Math.max(
+      const instances = readPositiveIntSetting(
+        process.env.EWOH_RATE_LIMIT_FALLBACK_INSTANCES,
         1,
-        Number(process.env.EWOH_RATE_LIMIT_FALLBACK_INSTANCES || 1),
+        'EWOH_RATE_LIMIT_FALLBACK_INSTANCES',
+        (message) => this.logger.warn(message),
       );
       effectiveMax = Math.max(1, Math.floor(max / instances));
       this.logger.warn(

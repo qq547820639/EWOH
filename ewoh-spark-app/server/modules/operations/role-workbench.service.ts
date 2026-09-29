@@ -128,7 +128,7 @@ export class RoleWorkbenchService {
     if (role === 'operator') {
       data = await this.operatorData(
         orgId,
-        personId?.trim() || actor?.userId || '',
+        this.operatorPersonId(personId, target, actor),
         sourceAvailable,
         dataRange,
       );
@@ -529,13 +529,18 @@ export class RoleWorkbenchService {
     personId?: string,
     actor?: OrgContext,
   ): Promise<WorkbenchListResult> {
-    this.assertWorkbenchAccess(role, personId, actor);
+    const { target } = this.assertWorkbenchAccess(role, personId, actor);
     const orgId = actor?.primaryOrgId ?? '';
     const parsed = parseWorkbenchListQuery(query);
 
     const source = LIST_SOURCES[listKey];
     if (source && orgId) {
-      return this.queryPgList(source, parsed, orgId, personId ?? actor?.userId);
+      return this.queryPgList(
+        source,
+        parsed,
+        orgId,
+        target === 'operator' ? this.operatorPersonId(personId, target, actor) : undefined,
+      );
     }
 
     // Fallback for object-shaped lists / missing org context: normalise the
@@ -559,10 +564,21 @@ export class RoleWorkbenchService {
   }
 
   /**
-   * Server-side RBAC gate shared by the dashboard and every list query. A
-   * forged `role` param must never grant access; `personId` is only honoured
-   * for the caller's own identity or an admin simulating an operator.
+   * Operator rows are keyed by the personnel-domain ID, not the auth subject.
+   * A signed person binding is required for workers; supervisors may inspect a
+   * requested operator inside their org, and admins retain simulation access.
    */
+  private operatorPersonId(
+    personId: string | undefined,
+    target: WorkbenchRole,
+    actor?: OrgContext,
+  ): string {
+    if (target !== 'operator') return '';
+    const requested = personId?.trim() ?? '';
+    if (requested) return requested;
+    return actor?.personId?.trim() ?? '';
+  }
+
   private assertWorkbenchAccess(
     role: string,
     personId?: string,
@@ -581,11 +597,16 @@ export class RoleWorkbenchService {
         `You are not authorized to view the '${target}' workbench`,
       );
     }
-    if (personId && personId.trim()) {
-      const isSelf = Boolean(actor && personId.trim() === actor.userId);
-      if (!isSelf && !canSimulate) {
+    const requested = personId?.trim() ?? '';
+    if (target === 'operator' && requested && actor) {
+      const canInspectAnyPerson =
+        canSimulate ||
+        authRoles.includes('dispatcher') ||
+        authRoles.includes('workshop_lead');
+      const isSelf = requested === actor.personId?.trim();
+      if (!isSelf && !canInspectAnyPerson) {
         throw new ForbiddenException(
-          'You may only query your own operator workbench',
+          'You may only query the operator workbench bound to your signed personId',
         );
       }
     }

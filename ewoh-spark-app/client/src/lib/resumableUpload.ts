@@ -104,6 +104,12 @@ export function createChunks(
   blob: Blob,
   chunkSizeBytes: number = DEFAULT_CHUNK_SIZE_BYTES,
 ): Chunk[] {
+  if (!Number.isSafeInteger(chunkSizeBytes) || chunkSizeBytes <= 0) {
+    throw new Error('chunkSizeBytes must be a positive integer');
+  }
+  if (!Number.isSafeInteger(blob.size) || blob.size < 0) {
+    throw new Error('blob size must be a non-negative integer');
+  }
   const size = blob.size;
   const chunks: Chunk[] = [];
   for (let start = 0; start < size; start += chunkSizeBytes) {
@@ -146,7 +152,15 @@ export async function runResumableUpload<T = UploadChunkResult>(
   const prior = options.resumeState
     ? await options.resumeState(uploadId)
     : [];
-  const completed = new Set<number>(prior ?? []);
+  // A corrupt/out-of-range progress record must never suppress a missing chunk.
+  // Filter persisted indexes to the current chunk domain before deciding what
+  // may be skipped; duplicates are harmless but are normalized here as well.
+  const completed = new Set<number>(
+    (prior ?? []).filter(
+      (index) =>
+        Number.isSafeInteger(index) && index >= 0 && index < chunks.length,
+    ),
+  );
   const resumed = completed.size > 0;
 
   const meta: UploadMeta = {

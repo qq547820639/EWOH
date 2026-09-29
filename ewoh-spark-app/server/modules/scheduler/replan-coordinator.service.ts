@@ -27,6 +27,7 @@ import { OutboxService } from './outbox.service';
 import { propagateImpact } from './impact-propagation';
 import { ReplanGuardStatusService } from '../health/replan-guard-status.service';
 import { projectReplanDecision } from './decision-projection';
+import { closeSchedulingRun } from './scheduling-run.lifecycle';
 import { appendPlanDecisionRecords } from './decision-ledger';
 
 /** 影响分析结果：哪些任务需重排、哪些被冻结、原因说明。 */
@@ -56,8 +57,48 @@ interface OrgReplanState {
   suppressedCount: number;
 }
 
+/**
+ * F-10（2026-09-22）：抑制/去抖的**成因**必须可区分。
+ *
+ * 实测代价：同租户两条自动重排（TASK_UPDATED 与 DEVICE_OFFLINE）相撞时，
+ * 判定为 `suppressed` 的那一条既没有 run 也没有 trigger 行，唯一痕迹是
+ * outbox 里一条 `reason: 'storm_guard_suppressed'` —— 与「窗口配额打满」
+ * 的政策抑制共用同一个字符串，于是数据面上分不出
+ * 「政策说不必重排」和「另一个重排正占着守卫锁」，定位只能靠复现。
+ * 而锁忙是**时序**问题（该补投），配额是**政策**问题（不该重排），二者结论相反。
+ */
+type StormGuardReason =
+  | 'storm_guard_lock_busy'
+  | 'replan_debounce_window'
+  | 'replan_interval_window_quota';
+
+interface StormGuardOutcome {
+  decision: 'allowed' | 'debounced' | 'suppressed';
+  reason?: StormGuardReason;
+}
+
 /** 内存有界 LRU 上限（org 数）。 */
 const MAX_ORG_STATES = 256;
+
+/**
+ * F-10b（V62）：事件触发（fire-and-forget 独立事务）撞上"另一条同租户重排正持有守卫锁"时，
+ * 有限等待而不是直接丢弃。
+ *
+ * 实测依据：同一租户内并发自动重排相撞，取不到 org 级 advisory xact lock 的一方被
+ * `suppressed`，而全仓没有任何生产者补投它（`replan.suppressed` 只有发射方）。
+ * 实测频次（要说清不是每次都发生，它是时序相关的）：修复前 `pg-temporary-failure`
+ * 在完整 D 段里 3 次挂 2 次（V58 按分支穷举归因到本分支）；带 EWOH_DB_REQUIRE_TX=1
+ * 的普查 3 次里命中 1 次（cfg01-census-3），另两次为 0。修复后带开关连跑 3 次 +
+ * 不带开关 1 次的**全 D 段**为 0 次命中（n=4，只支撑"未复发"，不支撑"已消除"）。
+ * 确定性证据在 `replan-storm.spec.ts` 的脚本化锁序列用例，不靠复跑。
+ *
+ * 只对**事件路径**开放等待：HTTP 请求事务里等待会拖慢响应、且调用方本来就看得见结果，
+ * 不该被悄悄重试（保持原语义 waitMs=0）。
+ * 代价要说清：等待期间这条独立事务的连接一直被占（默认预算 2s），
+ * 与今天"N 条并发 detached 重排各占一条连接跑完整个求解"是同一类压力，不是新增类别。
+ */
+const GUARD_LOCK_WAIT_BUDGET_MS = Number(process.env.EWOH_REPLAN_GUARD_LOCK_WAIT_MS ?? 2_000);
+const GUARD_LOCK_RETRY_INTERVAL_MS = 100;
 
 /** 默认 Replan 风暴配置（与 DEFAULT_CONFIG.replan 对齐；缺省=现状）。 */
 const FALLBACK_REPLAN: ReplanConfig = {
@@ -211,7 +252,9 @@ export class ReplanCoordinatorService {
    * Replan V2 风暴守卫（08 §7）：按 org 有界 LRU（P0-5：内存态为降级缓存）。
    * 距同 org 上次 replan < minimumReplanIntervalMs 且窗口内已达
    * maximumReplansPerWindow → 抑制（计数 + SSE replan.suppressed）。
-   * 距上次 < replanDebounceMs → debounced（合并，不创建 run）。
+   * 距**同一工作项**（`subject`=触发实体）上次 replan < replanDebounceMs → debounced
+   * （F-10 修复后按实体判；无实体键时退回按租户）。
+   * 抑制与去抖各带可区分 reason（见 StormGuardReason）。
    * P0-5：先获取跨实例守卫权（org 级 advisory xact lock）；未获得 → 另一实例正在
    * 处理该 org → 直接 suppressed；锁不可用 → 显式降级（见 catch）。
    * NEST-124 修复（2026-08-17）：advisory lock 与状态判定收进**同一事务**——
@@ -219,27 +262,59 @@ export class ReplanCoordinatorService {
    * 判定通过→释放锁→实例 B 获取锁→其本地内存态判定也通过→双实例并发重排）。
    * 现在 runInTransaction 同时覆盖「取锁 + 读配置 + 内存态判定」，判定期间
    * 锁始终持有；判定返回后事务提交释放锁，窗口收窄到判定本身。
+   *
+   * ⚠ 上面那句「窗口收窄到判定本身」只对**独立调用**成立，实测并非普适（V58）：
+   * `evaluateStormGuard` 用的是 `runInTransaction`，而它会 join 调用方已开启的事务
+   * （无 savepoint）。所以在 `handleTriggerDetached` 的独立事务里、以及在 HTTP 请求
+   * 事务里，这把 org 级 xact 锁一直持到**外层事务提交**才释放——即横跨整个求解与落库
+   * 过程，而不是判定本身。后果：同租户并发自动重排互相撞锁，取不到锁的一方被判
+   * `suppressed`。**锁的作用域本轮没改**（改它等于改风暴策略本身）；
+   * V62 只做了一件小事：事件（detached）路径在锁忙时有限等待后再判定，
+   * 把"撞锁=丢掉这次需求"变成"撞锁=最多等 2s 再排队判定"（见 GUARD_LOCK_WAIT_BUDGET_MS）。
+   * 政策否决（去抖/配额）与预算用尽后的锁忙仍会丢弃——那条残留才是需要机制决策的部分。
    */
+/** 守卫锁单次尝试；结果行缺失视为能力异常（抛给 catch 分支走 fail-closed/降级）。 */
+  private async tryGuardLock(orgKey: string): Promise<boolean> {
+    const res = (await this.db.execute(
+      sql`SELECT pg_try_advisory_xact_lock(hashtext(${orgKey + ':replan_guard'})) AS acquired`,
+    )) as unknown;
+    const row = Array.isArray(res)
+      ? (res as Array<Record<string, unknown>>)[0]
+      : (res as { rows?: Array<Record<string, unknown>> }).rows?.[0];
+    if (row == null) {
+      throw new Error('advisory lock result row missing (unexpected execute shape)');
+    }
+    return row.acquired === true;
+  }
+
   private async evaluateStormGuard(
     ctx: OrgContext,
-  ): Promise<'allowed' | 'debounced' | 'suppressed'> {
+    /** 工作项键（触发实体）。缺省时去抖退回按租户判据（不放宽聚合触发那条路径）。 */
+    subject?: string | null,
+    /** >0 时锁忙改为有限等待（仅事件路径用；见 GUARD_LOCK_WAIT_BUDGET_MS）。 */
+    lockWaitMs = 0,
+  ): Promise<StormGuardOutcome> {
     const orgKey = ctx.primaryOrgId || 'ALL';
+    const subjectKey = typeof subject === 'string' ? subject.trim() : '';
     try {
       return await this.requestDatabaseContext.runInTransaction(
         buildGucSettings(ctx),
         async () => {
           // 1) 跨实例守卫权（org 级 advisory xact lock；事务提交即释放）。
-          const res = (await this.db.execute(
-            sql`SELECT pg_try_advisory_xact_lock(hashtext(${orgKey + ':replan_guard'})) AS acquired`,
-          )) as unknown;
-          const row = Array.isArray(res)
-            ? (res as Array<Record<string, unknown>>)[0]
-            : (res as { rows?: Array<Record<string, unknown>> }).rows?.[0];
-          if (row == null) {
-            throw new Error('advisory lock result row missing (unexpected execute shape)');
+          //    锁忙 = 另一个重排正在进行，是**时序**而不是政策否决 → 事件路径先有限等待
+          //    （F-10b/V62）；等待预算用尽仍忙，才退回原来的 suppressed(lock_busy) 语义。
+          let acquired = await this.tryGuardLock(orgKey);
+          const waitDeadline = Date.now() + Math.max(0, lockWaitMs);
+          while (!acquired && Date.now() < waitDeadline) {
+            await new Promise((resolve) => setTimeout(resolve, GUARD_LOCK_RETRY_INTERVAL_MS));
+            acquired = await this.tryGuardLock(orgKey);
           }
-          if (row.acquired !== true) {
-            return 'suppressed' as const;
+          if (!acquired) {
+            // F-10 观测性：锁忙与配额抑制的 reason 必须可区分（成因相反：一个该补投、一个不该）。
+            return {
+              decision: 'suppressed' as const,
+              reason: 'storm_guard_lock_busy' as const,
+            };
           }
           // 2) 状态判定在锁事务内（NEST-124：不再在锁释放后判定）。
           // R2-SCH-009（2026-08-17，NEST-124 残留）：状态源改为 DB 权威——
@@ -275,16 +350,54 @@ export class ReplanCoordinatorService {
             (t) => now - t < windowMs,
           ).length;
 
-          if (now - lastReplanAt < debounceMs) {
-            return 'debounced' as const;
+          /**
+           * F-10 修复（2026-09-22，实测驱动）：**去抖按工作项判，配额按租户判。**
+           *
+           * 原实现两条判据都用「本 org 最近一条非 MANUAL run」，于是
+           * `TASK_UPDATED(taskX)` 刚跑完会把 6 分钟不相关的 `DEVICE_OFFLINE(deviceB)`
+           * 一起合掉——而这两个是**互不覆盖的工作项**：前一次重排的快照里没有后一次
+           * 故障，合并的结果就是那条故障永远没人重排（实测：S-03 在完整 D 段 3 次里
+           * 挂 2 次，被合掉的那次在库里只剩一条 outbox 痕迹）。
+           * 风暴保护不该由去抖承担：org 级 minimumReplanIntervalMs + maximumReplansPerWindow
+           * 配额仍然按租户计（求解器负载的上界不变），去抖只负责"同一件事别重复做"。
+           *
+           * 无实体键（`subject` 缺省，如 conflict batch 的聚合键可能超出列宽）时退回
+           * 原按租户判据——不擅自放宽那一条路径。
+           */
+          let lastSubjectReplanAt = lastReplanAt;
+          if (subjectKey) {
+            const subjectRuns = await this.db
+              .select({ createdAt: ewohSchedulingRun.createdAt })
+              .from(ewohSchedulingRun)
+              .where(
+                and(
+                  eq(ewohSchedulingRun.orgId, orgKey),
+                  ne(ewohSchedulingRun.triggerType, 'MANUAL'),
+                  eq(ewohSchedulingRun.triggerEntityId, subjectKey),
+                ),
+              )
+              .orderBy(desc(ewohSchedulingRun.createdAt))
+              .limit(1);
+            const at = subjectRuns[0]?.createdAt;
+            lastSubjectReplanAt = at instanceof Date ? at.getTime() : 0;
+          }
+
+          if (now - lastSubjectReplanAt < debounceMs) {
+            return {
+              decision: 'debounced' as const,
+              reason: 'replan_debounce_window' as const,
+            };
           }
           if (
             now - lastReplanAt < minIntervalMs &&
             replanTimesInWindow >= maxPerWindow
           ) {
-            return 'suppressed' as const;
+            return {
+              decision: 'suppressed' as const,
+              reason: 'replan_interval_window_quota' as const,
+            };
           }
-          return 'allowed' as const;
+          return { decision: 'allowed' as const };
         },
       );
     } catch (err) {
@@ -305,6 +418,8 @@ export class ReplanCoordinatorService {
         `cross-instance replan guard unavailable, falling back to in-memory state: ${reason}`,
       );
       // 内存态降级判定（无锁，与历史行为一致）。
+      // 注意：降级路径的去抖仍**按租户**（F-10 的按实体判据需要读 run 表，而这条分支
+      // 正是因为读不了 run 表才存在）→ 降级期间风暴保护比主路径更粗，不更松。
       const now = Date.now();
       const replan = await this.readReplanConfig();
       const debounceMs = replan?.replanDebounceMs ?? FALLBACK_REPLAN.replanDebounceMs!;
@@ -316,14 +431,22 @@ export class ReplanCoordinatorService {
         replan?.conflictAggregationWindowMs ?? FALLBACK_REPLAN.conflictAggregationWindowMs!;
       const state = this.touchOrgState(orgKey);
       state.replanTimes = state.replanTimes.filter((t) => now - t < windowMs);
-      if (now - state.lastReplanAt < debounceMs) return 'debounced';
+      if (now - state.lastReplanAt < debounceMs) {
+        return {
+          decision: 'debounced' as const,
+          reason: 'replan_debounce_window' as const,
+        };
+      }
       if (
         now - state.lastReplanAt < minIntervalMs &&
         state.replanTimes.length >= maxPerWindow
       ) {
-        return 'suppressed';
+        return {
+          decision: 'suppressed' as const,
+          reason: 'replan_interval_window_quota' as const,
+        };
       }
-      return 'allowed';
+      return { decision: 'allowed' as const };
     }
   }
 
@@ -370,6 +493,24 @@ export class ReplanCoordinatorService {
     }
     this.logger.warn(
       `replan suppressed for org ${orgKey} (${reason}): total=${state.suppressedCount}`,
+    );
+  }
+
+  /**
+   * 去抖（debounce）今天**在数据面上完全无痕**：不建 run、不建 trigger 行、
+   * 不发 outbox 事件、也没有日志——只有返回值里一个 `debounced: true`。
+   * F-10 定位期间实测：run=0 时无法从库里区分「去抖跳过」与「续作丢失（RUN-01）」，
+   * 只能靠复现 + 打开进程内日志。这里补一条可观测线（不改判定、不改契约）。
+   */
+  private logGuardPassedOver(
+    ctx: OrgContext,
+    triggerType: string,
+    entityId: string | null,
+    reason?: StormGuardReason,
+  ): void {
+    this.logger.debug(
+      `replan debounced for org ${ctx.primaryOrgId || 'ALL'} `
+      + `(trigger=${triggerType} entity=${entityId ?? '-'} reason=${reason ?? 'unknown'})`,
     );
   }
 
@@ -599,6 +740,52 @@ export class ReplanCoordinatorService {
   }
 
   /**
+   * run 闭合的唯一入口（F-09 同类收口 → V59 起改为委托给生命周期所有者）。
+   *
+   * 为什么必须有它：`handleTrigger` 的三个闭合出口此前都是「UPDATE 写完就走」，0 行命中
+   * （org 谓词不匹配 / 行被并发删除 / 无 GUC 时 RLS 静默空）会让 run 永远停在 `queued`
+   * 而且**不留任何痕迹**——这正是 RUN-01 调查里最难定位的那类形态（见基线文档 §5.3f–§5.3h）。
+   * 现在把命中集合取回来：0 行即按 runId + 租户 + 阶段显式报错。
+   * 不改返回语义、不抛断主流程（闭合失败不该把已经跑完的重排判废）。
+   *
+   * V59：实现搬到 `scheduling-run.lifecycle`，与 `scheduler-run-orchestrator` 共用同一个
+   * 写入口——run 终态原来在两个文件里各写一套（这边带谓词带命中检查，那边裸 UPDATE）。
+   */
+  private async closeRun(input: {
+    runId: string;
+    orgId: string;
+    patch: Record<string, unknown>;
+    stage: 'suppressed' | 'persisted' | 'failed';
+  }): Promise<boolean> {
+    return closeSchedulingRun(this.db, input, this.logger);
+  }
+
+  /**
+   * RUN-01 修复：异步（fire-and-forget）触发的自动重排必须**自带事务**，不能继承调用方的请求事务。
+   *
+   * 实测根因（基线文档 §5.3f/§5.3h）：`runInTransaction` 检测到已有 store 时**加入同一事务**且无
+   * savepoint（`request-database-context.ts` 的 `storage.getStore()` 分支）。ingest 处理器
+   * fire-and-forget 后立即返回响应 → 请求事务结束 → continuation 里第一个 `runInTransaction`
+   * join 到那个**已结束**的事务上，永久挂住：无异常、无日志、run 停在 `queued`，世界快照与方案
+   * 都不产生。
+   *
+   * 这里复用仓库既有的 `runDetachedTransaction`（撤回路径为同类问题已经用它），让自动重排拥有
+   * 独立事务与 GUC，使其物理事务形状与人工 HTTP 触发路径一致（S-01 实测该路径崩溃是原子的）。
+   */
+  async handleTriggerDetached(
+    triggerType: string,
+    entityId: string | null,
+    ctx: OrgContext,
+    triggerIds?: string[],
+  ): Promise<TriggerResult> {
+    return this.requestDatabaseContext.runDetachedTransaction(
+      buildGucSettings(ctx),
+      () =>
+        this.handleTrigger(triggerType, entityId, ctx, triggerIds, GUARD_LOCK_WAIT_BUDGET_MS),
+    );
+  }
+
+  /**
    * 处理一次重排触发：求值（去重/去抖）→ 构建快照 → 影响分析 → 局部重排 → 持久化 → 更新运行状态。
    * 局部重排：仅把受影响任务 + 冻结任务交给求解器，无关任务不进入子图（不 churn），
    * 并传递 baselineAssignee 作为 churn/stability 罚项基线。
@@ -615,21 +802,29 @@ export class ReplanCoordinatorService {
      * 反查受影响任务并集，entityId 仅作为 run 的展示/去重键。
      */
     triggerIds?: string[],
+    /** 守卫锁忙的等待预算；只有事件（detached）路径给正数，缺省 0=保持原语义。 */
+    guardLockWaitMs = 0,
   ): Promise<TriggerResult> {
     // Replan V2 风暴守卫（08 §7）：抑制/去抖先于 triggerService 求值。
     if (triggerType !== 'MANUAL') {
-      let guard: 'allowed' | 'debounced' | 'suppressed';
+      let guard: StormGuardOutcome;
       try {
-        guard = await this.evaluateStormGuard(ctx);
+        guard = await this.evaluateStormGuard(ctx, entityId, guardLockWaitMs);
       } catch (err) {
         // P1-6 production fail-closed：advisory-lock 能力异常 → 阻止 automatic replan（不创建 run）。
         return this.failClosedResult(err);
       }
-      if (guard === 'suppressed') {
-        await this.recordSuppressed(ctx, triggerType, entityId ? [entityId] : []);
+      if (guard.decision === 'suppressed') {
+        await this.recordSuppressed(
+          ctx,
+          triggerType,
+          entityId ? [entityId] : [],
+          guard.reason,
+        );
         return { run: null, plans: [], debounced: false, suppressed: true };
       }
-      if (guard === 'debounced') {
+      if (guard.decision === 'debounced') {
+        this.logGuardPassedOver(ctx, triggerType, entityId, guard.reason);
         return { run: null, plans: [], debounced: true, suppressed: false };
       }
     }
@@ -730,14 +925,16 @@ export class ReplanCoordinatorService {
         await this.requestDatabaseContext.runInTransaction(
           buildGucSettings(ctx),
           async () => {
-            await this.db
-              .update(ewohSchedulingRun)
-              .set({
+            await this.closeRun({
+              runId: run.runId,
+              orgId: ctx.primaryOrgId,
+              stage: 'suppressed',
+              patch: {
                 status: 'succeeded',
                 snapshotVersion: snapshot.snapshotVersion,
                 planIds: [],
-              })
-              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
+              },
+            });
           },
         );
         await this.recordSuppressed(
@@ -808,14 +1005,16 @@ export class ReplanCoordinatorService {
             );
           }
 
-          await this.db
-            .update(ewohSchedulingRun)
-            .set({
+          await this.closeRun({
+            runId: run.runId,
+            orgId: ctx.primaryOrgId,
+            stage: 'persisted',
+            patch: {
               status: 'succeeded',
               snapshotVersion: snapshot.snapshotVersion,
               planIds: plans.map((p) => p.planId),
-            })
-            .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
+            },
+          });
         },
       );
 
@@ -835,10 +1034,12 @@ export class ReplanCoordinatorService {
         await this.requestDatabaseContext.runInTransaction(
           buildGucSettings(ctx),
           async () => {
-            await this.db
-              .update(ewohSchedulingRun)
-              .set({ status: 'failed', failureReason: message })
-              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
+            await this.closeRun({
+              runId: run.runId,
+              orgId: ctx.primaryOrgId,
+              stage: 'failed',
+              patch: { status: 'failed', failureReason: message },
+            });
           },
         );
       } catch (inner) {
@@ -862,18 +1063,29 @@ export class ReplanCoordinatorService {
     if (triggerIds.length === 0) {
       return { run: null, plans: [], debounced: true, suppressed: false };
     }
-    let guard: 'allowed' | 'debounced' | 'suppressed';
+    let guard: StormGuardOutcome;
     try {
       guard = await this.evaluateStormGuard(ctx);
     } catch (err) {
       // P1-6 production fail-closed：advisory-lock 能力异常 → 阻止 automatic replan（不创建 run）。
       return this.failClosedResult(err);
     }
-    if (guard === 'suppressed') {
-      await this.recordSuppressed(ctx, 'RESERVATION_CONFLICT', triggerIds);
+    if (guard.decision === 'suppressed') {
+      await this.recordSuppressed(
+        ctx,
+        'RESERVATION_CONFLICT',
+        triggerIds,
+        guard.reason,
+      );
       return { run: null, plans: [], debounced: false, suppressed: true };
     }
-    if (guard === 'debounced') {
+    if (guard.decision === 'debounced') {
+      this.logGuardPassedOver(
+        ctx,
+        'RESERVATION_CONFLICT',
+        triggerIds[0] ?? null,
+        guard.reason,
+      );
       return { run: null, plans: [], debounced: true, suppressed: false };
     }
 
@@ -988,14 +1200,16 @@ export class ReplanCoordinatorService {
             );
           }
 
-          await this.db
-            .update(ewohSchedulingRun)
-            .set({
+          await this.closeRun({
+            runId: run.runId,
+            orgId: ctx.primaryOrgId,
+            stage: 'persisted',
+            patch: {
               status: 'succeeded',
               snapshotVersion: snapshot.snapshotVersion,
               planIds: plans.map((p) => p.planId),
-            })
-            .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
+            },
+          });
         },
       );
 
@@ -1009,10 +1223,12 @@ export class ReplanCoordinatorService {
         await this.requestDatabaseContext.runInTransaction(
           buildGucSettings(ctx),
           async () => {
-            await this.db
-              .update(ewohSchedulingRun)
-              .set({ status: 'failed', failureReason: message })
-              .where(and(eq(ewohSchedulingRun.runId, run.runId), eq(ewohSchedulingRun.orgId, ctx.primaryOrgId)));
+            await this.closeRun({
+              runId: run.runId,
+              orgId: ctx.primaryOrgId,
+              stage: 'failed',
+              patch: { status: 'failed', failureReason: message },
+            });
           },
         );
       } catch (inner) {

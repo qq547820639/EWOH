@@ -3,6 +3,14 @@
 ## Status: Accepted (2026-08-10)
 Owner: 平台/交付负责人（Scheduler V2 域）
 
+> 现行口径（2026-09-29 补，依 standalone_057 更正；下表与「要点 1」的 NULL 放行表述是 Accepted 当时的定义）：
+> `db/migrations/standalone_057_rls_null_reject.sql` 重建了这批 policy，**去掉了 `OR org_id IS NULL` 放行分支**
+> （该文件 :135 明写此意，:200-215 是 `ewoh_scheduling_plan_assignment` 的现行体），并对 :97-113 清单内
+> 15 张调度表动态 `ALTER COLUMN org_id SET NOT NULL`（:126-129）。因此今天**不存在**「NULL 行对任意 org 可见」，
+> GUC 未设置且非 global_admin 时表达式为 NULL ⇒ fail-closed 全拒。本 ADR 的三分类决定本身未变。
+> 机器对账入口：`chain-baseline-doc-face` 的 `rls_adr_null_bypass` 逐行核本表这两类声明与迁移现行定义
+> （出处《链级行为基线》§5.3n44，V336）。
+
 ## Background
 
 Scheduler V2 运行时域共有 **11 张**表（此前 OPEN-DECISIONS 记为「9 张」为不精确计数，

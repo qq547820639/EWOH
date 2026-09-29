@@ -139,7 +139,13 @@ class WorldModelEndpointTest(unittest.TestCase):
         status, body = self.fx.req(
             "/api/world/states",
             "POST",
-            {"entityId": PERSON_ID, "entityType": "exo", "stateJson": {}},
+            {
+                "entityId": PERSON_ID,
+                "entityType": "exo",
+                "stateJson": {},
+                "sourceType": "real",
+                "confidence": 1.0,
+            },
         )
         self.assertEqual(status, 400)
         self.assertEqual(body["error"]["code"], "entity_type_mismatch")
@@ -151,6 +157,8 @@ class WorldModelEndpointTest(unittest.TestCase):
                 "entityId": PERSON_ID,
                 "entityType": "person",
                 "stateJson": {},
+                "sourceType": "real",
+                "confidence": 1.0,
                 "validFrom": "2026-08-16T07:00:00Z",
             },
         )
@@ -165,6 +173,8 @@ class WorldModelEndpointTest(unittest.TestCase):
                 "entityId": PERSON_ID,
                 "entityType": "person",
                 "stateJson": {"zone": "Z1"},
+                "sourceType": "real",
+                "confidence": 1.0,
                 "validFrom": "2026-08-16T08:05:00Z",
             },
         )
@@ -176,6 +186,8 @@ class WorldModelEndpointTest(unittest.TestCase):
                 "entityId": PERSON_ID,
                 "nodeType": "ENTER_ZONE",
                 "payload": {"zone_id": "zone:Z-A"},
+                "sourceType": "real",
+                "confidence": 1.0,
                 "ts": "2026-08-16T08:06:00Z",
             },
         )
@@ -187,10 +199,62 @@ class WorldModelEndpointTest(unittest.TestCase):
         self.assertEqual(body["events"][-1]["node_id"], event_id)
         # 非规范事件主体 → 400
         status, body = self.fx.req(
-            "/api/world/events", "POST", {"entityId": "P-1", "nodeType": "ENTER_ZONE"}
+            "/api/world/events",
+            "POST",
+            {
+                "entityId": "P-1",
+                "nodeType": "ENTER_ZONE",
+                "sourceType": "real",
+                "confidence": 1.0,
+            },
         )
         self.assertEqual(status, 400)
         self.assertEqual(body["error"]["code"], "bad_event_entity_ref")
+
+    def test_world_writes_require_explicit_provenance(self):
+        base_state = {
+            "entityId": PERSON_ID,
+            "entityType": "person",
+            "stateJson": {"zone": "Z1"},
+            "validFrom": "2026-08-16T08:05:00Z",
+        }
+        status, body = self.fx.req("/api/world/states", "POST", base_state)
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "invalid_params")
+        status, body = self.fx.req(
+            "/api/world/states",
+            "POST",
+            {**base_state, "sourceType": "real", "confidence": "high"},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "invalid_params")
+        status, body = self.fx.req(
+            "/api/world/states",
+            "POST",
+            {**base_state, "sourceType": "real", "confidence": 1.5},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "invalid_params")
+
+        status, body = self.fx.req(
+            "/api/world/events",
+            "POST",
+            {"entityId": PERSON_ID, "nodeType": "ENTER_ZONE"},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "invalid_params")
+
+    def test_world_writes_reject_non_object_bodies(self):
+        for path, body in (
+            ("/api/world/entities", []),
+            ("/api/world/states", "state"),
+            ("/api/world/events", 7),
+            ("/api/world/predictions", None),
+        ):
+            with self.subTest(path=path):
+                status, response = self.fx.req(path, "POST", body)
+                self.assertEqual(status, 400)
+                self.assertEqual(response["error"]["code"], "invalid_params")
 
     def test_predictions(self):
         status, body = self.fx.req(

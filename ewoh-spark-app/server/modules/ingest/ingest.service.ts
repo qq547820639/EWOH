@@ -1471,8 +1471,11 @@ export class IngestService {
       isGlobalAdmin: false,
     };
     // fire-and-forget：不 await（真机数据接入优先），异常已被 ReplanCoordinator 熔断兜底。
+    // RUN-01 修复：必须走 handleTriggerDetached —— 直接调用 handleTrigger 会继承本次 ingest 请求的
+    // 事务 store，而响应一返回该事务即结束，continuation 会 join 到已结束的事务上永久挂住
+    // （实测：无异常无日志、run 永停 queued、快照与方案都不产生）。
     Promise.resolve(
-      this.replanCoordinator.handleTrigger('DEVICE_OFFLINE', deviceId, orgCtx),
+      this.replanCoordinator.handleTriggerDetached('DEVICE_OFFLINE', deviceId, orgCtx),
     ).catch((e) => {
       this.logger.error(
         `DEVICE_OFFLINE replan for ${deviceId} failed: ${(e as Error).message}`,

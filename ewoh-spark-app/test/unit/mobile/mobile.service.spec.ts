@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import {
   MobileService,
   parseScanValue,
@@ -46,10 +47,12 @@ describe('MobileService', () => {
     const service = new MobileService(db as never, mes as never);
 
     // NEST-412：personId 必须是本人（或特权角色）——查询与身份同源。
-    const rows = await service.listWorkbench('user-1', {
-      userId: 'user-1',
+    const rows = await service.listWorkbench('person-1', {
+      userId: 'auth-user-1',
+      personId: 'person-1',
       primaryOrgId: 'org-1',
-    });
+      roles: ['worker'],
+    } as never);
 
     expect(rows).toHaveLength(1);
     expect(rows[0].stepId).toBe('S1');
@@ -58,7 +61,7 @@ describe('MobileService', () => {
       (where as unknown as jest.Mock).mock.calls[0]?.[0] ?? '',
     );
     expect(predicate).toContain('assigned_person_id');
-    expect(predicate).toContain('user-1');
+    expect(predicate).toContain('person-1');
     expect(predicate).toContain('org-1');
   });
 
@@ -68,9 +71,11 @@ describe('MobileService', () => {
 
     await expect(
       service.listWorkbench('person-other', {
-        userId: 'user-1',
+        userId: 'auth-user-1',
+        personId: 'person-1',
         primaryOrgId: 'org-1',
-      }),
+        roles: ['worker'],
+      } as never),
     ).rejects.toThrow(/personId mismatch/);
     // 特权角色（workshop_lead）可代查。
     const orderBy = jest.fn().mockResolvedValue([]);
@@ -82,26 +87,140 @@ describe('MobileService', () => {
     await expect(
       privilegedService.listWorkbench('person-other', {
         userId: 'user-1',
+        personId: 'person-1',
         primaryOrgId: 'org-1',
         roles: ['workshop_lead'],
-      }),
+      } as never),
     ).resolves.toEqual([]);
     expect(where).toHaveBeenCalledTimes(1);
   });
 
-  it('fails closed when the caller has no person or org context', async () => {
+  it('uses the signed person binding, not the auth user id, for worker self-scope', async () => {
+    const orderBy = jest.fn().mockResolvedValue([]);
+    const where = jest.fn(() => ({ orderBy }));
+    const db = {
+      select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })),
+    };
+    const service = new MobileService(db as never, {} as never);
+    const actor = {
+      userId: 'auth-user-1',
+      personId: 'person-1',
+      primaryOrgId: 'org-1',
+      roles: ['worker'],
+    };
+
+    await expect(
+      service.listWorkbench('person-1', actor as never),
+    ).resolves.toEqual([]);
+    expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a worker whose signed person binding differs from the requested workbench', async () => {
     const db = { select: jest.fn() };
     const service = new MobileService(db as never, {} as never);
 
     await expect(
-      service.listWorkbench('', {
-        userId: 'user-1',
+      service.listWorkbench('person-other', {
+        userId: 'auth-user-1',
+        personId: 'person-1',
         primaryOrgId: 'org-1',
-      }),
-    ).resolves.toEqual([]);
+        roles: ['worker'],
+      } as never),
+    ).rejects.toThrow(ForbiddenException);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a worker has no trusted person binding or tenant context', async () => {
+    const db = { select: jest.fn() };
+    const service = new MobileService(db as never, {} as never);
+
     await expect(
-      service.listWorkbench('user-1', undefined),
-    ).resolves.toEqual([]);
+      service.listWorkbench('person-1', {
+        userId: 'auth-user-1',
+        primaryOrgId: 'org-1',
+        roles: ['worker'],
+      } as never),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.listWorkbench('person-1', undefined),
+    ).rejects.toThrow(ForbiddenException);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('scopes assigned-device execution facts to the caller org without a NULL-org bypass', async () => {
+    const orderBy = jest.fn().mockResolvedValue([
+      { deviceId: 'device-1' },
+      { deviceId: 'device-2' },
+    ]);
+    const where = jest.fn((predicate: unknown) => ({ orderBy }));
+    const db = {
+      select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })),
+    };
+    const control = {
+      listDeviceCommands: jest.fn()
+      .mockResolvedValueOnce({
+        summary: {
+          inFlight: 1,
+          queued: 2,
+          awaitingDelivery: 3,
+          overdue: 4,
+          oldestWaitingMs: 5,
+          busyBlocker: null,
+          queuedReasons: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        summary: {
+          inFlight: 0,
+          queued: 0,
+          awaitingDelivery: 0,
+          overdue: 0,
+          oldestWaitingMs: null,
+          busyBlocker: null,
+          queuedReasons: null,
+        },
+      }),
+    };
+    const mes = {
+      getWorkOrder: jest.fn().mockResolvedValue({
+        workOrder: { scheduleTaskId: 'task-1' },
+      }),
+    };
+    const service = new MobileService(db as never, mes as never, control as never);
+    const actor = {
+      userId: 'auth-user-1',
+      personId: 'person-1',
+      primaryOrgId: 'org-1',
+      roles: ['worker'],
+    };
+
+    const result = await service.getOrder('WO-1', actor as never);
+    expect(result.deviceExecution).toMatchObject({
+      deviceId: 'device-1',
+      otherStuckCount: 0,
+    });
+    expect(control.listDeviceCommands).toHaveBeenCalledWith(
+      'device-1',
+      { limit: 10 },
+      actor,
+    );
+    const predicate = sqlText(where.mock.calls[0]?.[0] ?? '');
+    expect(predicate).toContain('task-1');
+    expect(predicate).toContain('org-1');
+    expect(predicate).not.toContain('is null');
+  });
+
+  it('does not query device assignments without trusted tenant context', async () => {
+    const db = { select: jest.fn() };
+    const mes = {
+      getWorkOrder: jest.fn().mockResolvedValue({
+        workOrder: { scheduleTaskId: 'task-1' },
+      }),
+    };
+    const service = new MobileService(db as never, mes as never);
+
+    const result = await service.getOrder('WO-1', undefined);
+    expect(result.deviceExecution).toBeNull();
     expect(db.select).not.toHaveBeenCalled();
   });
 

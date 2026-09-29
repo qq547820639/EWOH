@@ -5,6 +5,8 @@
  * insert（三表行收集 + 回读）/ select（行回读，忽略条件）/ update
  * （patch 收集 + 命令/请求行回写，receipts/revoke 终态读回依赖；
  * R2-SMI-009：update 链尾提供 returning 以支持请求行 CAS 写回）。
+ * select 链尾另有 `.for()`（RVAGG 行锁 `SELECT ... FOR UPDATE`）：按表分派、不消费调用次序，
+ * 所以 `lockRequestRow` 多发的这次 select 不会吃掉本该给别的查询的行集。
  */
 import {
   ewohControlRequest,
@@ -72,6 +74,10 @@ function makeJoinChain(
       const q: any = Promise.resolve(rows);
       // join 之后再 where：条件必须真正生效（服务层就是 join → where 的顺序）
       q.where = (cond: unknown) => chain(rows.filter((row) => matches(cond, row)));
+      // RVAGG 行锁：`SELECT ... FOR UPDATE/SHARE` 的锁子句不改变结果集——PostgreSQL 只是在
+      // 返回命中行之前排队等锁。所以这一环必须原样把当前行集交回下游（可继续 .limit()、可
+      // await），不能给空数组：空数组会让"拿锁后读到的行"在替身里凭空消失。
+      q.for = (_lockType?: unknown) => q;
       q.orderBy = () => q;
       q.limit = () => q;
       return q;
@@ -173,6 +179,11 @@ export function makeControlDb(seed: {
           const q: any = Promise.resolve(rows);
           q.where = (cond: unknown) => chain(rows.filter((row) => matches(cond, row)));
           q.innerJoin = makeJoinChain(rows, rowsFor);
+          // RVAGG 行锁（`lockRequestRow` = `SELECT ... FOR UPDATE`）：锁子句不改变结果集，
+          // PostgreSQL 只是在返回命中行之前排队等锁 ⇒ 这一环原样把当前行集交回下游
+          // （可继续 .limit()、可 await）。返回空数组会让"锁后读到的行"凭空消失，
+          // 让依赖锁后真值的聚合在替身里静默失真。
+          q.for = (_lockType?: unknown) => q;
           q.orderBy = () => q;
           q.limit = () => q;
           return q;
