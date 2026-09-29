@@ -4298,7 +4298,8 @@
     "v352_fix": "关系判据「离批准时刻 < 离创建时刻」替代绝对毫秒上界；标题尾补位点号 AVMS-01；绝对滞后量不再由本用例约束（限度写明）",
     "v352_teeth": "变异对照：对调两个被减数（按\"审计=创建时刻\"这一猜想写）⇒ 单跑 AV-05 红在 Expected: < 14／Received: 1862（tmp/v352-mutation-arm.log），还原后 sha 与改前逐字相同；另附单跑 5 支全绿（tmp/v352-single-spec.log）与全量重放 D 与 D2 各 139 passed",
     "v352_attestation": "带服务全量重放 REPLAY_RC=0、D 与 D2 各 139 passed；2 处 MTIME_OK（被改的 spec、量具自测件）；一致性尺子判据自测 48 条全抓到、对照 0 项；mint rc=0、freshness rc=0、down rc=0 且 LISTEN=0（tmp/v352-steps.log）",
-    "v352_interrupt_lesson": "只杀驱动脚本会留下孤儿 verify.sh：它继续覆写 D 段日志并持有 .replay.lock；若此时第二遍的失败分支拆掉集群，孤儿那一遍全程读不到库，读数既不可用又污染按 mtime 挑真值源的判据。正确做法是按 PID 收 verify.sh 本体，确认锁已释放、jest 不残留，再起重放"
+    "v352_interrupt_lesson": "只杀驱动脚本会留下孤儿 verify.sh：它继续覆写 D 段日志并持有 .replay.lock；若此时第二遍的失败分支拆掉集群，孤儿那一遍全程读不到库，读数既不可用又污染按 mtime 挑真值源的判据。正确做法是按 PID 收 verify.sh 本体，确认锁已释放、jest 不残留，再起重放",
+    "v352_delivery": "交付：V352 的四处改动（链级 spec 的关系判据＋《基线》《裁决包》＋状态件）已提交并推送 main（292e50d0）；远端核对＝refs/remotes/origin/main 与本仓 HEAD 同为 292e50d0；提交前四条收尾门禁全绿（freshness rc=0、consistency 无漂移＋判据自测 48/48、fix-sites rc=0、audit-regression-gates rc=0）。工作树排除面（现算）：已跟踪仍脏 162 项、未跟踪未纳入 31 项"
   },
   "findings": {
     "fixed": [
