@@ -231,7 +231,7 @@ interface AuthorizationItem {
      * 所以这不是"数据不够"，也不是"库里没有时间"，而是：**有效期锚点取了行时间戳（可被任何后续写移动，
      * 见 AV-02），而不是审批这个事实自己的时间**。修法有现成权威源可用。
      */
-    it('AV-05 决定性对照：批准时刻在库里另有其行，授权视图没用它', async () => {
+    it('AV-05 决定性对照：批准时刻在库里另有其行，授权视图没用它（AVMS-01 尺度改为关系判据，V352）', async () => {
       expect(approvalId).not.toBe('');
       // 前提：AV-01 的读数必须在场。V181 实测过一次级联——AV-01 先红 ⇒ 这里拿到 undefined ⇒
       // new Date(0)=1970-01-01，第二条红看不出原告是谁。前提不过就当前提不过，不许往下读成事实。
@@ -273,9 +273,14 @@ interface AuthorizationItem {
       const span05 = approveCallMs - createdMsFromAv01;
       expect(span05).toBeGreaterThanOrEqual(1_500);
       expect(Math.abs(stepMs - viewApprovedMsFromAv01)).toBeLessThanOrEqual(Math.floor(span05 / 4));
-      // ② 两行都不记录"批准于何时"，但库里**确实有**这个事实：审计行的 created_at 贴着动作发生。
+      // ② 两行都不记录"批准于何时"，但库里**确实有**这个事实：审计行的时刻贴的是批准动作，不是行创建时刻。
+      //    V352（AVMS-01）：这里原本写 `toBeLessThan(1_500)`——那是**环境派生的上界**，量的是事件→落库的滞后，
+      //    实测负载下滞后 5123ms 就红（两档各复跑 3 次均未再现，证据见登记册 §5.3n62），而本用例要证的从来不是
+      //    "几毫秒内落库"，是"审计时刻锚在哪一刻"。改成两根时刻的关系判据：离批准更近、离创建更远。
+      //    它照样有牙：若审计记的是行创建时刻（AV-05 要否证的那个猜想），右边变成 0，第二条立刻红。
+      //    限度：审计事件的**绝对滞后量**不再被本用例约束（要量它得单独做延迟测量，不混在锚点判据里）。
       expect(auditRows.length).toBeGreaterThan(0);
-      expect(Math.abs(auditMs - approveCallMs)).toBeLessThan(1_500);
+      expect(Math.abs(auditMs - approveCallMs)).toBeLessThan(Math.abs(auditMs - createdMsFromAv01));
       // ③ 于是准确结论是：授权视图与网关的有效期锚点用的是"行最后被写"的列，
       //    而"批准"这一事实的时间在审计面；两者相差正好是 pending 的时长。
       expect(auditMs - viewApprovedMsFromAv01).toBeGreaterThanOrEqual(1_000);
