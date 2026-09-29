@@ -1,0 +1,1096 @@
+{
+ "generated_by": "scripts/chain-baseline/gen-vocabulary-bindings.cjs（不要手改：改规则就改生成器）",
+ "rule": "覆盖率=|可写态∩词表|/|可写态|；1 ⇒ bound，≥0.5 ⇒ partial，其余 unbound；0 覆盖不参与。DB 面另判：只认 CHECK (<col> IN (…))，跨迁移取最后一个定义，DROP 在后则视为已解除，rollback.sql 不参与。TS 面再另判：命名规则（物理表名去 ewoh_ 前缀→大驼峰+Status/State）命中记 ts_type；取值集合另出一根轴（ts_value_superset_types／ts_exact_value_match），两根不并成一句\"已绑定\"。归属再出第三根轴（V316）：contract_authors 逐字取契约自己的 authority_table: 出现处（文件名#顶层块名＋行尾分片注释），chosen_self_declared 只答\"覆盖率挑中那份词表有没有把本表写成权威表\"，不改动 vocabulary/差集",
+ "scope": "链上模块目录（scheduler/control/approval/task/agent/ingest/work-orchestration/gamification） ∩ schema 里有 status/state 列的表；另并入试点权威表清单里同样有状态列的那些；TS 面只扫 ewoh-spark-app/shared/（前后端共用规范层），client/ 下的同名 union 是界面镜像，不计入权威",
+ "limits": "DB 面是静态迁移的下界（本机未检索到动态 EXECUTE 造 CHECK 的形态，只检索到动态 RLS POLICY）；可写集合只算链上模块目录，别处写入不计；非 status/state 命名的枚举列不计；蕴含式与分型复合 CHECK 只点名不折算成词表（db_check_unparsed／db-shape-unreadable）；TS 面只认纯字面量联合与 as const 数组（混入具名类型的联合体丢弃），且 ts_value_superset 只证明\"shared/ 存在容得下这些值的联合\"，不证明那个联合管的就是本列；contract_authors 只点名不认领：一张表被多份契约自述时，各份管的是该列的**不同分片**（分片条件只在契约的行尾注释里，没有结构化字段），把几份的态并起来会替\"这批行不属的那个分片\"消音，所以其他自述方的态只进 other_author_states／missing_claimed_by_other_author 两个诊断字段，三面目已知集合与写点集合都不并入",
+ "db_surface": {
+  "tables_with_plain_status_check": 21,
+  "tables_with_unreadable_shape_only": 3,
+  "defs_with_unresolved_table": 0,
+  "unresolved_examples": []
+ },
+ "ts_surface": {
+  "shared_ts_files_scanned": 54,
+  "shared_literal_unions_found": 166,
+  "shared_literal_unions_status_named": 13,
+  "shared_inline_field_unions": 9
+ },
+ "summary": {
+  "tables": 23,
+  "contract_status_counts": {
+   "bound": 6,
+   "unbound": 13,
+   "partial": 2,
+   "ambiguous": 2
+  },
+  "with_db_check": 5,
+  "written_but_no_db_check": [
+   "ewohControlCommand",
+   "ewohDeviceCapability",
+   "ewohEvent",
+   "ewohFactoryReplicationSessions",
+   "ewohHandoffs",
+   "ewohModelRegistry",
+   "ewohNotification",
+   "ewohOutbox",
+   "ewohPolicyActivation",
+   "ewohPolicyReplay",
+   "ewohReplanTrigger",
+   "ewohResourceReservation",
+   "ewohSchedulePlan",
+   "ewohSchedulingExecution",
+   "ewohSchedulingPlanAssignment",
+   "ewohSchedulingPolicy",
+   "ewohSchedulingRun",
+   "ewohSpatialEntity"
+  ],
+  "code_outside_db_check": [],
+  "db_check_values_not_written_by_chain": [
+   {
+    "table": "ewohAgentManifest",
+    "values": [
+     "suspended"
+    ]
+   },
+   {
+    "table": "ewohAgentTask",
+    "values": [
+     "completed",
+     "failed"
+    ]
+   },
+   {
+    "table": "ewohControlRequest",
+    "values": [
+     "gateway_received"
+    ]
+   },
+   {
+    "table": "ewohProductionTask",
+    "values": [
+     "cancelled",
+     "completed",
+     "dispatched",
+     "exception",
+     "executing",
+     "paused",
+     "pending_approval",
+     "pending_confirm",
+     "received"
+    ]
+   }
+  ],
+  "authority_counts": {
+   "db+contract+code": 4,
+   "db+code": 1,
+   "contract+code": 6,
+   "code+ts": 4,
+   "code": 8
+  },
+  "db_vs_contract_counts": {
+   "db-narrower": 1,
+   "no-contract-binding": 1,
+   "db-equals-contract": 3,
+   "db-shape-unreadable": 2,
+   "no-db-check": 16
+  },
+  "db_equals_contract": [
+   "ewohAgentTask",
+   "ewohControlRequest",
+   "ewohProductionTask"
+  ],
+  "db_narrower_than_contract": [
+   "ewohAgentApproval"
+  ],
+  "db_shape_unreadable": [
+   "ewohControlCommand",
+   "ewohSchedulePlan"
+  ],
+  "with_ts_type": 4,
+  "ts_written_outside_type": [
+   {
+    "table": "ewohSchedulePlan",
+    "values": [
+     "approved",
+     "cancelled",
+     "dispatched",
+     "superseded"
+    ]
+   }
+  ],
+  "ts_type_values_not_written": [
+   {
+    "table": "ewohDeviceCapability",
+    "values": [
+     "disabled"
+    ]
+   },
+   {
+    "table": "ewohSchedulePlan",
+    "values": [
+     "shadow"
+    ]
+   },
+   {
+    "table": "ewohSchedulingExecution",
+    "values": [
+     "COMPLETED",
+     "DISPATCHED",
+     "FAILED",
+     "PAUSED",
+     "PLANNED",
+     "STARTED"
+    ]
+   },
+   {
+    "table": "ewohSchedulingPolicy",
+    "values": [
+     "DRAFT",
+     "SHADOW"
+    ]
+   }
+  ],
+  "ts_type_corroborated": [
+   "ewohDeviceCapability",
+   "ewohSchedulingExecution",
+   "ewohSchedulingPolicy"
+  ],
+  "code_only_no_ts": [
+   "ewohFactoryReplicationSessions",
+   "ewohModelRegistry",
+   "ewohOutbox",
+   "ewohPolicyActivation",
+   "ewohPolicyReplay",
+   "ewohReplanTrigger",
+   "ewohResourceReservation",
+   "ewohSpatialEntity"
+  ],
+  "ts_value_superset": [
+   "ewohAgentApproval",
+   "ewohAgentTask",
+   "ewohDeviceCapability",
+   "ewohFactoryReplicationSessions",
+   "ewohHandoffs",
+   "ewohModelRegistry",
+   "ewohNotification",
+   "ewohOutbox",
+   "ewohPolicyActivation",
+   "ewohPolicyReplay",
+   "ewohSchedulingExecution",
+   "ewohSchedulingPlanAssignment",
+   "ewohSchedulingPolicy",
+   "ewohSchedulingRun",
+   "ewohSpatialEntity"
+  ],
+  "shared_written_nowhere": [
+   "ewohAgentManifest",
+   "ewohControlCommand",
+   "ewohControlRequest",
+   "ewohEvent",
+   "ewohProductionTask",
+   "ewohReplanTrigger",
+   "ewohResourceReservation",
+   "ewohSchedulePlan"
+  ],
+  "code_only_no_ts_no_shared_match": [
+   "ewohReplanTrigger",
+   "ewohResourceReservation"
+  ],
+  "chosen_self_declared": [
+   "ewohControlCommand",
+   "ewohEvent"
+  ],
+  "chosen_not_self_declared": [
+   "ewohAgentApproval",
+   "ewohAgentTask",
+   "ewohControlRequest",
+   "ewohHandoffs",
+   "ewohNotification",
+   "ewohProductionTask",
+   "ewohSchedulingPlanAssignment",
+   "ewohSchedulingRun"
+  ],
+  "multi_author_tables": [
+   {
+    "table": "ewohEvent",
+    "authors": [
+     "alert.yaml#andon_notification_identity",
+     "alert.yaml#data_quality_notification_identity",
+     "approval.yaml#expiry_notification_identity"
+    ]
+   }
+  ],
+  "false_gap_named_by_other_author": [
+   {
+    "table": "ewohEvent",
+    "values": [
+     "open"
+    ]
+   }
+  ]
+ },
+ "bindings": [
+  {
+   "table": "ewohAgentApproval",
+   "physical": "ewoh_agent_approval",
+   "written": [
+    "approved",
+    "expired",
+    "pending",
+    "rejected"
+   ],
+   "vocabulary": "approval.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "bypassed",
+    "cancelled"
+   ],
+   "db_constraint": {
+    "constraint": "chk_ewoh_agent_approval_status",
+    "column": "status",
+    "values": [
+     "approved",
+     "expired",
+     "pending",
+     "rejected"
+    ],
+    "source": "db/migrations/standalone_049_agent_approval.sql"
+   },
+   "enforced_by_db": true,
+   "db_check_unparsed": [
+    {
+     "constraint": "chk_ewoh_agent_approval_resolved",
+     "shape": "implication",
+     "source": "db/migrations/standalone_049_agent_approval.sql"
+    }
+   ],
+   "code_outside_db": [],
+   "db_not_written": [],
+   "db_vs_contract": "db-narrower",
+   "contract_extra_over_db": [
+    "bypassed",
+    "cancelled"
+   ],
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/api.interface.ts#ApprovalStepStatus",
+    "ewoh-spark-app/shared/api.interface.ts#ApprovalInstanceStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "db+contract+code"
+  },
+  {
+   "table": "ewohAgentManifest",
+   "physical": "ewoh_agent_manifest",
+   "written": [
+    "registered"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": {
+    "constraint": "chk_ewoh_agent_manifest_status",
+    "column": "status",
+    "values": [
+     "registered",
+     "suspended"
+    ],
+    "source": "db/migrations/standalone_037_agent_manifest.sql"
+   },
+   "enforced_by_db": true,
+   "code_outside_db": [],
+   "db_not_written": [
+    "suspended"
+   ],
+   "db_vs_contract": "no-contract-binding",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "db+code"
+  },
+  {
+   "table": "ewohAgentTask",
+   "physical": "ewoh_agent_task",
+   "written": [
+    "cancelled",
+    "created",
+    "dispatched",
+    "in_progress"
+   ],
+   "vocabulary": "agent-task.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "completed",
+    "failed"
+   ],
+   "db_constraint": {
+    "constraint": "chk_ewoh_agent_task_status",
+    "column": "status",
+    "values": [
+     "cancelled",
+     "completed",
+     "created",
+     "dispatched",
+     "failed",
+     "in_progress"
+    ],
+    "source": "db/migrations/standalone_038_agent_task.sql"
+   },
+   "enforced_by_db": true,
+   "code_outside_db": [],
+   "db_not_written": [
+    "completed",
+    "failed"
+   ],
+   "db_vs_contract": "db-equals-contract",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/agent-task.ts#TASK_STATUSES"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "db+contract+code"
+  },
+  {
+   "table": "ewohControlCommand",
+   "physical": "ewoh_control_command",
+   "written": [
+    "expired",
+    "failed",
+    "revoked",
+    "sent"
+   ],
+   "vocabulary": "control.yaml",
+   "status": "partial",
+   "coverage": 0.5,
+   "missingInVocabulary": [
+    "expired",
+    "sent"
+   ],
+   "declaredNotWritten": [
+    "approved",
+    "created",
+    "executed",
+    "gateway_received",
+    "partial_success",
+    "pending_approval",
+    "pending_gateway",
+    "timeout"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_check_unparsed": [
+    {
+     "constraint": "chk_ewoh_control_command_sent_has_time",
+     "shape": "implication",
+     "source": "db/migrations/standalone_106_control_sent_state_pair.sql"
+    }
+   ],
+   "db_vs_contract": "db-shape-unreadable",
+   "contract_authors": [
+    {
+     "file": "control.yaml",
+     "block": "control_notification_identity",
+     "shard_note": "主事实＝那条命令行：被撤回（revoked）／撤回后仍被执行（违规回执）",
+     "shard_type": null
+    }
+   ],
+   "chosen_self_declared": true,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohControlRequest",
+   "physical": "ewoh_control_request",
+   "written": [
+    "approved",
+    "created",
+    "executed",
+    "failed",
+    "partial_success",
+    "pending_approval",
+    "pending_gateway",
+    "revoked",
+    "timeout"
+   ],
+   "vocabulary": "control.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "gateway_received"
+   ],
+   "db_constraint": {
+    "constraint": "ck_control_request_status_contract",
+    "column": "status",
+    "values": [
+     "approved",
+     "created",
+     "executed",
+     "failed",
+     "gateway_received",
+     "partial_success",
+     "pending_approval",
+     "pending_gateway",
+     "revoked",
+     "timeout"
+    ],
+    "source": "db/migrations/standalone_107_control_request_status_contract.sql"
+   },
+   "enforced_by_db": true,
+   "code_outside_db": [],
+   "db_not_written": [
+    "gateway_received"
+   ],
+   "db_vs_contract": "db-equals-contract",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "db+contract+code"
+  },
+  {
+   "table": "ewohDeviceCapability",
+   "physical": "ewoh_device_capability",
+   "written": [
+    "active"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": {
+    "file": "ewoh-spark-app/shared/api.interface.ts",
+    "name": "DeviceCapabilityStatus",
+    "values": [
+     "active",
+     "disabled"
+    ]
+   },
+   "ts_outside_type": [],
+   "ts_type_not_written": [
+    "disabled"
+   ],
+   "ts_type_corroborated": true,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/api.interface.ts#DeviceCapabilityStatus",
+    "ewoh-spark-app/shared/exo-config.ts#PROFILE_STATUSES",
+    "ewoh-spark-app/shared/exo-session.ts#EXO_SESSION_STATUSES",
+    "ewoh-spark-app/shared/identity.ts#MappingStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code+ts"
+  },
+  {
+   "table": "ewohEvent",
+   "physical": "ewoh_event",
+   "written": [
+    "bypassed",
+    "cancelled",
+    "consumed",
+    "open",
+    "pending"
+   ],
+   "vocabulary": "approval.yaml",
+   "status": "partial",
+   "coverage": 0.6,
+   "missingInVocabulary": [
+    "consumed",
+    "open"
+   ],
+   "declaredNotWritten": [
+    "approved",
+    "expired",
+    "rejected"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [
+    {
+     "file": "alert.yaml",
+     "block": "andon_notification_identity",
+     "shard_note": "event_type='AndonRaised' 的那些行＝安灯主事实",
+     "shard_type": null
+    },
+    {
+     "file": "alert.yaml",
+     "block": "data_quality_notification_identity",
+     "shard_note": "event_type='DataQualityAlert' 且 status='open' 的那些行",
+     "shard_type": null
+    },
+    {
+     "file": "approval.yaml",
+     "block": "expiry_notification_identity",
+     "shard_note": null,
+     "shard_type": "approval_instance"
+    }
+   ],
+   "chosen_self_declared": true,
+   "other_author_states": [
+    "acknowledged",
+    "closed",
+    "open",
+    "processing",
+    "reopened"
+   ],
+   "missing_claimed_by_other_author": [
+    "open"
+   ],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohFactoryReplicationSessions",
+   "physical": "ewoh_factory_replication_sessions",
+   "written": [
+    "running"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#SchedulingRun.status",
+    "ewoh-spark-app/shared/simulation-run.ts#SIMULATION_STATUSES"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohHandoffs",
+   "physical": "ewoh_handoffs",
+   "written": [
+    "open"
+   ],
+   "vocabulary": "alert.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "acknowledged",
+    "closed",
+    "processing",
+    "reopened"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/alert-state-machine.ts#ALERT_STATES",
+    "ewoh-spark-app/shared/learning-signal.ts#LEARNING_SIGNAL_STATUSES",
+    "ewoh-spark-app/shared/quality.ts#QUALITY_LIFECYCLE",
+    "ewoh-spark-app/shared/risk.ts#RISK_LIFECYCLE",
+    "ewoh-spark-app/shared/scheduler.ts#RouteGraphEdge.status"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohModelRegistry",
+   "physical": "ewoh_model_registry",
+   "written": [
+    "active",
+    "superseded"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/exo-config.ts#PROFILE_STATUSES",
+    "ewoh-spark-app/shared/identity.ts#MappingStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohNotification",
+   "physical": "ewoh_notification",
+   "written": [
+    "pending"
+   ],
+   "vocabulary": "approval.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "approved",
+    "bypassed",
+    "cancelled",
+    "expired",
+    "rejected"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/api.interface.ts#ApprovalStepStatus",
+    "ewoh-spark-app/shared/api.interface.ts#ApprovalInstanceStatus",
+    "ewoh-spark-app/shared/api.interface.ts#OutboxEvent.status",
+    "ewoh-spark-app/shared/dead-letter.ts#DEAD_LETTER_STATUSES",
+    "ewoh-spark-app/shared/exo-config.ts#FIT_STATUSES",
+    "ewoh-spark-app/shared/exo-config.ts#CALIBRATION_STATUSES",
+    "ewoh-spark-app/shared/notification-resolution.ts#NOTIFICATION_STATUSES",
+    "ewoh-spark-app/shared/notification-resolution.ts#NOTIFICATION_LIST_FILTERS",
+    "ewoh-spark-app/shared/order-chain.ts#OPEN_ORDER_STATUSES",
+    "ewoh-spark-app/shared/shift.ts#ShiftHandover.status"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohOutbox",
+   "physical": "ewoh_outbox",
+   "written": [
+    "published"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/api.interface.ts#OutboxEvent.status",
+    "ewoh-spark-app/shared/retrospective.ts#RETROSPECTIVE_STATUSES"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohPolicyActivation",
+   "physical": "ewoh_policy_activation",
+   "written": [
+    "ROLLED_BACK"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#PolicyActivationRecord.status"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohPolicyReplay",
+   "physical": "ewoh_policy_replay",
+   "written": [
+    "COMPLETED"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#SchedulingExecutionStatus",
+    "ewoh-spark-app/shared/scheduler.ts#PolicyReplayRecord.status"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohProductionTask",
+   "physical": "ewoh_production_task",
+   "written": [
+    "draft",
+    "pending_dispatch"
+   ],
+   "vocabulary": "task.yaml",
+   "status": "bound",
+   "coverage": 1,
+   "missingInVocabulary": [],
+   "declaredNotWritten": [
+    "cancelled",
+    "completed",
+    "dispatched",
+    "exception",
+    "executing",
+    "paused",
+    "pending_approval",
+    "pending_confirm",
+    "received"
+   ],
+   "db_constraint": {
+    "constraint": "ck_production_task_status_contract",
+    "column": "status",
+    "values": [
+     "cancelled",
+     "completed",
+     "dispatched",
+     "draft",
+     "exception",
+     "executing",
+     "paused",
+     "pending_approval",
+     "pending_confirm",
+     "pending_dispatch",
+     "received"
+    ],
+    "source": "db/migrations/standalone_071_task_status_contract.sql"
+   },
+   "enforced_by_db": true,
+   "code_outside_db": [],
+   "db_not_written": [
+    "cancelled",
+    "completed",
+    "dispatched",
+    "exception",
+    "executing",
+    "paused",
+    "pending_approval",
+    "pending_confirm",
+    "received"
+   ],
+   "db_vs_contract": "db-equals-contract",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "db+contract+code"
+  },
+  {
+   "table": "ewohReplanTrigger",
+   "physical": "ewoh_replan_trigger",
+   "written": [
+    "processed"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohResourceReservation",
+   "physical": "ewoh_resource_reservation",
+   "written": [
+    "released",
+    "reserved"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  },
+  {
+   "table": "ewohSchedulePlan",
+   "physical": "ewoh_schedule_plan",
+   "written": [
+    "approved",
+    "cancelled",
+    "confirmed",
+    "dispatched",
+    "proposed",
+    "rejected",
+    "superseded"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "coverage": 0.429,
+   "nearest": {
+    "vocabulary": "approval.yaml",
+    "coverage": 0.429
+   },
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_check_unparsed": [
+    {
+     "constraint": "chk_ewoh_schedule_plan_shadow_not_production",
+     "shape": "compound-or-negated",
+     "source": "db/migrations/standalone_048_shadow_plan_isolation.sql"
+    }
+   ],
+   "db_vs_contract": "db-shape-unreadable",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": {
+    "file": "ewoh-spark-app/shared/scheduler.ts",
+    "name": "SchedulePlanStatus",
+    "values": [
+     "confirmed",
+     "proposed",
+     "rejected",
+     "shadow"
+    ]
+   },
+   "ts_outside_type": [
+    "approved",
+    "cancelled",
+    "dispatched",
+    "superseded"
+   ],
+   "ts_type_not_written": [
+    "shadow"
+   ],
+   "ts_type_corroborated": false,
+   "ts_value_superset_types": [],
+   "ts_exact_value_match": [],
+   "authority": "code+ts"
+  },
+  {
+   "table": "ewohSchedulingExecution",
+   "physical": "ewoh_scheduling_execution",
+   "written": [
+    "CANCELLED"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": {
+    "file": "ewoh-spark-app/shared/scheduler.ts",
+    "name": "SchedulingExecutionStatus",
+    "values": [
+     "CANCELLED",
+     "COMPLETED",
+     "DISPATCHED",
+     "FAILED",
+     "PAUSED",
+     "PLANNED",
+     "STARTED"
+    ]
+   },
+   "ts_outside_type": [],
+   "ts_type_not_written": [
+    "COMPLETED",
+    "DISPATCHED",
+    "FAILED",
+    "PAUSED",
+    "PLANNED",
+    "STARTED"
+   ],
+   "ts_type_corroborated": true,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#SchedulingExecutionStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code+ts"
+  },
+  {
+   "table": "ewohSchedulingPlanAssignment",
+   "physical": "ewoh_scheduling_plan_assignment",
+   "written": [
+    "approved",
+    "cancelled",
+    "completed",
+    "dispatched",
+    "executing",
+    "failed"
+   ],
+   "vocabulary": "agent-task.yaml",
+   "status": "ambiguous",
+   "coverage": 0.667,
+   "candidates": [
+    "agent-task.yaml",
+    "task.yaml"
+   ],
+   "missingInVocabulary": [
+    "approved",
+    "executing"
+   ],
+   "declaredNotWritten": [
+    "created",
+    "in_progress"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#AssignmentStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohSchedulingPolicy",
+   "physical": "ewoh_scheduling_policy",
+   "written": [
+    "ACTIVE",
+    "ARCHIVED"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": {
+    "file": "ewoh-spark-app/shared/scheduler.ts",
+    "name": "SchedulingPolicyStatus",
+    "values": [
+     "ACTIVE",
+     "ARCHIVED",
+     "DRAFT",
+     "SHADOW"
+    ]
+   },
+   "ts_outside_type": [],
+   "ts_type_not_written": [
+    "DRAFT",
+    "SHADOW"
+   ],
+   "ts_type_corroborated": true,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#SchedulingPolicyStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code+ts"
+  },
+  {
+   "table": "ewohSchedulingRun",
+   "physical": "ewoh_scheduling_run",
+   "written": [
+    "failed",
+    "queued",
+    "succeeded"
+   ],
+   "vocabulary": "agent-task.yaml",
+   "status": "ambiguous",
+   "coverage": 0.333,
+   "candidates": [
+    "agent-task.yaml",
+    "control.yaml"
+   ],
+   "missingInVocabulary": [
+    "queued",
+    "succeeded"
+   ],
+   "declaredNotWritten": [
+    "cancelled",
+    "completed",
+    "created",
+    "dispatched",
+    "in_progress"
+   ],
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": false,
+   "other_author_states": [],
+   "missing_claimed_by_other_author": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/scheduler.ts#SchedulingRun.status"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "contract+code"
+  },
+  {
+   "table": "ewohSpatialEntity",
+   "physical": "ewoh_spatial_entity",
+   "written": [
+    "active"
+   ],
+   "vocabulary": null,
+   "status": "unbound",
+   "db_constraint": null,
+   "enforced_by_db": false,
+   "db_vs_contract": "no-db-check",
+   "contract_authors": [],
+   "chosen_self_declared": null,
+   "other_author_states": [],
+   "ts_type": null,
+   "ts_value_superset_types": [
+    "ewoh-spark-app/shared/api.interface.ts#DeviceCapabilityStatus",
+    "ewoh-spark-app/shared/exo-config.ts#PROFILE_STATUSES",
+    "ewoh-spark-app/shared/exo-session.ts#EXO_SESSION_STATUSES",
+    "ewoh-spark-app/shared/identity.ts#MappingStatus"
+   ],
+   "ts_exact_value_match": [],
+   "authority": "code"
+  }
+ ]
+}

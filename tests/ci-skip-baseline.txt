@@ -1,0 +1,24 @@
+# pytest 跳过登记基线（CI-01，2026-09-21 首次建立）
+#
+# 格式：`文件 :: 原因 :: 允许次数`（原因取 pytest `-rs` 汇总行的原文，去掉行尾句号）
+#
+# 为什么要有这个文件：`pytest` 与 `unittest` 对**被跳过**的用例退出码仍是 0。
+# 本仓库 CP-SAT 求解/预约用例带 `skipUnless(_ORT_TOOLS_AVAILABLE)` 守卫，而 CI 的 Python
+# job 只装 ruff/bandit/pytest、不装 ortools → 求解路径在 CI 里静默全跳仍然绿。
+# 门禁 `scripts/assert-test-skips.py` 因此要求：每一次跳过都必须在这里被显式登记，且数量不得增加。
+#
+# 纪律（与 db/migration-verify-baseline.txt 同一条）：
+#   · 基线只允许缩小——可选依赖装好后这里会打印 FIXED，请删掉对应行；
+#   · 新增跳过或某类跳过数量变多 → 门禁非零退出；
+#   · 登记 = 承认「这条路径当前没有被验证」，不是让它永久合法。
+#
+# 出处：本机 Python 3.9.6、未安装 ortools、未安装 asyncua≥2.0 的一次真实全量运行
+# （2060 passed, 14 skipped）逐项登记。CI 的解释器与依赖不同，首跑若报
+# 「不在基线内（新增跳过）」，应把 CI 实际原因原文补进来，而不是关掉门禁；
+# 若报 FIXED，则说明该依赖在 CI 已具备、对应路径应转为必跑。
+
+src/edge_platform/tests/test_actuator_opcua_real.py :: 需要 asyncua ≥ 2.0（可选依赖；1.1.x 有 sync 线程收线缺陷，真栈用例如实跳过） :: 2
+tests/edge/test_cpsat_solver.py :: ortools 未安装，跳过可行性/确定性断言 :: 1
+tests/test_cpsat_reservation.py :: ortools 未安装，跳过真实求解 reservation fixture 测试 :: 3
+tests/test_cpsat_solver_real.py :: ortools 未安装，跳过真实求解 fixture 测试 :: 7
+tests/test_cpsat_worker_contract.py :: ortools 未安装，求解路径不适用 :: 1
