@@ -6,6 +6,8 @@
  * 「是否可用于决策」的判定。供 DataCredibility 组件及各处视图复用。
  */
 
+import { DISPLAY_TIME_OPTS } from './intl';
+
 export interface CredibilityInfo {
   /** 数据来源类型（real / controlled_test / simulated / replayed / stale / offline 等）。 */
   sourceType?: string;
@@ -104,5 +106,5 @@ export function formatTimestamp(iso: string | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  return d.toLocaleString('zh-CN', DISPLAY_TIME_OPTS);
 }

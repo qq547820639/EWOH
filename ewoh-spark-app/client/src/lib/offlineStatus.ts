@@ -1,5 +1,6 @@
 import type { SimpleStore, StoredPendingAction, SyncState } from './offlineDb';
 import { backoffDelayWithJitter, getLastSyncAt } from './offlineDb';
+import { DISPLAY_TIME_OPTS } from './intl';
 
 /** Threshold after which a workbench is considered "data stale" (no sync). */
 export const STALE_DATA_THRESHOLD_MS = 5 * 60 * 1000;
@@ -70,7 +71,7 @@ export function formatLastSync(lastSyncAt: string | null): string {
   if (elapsedMs < 60_000) {
     return '刚刚';
   }
-  return new Date(lastSyncAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  return new Date(lastSyncAt).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS);
 }
 
 /**

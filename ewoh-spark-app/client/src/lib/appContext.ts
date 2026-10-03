@@ -1,4 +1,5 @@
 import { navGroups } from './navigation';
+import { DISPLAY_TIME_OPTS } from './intl';
 
 /**
  * 全局应用外壳（UX-006）的纯逻辑层。
@@ -211,5 +212,5 @@ export function formatDataFreshness(iso: string): string {
   const elapsedMs = Date.now() - then;
   if (elapsedMs < 60_000) return '刚刚';
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)} 分钟前`;
-  return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  return new Date(iso).toLocaleString('zh-CN', DISPLAY_TIME_OPTS);
 }
