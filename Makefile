@@ -294,7 +294,7 @@ clean:  ## 清理构建产物与临时文件
 	rm -rf logs .pytest_cache .ruff_cache
 
 # ── 试点链行为基线（调度→审批→派工→执行→回执；见 docs/audit/current/chain-behavior-baseline.md）
-.PHONY: chain-baseline-up chain-baseline-seed chain-baseline-rebuild chain-baseline-verify chain-baseline-down chain-baseline-doctor chain-baseline-doctor-selftest chain-baseline-matrix chain-baseline-client-drift chain-baseline-consistency chain-baseline-inventory chain-baseline-criterion-selftest chain-baseline-ci-surface chain-baseline-fix-sites chain-baseline-negative-control chain-baseline-write-fanout chain-baseline-shape-exposure chain-baseline-copy-census chain-baseline-contract-emitters chain-baseline-event-roles chain-baseline-event-payload chain-baseline-event-readside chain-baseline-instrument-surface chain-baseline-ledger-gap chain-baseline-outbox-probe chain-baseline-worker-timer-census chain-baseline-worker-shutdown-probe chain-baseline-tx-boundary-shadow chain-baseline-ci-cost chain-baseline-contract-arrows chain-baseline-contract-arrow-evidence chain-baseline-status-write-guard chain-baseline-status-target-states chain-baseline-timing-census chain-baseline-optional-fallback chain-baseline-raw-status-writes chain-baseline-state-column-vocabulary chain-baseline-vocabulary-bindings chain-baseline-stored-vocabulary chain-baseline-promotion-readings chain-baseline-writer-drift-shadow
+.PHONY: chain-baseline-up chain-baseline-seed chain-baseline-rebuild chain-baseline-verify chain-baseline-down chain-baseline-doctor chain-baseline-doctor-selftest chain-baseline-matrix chain-baseline-client-drift chain-baseline-consistency chain-baseline-inventory chain-baseline-criterion-selftest chain-baseline-ci-surface chain-baseline-fix-sites chain-baseline-negative-control chain-baseline-write-fanout chain-baseline-shape-exposure chain-baseline-copy-census chain-baseline-contract-emitters chain-baseline-event-roles chain-baseline-event-payload chain-baseline-event-readside chain-baseline-instrument-surface chain-baseline-ledger-gap chain-baseline-refactor-backlog chain-baseline-backlog-premise chain-baseline-outbox-probe chain-baseline-worker-timer-census chain-baseline-worker-shutdown-probe chain-baseline-tx-boundary-shadow chain-baseline-ci-cost chain-baseline-contract-arrows chain-baseline-contract-arrow-evidence chain-baseline-status-write-guard chain-baseline-status-target-states chain-baseline-timing-census chain-baseline-optional-fallback chain-baseline-raw-status-writes chain-baseline-state-column-vocabulary chain-baseline-vocabulary-bindings chain-baseline-stored-vocabulary chain-baseline-promotion-readings chain-baseline-writer-drift-shadow
 
 chain-baseline-up:  ## 建/复用一次性 PostgreSQL（仓库自带 embedded 二进制，不依赖 Docker）
 	bash scripts/chain-baseline/up.sh
@@ -362,6 +362,14 @@ chain-baseline-instrument-surface:  ## 量具执行面清点（V140 建；V347 �
 chain-baseline-ledger-gap:  ## 审计覆盖账本 ↔ 磁盘现扫 的双向差集（V346，AUDLEDGER-01 的读数面）：现扫总体只向 audit-file-ledger.js 的只读子命令 paths 取（同一条枚举器两个消费者），报未入账／幽灵行／旧内容审阅三个方向，并与 stats 行逐字自证；取不到一律退 3 不折算成"一致"（判据自测条数由脚本自报）
 	node scripts/chain-baseline/ledger-gap.cjs --self-test
 	node scripts/chain-baseline/ledger-gap.cjs
+
+chain-baseline-refactor-backlog:  ## 重构事项四源对账（V353 建，BACKLOGRE-01 的读数面）：登记册 §5.4 表切片与编号形状**复用** artifact-consistency 的同一判据（两套边界会把 185 行读成 71/470）；现扫总体只向 audit-file-ledger.js 的只读子命令 paths 取；判重必须两轴齐（同一文件 ＋ 至少一个语料内出现 ≤2 行的主题名），只共享热点文件算歧义不算重复；路径先剥后抽符号（带点文件名截断会让 server/scheduler 冒充判别符号）；引用落点用 AST 判符号，只有"唯一候选＋行号超出真实行数"才判红，缩写/重名/自测合成夹具名一律不判红；§5.4 切片取不到退 3 不折成零行（判据自测条数由脚本自报）
+	node scripts/chain-baseline/refactor-backlog-reconcile.cjs --self-test
+	node scripts/chain-baseline/refactor-backlog-reconcile.cjs
+
+chain-baseline-backlog-premise:  ## 重构前置的在线核数（V353 建，BACKLOGPREM-01 的读数面）：A3 跨租户用**运行角色**双臂实测（owner 会绕过 RLS，用它测等于什么都测不到）＋注入式正向对照（locks 两个 org 各注入、他 org 必须读 0、清理后残留必须 0，否则整批"读 0 行"降级为不可信）＋A5 的 resource_type 值域对契约注册表比（词表取自 contracts/resource/resource.schema.json#resourceTypeRegistry.const，不手抄实现 WHERE）。七档租户面互斥＋值域四态，取不到连接/表缺/词表解析不到一律不可判。--run 需先 source tmp/chain-baseline/env.sh（判据自测条数由脚本自报）
+	node scripts/chain-baseline/backlog-premise-probe.cjs --self-test
+	node scripts/chain-baseline/backlog-premise-probe.cjs --run
 
 chain-baseline-ci-cost:  ## 试点量具接 CI 的代价实测（V149）：逐件真跑 make <target>（链级集群关掉、不装依赖），按输出签名分五桶 ready/needs-db/needs-dep/failed/not-measured；分桶恒等式不成立即拒出数（不接成主线：它会双跑其它量具）。目标名单不手抄——V348（CCOST-01）起向执行面尺的 analyze() 现抽，两侧不同名即拒出数（判据自测条数由脚本自报）
 	node scripts/chain-baseline/ci-onboarding-cost.cjs --self-test
