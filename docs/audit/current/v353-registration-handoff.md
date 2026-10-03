@@ -24,7 +24,7 @@
 - 本轮曾试加仓外可回滚垫片 `ewoh-spark-app/node_modules/@server -> ../dist/server`
   （`node_modules` 被 `.gitignore:59` 忽略、不在重放覆盖集内、下次 `pnpm install` 会消失）。
   它只把失败点从 `@server/database/schema` 推进到 **`@shared/capability`** ——同一个构建形状缺口
-  不止一个前缀（`dist/shared` 实测不存在，所以 `@shared/*` 连垫片都无处可指）。
+  不止一个前缀（`dist/shared` **在位**，缺的只是运行时解析途径：没有任何 `@shared` 垫片或注册，所以它同样解不到）。
   **垫片已在本轮结束时撤除**（`rm ewoh-spark-app/node_modules/@server`），本机不留隐性改动。
   ⇒ 修法只能是构建侧补齐别名重写或启动侧注册全部前缀（`@server`/`@shared`/`@client`），
   且必须先解释"V352 为何能跑绿"——解释不了就不要动 `verify.sh`，那会掩盖真正的差异。
