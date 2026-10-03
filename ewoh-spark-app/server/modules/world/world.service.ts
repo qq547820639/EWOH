@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import type { CurrentWorldState, EventChainNode, ReplaySnapshot } from '@shared/api.interface';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { rethrowWithLog } from '../shared/rethrow-with-log';
 
 type SpatialEntityRow = typeof ewohSpatialEntity.$inferSelect;
 type WorldStateRow = typeof ewohWorldState.$inferSelect;
@@ -241,8 +242,7 @@ export class WorldService {
       this.stateCache.set(cacheKey, { data: result, ts: Date.now() });
       return this.paginateWorldState(result, page, pageSize);
     } catch (error) {
-      this.logger.error('getCurrentState 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getCurrentState 失败', error);
     }
   }
 
@@ -293,8 +293,7 @@ export class WorldService {
         createdAt: r.createdAt ? r.createdAt.toISOString() : '',
       }));
     } catch (error) {
-      this.logger.error('getEventChain 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getEventChain 失败', error);
     }
   }
 
@@ -543,8 +542,7 @@ export class WorldService {
       }
       return snapshots;
     } catch (error) {
-      this.logger.error('getReplay 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getReplay 失败', error);
     }
   }
 

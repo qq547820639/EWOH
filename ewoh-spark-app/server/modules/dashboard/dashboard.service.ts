@@ -30,6 +30,12 @@ import {
   verifyCapabilityRestoreApproval,
 } from '@shared/capability-requirements';
 import { ApprovalPersistenceService } from '../approval/approval-persistence.service';
+import {
+  clampEventWindowHours,
+  clampListLimit,
+  clampListOffset,
+  MAX_LIST_LIMIT,
+} from '@shared/query-params';
 import { deriveDeviceCapabilities } from '../scheduler/device-capabilities';
 import {
   DEVICE_CATEGORIES,
@@ -76,8 +82,11 @@ export function normalizePagination(page?: number, pageSize?: number) {
 /**
  * NEST-347/348/349（2026-08-17 审计整改）：查询数值参数统一清洗——
  * parseInt NaN 一律拒绝（不允许 gte(col, NaN) 这类未定义行为），limit 设上限。
+ *
+ * 上限常量已收敛至 `@shared/query-params`（跨端单一事实源），此处重导出以
+ * 保持既有 import 路径 `from './dashboard.service'` 的对外契约不变。
  */
-export const MAX_LIST_LIMIT = 500;
+export { MAX_LIST_LIMIT };
 
 export function parseLimitParam(
   raw: string | undefined,
@@ -170,6 +179,29 @@ export class DashboardService {
       if (i++ >= drop) break;
       cache.delete(oldKey);
     }
+  }
+
+  /**
+   * 统一「记日志后原样重抛」的 catch 收尾（`catch (e) { log(...); throw e; }`）。
+   *
+   * ## 为什么不直接删掉 try/catch
+   * 全部 15 处 catch 的语义都是「记录后重抛」——重抛意味着**异常语义与 HTTP
+   * 状态码完全不变**，try/catch 存在的唯一价值是那条日志。删除它们会丢掉可观测性，
+   * 因此改为收敛日志语句本身。
+   *
+   * ## 为什么不改变重抛行为
+   * `throw error` 保持原样：调用方（Nest 异常过滤器）依赖原始错误对象上的
+   * `getStatus()`，包装成新异常会改变对外 HTTP 状态码。故本方法返回 `never`，
+   * 类型上标注以确保调用点无法「记录后忘记重抛」。
+   *
+   * @param context 日志上下文，如 `'getEvents 失败'`
+   * @param error 捕获到的异常
+   * @param isExpected 预期内异常（404/400 等业务异常）——为 true 时**跳过日志**直接重抛，
+   *   避免正常业务分支污染错误日志。默认为 false（即记录）。
+   */
+  private rethrowWithLog(context: string, error: unknown, isExpected = false): never {
+    if (!isExpected) this.logger.error(context, error);
+    throw error;
   }
 
   constructor(
@@ -276,8 +308,7 @@ export class DashboardService {
       this.overviewCache.set(orgKey, { data: result, timestamp: now });
       return result;
     } catch (error) {
-      this.logger.error('getOverview 失败', error);
-      throw error;
+      this.rethrowWithLog('getOverview 失败', error);
     }
   }
 
@@ -318,8 +349,7 @@ export class DashboardService {
         dataConfidence: row.data_confidence === null || row.data_confidence === undefined ? null : Number(row.data_confidence),
       }));
     } catch (error) {
-      this.logger.error('getEnvironmentSummary 失败', error);
-      throw error;
+      this.rethrowWithLog('getEnvironmentSummary 失败', error);
     }
   }
 
@@ -349,8 +379,7 @@ export class DashboardService {
           : base);
       return this.mapDeviceRows(rows);
     } catch (error) {
-      this.logger.error('getDevices 失败', error);
-      throw error;
+      this.rethrowWithLog('getDevices 失败', error);
     }
   }
 
@@ -368,11 +397,7 @@ export class DashboardService {
       detail.capabilities = await this.listDeviceCapabilities(deviceId, actor);
       return detail;
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      this.logger.error('getDeviceDetail 失败', error);
-      throw error;
+      this.rethrowWithLog('getDeviceDetail 失败', error, error instanceof NotFoundException);
     }
   }
 
@@ -402,8 +427,7 @@ export class DashboardService {
         pageSize,
       };
     } catch (error) {
-      this.logger.error('searchDevices 失败', error);
-      throw error;
+      this.rethrowWithLog('searchDevices 失败', error);
     }
   }
 
@@ -1102,13 +1126,10 @@ export class DashboardService {
   ): Promise<{ items: EventInfo[]; total: number }> {
     try {
       // NEST-347：limit 上限（防 parseInt('1e9') 全表拉取）。
-      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
-      const safeOffset = Math.max(0, Math.trunc(offset ?? 0));
+      const safeLimit = clampListLimit(limit, 50);
+      const safeOffset = clampListOffset(offset);
       // 时间窗：默认 24h，显式传入则 clamp 到 [1, 168]（7 天）。
-      const safeHours = Math.min(
-        Math.max(hours != null && Number.isFinite(hours) ? Math.trunc(hours) : 24, 1),
-        168,
-      );
+      const safeHours = clampEventWindowHours(hours);
       const conditions: SQL[] = [];
       const orgCond = this.orgCondition(ewohEvent.orgId, actor);
       if (orgCond) conditions.push(orgCond);
@@ -1151,8 +1172,7 @@ export class DashboardService {
         })),
       };
     } catch (error) {
-      this.logger.error('getEvents 失败', error);
-      throw error;
+      this.rethrowWithLog('getEvents 失败', error);
     }
   }
 
@@ -1207,8 +1227,7 @@ export class DashboardService {
         trend: trendRows.map((r) => ({ time: r.time, count: r.count })),
       };
     } catch (error) {
-      this.logger.error('getEventStats 失败', error);
-      throw error;
+      this.rethrowWithLog('getEventStats 失败', error);
     }
   }
 
@@ -1219,7 +1238,7 @@ export class DashboardService {
   ): Promise<TelemetryInfo[]> {
     try {
       // NEST-348：limit 上限。
-      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), MAX_LIST_LIMIT);
+      const safeLimit = clampListLimit(limit, 50);
       const conditions: SQL[] = [eq(ewohTelemetry.deviceId, deviceId)];
       const orgCond = this.orgCondition(ewohTelemetry.orgId, actor);
       if (orgCond) conditions.push(orgCond);
@@ -1240,8 +1259,7 @@ export class DashboardService {
         qualityStatus: r.qualityStatus,
       }));
     } catch (error) {
-      this.logger.error('getTelemetry 失败', error);
-      throw error;
+      this.rethrowWithLog('getTelemetry 失败', error);
     }
   }
 
@@ -1280,8 +1298,7 @@ export class DashboardService {
         telemetryCount: r.telemetryCount ?? 0,
       }));
     } catch (error) {
-      this.logger.error('getWorkers 失败', error);
-      throw error;
+      this.rethrowWithLog('getWorkers 失败', error);
     }
   }
 
@@ -1351,9 +1368,7 @@ export class DashboardService {
         handlerAction: updated.handlerAction ?? null,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      this.logger.error('handleEvent 失败', error);
-      throw error;
+      this.rethrowWithLog('handleEvent 失败', error, error instanceof NotFoundException);
     }
   }
 
@@ -1400,9 +1415,7 @@ export class DashboardService {
 
       return this.mapDevice(created);
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      this.logger.error('createDevice 失败', error);
-      throw error;
+      this.rethrowWithLog('createDevice 失败', error, error instanceof BadRequestException);
     }
   }
 
@@ -1466,9 +1479,7 @@ export class DashboardService {
 
       return this.mapDevice(updated);
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      this.logger.error('updateDevice 失败', error);
-      throw error;
+      this.rethrowWithLog('updateDevice 失败', error, error instanceof NotFoundException);
     }
   }
 
@@ -1533,8 +1544,7 @@ export class DashboardService {
         boundPersonName: personEntity?.name ?? null,
       };
     } catch (error) {
-      this.logger.error(`getDeviceBindings 失败 deviceId=${deviceId}`, error);
-      throw error;
+      this.rethrowWithLog(`getDeviceBindings 失败 deviceId=${deviceId}`, error);
     }
   }
 
@@ -1656,8 +1666,7 @@ export class DashboardService {
 
       return this.getDeviceBindings(deviceId, actor);
     } catch (error) {
-      this.logger.error(`bindDevice 失败 deviceId=${deviceId}`, error);
-      throw error;
+      this.rethrowWithLog(`bindDevice 失败 deviceId=${deviceId}`, error);
     }
   }
 
@@ -1728,8 +1737,7 @@ export class DashboardService {
         }
       }
     } catch (error) {
-      this.logger.error(`unbindDevice 失败 deviceId=${deviceId}`, error);
-      throw error;
+      this.rethrowWithLog(`unbindDevice 失败 deviceId=${deviceId}`, error);
     }
   }
 

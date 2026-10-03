@@ -32,6 +32,7 @@ import type {
 } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { buildGucSettings } from '../shared/org-context.interceptor';
+import { rethrowWithGuard, rethrowWithLog } from '../shared/rethrow-with-log';
 import { RequestDatabaseContext } from '../../database/request-database-context';
 import { assertPlanTenantVisible } from '../scheduler/plan-tenant-guard';
 import { markPlanDispatched } from '../scheduler/scheduling-plan.lifecycle';
@@ -337,9 +338,7 @@ export class GamificationService {
         allocations: allocationResults,
       };
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      this.logger.error('allocateResources 失败', error);
-      throw error;
+      rethrowWithGuard(this.logger, 'allocateResources 失败', error, BadRequestException);
     }
   }
 
@@ -527,9 +526,7 @@ export class GamificationService {
         nodes,
       };
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      this.logger.error('orchestrateTask 失败', error);
-      throw error;
+      rethrowWithGuard(this.logger, 'orchestrateTask 失败', error, BadRequestException);
     }
   }
 
@@ -584,9 +581,13 @@ export class GamificationService {
       );
       return await this.dispatchConfirmedLegacy(planId, req, actor, existing);
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
-      this.logger.error('dispatchPlan 失败', error);
-      throw error;
+      rethrowWithGuard(
+        this.logger,
+        'dispatchPlan 失败',
+        error,
+        BadRequestException,
+        NotFoundException,
+      );
     }
   }
 
@@ -799,8 +800,7 @@ export class GamificationService {
         delivered: true,
       };
     } catch (error) {
-      this.logger.error('sendExoFeedback 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'sendExoFeedback 失败', error);
     }
   }
 
@@ -849,8 +849,7 @@ export class GamificationService {
         actor,
       );
     } catch (error) {
-      this.logger.error('getBrainSuggestions 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getBrainSuggestions 失败', error);
     }
   }
 

@@ -6,6 +6,7 @@ import { isValidSpatialKind } from '@shared/location';
 import { DomainContractError } from '@shared/risk';
 import type { SpatialEntity, Topology, SpatialHierarchyNode } from '@shared/api.interface';
 import type { OrgContext } from '../shared/org-context.interceptor';
+import { rethrowWithLog } from '../shared/rethrow-with-log';
 
 @Injectable()
 export class SpatialService {
@@ -70,8 +71,7 @@ export class SpatialService {
 
       return rows.map((r) => this.mapEntity(r));
     } catch (error) {
-      this.logger.error('getEntities 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getEntities 失败', error);
     }
   }
 
@@ -90,8 +90,7 @@ export class SpatialService {
       if (rows.length === 0) return null;
       return this.mapEntity(rows[0]);
     } catch (error) {
-      this.logger.error(`getEntity 失败 entityId=${entityId}`, error);
-      throw error;
+      rethrowWithLog(this.logger, `getEntity 失败 entityId=${entityId}`, error);
     }
   }
 
@@ -111,8 +110,7 @@ export class SpatialService {
         createdAt: r.createdAt.toISOString(),
       }));
     } catch (error) {
-      this.logger.error('getTopology 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getTopology 失败', error);
     }
   }
 
@@ -158,8 +156,7 @@ export class SpatialService {
 
       return roots;
     } catch (error) {
-      this.logger.error('getHierarchy 失败', error);
-      throw error;
+      rethrowWithLog(this.logger, 'getHierarchy 失败', error);
     }
   }
 
