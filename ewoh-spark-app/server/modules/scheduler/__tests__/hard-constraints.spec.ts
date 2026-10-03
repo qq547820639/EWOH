@@ -304,6 +304,26 @@ describe('Hard constraints（15 类）', () => {
     expect(plan.assignments[0].deviceId).toBe('d2');
   });
 
+  it('LOCKED_STATION：锁定工位生效（锁定工位之外无候选）', async () => {
+    const { solver } = makeSolver();
+    // 候选工位 S1/S2 评分完全同分（route mock 恒定），默认 argmin 按 stationId 升序
+    // 取 S1 —— 故锁 S2 若未生效，断言必然失败（红）。
+    const plan = await solver.solve(
+      buildSnapshot({
+        persons: [seedPerson({ id: 'p1' })],
+        tasks: [seedTask({ id: 't1', candidateStations: ['S1', 'S2'] })],
+        devices: [seedDevice({ id: 'd1' })],
+        stations: [
+          { id: 'S1', name: 'S1', x: 0, y: 0, capacity: 1 },
+          { id: 'S2', name: 'S2', x: 0, y: 0, capacity: 1 },
+        ],
+      }),
+      [{ type: 'LOCKED_STATION', taskId: 't1', stationId: 'S2' }],
+      { ...baseSolveOpts, policy: defaultPolicy() },
+    );
+    expect(plan.assignments[0].stationId).toBe('S2');
+  });
+
   it('LOCKED_TIME：锁定时间窗生效', async () => {
     const { solver } = makeSolver();
     const startMs = 1_000_000;

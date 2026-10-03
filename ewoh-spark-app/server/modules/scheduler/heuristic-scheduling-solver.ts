@@ -154,6 +154,7 @@ interface ReuseContext {
   predecessorDone: (id: string) => boolean;
   lockedPersonByTask: Map<string, string>;
   lockedDeviceByTask: Map<string, string>;
+  lockedStationByTask: Map<string, string>;
   excludedPersonByTask: Map<string, Set<string>>;
   excludedPersonGlobal: Set<string>;
   excludedDeviceByTask: Map<string, Set<string>>;
@@ -291,6 +292,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
     // ---- 约束支持性检查 + 拆解可执行约束 ----
     const lockedPersonByTask = new Map<string, string>();
     const lockedDeviceByTask = new Map<string, string>();
+    const lockedStationByTask = new Map<string, string>();
     const lockedTimeByTask = new Map<string, [number, number]>();
     const forbiddenZones = new Set<string>(
       snapshot.forbiddenZones.map((f) => f.zoneId),
@@ -348,6 +350,9 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           break;
         case 'LOCKED_DEVICE':
           if (c.taskId && c.deviceId) lockedDeviceByTask.set(c.taskId, c.deviceId);
+          break;
+        case 'LOCKED_STATION':
+          if (c.taskId && c.stationId) lockedStationByTask.set(c.taskId, c.stationId);
           break;
         case 'LOCKED_TIME':
           if (c.taskId && c.startMs != null && c.endMs != null)
@@ -788,11 +793,15 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       // T03 / P1-4（G3）：station 为决策变量——枚举 candidateStations（有限集），
       // 回退 task.stationId；stationDecisionEnabled=false 回退基线行为（风险回滚开关）。
       const stationDecisionEnabled = config.stationCapacityEnforced !== false;
-      const stationOptions = this.resolveStationOptions(
-        task,
-        stationById,
-        stationDecisionEnabled,
-      );
+      // LOCKED_STATION：锁定工位优先于 candidateStations/stationDecisionEnabled——
+      // 锁定工位存在则候选集收敛为它（锁定工位不在快照中则候选集为空 → 如实不派工）。
+      // 与 candidate-engine.service.ts 的 lockedStation 处理同款，避免两条路径语义分裂。
+      const lockedStation = lockedStationByTask.get(task.id);
+      const stationOptions = lockedStation
+        ? stationById.has(lockedStation)
+          ? [lockedStation]
+          : []
+        : this.resolveStationOptions(task, stationById, stationDecisionEnabled);
 
       // station 维度索引（P1-3/P1-4）：capability + capacity 已在 solve 开头一次性构建
       // （hoist 出任务循环，见 solve 顶部 "任务无关索引" 段）。
@@ -927,6 +936,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           predecessorDone: predecessorDoneFn,
           lockedPersonByTask,
           lockedDeviceByTask,
+          lockedStationByTask,
           excludedPersonByTask,
           excludedPersonGlobal,
           excludedDeviceByTask,
@@ -981,6 +991,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           forbiddenZoneIds,
           lockedPersonByTask,
           lockedDeviceByTask,
+          lockedStationByTask,
           excludedPersonByTask,
           excludedDeviceByTask,
           excludedStationByTask,
@@ -1920,7 +1931,13 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       return null;
     }
 
-    // station 级校验（排除/能力/禁入区域）。
+    // station 级校验（锁定/排除/能力/禁入区域）。
+    const lockedStationId = ctx.lockedStationByTask.get(task.id);
+    if (lockedStationId && lockedStationId !== entry.stationId) return null;
+    if (!entry.stationId && ctx.lockedStationByTask.has(task.id)) {
+      // 任务锁定工位但基线为无工位 → 不匹配。
+      return null;
+    }
     if (entry.stationId) {
       if (
         this.isExcludedResource(
