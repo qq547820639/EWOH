@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { ewohEvent, ewohNotification } from '@server/database/schema';
 import { AuditService } from '../shared/audit.service';
 import { parseDateInput } from '../shared/parse-date-input';
+import { clampListLimit } from '@shared/query-params';
 import { resolveNotificationsFor } from '../notification/notification-resolution.link';
 import { DeviceResponsibilityService } from '../responsibility/device-responsibility.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
@@ -253,7 +254,9 @@ export class OeeService {
     if (deviceId) conditions.push(eq(ewohEvent.deviceId, deviceId));
     if (start) conditions.push(gte(ewohEvent.createdAt, new Date(start)));
     if (end) conditions.push(lte(ewohEvent.createdAt, new Date(end)));
-    const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 500);
+    // fallback 与签名默认值 200 保持一致（限签名兜底为 number，实践中不触发，
+    // 但保持一致可避免未来放宽签名时静默改变上限行为）。
+    const safeLimit = clampListLimit(limit, 200);
     return this.db
       .select()
       .from(ewohEvent)

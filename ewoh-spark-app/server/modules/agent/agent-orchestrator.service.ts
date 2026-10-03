@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { validateAgentTask, agentTaskTransitionAllowed } from '@shared/agent-task';
 import { isCatalogEventType } from '@shared/event-catalog';
 import { buildEventEnvelope, envelopeForEvidence } from '@shared/event-envelope';
+import { clampListLimit, clampListOffset } from '@shared/query-params';
 import { AuditService } from '../shared/audit.service';
 
 export type AgentTaskInput = Record<string, unknown>;
@@ -304,8 +305,8 @@ export class AgentOrchestratorService {
     orgId: string,
     pagination?: { limit?: number; offset?: number },
   ): Promise<Record<string, unknown>[]> {
-    const limit = Math.min(Math.max(1, Math.trunc(pagination?.limit ?? 100)), 500);
-    const offset = Math.max(0, Math.trunc(pagination?.offset ?? 0));
+    const limit = clampListLimit(pagination?.limit, 100);
+    const offset = clampListOffset(pagination?.offset);
     const rows = await this.db
       .select()
       .from(ewohAgentTask)

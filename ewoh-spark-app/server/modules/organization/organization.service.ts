@@ -9,6 +9,7 @@ import {
   ewohSpatialEntity,
 } from '@server/database/schema';
 import { isValidUuid } from '@server/common/uuid';
+import { clampListLimit, clampListOffset } from '@shared/query-params';
 import { AuditService } from '../shared/audit.service';
 import type { OrgContext } from '../shared/org-context.interceptor';
 
@@ -256,8 +257,8 @@ export class OrganizationService {
     if (query.status) {
       conditions.push(eq(ewohPersonnel.status, query.status));
     }
-    const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? 200)), 500);
-    const offset = Math.max(0, Math.trunc(query.offset ?? 0));
+    const limit = clampListLimit(query.limit, 200);
+    const offset = clampListOffset(query.offset);
     return this.db
       .select()
       .from(ewohPersonnel)

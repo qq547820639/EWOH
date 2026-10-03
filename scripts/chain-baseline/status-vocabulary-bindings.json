@@ -10,7 +10,7 @@
   "unresolved_examples": []
  },
  "ts_surface": {
-  "shared_ts_files_scanned": 54,
+  "shared_ts_files_scanned": 55,
   "shared_literal_unions_found": 166,
   "shared_literal_unions_status_named": 13,
   "shared_inline_field_unions": 9

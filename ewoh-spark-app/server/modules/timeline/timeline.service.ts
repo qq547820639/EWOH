@@ -3,6 +3,7 @@ import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack
 import { ewohEvent } from '@server/database/schema';
 import { eq, desc, and, gte, type SQL } from 'drizzle-orm';
 import type { TimelineEvent } from '@shared/api.interface';
+import { clampEventWindowHours, clampListLimit } from '@shared/query-params';
 import type { OrgContext } from '../shared/org-context.interceptor';
 import { buildTimelineEvents } from './timeline.projection';
 
@@ -26,13 +27,11 @@ export class TimelineService {
     hours?: number,
   ): Promise<TimelineEvent[]> {
     try {
-      const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 500);
-      // 时间窗滚动查询（2026-08-19，与 dashboard/events 同语义）：默认 24h，
-      // clamp [1,168]——事件表高写入量，无窗全表扫描在峰值时拖垮平台。
-      const safeHours = Math.min(
-        Math.max(hours != null && Number.isFinite(hours) ? Math.trunc(hours) : 24, 1),
-        168,
-      );
+      // 清洗逻辑收敛至 @shared/query-params（与 dashboard/events 同语义，单一事实源）。
+      const safeLimit = clampListLimit(limit, 100);
+      // 时间窗滚动查询（2026-08-19）：默认 24h，clamp [1,168]——
+      // 事件表高写入量，无窗全表扫描在峰值时拖垮平台。
+      const safeHours = clampEventWindowHours(hours);
       const conditions: SQL[] = [];
       if (!actor?.isGlobalAdmin) {
         const orgId = actor?.primaryOrgId?.trim();
