@@ -7421,7 +7421,7 @@ export interface paths {
         };
         /**
          * Delivery backlog live snapshot (plant-level, NO-77a)
-         * @description 投递积压**实时快照**（只读，工厂级聚合）。判定与巡检（sweep）同一实现： `sent`（未交付）与 `gateway_received`（已投未回执）且 `sent_at < now-SLA`。 看板/工作台按它展示聚合数字——不依赖"恰好有人跑过巡检"。
+         * @description 投递积压**实时快照**（只读，工厂级聚合）。判定与巡检（sweep）同一实现： `sent`（未交付）与 `gateway_received`（已投未回执）且 `sent_at < now-SLA`。 看板/工作台按它展示聚合数字——不依赖"恰好有人跑过巡检"。 PROJ-06：单轮最多检视 500 行；读满时 `truncated=true`，此时 `totals` 由同口径的 全量聚合给出（是**真总量**），而 `devices[]` 与 `escalatedDevices` 只覆盖最久的那一批。
          */
         get: {
             parameters: {
@@ -7449,6 +7449,8 @@ export interface paths {
                                 escalatedDevices?: number;
                                 oldestWaitingMs?: number | null;
                             };
+                            /** @description 明细被单轮扫描上限截断（true 时 totals 仍为全量聚合） */
+                            truncated: boolean;
                             devices: {
                                 deviceId?: string;
                                 commands?: number;
@@ -7859,7 +7861,7 @@ export interface paths {
         put?: never;
         /**
          * Sweep control commands stuck in delivery backlog
-         * @description NO-68a：把"命令下发后迟迟没投到设备"变成一条叫到人的提醒。 扫本租户内 `status=sent` 且 `delivered_at is null` 且下发已超过投递 SLA （`EWOH_CONTROL_DELIVERY_SLA_MS`，默认 5 分钟）的命令，按设备聚合成 确定性 notificationId 的提醒（收件人 dispatcher / workshop_lead / device_ops， 重复扫描只累加 `duplicates`），并写 `control.delivery_backlog_sweep` 审计。 **只读命令与设备事实**：不改状态、不代替人投递、不撤销任何命令。 同一实现由定时 worker 复跑（`CONTROL_BACKLOG_WORKER_INTERVAL_MS`，默认 10 分钟， `CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）；本端点供值班角色在排障时手动触发， 不必等下一个周期。跨设备/跨 request 的租户级操作，故挂在 `api/control` 而非 某条 request 之下（对齐 `/api/perception/fusion/sweep` 等同类巡检）。
+         * @description NO-68a：把"命令下发后迟迟没投到设备"变成一条叫到人的提醒。 扫本租户内 `status=sent` 且 `delivered_at is null` 且下发已超过投递 SLA （`EWOH_CONTROL_DELIVERY_SLA_MS`，默认 5 分钟）的命令，按设备聚合成 确定性 notificationId 的提醒（收件人 dispatcher / workshop_lead / device_ops， 重复扫描只累加 `duplicates`），并写 `control.delivery_backlog_sweep` 审计。 F-02 后本端点**同时是命令过期收敛的唯一 writer**：在飞命令（`sent`/`gateway_received`） 的下发时刻超过 `EWOH_CONTROL_COMMAND_EXPIRY_MS`（缺省=授权有效期 24h）， 或其请求行的 `deadline`（契约 `business_deadline` 的载体）已过时， 以 CAS 写成终态 `expired`（0 命中即跳过并留痕），落 `delivery_expired` 结果行 + `control.command.expired` 审计，并把该请求的聚合状态收敛到 `timeout`； 未过期的积压只提醒、不改状态。仍**不代替人投递、不改设备事实、不撤销任何命令** （`revoked` 与 `expired` 是两件事：前者根本没投给设备）。 同一实现由定时 worker 复跑（`CONTROL_BACKLOG_WORKER_INTERVAL_MS`，默认 10 分钟， `CONTROL_BACKLOG_WORKER_DISABLED=1` 可关）；本端点供值班角色在排障时手动触发， 不必等下一个周期。跨设备/跨 request 的租户级操作，故挂在 `api/control` 而非 某条 request 之下（对齐 `/api/perception/fusion/sweep` 等同类巡检）。
          */
         post: {
             parameters: {
@@ -7887,6 +7889,12 @@ export interface paths {
                             duplicates?: number;
                             /** @description 当前投递 SLA（毫秒） */
                             slaMs?: number;
+                            /** @description F-02：本次被收敛为 expired 终态的在飞命令数（CAS 命中才计） */
+                            expired?: number;
+                            /** @description 过期收敛 CAS 未命中数（状态已被并发 writer 改写，本方不覆盖） */
+                            expiryConflicts?: number;
+                            /** @description 当前过期时限（毫秒；缺省取授权有效期 24h） */
+                            expiryMs?: number;
                             notificationIds?: string[];
                         };
                     };
