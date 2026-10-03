@@ -126,4 +126,45 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 
 ---
 
-*§1（调度域精读）与 §2（控制域精读）由后台精读代理回传后经主理人逐条重读原文再入档；未入档前不得引用。*
+*§1 起为精读结论。标记沿用《基线》的四档：`已证实(源码·本人复核)` ＝ 本轮我亲手重读了该行区间；`走读定位(待复核)` ＝ 子代理逐行读并带行号、我未逐条回读（本项目实测子代理误报率约 1/3，两档不得混用）。*
+
+## §1 调度域（生产主路径）
+
+**职责**：`heuristic-scheduling-solver.ts` 是**当前唯一生产求解器**（`solver.service.ts` 缺省 `activation='OFF'`，CP-SAT 需 `EWOH_SOLVER_ACTIVATION=PRODUCTION` ∧ `EWOH_SOLVER_PRODUCTION_ENABLED=1` 双重门控，未过则 fail-closed 回退 heuristic）；`plan.service.ts` 负责方案落库与状态机；`world-state.service.ts` 负责快照聚合与新鲜度判定；`scheduler-run-orchestrator.service.ts` 串起触发→快照→求解→落库→闭合 run。
+**入口**：HTTP `POST /runs`（经 `org-context.interceptor.ts` 把整个 handler 包进请求级事务）；后台触发走另一档（无 store ⇒ 各段独立提交）。
+**数据流**：trigger 建行 `queued` → 快照持久化（版本号由计数器表 `ON CONFLICT (day)` upsert 分配）→ 约束装载 → 求解（只算不写）→ **单个事务内** `persistPlan` 循环 + `closeSchedulingRun` + `invalidate` → 提交后才经 outbox→pg_notify→SSE 可见。
+**异常分支**：求解抛错 → catch 内另起事务写 `failed`，但该事务随请求事务回滚 ⇒ **HTTP 档无 DB 留痕**；`closeSchedulingRun` 返回 false 不抛（0 命中只打日志）且编排丢弃返回值 ⇒ 方案已提交而 run 仍 `queued` 的形状存在。
+**未解疑点**：`EWOH_REQUIRE_CONSTRAINT_LOADER`／`EWOH_DB_REQUIRE_TX` 在生产是否置位（未查部署环境，属机制限制）；narration 与 30s TTL 缓存的两个竞态未实测。
+
+| # | 结论 | 标记 | 依据 |
+|---|---|---|---|
+| 1 | 约束拆解 switch 的 `default: break` 不记 violation、不打日志、不抛错 ⇒ 未落 case 的类型静默 | 已证实(源码·本人复核) | `heuristic-scheduling-solver.ts:386-388` |
+| 2 | `LOCKED_STATION` 已有 case 与消费点（roadmap A0-1 所述"缺 case"已被 `de5b1148` 修掉）| 已证实 | `:354-356` |
+| 3 | `LOCKED_ASSIGNMENT` 要求 `taskId&&personId&&deviceId` 齐全、无 `stationId` 分支 ⇒ 与 `constraints.ts` 的"三字段各自独立"分叉（roadmap A0-2 成立）| 已证实 | `:361-366` |
+| 4 | 内联候选路径未透传 `stationAvailableWindowsById` ⇒ `eligibility.service.ts` 的资源时间窗在该路径恒不生效；`bookedStationCounts` 从未被 eligibility 读取 | 走读定位(待复核) | `heuristic:1212-1245`、`eligibility.service.ts:461-471` |
+| 5 | 事件影响范围取"全部 open 事件"、无任务 scope，`eventImpacts` 在本文件零出现；后果是一条高危事件给所有任务同等加分 | 走读定位(待复核)（`eventImpacts` 零出现一支我已用两种写法核过）| `heuristic:666-668`、`priority-engine.ts:146-161,274-292` |
+| 6 | 快照行不存在（含 retention 48h 清理）被报成 `PLAN_STALE:CONTENT_CHANGED`；预占漂移的原因码两支同值 | 已证实 | `world-state.service.ts:644`、`:671`、`:761` |
+| 7 | replan 作废旧方案是**仅身份谓词**的裸 UPDATE（无来源态、无 org、无 returning）⇒ 与开放行 `GUARD-01` 同一事实，且**该行抄的 `:1400-1403` 已漂到 `:1386-1389`** | 已证实 | `plan.service.ts:1386-1389` |
+| 8 | 取消路径：assignment CAS 落空者被摘出 `cancelled` 并入 `irreversible`（CCAS-01 的修形已在位），方案行仍写终态 `cancelled` 且带来源态 `inArray` 守卫 | 已证实 | `plan.service.ts:898-912`、`:956-973` |
+
+## §2 控制域与工单编排
+
+**职责**：`control.service.ts`（磁盘 3,273 行；账本记 2,853 已过期）承载命令/请求双层状态、投递认领、回执、撤回、积压巡检；`work-orchestration.service.ts` 是 handoffs/git-sync/锁 的编排层。
+**入口**：`control.controller.ts`（HTTP）＋ `control-delivery-backlog.worker.ts`（巡检腿）＋ 网关轮询 `/api/control/commands/pending`。
+**数据流**：命令行 `pending→sent→gateway_received→executed/failed/timeout`，请求行按命令集合聚合；`delivered_at` 唯一写点在投递认领处，带 60s 窗口谓词。
+**异常分支**：撤回腿在 `runDetachedTransaction` 里写，落空 ⇒ 整笔独立事务回滚、命令留 `sent`、`poll=409` 可见（`RVAGG-02` V325 已实测并据此**定案"不需要补锁→读→写"**）。
+
+| # | 结论 | 标记 | 依据 |
+|---|---|---|---|
+| 1 | `transitionCommand` 不是命令状态的唯一收口：两处批量写不经它 | 已证实 | `control.service.ts:1057-1065`（无 org 谓词、无 `returning()`）、`:2268-2282`（有 CAS＋`returning`，无 org 谓词）|
+| 2 | 子代理报的"撤回缺 `lockRequestRow` ⇒ 撤回丢失并返 500"**被已闭行的实测反驳**，不登记为缺陷 | 已证实(反驳依据为登记册实测) | `chain-behavior-baseline.md:11694`（RVAGG-02 口径定案段）|
+| 3 | 工单编排 `*Durable`／legacy 配对：生产侧 6 对、测试侧 6/6 双侧覆盖；另有 3 个 Durable-only（其中 `createReplicationSessionDurable` 无调用方亦无测试）| 走读定位(待复核) | `work-orchestration.service.ts:397/427,517/575,726/776,756/832,900/1000,949/1068,1151` |
+| 4 | `listHandoffs()` 确为无 `WHERE` 全表读，但性质是**"表根本没有 `org_id` 列"**（DDL 一手核对），且 `ewoh_git_sync_state`／`ewoh_evidence_metadata` 同缺 | 已证实 | `db/migrations/standalone_004_ewoh_domain.sql:44-58`、`domain-persistence.service.ts:432-440`；库内实测见 unified-backlog §四 |
+| 5 | 读入口被 `@Roles('global_admin')` ＋ default-deny 守卫挡住 ⇒ roadmap A3"全租户数据可读"要改档 | 走读定位(待复核)（守卫在位一支我已见 `controller.ts:16` 字样）| `work-orchestration.controller.ts:16`、`app.module.ts:122-123` |
+
+## §3 未做与欠账（写在这里，不留 in-memory）
+
+1. §1 第 4/5 行、§2 第 3/5 行的 `走读定位(待复核)` 条目尚未逐条回读——**提升为 §5.4 登记行之前必须逐条复核**，否则会复刻 roadmap 那 1/3 误报率。
+2. 约束 case 表的完整 19 行矩阵未落到持久件（子代理输出会随会话消失）；落盘与逐条复核转下一轮第一项，登记单见 `docs/audit/current/v353-registration-handoff.md`。
+3. 本轮**未做**：全仓均匀逐字读（理由见 §0.6 的历史读数作废证据）；`control.service.ts` 拆分；任何产品码修改。
+
