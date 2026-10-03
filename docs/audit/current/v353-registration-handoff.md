@@ -21,10 +21,14 @@
   `-r tsconfig-paths/register` 或别名引导，仓内也没有 `@server` 的 node_modules 垫片 ⇒
   `node dist/server/main.js` 在 `app.module → dashboard.module → dashboard.service:13` 处 `MODULE_NOT_FOUND`，
   `/health/ready` 30s 内不就绪，`verify.sh` 按设计退 **3＝不可用**（不是链跑红）。
-- 本轮为把重放跑完，在**仓外可回滚位**加了垫片：`ewoh-spark-app/node_modules/@server -> ../dist/server`
+- 本轮曾试加仓外可回滚垫片 `ewoh-spark-app/node_modules/@server -> ../dist/server`
   （`node_modules` 被 `.gitignore:59` 忽略、不在重放覆盖集内、下次 `pnpm install` 会消失）。
-  **撤销**：`rm ewoh-spark-app/node_modules/@server`。这条垫片只是"让背书能跑"，不是修法——
-  真修是把那 18 个文件的别名重写补上或给启动加别名注册，二者都改构建/启动面，须属主拍。
+  它只把失败点从 `@server/database/schema` 推进到 **`@shared/capability`** ——同一个构建形状缺口
+  不止一个前缀（`dist/shared` 实测不存在，所以 `@shared/*` 连垫片都无处可指）。
+  **垫片已在本轮结束时撤除**（`rm ewoh-spark-app/node_modules/@server`），本机不留隐性改动。
+  ⇒ 修法只能是构建侧补齐别名重写或启动侧注册全部前缀（`@server`/`@shared`/`@client`），
+  且必须先解释"V352 为何能跑绿"——解释不了就不要动 `verify.sh`，那会掩盖真正的差异。
+- 第二手证据（本轮实测）：垫片生效后 `server.log` 的首个 `Cannot find module` 变成 `@shared/capability`。
 - 历史疑点（未解）：V352 的速览自称"带服务全量重放 D 与 D2 各 139 passed、复铸 rc=0"，
   说明当时后端能起。我没找出当时与现在的差别在哪（未读 stamp 与 dist 的历史），
   因此**不得**把这条写成"回归"，只能写成"当前树实测不可用，历史能用的成因未定位"。
