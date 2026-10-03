@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { errorMessage } from '../../lib/errorContract';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowUpCircle, Boxes, Factory, GitCompareArrows, Layers3, ListChecks, PackageSearch, Play, RotateCcw, Workflow } from 'lucide-react';
@@ -45,7 +46,7 @@ interface ScaleData {
 }
 
 const formatTime = (value: string | null | undefined): string =>
-  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
+  value ? new Date(value).toLocaleString('zh-CN', DISPLAY_TIME_OPTS) : '—';
 
 const parseJsonValue = (value: string): unknown => {
   try {

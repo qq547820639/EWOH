@@ -3,6 +3,7 @@ import { Link2, Copy, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import type { TimelineEvent } from '../lib/timelineModel';
 import { cn } from '../lib/utils';
+import { DISPLAY_TIME_OPTS } from '../lib/intl';
 import { sanitizeUrl } from '../lib/urlSafety';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -54,8 +55,8 @@ function severityClass(severity?: string): string {
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  // CLI-329：全站展示统一 Asia/Shanghai 时区，不随浏览器本地时区漂移。
-  return d.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
+  // CLI-329：全站展示统一 Asia/Shanghai 时区，不随浏览器本地时区漂移（配置见 @/lib/intl）。
+  return d.toLocaleString('zh-CN', DISPLAY_TIME_OPTS);
 }
 
 /** 序列化统一时间线事件为行对象（用于 CSV/JSON 导出）。 */

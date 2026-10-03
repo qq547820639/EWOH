@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DISPLAY_TIME_OPTS_MONTH_DAY } from '../../lib/intl';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Loader2, ShieldCheck, XCircle, Bell, RotateCcw } from 'lucide-react';
@@ -48,14 +49,7 @@ import { parseError } from '@client/src/lib/errorContract';
  */
 function formatRunTime(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return new Date(iso).toLocaleString('zh-CN', DISPLAY_TIME_OPTS_MONTH_DAY);
 }
 
 function RunBadge({ status }: { status: string }): React.ReactElement {

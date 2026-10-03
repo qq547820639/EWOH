@@ -5,6 +5,7 @@
  * 纯函数 + 常量 + 类型；视图层 SchedulingView.tsx 消费。
  */
 import type { PlanStatus, SchedulingPlanV2 } from '@shared/api.interface';
+import { DISPLAY_TIME_OPTS_MONTH_DAY } from '../../lib/intl';
 
 // ── 类型 ─────────────────────────────────────────────────────────────────
 
@@ -44,14 +45,7 @@ export const TRIGGER_LABELS: Record<string, string> = {
 
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return new Date(iso).toLocaleString('zh-CN', DISPLAY_TIME_OPTS_MONTH_DAY);
 }
 
 export function isPendingStatus(status: PlanStatus): boolean {

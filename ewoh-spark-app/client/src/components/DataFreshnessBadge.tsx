@@ -1,5 +1,6 @@
 import { Badge } from './ui/badge';
 import { toneBadge } from '../lib/statusTone';
+import { DISPLAY_TIME_OPTS } from '../lib/intl';
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +35,7 @@ function formatUpdatedAt(ts: number | null | undefined): string {
   if (ts == null) return '未知';
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '未知';
-  return d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  return d.toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS);
 }
 
 function formatLagMs(lagMs: number | null | undefined): string {

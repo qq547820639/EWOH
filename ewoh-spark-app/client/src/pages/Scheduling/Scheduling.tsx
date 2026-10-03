@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DISPLAY_TIME_OPTS_MONTH_DAY } from '../../lib/intl';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -61,14 +62,7 @@ const STATUS_FILTERS: Array<{ label: string; value: StatusFilter }> = [
 
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return new Date(iso).toLocaleString('zh-CN', DISPLAY_TIME_OPTS_MONTH_DAY);
 }
 
 function isPendingStatus(status: PlanStatus): boolean {

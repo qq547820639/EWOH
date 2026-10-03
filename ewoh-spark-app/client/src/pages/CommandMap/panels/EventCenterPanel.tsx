@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { DISPLAY_TIME_OPTS, DISPLAY_TIME_OPTS_MONTH_DAY } from '../../../lib/intl';
 import { toast } from 'sonner';
 import { CheckCircle2, Hammer, History, Loader2 } from 'lucide-react';
 import { getEvents, handleEvent } from '@client/src/api/dashboard';
@@ -49,14 +50,7 @@ const DEFAULT_TIME_RANGE_HOURS = 24;
 
 /** R2-CP1-2：时间展示统一 Asia/Shanghai 时区（不依赖浏览器本地时区）。 */
 function formatShortTime(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return new Date(iso).toLocaleString('zh-CN', DISPLAY_TIME_OPTS_MONTH_DAY);
 }
 
 function timeAgo(dateStr: string | null): string {
@@ -403,7 +397,7 @@ export default function EventCenterPanel({
                 label="创建时间"
                 value={
                   selectedEvent.createdAt
-                    ? new Date(selectedEvent.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+                    ? new Date(selectedEvent.createdAt).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)
                     : '—'
                 }
               />
@@ -433,7 +427,7 @@ export default function EventCenterPanel({
                   label="前"
                   value={
                     replayContext.beforeTs
-                      ? new Date(replayContext.beforeTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+                      ? new Date(replayContext.beforeTs).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)
                       : '无'
                   }
                 />
@@ -441,7 +435,7 @@ export default function EventCenterPanel({
                   label="中"
                   value={
                     replayContext.duringTs
-                      ? new Date(replayContext.duringTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+                      ? new Date(replayContext.duringTs).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)
                       : '无'
                   }
                 />
@@ -449,7 +443,7 @@ export default function EventCenterPanel({
                   label="后"
                   value={
                     replayContext.afterTs
-                      ? new Date(replayContext.afterTs).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+                      ? new Date(replayContext.afterTs).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)
                       : '无'
                   }
                 />

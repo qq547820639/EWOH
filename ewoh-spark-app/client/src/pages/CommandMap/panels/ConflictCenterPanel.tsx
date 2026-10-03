@@ -7,6 +7,7 @@
 // 冲突数据不虚构：无冲突即空态提示，不展示伪造信息。
 
 import { memo, useMemo, useRef, useState } from 'react';
+import { DISPLAY_TIME_OPTS } from '../../../lib/intl';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -198,7 +199,7 @@ export function ConflictCenterPanel({
       {
         key: 'detected',
         header: '检测时间',
-        render: (c) => (c.detectedAt ? new Date(c.detectedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—'),
+        render: (c) => (c.detectedAt ? new Date(c.detectedAt).toLocaleString('zh-CN', DISPLAY_TIME_OPTS) : '—'),
       },
     ],
     [lifecycleById],
@@ -393,8 +394,8 @@ export function ConflictCenterPanel({
                           <p className="text-[10px] text-white/35">
                             冲突 ID：{c.conflictId} · 快照：{c.snapshotVersion ?? 'CURRENT'}
                             {c.taskIds.length > 0 && ` · 任务：${c.taskIds.length} 个`}
-                            {c.detectedAt && ` · 检测：${new Date(c.detectedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`}
-                            {c.suppressUntil && ` · 抑制至：${new Date(c.suppressUntil).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`}
+                            {c.detectedAt && ` · 检测：${new Date(c.detectedAt).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)}`}
+                            {c.suppressUntil && ` · 抑制至：${new Date(c.suppressUntil).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)}`}
                           </p>
                           {/* Phase 3 / P3-T1：生命周期操作（按状态机可用操作） */}
                           {actions.length > 0 && (

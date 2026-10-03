@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { DISPLAY_TIME_OPTS_MONTH_DAY } from '../../lib/intl';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -57,14 +58,7 @@ function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return d.toLocaleString('zh-CN', DISPLAY_TIME_OPTS_MONTH_DAY);
 }
 
 function SeverityBadge({ severity }: { severity: string | null }): React.ReactElement {
