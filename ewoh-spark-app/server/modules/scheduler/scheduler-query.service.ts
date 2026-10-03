@@ -83,6 +83,37 @@ export class SchedulerQueryService {
     'executing',
   ];
 
+  /**
+   * 活跃方案读面的 **strategy 白名单**（真实调度方案才进入前端"活跃方案"列表）。
+   *
+   * 背景：`ewoh_schedule_plan` 是**多域共用表**。gamification 模块绕过调度内核直写该表
+   * （`gamification.service.ts` 的 `resource_alloc` / `task_orchest`，均 status='proposed'），
+   * 而本方法原先只按 status 过滤，导致非调度方案混入活跃调度方案列表。
+   *
+   * 为何按 strategy 白名单而非排除 `resource_alloc`/`task_orchest`：排除法只能挡住
+   * 现存两种非调度策略，将来新增第三种会再次漏网；白名单天然免疫。
+   *
+   * 为何**不是**求解器版本名（heuristic-v2 / cpsat-v1 / rule-based-v1 / milp-v1）：
+   * 求解器身份持久化在 `solver_version` 列，而 `strategy` 列由唯一真实调度写入口
+   * `PlanService.persistPlan` 硬编码为 `'scheduling_v2'`（plan.service.ts:131）——
+   * 跑哪个求解器都写同一个值。若把求解器版本名当白名单，会把全部真实调度方案过滤掉。
+   *
+   * 取值依据：
+   * - `scheduling_v2`：当前唯一调度写入口（plan.service.ts:131）。
+   * - `keep_status` / `capacity_priority` / `load_balance`：调度域自身的历史真实策略值
+   *   （旧 scheduler.service.ts 写入点；`shared/scheduler.ts` 的 `ScheduleStrategy`
+   *   联合类型；openapi/ewoh.yaml 的 strategy 字段说明）。保留它们，历史遗留的真实
+   *   调度方案才不会从活跃列表消失。
+   *
+   * fail-open：未知 strategy 只是被过滤，不抛错（不因历史脏数据让合法请求 500）。
+   */
+  private static readonly SCHEDULING_PLAN_STRATEGIES = [
+    'scheduling_v2',
+    'keep_status',
+    'capacity_priority',
+    'load_balance',
+  ];
+
   /** v0.7 A2：预占过期预警阈值（ms），剩余时长低于该值产出 reservation_expiring 冲突。默认 15 分钟。 */
   private readonly reservationExpiringThresholdMs = 15 * 60 * 1000;
 
@@ -280,11 +311,17 @@ export class SchedulerQueryService {
    *
    * 前端页面刷新 / SSE resync / 多终端必须从此处重新拉取权威方案，
    * SSE 仅作为增量更新机制，不作为唯一状态源。
+   *
+   * strategy 域隔离：仅返回真实调度方案（SCHEDULING_PLAN_STRATEGIES 白名单），
+   * 排除共用表里 gamification 等其他域写入的非调度方案。
    */
   async getActivePlans(actor?: OrgContext): Promise<SchedulingPlanV2[]> {
     this.assertActorForHttp(actor);
     const conditions: SQL[] = [
       inArray(ewohSchedulePlan.status, SchedulerQueryService.ACTIVE_PLAN_STATUSES),
+      // ewoh_schedule_plan 为多域共用表：按 strategy 白名单收敛到调度域，
+      // 使非调度方案（gamification resource_alloc / task_orchest）不进入本列表。
+      inArray(ewohSchedulePlan.strategy, SchedulerQueryService.SCHEDULING_PLAN_STRATEGIES),
     ];
     // ADR-071：actor 提供时按 org 过滤（org 匹配或 NULL 存量行——与 RLS USING 等价）。
     if (actor) {
