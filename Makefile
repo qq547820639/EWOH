@@ -295,6 +295,7 @@ clean:  ## 清理构建产物与临时文件
 
 # ── 试点链行为基线（调度→审批→派工→执行→回执；见 docs/audit/current/chain-behavior-baseline.md）
 .PHONY: chain-baseline-up chain-baseline-seed chain-baseline-rebuild chain-baseline-verify chain-baseline-down chain-baseline-doctor chain-baseline-doctor-selftest chain-baseline-matrix chain-baseline-client-drift chain-baseline-consistency chain-baseline-inventory chain-baseline-criterion-selftest chain-baseline-ci-surface chain-baseline-fix-sites chain-baseline-negative-control chain-baseline-write-fanout chain-baseline-shape-exposure chain-baseline-copy-census chain-baseline-contract-emitters chain-baseline-event-roles chain-baseline-event-payload chain-baseline-event-readside chain-baseline-instrument-surface chain-baseline-ledger-gap chain-baseline-refactor-backlog chain-baseline-backlog-premise chain-baseline-outbox-probe chain-baseline-worker-timer-census chain-baseline-worker-shutdown-probe chain-baseline-tx-boundary-shadow chain-baseline-ci-cost chain-baseline-contract-arrows chain-baseline-contract-arrow-evidence chain-baseline-status-write-guard chain-baseline-status-target-states chain-baseline-timing-census chain-baseline-optional-fallback chain-baseline-raw-status-writes chain-baseline-state-column-vocabulary chain-baseline-vocabulary-bindings chain-baseline-stored-vocabulary chain-baseline-promotion-readings chain-baseline-writer-drift-shadow
+.PHONY: chain-baseline-dist-alias
 
 chain-baseline-up:  ## 建/复用一次性 PostgreSQL（仓库自带 embedded 二进制，不依赖 Docker）
 	bash scripts/chain-baseline/up.sh
@@ -358,6 +359,10 @@ chain-baseline-event-roles:  ## 契约事件角色普查（V135）：70 条声�
 chain-baseline-instrument-surface:  ## 量具执行面清点（V140 建；V347 把分母改成 Makefile 现抽）：分母＝`^chain-baseline-*` 目标 − 逐条带理由的生命周期豁免 ＋ 前缀外入口（三个数都由脚本自报）；报哪些真被 CI 调、哪些只有人手敲 make 才跑；「豁免吞量具／豁免过期／两头挂／归错表／桶不闭合」任一成立即退 2（正向对照认得 audit-regression-gates，认不出则"无人跑"全不可信）
 	node scripts/chain-baseline/instrument-surface.cjs --self-test
 	node scripts/chain-baseline/instrument-surface.cjs
+
+chain-baseline-dist-alias:  ## 服务端产物裸别名检查（V356 建，ARUN-01 的常驻判据位点）：把 verify.sh rebuild 档那道「陈旧 dist 冒充已重建」的自检搬成可 require 的件——扫描 dist/server 的 .js 里残留的裸 `@(server|shared|client)/*` 导入；整行/块注释不算命中（V356 实测文本面提及会假阳性），目录读不到判不可判并按非零退出（不折成干净）
+	node scripts/chain-baseline/dist-alias-check.cjs --self-test
+	node scripts/chain-baseline/dist-alias-check.cjs ewoh-spark-app/dist/server
 
 chain-baseline-ledger-gap:  ## 审计覆盖账本 ↔ 磁盘现扫 的双向差集（V346，AUDLEDGER-01 的读数面）：现扫总体只向 audit-file-ledger.js 的只读子命令 paths 取（同一条枚举器两个消费者），报未入账／幽灵行／旧内容审阅三个方向，并与 stats 行逐字自证；取不到一律退 3 不折算成"一致"（判据自测条数由脚本自报）
 	node scripts/chain-baseline/ledger-gap.cjs --self-test

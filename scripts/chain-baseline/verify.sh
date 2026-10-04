@@ -674,10 +674,13 @@ if [ "$WITH_SERVER" = "1" ]; then
     || { log "  FAIL 缺少 dist/server/main.js"; FAILED=$((FAILED+1)); }
   # 陈旧产物自检：只认本仓三个本地别名前缀（`@nestjs/*` 这类真包不算）。复用 dist 的那一档不判，
   # 因为那一档的语义就是"我知道这可能是旧的"（上方 log 已声明本段结论不成立）。
+  # 陈旧产物自检：只认本仓三个本地别名前缀（`@nestjs/*` 这类真包不算）。复用 dist 的那一档不判，
+  # 因为那一档的语义就是"我知道这可能是旧的"（上方 log 已声明本段结论不成立）。
+  # V356：判据从本文件的一行 grep 搬进可 require 的量具 `dist-alias-check.cjs`（判据自测条数由脚本自报），
+  # 这样这道检查有常驻位点而不只是重放里的一句话；目录读不到判不可判，按 FAIL 计，不折成"干净"。
   if [ "${EWOH_SKIP_BUILD:-0}" != "1" ]; then
-    BARE_ALIAS="$(grep -rlE 'require\("@(server|shared|client)/' "$ROOT/ewoh-spark-app/dist/server" 2>/dev/null | wc -l | tr -d ' ')"
-    [ "$BARE_ALIAS" = "0" ] \
-      || { log "  FAIL 服务端产物残留 ${BARE_ALIAS} 个裸路径别名文件 ⇒ 这遍测的不是当前树能跑的形状（见 $BASE_DIR/build.log）"; FAILED=$((FAILED+1)); }
+    node "$HERE/dist-alias-check.cjs" "$ROOT/ewoh-spark-app/dist/server" \
+      || { log "  FAIL 服务端产物裸别名检查未过（构建输出见 $BASE_DIR/build.log）"; FAILED=$((FAILED+1)); }
   fi
   (
     cd "$ROOT/ewoh-spark-app" || exit 1
