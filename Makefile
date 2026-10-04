@@ -529,6 +529,10 @@ chain-baseline-copy-census:  ## 跨表副本普查（V129）：先跑 17 项判�
 	@node scripts/chain-baseline/copy-census.cjs --self-test
 	node scripts/chain-baseline/copy-census.cjs
 
+chain-baseline-constraint-roundtrip:  ## 约束持久面↔解码器↔求解守卫三面对账（V363，SKW-01／VALDR-01 的产地）：库里每一行约束走一遍生产解码器之后，还剩什么能让求解器认它。三面词表都不手抄——解码器键名现取 constraint-loader.service.ts 的 rowToConstraint、case 守卫现取 heuristic 的 switch(c.type)、写入口键名现取两个 valueJson 字面量。判决三态＝可满足／不可满足(inert，守卫当场短路且不记 violation)／该类型无 case（无声跳过）；一个 case 里多条腿（EXCLUDED_RESOURCE／PREFERRED_RESOURCE）任一点着即算可满足。取不到库或解析不到源码一律判**不可判 rc=3**，绝不把读不到折成「没有 inert 行」。判据自测条数由脚本自报（含正向对照、掏空解码器键表的反向对照、分支极性与对偶、值域封闭）
+	@node scripts/chain-baseline/constraint-roundtrip-probe.cjs --self-test
+	@set -a && . tmp/chain-baseline/env.sh >/dev/null 2>&1; set +a; node scripts/chain-baseline/constraint-roundtrip-probe.cjs
+
 chain-baseline-negative-control:  ## 门禁主线「能不能红」的负向控制度量（V115）：干净对照→夹具注入已知缺陷→必须报出预期判据→撤销回绿；含 SKIP→PASS 形状探针
 	@node scripts/chain-baseline/gate-negative-control.cjs --self-check
 	node scripts/chain-baseline/gate-negative-control.cjs $(GATE_ARGS)
