@@ -697,8 +697,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       start: number;
       end: number;
     }> = [...baseBookedStationSlots];
-    // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
-    const bookedStationCounts = new Map<string, number>();
     // T9（审计批次 D）：资源维度槽位索引（SlotIndex：按 start 排序 + 前缀
     // max(end) + 二分 overlap 判定）。原实现每任务从全量数组重建三 Map
     // （O(T × S_total) 主导项）且每候选线性 .some() 扫描（O(C × k)）；现改为
@@ -815,7 +813,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       let taskCandidateCount = 0;
       let taskRejectedTotal = 0;
       // 当前已占用槽位 → 资源维度索引（T9：已上移到 solve 顶部构建一次，
-      // 接受分配时增量维护——见 bookedStationCounts 附近的 SlotIndex 构建段）。
+      // 接受分配时增量维护——见 solve 顶部的 SlotIndex 构建段）。
       // 候选设备集合（hoist 出 person 循环：devicesForTask 与 person/station 无关）。
       const deviceCandidates = this.deviceCandidatesForTask(
         task.id,
@@ -1007,7 +1005,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           bookedTimeSlots: bookedPersonSlots,
           bookedDeviceSlots,
           bookedStationSlots,
-          bookedStationCounts,
           baselineAssignee: opts.baselineAssignee,
           minBatteryPct: effectiveMinBattery,
           maxContinuousLoad: effectiveMaxLoad,
@@ -1239,7 +1236,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 stationCapabilitiesById,
                 stationCapabilityRecordsById,
                 stationAvailableWindowsById,
-                bookedStationCounts,
                 // NO-05c / NO-05d：候选工位维护/质量封锁（fail-closed 拒派）。
                 stationMaintenanceBlockedById,
                 stationQualityBlockedById,
@@ -1442,11 +1438,6 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
           stationSlotsById.set(best.stationId, sIdx);
         }
         sIdx.insert({ stationId: best.stationId, start: best.startMs, end: best.endMs });
-        // P0：工位占用计数增量维护（预订时 +1，替代每任务重建）。
-        bookedStationCounts.set(
-          best.stationId,
-          (bookedStationCounts.get(best.stationId) ?? 0) + 1,
-        );
       }
       // P0-5：metrics 由 SchedulingObjectiveEvaluator 统一计算（见 solve 末尾），
       // 此处不再累积内部计数（避免 CP-SAT/heuristic 双源不一致）。

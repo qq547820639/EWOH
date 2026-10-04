@@ -251,7 +251,6 @@ export class MilpSchedulingSolver implements SchedulingSolver {
         bookedTimeSlots: baseBookedTimeSlots,
         bookedDeviceSlots: baseBookedDeviceSlots,
         bookedStationSlots: baseBookedStationSlots,
-        bookedStationCounts: new Map<string, number>(),
         baselineAssignee: opts.baselineAssignee,
         minBatteryPct: ir.minBatteryOverride ?? config.minBatteryPct,
         maxContinuousLoad: ir.maxLoadOverride ?? config.maxContinuousLoad,

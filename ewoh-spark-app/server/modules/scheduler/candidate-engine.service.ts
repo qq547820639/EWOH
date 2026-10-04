@@ -87,7 +87,6 @@ export interface CandidatePoolOptions {
   bookedTimeSlots?: Array<{ personId: string; start: number; end: number }>;
   bookedDeviceSlots?: Array<{ deviceId: string; start: number; end: number }>;
   bookedStationSlots?: Array<{ stationId: string; start: number; end: number }>;
-  bookedStationCounts?: Map<string, number>;
   /** 基线分配（taskId → personId），用于 churn/change 成本。 */
   baselineAssignee?: Map<string, string | null>;
   /** 最小电量/最大负荷覆盖（约束可覆盖 config）。 */
@@ -332,7 +331,6 @@ export class CandidateEngineService {
     const bookedTimeSlots = opts.bookedTimeSlots ?? [];
     const bookedDeviceSlots = opts.bookedDeviceSlots ?? [];
     const bookedStationSlots = opts.bookedStationSlots ?? [];
-    const bookedStationCounts = opts.bookedStationCounts ?? new Map<string, number>();
     // T9（审计批次 D）：按资源 id 一次性分组（原实现把全量槽位数组塞进每个
     // 候选的 eligibility ctx，eligibility.slotIndexFor 对每个新 ctx 重新分组
     // 全量数组 → O(C × S_total) 二次项）。改为每组一次、每候选只携带本资源
@@ -524,7 +522,6 @@ export class CandidateEngineService {
               stationCapacityById,
               stationCapabilitiesById,
               stationCapabilityRecordsById,
-              bookedStationCounts,
               // P1-A：候选工位可用窗口（正空间交集；无数据不限制）。
               stationAvailableWindowsById,
               // NO-05c（ADR-010）：候选工位维护封锁（fail-closed 拒派）。

@@ -159,8 +159,6 @@ export interface EligibilityContext {
   stationCapabilitiesById?: Map<string, string[]>;
   /** NO-12v / ADR-045：候选工位能力契约记录（匹配优先契约形态）。 */
   stationCapabilityRecordsById?: Map<string, CapabilityRecord[]>;
-  /** T03 / P1-3：候选工位已占用（stationId → 时间区间），用于容量计数。 */
-  bookedStationCounts?: Map<string, number>;
   /** P1-A：候选工位可用窗口（stationId → 窗口列表）；无数据不限制（缺数据不伪造）。 */
   stationAvailableWindowsById?: Map<string, Array<{ startMs: number; endMs: number }>>;
   /**

@@ -150,7 +150,6 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
     const bookedStationSlots: Array<{ stationId: string; start: number; end: number }> = [
       ...baseBookedStationSlots,
     ];
-    const bookedStationCounts = new Map<string, number>();
 
     // 任务序：前置 DAG 就绪集内按确定性规则推进（未就绪任务轮空）。
     const remaining = snapshot.tasks
@@ -203,7 +202,6 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
           bookedTimeSlots,
           bookedDeviceSlots,
           bookedStationSlots,
-          bookedStationCounts,
           baselineAssignee: opts.baselineAssignee,
           minBatteryPct: ir.minBatteryOverride ?? config.minBatteryPct,
           maxContinuousLoad: ir.maxLoadOverride ?? config.maxContinuousLoad,
@@ -236,10 +234,6 @@ export class RuleBasedSchedulingSolver implements SchedulingSolver {
         }
         if (chosen.stationId) {
           bookedStationSlots.push({ stationId: chosen.stationId, start: chosen.startMs, end: chosen.endMs });
-          bookedStationCounts.set(
-            chosen.stationId,
-            (bookedStationCounts.get(chosen.stationId) ?? 0) + 1,
-          );
         }
       }
       remaining.splice(0, remaining.length, ...next);
