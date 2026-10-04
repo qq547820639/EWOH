@@ -169,7 +169,7 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 这五类各自的语义确有**另一根轴**的实现（`eligibility.service.ts` 里 `availableFromMs`／`requiredStationCapabilities`／`capabilities.includes` 共 6 处），但那是按**资源数据**过滤，不是按**约束实例**消费——约束实例携带的参数（如 `RESOURCE_TIME_WINDOW` 的 start/end）没有任何读取点。
 
 **⑦ 决策追踪把注册表当成"本次应用了的约束"。** `heuristic-scheduling-solver.ts:1513` `traceExt.hardConstraints = [...SUPPORTED_HARD_CONSTRAINTS]` ⇒ 追踪面恒报 19 类，与③④⑤的实际消费面（heuristic 本地 9＋编译层 5＋Worker 0）不同源。
-`constraints.ts:99-106` 的 `supported` 判定又只看是否在注册表内，故这五类**永远判"支持"**、不会进 `heuristic:338-344` 的 `unsupported_constraint` violation ⇒ 从写入到追踪全程无人报。
+`constraints.ts:99-106` 的 `supported` 判定又只看是否在注册表内，故这五类**永远判"支持"**、不会进 `heuristic:338-344` 的 `unsupported_constraint` violation ⇒ 从写入到追踪全程无人报。**V355 已把这条升成实测**：三支常驻位点在 `plan-reject-authority.e2e.spec.ts`（对照臂 LOCKED_DEVICE 真换设备／现状臂 RESOURCE_TIME_WINDOW 写得进＋送得到＋不执行＋不上报／反向对照证明比较式随窗口取值翻 false）。
 
 **⑧ 可达性未证的一半**：约束写入路径是否按注册表校验类型（即客户端能否真提交这五类）本轮未读——已定位的注册表读侧只有 `constraint-loader.service.ts:175` 与 `plan.service.ts:1139`，两处都用 `isSoftConstraintType` 判 hard 标记、不校验取值域。**此项标 `未找到`，不是"证明不可达"**。
 
