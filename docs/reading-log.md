@@ -195,3 +195,14 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 4. 本轮新增的两处**自我更正**：①`verify.sh` 启动行显式 `EWOH_DEPLOY_TARGET=standalone` 起初记成"V353 失败成因"，实测 `ewoh-spark-app/.env.local-standalone`（2,853 字节、`.gitignore:83`）内含该变量 ⇒ 该处**属对干净克隆的预防性加固**，本机失败成因另有其他；②A2 凭据扩散面第一遍我用 `grep`（BRE）匹配口令字面量，`*` 被当量词 ⇒ 产物面/记忆面都读成 0，改 `-F` 后才是下面的真读数。
 5. A2 凭据扩散面（**本轮本人复算**，掩码 `Xq**68`）：tracked 面 `git grep -F` 于 `HEAD` **0 文件 0 行**（`git ls-files scripts/ecs-exec.sh` 空、`.gitignore:71` 排除）；历史面 `git log --all -S` **0 commit**（全仓 581 commits／8 refs），64 个不可达 blob 逐个 `cat-file` **0 命中** ⇒ **无历史可改写**；工作树面 **6 个文件全部 git-ignored**＝源脚本 1＋发布包内副本 2（`output/release-bundles/ewoh-0.6.0-rc4/` 外层与自嵌套内层）＋`.workbuddy/memory/` 3 个文件 4 行（2026-08-21/22/23，`.gitignore:37`）；roadmap A2 原述"扩散面 6 处"若指入库面则**不成立**。
 6. 发布工序的两条泄漏路径（本人复算文件与行数）：`scripts/package-release.sh:44` 用 `rsync -a "${ROOT_DIR}/scripts/"` 整目录搬走 ⇒ 未跟踪的 `ecs-exec.sh`（含明文口令）直接进发布包；`:56` 把 `${ROOT_DIR}/output/` 搬进 `${OUT}`，而 `${OUT}` 本身就在 `output/release-bundles/` 下（`:7`），且 `:14` 刚 `rm -rf "$OUT"` ⇒ rsync 边走边读，把半成品树复制进自己的 `output/` 子树，**恰好嵌套 1 层**（内层 4,390 文件 vs 外层 8,776；内层缺 `:60-66/:74/:130` 的收尾件；两处 `ecs-exec.sh` 在 `SHA256SUMS.txt:6041`/`:7430` 同哈希 `0cfd321b…`）。`:69` 的守卫现只查 `.env`。
+
+## §4 Q5／Q6 定案（提示词阶段 0 的两道前置门，本轮本人实测）
+
+| 问 | 答案 | 依据（命令＋读数，非引子代理） |
+|---|---|---|
+| **Q5 边缘侧是否活跃** | **活跃 ⇒ 阶段 4 该启动**，边缘相关 4 条 P 级问题不因"边缘已停摆"而挂起 | `git log --oneline -- src/edge_platform \| wc -l` = **66**；`git log --since='90 days ago' …` = **66**（同一批，全部在近 90 天内）；末笔 `7d0754a4 2026-09-29 20:42`（本轮基线库所属分支的那笔控制链路提交） |
+| **Q6 A4 那三个字段有没有下游消费者** | **没有 ⇒ 修它是"新增能力"，不是"修 bug"**（阶段 4 的定性据此改） | 服务端读者按名数：`ood_indicator` **0 文件**、`inference_ms` **0 文件**（`grep -rl --include=*.ts server/` 排除 spec）。同名的 `data_quality` 有 5 处命中，但逐处读后是 **ingest 侧自产列**：`schema.ts:878/1854/2988` 是列定义、`sensor-ingest.service.ts:390` 写值来源是 `semantics?.isLate ? 'degraded' : …` ⇒ 不是边缘上行那三个名的读者；`is_rule` 1 文件命中同一判法未追到边缘来源（**未证成消费者**，也不构成"有读者"） |
+
+**另一半证据（同一问的另一根轴）**：边缘侧 `src/edge_platform/edge/storage.py` 里 `advisory` **0 命中** ⇒ advisory 结论只活进程内存、从不落边缘库，所以它连"边缘侧自己的权威读者"都没有。
+
+**因此对 roadmap/提示词的两处更正**：A4 的字段名单本身是错的（真丢的是 `is_rule`/`inference_ms`/`data_quality`/`level`/`ood_indicator`，见 PREM-01 第③条）；而即便按真名修，阶段 4 的产出也**没有下游消费者可读** ⇒ 它不是补漏，是新增一段能力＋新增一张读面，范围要按新能力谈。这一条只登记读数与定性，**不替产品决定要不要做**。
