@@ -147,6 +147,32 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 | 7 | replan 作废旧方案是**仅身份谓词**的裸 UPDATE（无来源态、无 org、无 returning）⇒ 与开放行 `GUARD-01` 同一事实，且**该行抄的 `:1400-1403` 已漂到 `:1386-1389`** | 已证实 | `plan.service.ts:1386-1389` |
 | 8 | 取消路径：assignment CAS 落空者被摘出 `cancelled` 并入 `irreversible`（CCAS-01 的修形已在位），方案行仍写终态 `cancelled` 且带来源态 `inArray` 守卫 | 已证实 | `plan.service.ts:898-912`、`:956-973` |
 
+### 1.9 约束的四个消费面（V353 本轮逐行复核，替换上一版的"10 类静默丢弃"读数）
+
+上一版按子代理读数写的是"heuristic 有 10 个 `default: break` ⇒ 10 类硬约束静默丢弃"。**我自己重读后收窄**：
+`default: break` 只是"本求解器不按类型名消费"，其中五类另有消费点。把四类消费面分开数之后，结论如下。
+
+分母自报：本轮按 `['"]<TYPE>['"]` 全仓枚举（`os.walk`，排除 `.git/node_modules/tmp/.codex/output/release/dist/.workbuddy`、排除 `*spec*` 与 `__tests__`），命中文件与次数逐条列在下面。
+
+| 面 | 证据 | 读数 |
+|---|---|---|
+| ① 类型词表 | `shared/scheduler.ts:126`（硬 19）、`:151`（软 14，含重分类的 `EXCLUDED_RESOURCE`） | 去重 32 |
+| ② 注册表（自称"启发式求解器**真实执行**的硬约束集合"） | `constraints.ts:17-41` 硬 19、`:44-59` 软 13 | 与①逐字同集，无幻影项 |
+| ③ 编译层 | `constraint-compiler.ts:167/181/194/202/215/226` | 6 类：`REQUIRED_SKILL`·`REQUIRED_CERTIFICATION`·`SAFETY_BLOCK`·`PREDECESSOR`·`STATION_CAPACITY`·`EXCLUDED_RESOURCE`；调用方只有 `scheduler-run-orchestrator.service.ts` |
+| ④ 两个求解器的本地 switch | `heuristic:344-386`（10 个 case＋`:388-391` 的 `MANUAL_BOOST` 在 switch 之外）、`cp-sat-scheduling-solver.ts:600-633`（6 个 case） | heuristic 覆盖硬 9 类；cp-sat 只覆盖 6 类 |
+
+**⑤ 边缘 Worker 侧＝0 类。** `shared/scheduler.ts:465-466` 声明 `constraints?: Array<Record<string,unknown>>`，注释写"原始约束透传…供 CP-SAT Worker 消费相同语义"；`cp-sat-scheduling-solver.ts:803-808` 确实把它连同每条的 `supported` 标记一起发出，注释还写"不支持的约束显式标记，不静默忽略"。
+而接收端 `src/edge_platform/scheduler/cpsat/contract.py:136-159` 的 `SolverRequest` **没有 `constraints` 字段**，`from_dict:161-192` 只按声明键 `.get(...)` 取数 ⇒ 整个数组连同 `supported` 标记在 Worker 侧不存在。
+同函数内的不对称可反证这不是"整体宽容"：`tasks=[SolverTask(**t) …]` 对**项内**未知键会 `TypeError`（→400→降级熔断，有牙），只有**顶层**未知键被无声吞掉。⇒ 那句"不静默忽略"只在生产侧成立，消费侧无人接手，`supported` 标记是死载荷。
+
+**⑥ 零消费者的五类。** 注册表 19 类硬约束里，`PERSON_AVAILABLE`·`DEVICE_AVAILABLE`·`RESOURCE_TIME_WINDOW`·`NO_DOUBLE_BOOKING`·`STATION_CAPABILITY` 五类，除①的词表行与②的注册表行外**全仓再无命中**（`STATION_CAPABILITY` 另在 `docs/scheduler-commandmap-upgrade/05-incremental-design-2026-08-10.md` 出现一次）。
+这五类各自的语义确有**另一根轴**的实现（`eligibility.service.ts` 里 `availableFromMs`／`requiredStationCapabilities`／`capabilities.includes` 共 6 处），但那是按**资源数据**过滤，不是按**约束实例**消费——约束实例携带的参数（如 `RESOURCE_TIME_WINDOW` 的 start/end）没有任何读取点。
+
+**⑦ 决策追踪把注册表当成"本次应用了的约束"。** `heuristic-scheduling-solver.ts:1513` `traceExt.hardConstraints = [...SUPPORTED_HARD_CONSTRAINTS]` ⇒ 追踪面恒报 19 类，与③④⑤的实际消费面（heuristic 本地 9＋编译层 5＋Worker 0）不同源。
+`constraints.ts:99-106` 的 `supported` 判定又只看是否在注册表内，故这五类**永远判"支持"**、不会进 `heuristic:338-344` 的 `unsupported_constraint` violation ⇒ 从写入到追踪全程无人报。
+
+**⑧ 可达性未证的一半**：约束写入路径是否按注册表校验类型（即客户端能否真提交这五类）本轮未读——已定位的注册表读侧只有 `constraint-loader.service.ts:175` 与 `plan.service.ts:1139`，两处都用 `isSoftConstraintType` 判 hard 标记、不校验取值域。**此项标 `未找到`，不是"证明不可达"**。
+
 ## §2 控制域与工单编排
 
 **职责**：`control.service.ts`（磁盘 3,273 行；账本记 2,853 已过期）承载命令/请求双层状态、投递认领、回执、撤回、积压巡检；`work-orchestration.service.ts` 是 handoffs/git-sync/锁 的编排层。
@@ -163,8 +189,9 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 | 5 | 读入口被 `@Roles('global_admin')` ＋ default-deny 守卫挡住 ⇒ roadmap A3"全租户数据可读"要改档 | 走读定位(待复核)（守卫在位一支我已见 `controller.ts:16` 字样）| `work-orchestration.controller.ts:16`、`app.module.ts:122-123` |
 
 ## §3 未做与欠账（写在这里，不留 in-memory）
-
-1. §1 第 4/5 行、§2 第 3/5 行的 `走读定位(待复核)` 条目尚未逐条回读——**提升为 §5.4 登记行之前必须逐条复核**，否则会复刻 roadmap 那 1/3 误报率。
-2. 约束 case 表的完整 19 行矩阵未落到持久件（子代理输出会随会话消失）；落盘与逐条复核转下一轮第一项，登记单见 `docs/audit/current/v353-registration-handoff.md`。
+1. §1 第 4/5 行、§2 第 3/5 行的 `走读定位(待复核)` 条目**本轮仍未逐条回读**——提升为 §5.4 登记行之前必须复核，否则会复刻 roadmap 那 1/3 误报率。本轮已自己回读并升级的是：§1 第 1/2/3/6/7/8 行与 §1.9 的④⑤⑥⑦四段（每条都重开过引用的行区间）。
+2. ~~约束 case 表的完整矩阵未落到持久件~~ **本轮已落**：见 §1.9（四个消费面＋五类零消费者＋追踪面谎报＋Worker 顶层键丢弃，全部带 `文件:行`）。子代理原读数"10 类静默丢弃"被我收窄成"9 类本地消费＋5 类编译层消费＋5 类零消费者"，并补上了 Worker 侧那一面。
 3. 本轮**未做**：全仓均匀逐字读（理由见 §0.6 的历史读数作废证据）；`control.service.ts` 拆分；任何产品码修改。
-
+4. 本轮新增的两处**自我更正**：①`verify.sh` 启动行显式 `EWOH_DEPLOY_TARGET=standalone` 起初记成"V353 失败成因"，实测 `ewoh-spark-app/.env.local-standalone`（2,853 字节、`.gitignore:83`）内含该变量 ⇒ 该处**属对干净克隆的预防性加固**，本机失败成因另有其他；②A2 凭据扩散面第一遍我用 `grep`（BRE）匹配口令字面量，`*` 被当量词 ⇒ 产物面/记忆面都读成 0，改 `-F` 后才是下面的真读数。
+5. A2 凭据扩散面（**本轮本人复算**，掩码 `Xq**68`）：tracked 面 `git grep -F` 于 `HEAD` **0 文件 0 行**（`git ls-files scripts/ecs-exec.sh` 空、`.gitignore:71` 排除）；历史面 `git log --all -S` **0 commit**（全仓 581 commits／8 refs），64 个不可达 blob 逐个 `cat-file` **0 命中** ⇒ **无历史可改写**；工作树面 **6 个文件全部 git-ignored**＝源脚本 1＋发布包内副本 2（`output/release-bundles/ewoh-0.6.0-rc4/` 外层与自嵌套内层）＋`.workbuddy/memory/` 3 个文件 4 行（2026-08-21/22/23，`.gitignore:37`）；roadmap A2 原述"扩散面 6 处"若指入库面则**不成立**。
+6. 发布工序的两条泄漏路径（本人复算文件与行数）：`scripts/package-release.sh:44` 用 `rsync -a "${ROOT_DIR}/scripts/"` 整目录搬走 ⇒ 未跟踪的 `ecs-exec.sh`（含明文口令）直接进发布包；`:56` 把 `${ROOT_DIR}/output/` 搬进 `${OUT}`，而 `${OUT}` 本身就在 `output/release-bundles/` 下（`:7`），且 `:14` 刚 `rm -rf "$OUT"` ⇒ rsync 边走边读，把半成品树复制进自己的 `output/` 子树，**恰好嵌套 1 层**（内层 4,390 文件 vs 外层 8,776；内层缺 `:60-66/:74/:130` 的收尾件；两处 `ecs-exec.sh` 在 `SHA256SUMS.txt:6041`/`:7430` 同哈希 `0cfd321b…`）。`:69` 的守卫现只查 `.env`。

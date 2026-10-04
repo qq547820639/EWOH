@@ -658,11 +658,27 @@ if [ "$WITH_SERVER" = "1" ]; then
   if [ "${EWOH_SKIP_BUILD:-0}" = "1" ]; then
     log "  EWOH_SKIP_BUILD=1：复用现有 dist（若产品代码有改动，本段结论不成立）"
   else
+    # 构建前先整份清掉 dist（不是只清 dist/server）。理由（V353 两遍实测）：
+    #   ① nest-cli.json `deleteOutDir:false` ＋ tsc 增量 ⇒ "改了产品码"与"真的重新 emit"脱钩，
+    #      陈旧文件带着**上一轮的模块说明符形状**留在产物里：dist/server 有 18 个文件仍写裸
+    #      `require("@server/...")`（后端在 app.module → dashboard.service 处 MODULE_NOT_FOUND，
+    #      /health/ready 30s 不就绪 ⇒ 本段按设计退 3，真因是产物没覆盖当前树，不是链坏了）；
+    #   ② 只 `rm -rf dist/server` 会**更糟**——tsbuildinfo 还在，tsc 判定无变化而完全不 emit，
+    #      于是 `dist/server/main.js` 直接缺席（本仓下一步那条存在性检查把它抓了出来）。
+    # 清整份的代价实测很小：客户端 standalone 构建 3.17s、服务端 nest build 数秒，且 C 段本来就要重建。
+    rm -rf "$ROOT/ewoh-spark-app/dist"
     (cd "$ROOT/ewoh-spark-app" && npm run --silent build:prod:standalone > "$BASE_DIR/build.log" 2>&1) \
       || { log "  FAIL 构建（见 $BASE_DIR/build.log）"; exit 1; }
   fi
   [ -f "$ROOT/ewoh-spark-app/dist/server/main.js" ] \
     || { log "  FAIL 缺少 dist/server/main.js"; FAILED=$((FAILED+1)); }
+  # 陈旧产物自检：只认本仓三个本地别名前缀（`@nestjs/*` 这类真包不算）。复用 dist 的那一档不判，
+  # 因为那一档的语义就是"我知道这可能是旧的"（上方 log 已声明本段结论不成立）。
+  if [ "${EWOH_SKIP_BUILD:-0}" != "1" ]; then
+    BARE_ALIAS="$(grep -rlE 'require\("@(server|shared|client)/' "$ROOT/ewoh-spark-app/dist/server" 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$BARE_ALIAS" = "0" ] \
+      || { log "  FAIL 服务端产物残留 ${BARE_ALIAS} 个裸路径别名文件 ⇒ 这遍测的不是当前树能跑的形状（见 $BASE_DIR/build.log）"; FAILED=$((FAILED+1)); }
+  fi
   (
     cd "$ROOT/ewoh-spark-app" || exit 1
     if [ -f ./.env.local-standalone ]; then set -a; . ./.env.local-standalone; set +a; fi
@@ -681,7 +697,12 @@ if [ "$WITH_SERVER" = "1" ]; then
         for _ in $(seq 1 10); do kill -0 "$STALE_PID" 2>/dev/null || break; sleep 1; done
       fi
     fi
-    PORT=3100 NODE_ENV=production nohup node dist/server/main.js > "$BASE_DIR/server.log" 2>&1 &
+    # 显式指定部署目标：main.ts 已把 legacy 引导改成默认禁用（"Set EWOH_LEGACY_ENABLED=1 to opt in,
+    # or use EWOH_DEPLOY_TARGET=standalone"），而这一段构建/测的就是 standalone 档
+    # （build:prod:standalone）。此前该变量只由未入库的 `./.env.local-standalone` 提供 ⇒ 干净克隆上
+    # 后端 exit 1、/health/ready 永不就绪。本机因该文件在位而从未暴露，属预防性加固，
+    # 不是 V353 那遍 C 段退 3 的成因（成因是陈旧 dist，见上面 rebuild 档）。
+    PORT=3100 NODE_ENV=production EWOH_DEPLOY_TARGET=standalone nohup node dist/server/main.js > "$BASE_DIR/server.log" 2>&1 &
     echo $! > "$BASE_DIR/server.pid"
     disown 2>/dev/null || true
   )

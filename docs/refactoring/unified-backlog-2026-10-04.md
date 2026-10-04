@@ -135,3 +135,15 @@
 **没有改任何产品代码**——不是因为读不出问题，而是 §五 里三条最像缺陷的候选中，
 一条被已闭行的实测反驳（`CTRL-DETACHED-NOLOCK`）、两条需要先做词表/归属裁决才能动手（A3/A5）。
 按准则 6，被派"读"的一轮发现相邻问题就报告，不顺手改。
+
+## 十、本轮后半程补的三项定案（都已在《基线》§5.4 开行，编号在括号里）
+
+| 事项 | 定案（本人复算，非引子代理读数） | 登记去向 |
+|---|---|---|
+| roadmap **A2 生产凭据扩散面** | 原述"扩散面 6 处"若不指明是哪张面就无法核。固定串（`-F`）实测：**tracked 面 0 文件 0 行**（`git grep -F` 于 HEAD；`scripts/ecs-exec.sh` 由 `.gitignore:71` 排除）、**历史面 0 commit**（`git log --all -S`，581 commits／8 refs）＋**64 个不可达 blob 逐个 0 命中** ⇒ 无历史可改写；工作树 6 个命中文件**全部未跟踪**＝源脚本 1＋发布包内副本 2＋`.workbuddy/memory/` 3 文件 4 行。第一遍我用 BRE 匹配，口令里的 `*` 被当量词 ⇒ 产物面/记忆面假 0 | 更正写进 `PACK-01` 行的证据格 |
+| **A2 的工序成因**（新发现，非 roadmap 原有） | `package-release.sh:44` 整目录 `rsync scripts/` ⇒ 未跟踪脚本直接进发布包；`:56` 把 `output/` 搬进 `${OUT}` 而 `${OUT}` 就在 `output/release-bundles/` 下（`:7`）＋`:14` 刚 `rm -rf "$OUT"` ⇒ 自拷贝恰好 1 层（内层 4,390／外层 8,776 文件；两处 `SHA256SUMS.txt:6041`/`:7430` 同哈希）；`:69` 守卫只查 `.env` | `PACK-01`（A 桶：改白名单动发布完整性契约，属主拍；口令轮换属线下） |
+| **A0 系列的约束面**（roadmap A0-1/A0-2 只说了两处 case 形状，没说到消费面分叉） | 硬约束注册表自称 19 类真实执行（`constraints.ts:16-41`），实际三面分叉：编译层 6（`constraint-compiler.ts:167/181/194/202/215/226`）／生产 heuristic 9（`:344-386`）／CP-SAT 6（`cp-sat-scheduling-solver.ts:600-633`）；五类（`PERSON_AVAILABLE`/`DEVICE_AVAILABLE`/`RESOURCE_TIME_WINDOW`/`NO_DOUBLE_BOOKING`/`STATION_CAPABILITY`）**全仓零消费者**；Worker 侧 `SolverRequest` 根本没有 `constraints` 字段（`contract.py:136-159`＋`from_dict:161-192`）⇒ 请求侧"不支持的约束显式标记，不静默忽略"（`:803-808`）在消费侧不成立；决策追踪恒按注册表报 19 类（`heuristic:1513`） | `CSTR-01`（A 桶：接消费者还是删声明，属产品拍）；逐面矩阵见 `docs/reading-log.md` 第 1.9 节 |
+| **C 段重放为什么两次跑不成** | 两个成因必须分开：①陈旧 `dist` 冒充"已重建"（`deleteOutDir:false`＋tsbuildinfo ⇒ 只删 `dist/server` 反而 rc=0 不产出；整份删后裸别名 0）；②ENV-02 复发（六候选全部 `infeasible:no_eligible_resource`）⇒ 按 §5.3ad 既有复位入口 `chain-baseline-rebuild REBUILD=1`＋`chain-baseline-seed` 救回，两声 rc=0 | `ARUN-01`（E 桶）；ENV-02 不开新行，复位入口的有效性记进《基线》§七 V353 行 |
+| **本表的四源分母** | §5.4 现算 185 行（本轮后 191）、roadmap 12（表格面 C1-C5 未进判重 ⇒ 见 §七 第 1 条欠覆盖）、08-30 清单 12、提示词 6 | `RECON-01`（C 桶：接不接共享门禁属动严度） |
+
+一句话边界：**本轮零产品代码改动**（改的是 harness 的构建/启动档与台账），上表五条里三条要拍板才动得了手（A5 词表归属、A3 补列、CSTR-01 的五类词表去留），两条属属主/线下（发布白名单契约、口令轮换）。
