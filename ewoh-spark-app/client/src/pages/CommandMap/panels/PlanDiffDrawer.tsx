@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import type { PlanAssignmentDiff } from '@shared/api.interface';
 import type { CompareMapEntry } from '../vm/planCompareVM';
 import { UI_ARIA_LABELS } from '@client/src/lib/a11y';
+import { DISPLAY_TIME_OPTS } from '../../../lib/intl';
 
 interface PlanDiffDrawerProps {
   entry: CompareMapEntry | null;
@@ -34,7 +35,7 @@ const CHANGE_LABEL: Record<string, string> = {
 function fmtTime(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS) : '—';
 }
 
 function SnapshotBlock({

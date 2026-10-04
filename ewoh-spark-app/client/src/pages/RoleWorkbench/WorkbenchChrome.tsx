@@ -9,6 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { RoleWorkbenchRole } from '../../api/operations';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import { Button } from '@client/src/components/ui/button';
 import {
   formatValue,
@@ -124,10 +125,7 @@ export function WorkbenchChrome({
         <span className="inline-flex items-center gap-1.5">
           <RefreshCw className="size-3" />
           {generatedAt
-            ? `更新于 ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
-                timeZone: 'Asia/Shanghai',
-                hour12: false,
-              })}`
+            ? `更新于 ${new Date(generatedAt).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)}`
             : '尚未加载'}
         </span>
         {pageHealth !== 'ok' && (
@@ -263,10 +261,7 @@ export function WorkbenchChrome({
             <p className="mt-0.5 text-xs text-muted-foreground">
               更新：{kpi.refreshHint}
               {generatedAt
-                ? ` · ${new Date(generatedAt).toLocaleTimeString('zh-CN', {
-                    timeZone: 'Asia/Shanghai',
-                    hour12: false,
-                  })}`
+                ? ` · ${new Date(generatedAt).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)}`
                 : ''}
             </p>
           </div>

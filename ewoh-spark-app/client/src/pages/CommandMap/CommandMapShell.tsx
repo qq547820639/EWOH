@@ -46,6 +46,7 @@ import { cn } from '@client/src/lib/utils';
 import { queryKeys } from '@client/src/hooks/queryKeys';
 import { logger } from '../../lib/logger';
 import { getCurrentOperator } from '../../lib/auth';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import {
   advanceReplayTime,
   findNearestSnapshot,
@@ -140,10 +141,10 @@ function SchedulerRealtimeBadge({
     connected: rt.statusV2 !== 'OFFLINE',
   });
   const lastTime = rt.lastEventTime
-    ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+    ? new Date(rt.lastEventTime).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)
     : '—';
   const asOfTime = context?.sourceTimestamp
-    ? new Date(context.sourceTimestamp).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+    ? new Date(context.sourceTimestamp).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)
     : null;
   return (
     <div

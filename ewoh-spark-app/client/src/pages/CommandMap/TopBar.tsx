@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { OverviewStats, CurrentWorldState, SpatialEntity } from '@shared/api.interface';
 import { cn } from '@client/src/lib/utils';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import ThemeToggle from '@client/src/components/app-shell/ThemeToggle';
 
 interface TopBarProps {
@@ -46,7 +47,7 @@ function KpiItem({
 
 const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBarProps): React.ReactElement => {
   const [now, setNow] = useState<string>(() =>
-    new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
+    new Date().toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS),
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -54,7 +55,7 @@ const TopBar = ({ overview, onBack, entities, onSelectEntity, searchRef }: TopBa
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }));
+      setNow(new Date().toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS));
     }, 1000);
     return () => clearInterval(timer);
   }, []);

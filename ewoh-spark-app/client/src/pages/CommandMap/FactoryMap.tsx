@@ -15,6 +15,7 @@ import type {
 } from '@shared/api.interface';
 import { fitLabel, truncateLabel } from './labels';
 import { UI_ARIA_LABELS } from '../../lib/a11y';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import { getEntityColor, getDeviceColor, priorityLevelColor, resourceStatusColor, isExoDevice } from './entityColors';
 import {
   cameraFovPoints,
@@ -1188,7 +1189,7 @@ const FactoryMap = ({
           <span className="w-2 h-2 rounded-full bg-card animate-pulse" />
           回放中:{' '}
           {replayTime
-            ? new Date(replayTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+            ? new Date(replayTime).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)
             : '—'}
         </div>
       )}
@@ -1245,7 +1246,7 @@ const FactoryMap = ({
           <>
             <span>·</span>
             <span>
-              实时更新: {worldState.ts ? new Date(worldState.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—'}
+              实时更新: {worldState.ts ? new Date(worldState.ts).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS) : '—'}
             </span>
           </>
         )}

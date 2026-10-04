@@ -24,6 +24,7 @@ import type {
 } from '../../api/learning';
 // 归属 id 的展示归一与复发度量口径同源（`person:<uuid>` → `<uuid>`；执行事实表键见 shared）。
 import { executionSubjectKey } from '@shared/improvement-action';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 
 /** 可触发人审激活阶梯的角色（与服务端 @Roles 一致）。 */
 export const APPROVAL_ROLES = ['workshop_lead', 'global_admin'] as const;
@@ -331,7 +332,7 @@ export function buildThresholdBaselineView(
   const readAt = baseline?.readAt;
   return {
     readAtLabel: readAt && !Number.isNaN(Date.parse(readAt))
-      ? `读取时间 ${new Date(readAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`
+      ? `读取时间 ${new Date(readAt).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)}`
       : '读取时间未知',
     engineVersion: baseline?.engineVersion ?? '未知',
     entries,

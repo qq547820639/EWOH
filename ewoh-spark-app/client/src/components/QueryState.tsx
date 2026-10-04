@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { CheckCircle2, Inbox, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
+import { DISPLAY_TIME_OPTS } from '../lib/intl';
 import ErrorState from '@client/src/components/ErrorState';
 
 /**
@@ -126,10 +127,7 @@ const QueryState = ({
             <span>
               更新于{' '}
               {/* CLI-328：全站展示统一 Asia/Shanghai 时区。 */}
-              {new Date(resolvedUpdatedAt).toLocaleTimeString('zh-CN', {
-                hour12: false,
-                timeZone: 'Asia/Shanghai',
-              })}
+              {new Date(resolvedUpdatedAt).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)}
             </span>
           ) : null}
           {onRefresh && (

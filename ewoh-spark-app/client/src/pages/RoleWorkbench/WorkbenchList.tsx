@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { getWorkbenchList, type RoleWorkbenchRole } from '../../api/operations';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import { Button } from '@client/src/components/ui/button';
 import ErrorState from '../../components/ErrorState';
 import {
@@ -240,10 +241,7 @@ export function WorkbenchList({
           className="text-xs text-muted-foreground"
           title={
             dataFreshness
-              ? `数据更新于 ${new Date(dataFreshness).toLocaleTimeString('zh-CN', {
-                  timeZone: 'Asia/Shanghai',
-                  hour12: false,
-                })}`
+              ? `数据更新于 ${new Date(dataFreshness).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)}`
               : undefined
           }
         >

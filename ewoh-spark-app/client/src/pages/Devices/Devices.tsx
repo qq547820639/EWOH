@@ -27,6 +27,7 @@ import {
 import { DataSourceBadge } from '@client/src/components/DataSourceBadge';
 import AppErrorState from '@client/src/components/AppErrorState';
 import { errorDescription } from '@client/src/lib/errorContract';
+import { DISPLAY_TIME_OPTS } from '../../lib/intl';
 import DeviceConfigDrawer from './DeviceConfigDrawer';
 import { BatchCapabilityRestoreDialog } from './BatchCapabilityRestoreDialog';
 import ResponsibilityDialog from './ResponsibilityDialog';
@@ -237,7 +238,7 @@ const Devices = (): React.ReactElement => {
               ) : isFetching ? (
                 '正在刷新…'
               ) : (
-                `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`
+                `更新于 ${new Date(dataUpdatedAt).toLocaleTimeString('zh-CN', DISPLAY_TIME_OPTS)}`
               )}
             </p>
           )}
@@ -603,10 +604,7 @@ const Devices = (): React.ReactElement => {
                       </td>
                       <td className="px-5 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {d.lastTelemetryAt
-                          ? new Date(d.lastTelemetryAt).toLocaleString('zh-CN', {
-                              timeZone: 'Asia/Shanghai',
-                              hour12: false,
-                            })
+                          ? new Date(d.lastTelemetryAt).toLocaleString('zh-CN', DISPLAY_TIME_OPTS)
                           : '—'}
                       </td>
                       <td className="px-5 py-3">
