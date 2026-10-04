@@ -189,6 +189,9 @@ describe('applyOverrides（人工覆盖闭环）', () => {
     expect(res.diff.metricsDelta).toBeDefined();
 
     // 约束已落库（富化了 operator/reason/validFrom/expiresAt/snapshotVersion）。
+    // EXPFL-01（V368）注：这里 `expiresAt: 2000`（1970 年）的锁仍然生效，**不是**"过期不受约束"的设计断言——
+    // 假 DB 替身的 `.where()` 是空操作（dispatch-test-harness.ts:52-56），有效期谓词在这一档结构性看不见，
+    // "过期即停手"那一半只有链级（真库）档能量到（见 test/e2e/plan-reject-authority.e2e.spec.ts 的 EXPFL-01）。
     expect(state.constraints.length).toBeGreaterThan(0);
     const persisted = state.constraints[0] as Record<string, unknown>;
     expect(persisted.planId).toBe('P1');
@@ -196,6 +199,53 @@ describe('applyOverrides（人工覆盖闭环）', () => {
     expect((persisted.valueJson as Record<string, unknown>).snapshotVersion).toBe(
       'WS-TEST-0001',
     );
+  });
+
+  it('EXPFL-01 写侧配套：请求声明的 validFrom/expiresAt 必须同时落到 bigint 列（加载器只读那一列）', async () => {
+    const { schedulerService, state } = makeScheduler({ plans: [seedPlan()] });
+    const res: PlanOverrideResponse = await schedulerService.applyOverrides(
+      'P1',
+      {
+        actions: [
+          {
+            kind: 'LOCK_PERSON',
+            taskId: 't1',
+            personId: 'p2',
+            reason: '带有效期的锁定',
+            validFrom: 1000,
+            expiresAt: 2000,
+          },
+        ],
+        operator: 'op1',
+        reason: '人工锁定（带有效期）',
+      },
+      testOrgContext(),
+    );
+    expect(res.after.planId).toBe('P1-R2');
+    // 前提：确实落了一行，否则下面三个键的断言都是空谈。
+    expect(state.constraints.length).toBeGreaterThan(0);
+    const row = state.constraints[0] as Record<string, unknown>;
+    // standalone_023 的列注释把这两列写成权威（「求解前过滤依据：expires_at_ms != null AND
+    // expires_at_ms < now 视为失效」、valid_from_ms「替代 valueJson 内嵌 validFrom」），而两个加载器的
+    // 谓词只读 `expires_at_ms`（constraint-loader.service.ts:63-67／:104-107）⇒ 列没写＝声明作废。
+    // V368 之前这里两个键都缺（只有 value_json 里的 validFrom/expiresAt）⇒ 这一支会红在 undefined。
+    expect(row.expiresAtMs).toBe(2000);
+    expect(row.validFromMs).toBe(1000);
+    // JSON 内嵌那一份照旧保留（解码面 `v.expiresAt ?? row.expiresAtMs` 读它优先，两处必须同值）。
+    const vj = row.valueJson as Record<string, unknown>;
+    expect(vj.expiresAt).toBe(2000);
+    expect(vj.validFrom).toBe(1000);
+    // 缺省面：动作不带有效期时两列都写 null（列的语义是 null＝持续生效，不许漏键）。
+    const { schedulerService: svc2, state: st2 } = makeScheduler({ plans: [seedPlan()] });
+    await svc2.applyOverrides(
+      'P1',
+      { actions: [{ kind: 'LOCK_PERSON', taskId: 't1', personId: 'p2', reason: '不带有效期' }], operator: 'op1', reason: '对照' },
+      testOrgContext(),
+    );
+    const row2 = st2.constraints[0] as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(row2, 'expiresAtMs')).toBe(true);
+    expect(row2.expiresAtMs).toBeNull();
+    expect(row2.validFromMs).toBeNull();
   });
 
   it('覆盖动作 → 约束类型映射覆盖全部 10 种 kind（含 CHANGE_RESOURCE）', async () => {

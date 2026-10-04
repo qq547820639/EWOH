@@ -609,6 +609,10 @@ export class SchedulerPlanApplicationService {
               // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
               // NEST-157：HTTP 路径 ctx.primaryOrgId 必非空（上方守卫）。
               orgId: ctx.primaryOrgId || null,
+              // EXPFL-01（V368）：与 plan.service 同一张名册——加载器只按列 expires_at_ms 过滤，
+              // 不写那一列，请求里声明的 expiresAt 就只是 value_json 里的一个键。
+              validFromMs: c.validFrom ?? null,
+              expiresAtMs: c.expiresAt ?? null,
             })),
           );
         }

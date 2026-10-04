@@ -1380,6 +1380,12 @@ export class PlanService {
                 createdBy: ctx.userId,
                 // standalone_025_scheduler_rls：租户隔离（null=全局/存量行，policy 放行）。
                 orgId: ctx.primaryOrgId || null,
+                // EXPFL-01（V368）：有效期以**列**为权威——standalone_023 的列注释明写
+                // 「求解前过滤依据：expires_at_ms != null AND expires_at_ms < now 视为失效」、
+                // valid_from_ms「替代 valueJson 内嵌 validFrom」，而两个加载器的谓词只读那一列。
+                // 此前两处都只写 value_json 里的 validFrom/expiresAt ⇒ 声明的有效期在链上没有效果。
+                validFromMs: c.validFrom ?? null,
+                expiresAtMs: c.expiresAt ?? null,
               })),
             );
           }

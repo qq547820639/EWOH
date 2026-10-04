@@ -978,5 +978,154 @@ let approvedPlanId = '';
       // 锁进了求解 ⇒ 该任务不再被派给任何人（锁定的人不在候选集里，如实不派工）
       expect(afterLock).toBe(0);
     }, 120_000);
+
+    /**
+     * 归属：**EXPFL-01**（V367 量出、V368 落地）。真库档的有效期过滤对账。
+     * 三件事一次钉住：
+     *  ① 写侧配套——请求里声明的 `expiresAt` 现在同时写进 bigint 列 `expires_at_ms`
+     *    （`standalone_023` 的列注释明写它是「求解前过滤依据」，V368 之前两个写入口都不写那一列）；
+     *  ② 未到期 ⇒ 下一次重排继承回来照旧生效（不许把"会过滤"实现成"一律丢"）；
+     *  ③ 到期 ⇒ 下一次重排不再认这条锁，该任务的派工恢复。
+     * 第 ③ 步只改**列**、value_json 里的 expiresAt 留在未来时刻：解码面读 JSON 优先
+     * （`v.expiresAt ?? row.expiresAtMs`），所以派工恢复这一格同时证明过滤器认的是列而不是 JSON。
+     * 为什么这一族只能在真库上验：假 DB 替身的 `.where()` 是空操作
+     * （`dispatch-test-harness.ts:52-56`），有效期谓词在单测档结构性看不见（V278/V320 同一条限度）⇒
+     * 写侧那一半另有常驻单测钉（overrides.spec.ts 的 EXPFL-01），两面合起来才闭合。
+     */
+    it('EXPFL-01 有效期过滤对账：声明的 expiresAt 落到列、未到期继承照旧锁、把列改成过去时刻即放行（真库）', async () => {
+      const org = fixture.orgA.id;
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      const leaky = await owner`
+        SELECT constraint_id, type FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND active AND type IN ('MIN_BATTERY', 'MAX_WORKLOAD')`;
+      if (leaky.length > 0) {
+        console.log(`[EXPFL-01·前提塌陷] 起跑前本 org 残留全局门槛行=${JSON.stringify(leaky)}`);
+      }
+      expect(leaky.length).toBe(0);
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'MANUAL', entityId: own.taskId }),
+        },
+      );
+      expect(run.status).toBe(201);
+      const basePlanId = String(run.body.plans[0].planId);
+      const countTask = async (planId: string, taskId: string) => {
+        const rows = await owner`
+          SELECT task_id FROM ewoh_scheduling_plan_assignment
+           WHERE org_id::text = ${org} AND plan_id = ${planId} AND status <> 'cancelled'`;
+        return rows.filter((r: Record<string, unknown>) => String(r.task_id) === taskId).length;
+      };
+      const baseRows = await owner`
+        SELECT task_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${basePlanId}
+           AND status <> 'cancelled' AND task_id IS NOT NULL`;
+      expect(baseRows.length).toBeGreaterThan(0);
+      const lockTask = String((baseRows[0] as Record<string, unknown>).task_id);
+      const baseline = await countTask(basePlanId, lockTask);
+      expect(baseline).toBeGreaterThan(0);
+
+      const ghost = '0e0e0e0e-0e0e-4e0e-8e0e-0e0e0e0e0e0e';
+      const future = Date.now() + 3_600_000;
+      const A = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'EXPFL-01 A 遍：带一条一小时后才失效的锁',
+            lockedConstraints: [
+              { type: 'LOCKED_PERSON', taskId: lockTask, personId: ghost, expiresAt: future },
+            ],
+          }),
+        },
+      );
+      expect(A.status).toBe(201);
+      const planA = String((A.body as SchedulingPlanV2).planId);
+      const afterA = await countTask(planA, lockTask);
+
+      // ① 写侧那一半：列被填上了，而且与 value_json 同值；没带 validFrom ⇒ 列上留 NULL（null＝立即生效）。
+      const rowA = await owner`
+        SELECT constraint_id, expires_at_ms, valid_from_ms, value_json ->> 'expiresAt' AS json_expires
+        FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND plan_id = ${planA} AND type = 'LOCKED_PERSON' AND active`;
+      expect(rowA.length).toBe(1);
+      expect(Number(rowA[0].expires_at_ms)).toBe(future);
+      expect(String(rowA[0].json_expires)).toBe(String(future));
+      expect(rowA[0].valid_from_ms).toBeNull();
+
+      // ② 未到期 ⇒ 继承遍（不带请求约束）照旧把这条锁带进求解。
+      const B = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${planA}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ reason: 'EXPFL-01 B 遍：未到期，应仍锁住', lockedConstraints: [] }),
+        },
+      );
+      expect(B.status).toBe(201);
+      const planB = String((B.body as SchedulingPlanV2).planId);
+      const afterB = await countTask(planB, lockTask);
+
+      // ③ 已过期 ⇒ 下一次重排不再认这条锁。不能拿 planA 再重排（B 遍已把它标成 superseded，
+      //    实测 409），所以这一遍用**当轮最新的那份方案**做来源：照 B 遍那一行的同一形状写一行，
+      //    只把 expires_at_ms 写成过去时刻、value_json 里的 expiresAt 留在未来时刻。
+      //    ⇒ 两遍的唯一变量就是那一列；派工恢复即证明过滤器读的是列（解码面读 JSON 优先，
+      //      若过滤器也读 JSON，这条行会被当成"未来才失效"而继续生效）。
+      const past = Date.now() - 1_000;
+      const pastCid = 'EXPFL01-PAST-' + Date.now();
+      await owner`
+        INSERT INTO ewoh_scheduling_constraint
+          (constraint_id, org_id, plan_id, task_id, type, value_json, active, created_by,
+           valid_from_ms, expires_at_ms)
+        VALUES
+          (${pastCid}, ${org}, ${planB}, ${lockTask}, 'LOCKED_PERSON',
+           ${owner.json({ personId: ghost, operator: 'e2e', reason: 'EXPFL-01 C 遍：列上已过期', expiresAt: future })},
+           true, 'e2e', NULL, ${past})`;
+      const C = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${planB}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ reason: 'EXPFL-01 C 遍：列上已过期，应放行', lockedConstraints: [] }),
+        },
+      );
+      const cStatus = C.status;
+      const planC = cStatus === 201 ? String((C.body as SchedulingPlanV2).planId) : planB;
+      const afterC = await countTask(planC, lockTask);
+      const rowAfter = await owner`
+        SELECT expires_at_ms, value_json ->> 'expiresAt' AS json_expires
+        FROM ewoh_scheduling_constraint WHERE constraint_id = ${pastCid}`;
+      if (cStatus !== 201) {
+        console.log(`[EXPFL-01·前提塌陷] C 遍 replan(planB) 非 201：${JSON.stringify((C as { body?: unknown }).body ?? null).slice(0, 160)}`);
+      }
+
+      console.log(
+        `[EXPFL-01 有效期对账] 基线派工=${baseline}；A 遍（请求内带锁、列=${future}）派工=${afterA}；`
+        + `B 遍（只继承、未到期）派工=${afterB}；C 遍（列改成 ${past}、JSON 里仍是 ${rowAfter[0]?.json_expires}）`
+        + `状态=${cStatus}、派工=${afterC}`,
+      );
+      // 收尾：按 ghost 点名删掉本例写的行（value_json 是对象 ⇒ 谓词读得到）。
+      await owner`
+        DELETE FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND type = 'LOCKED_PERSON'
+           AND value_json ->> 'personId' = ${ghost}`;
+      const left = await owner`
+        SELECT 1 AS ok FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND value_json ->> 'personId' = ${ghost}`;
+      expect(left.length).toBe(0);
+
+      expect(afterA).toBe(0);
+      expect(afterB).toBe(0);
+      expect(cStatus).toBe(201);
+      // 过期即停手 ⇒ 该任务恢复派工（这条锁已被过滤，锁定的人不在候选集这件事不再适用）。
+      expect(afterC).toBeGreaterThan(0);
+    }, 180_000);
   },
 );
