@@ -368,5 +368,279 @@ let approvedPlanId = '';
       expect(Number(a.executions)).toBe(Number(b.executions));
       expect(Number(a.active_reservations)).toBe(Number(b.active_reservations));
     }, 120_000);
+
+    /**
+     * 归属：**CSTR-01**（《链级行为基线》§5.4 那行的"闸真长出来"读数，V355 建）。
+     * 两支合起来回答一个此前只有源码读数的问：客户端经 `POST /api/scheduler/plans/:id/replan`
+     * 送进来的约束，到底**改变不改变方案**。
+     *
+     *  ① 对照臂（必须开火）用注册表内、heuristic 本地 switch **有 case** 的 `LOCKED_DEVICE`
+     *     ⇒ 新方案的设备必须被换成指定那台。这一支红了就说明"请求→求解→落库"这条通道本身带得动
+     *     约束；它绿着，下面那支的"没变化"才是证据而不是恒真（V355 之前的读数全部来自走读，
+     *     从未有实测把这两件事分开钉过）。
+     *  ② 现状臂用注册表内、但三个消费面（编译层 6／heuristic 9／CP-SAT 6）**都没有 case** 的
+     *     `RESOURCE_TIME_WINDOW`，窗口给成**过去三小时到过去两小时**——若真被执行，任务应排不进
+     *     或至少报一条 violation。实测三件事一次测齐：写得进（HTTP 201）＋落得了库
+     *     （`ewoh_scheduling_constraint` 有行）＋送得到求解（方案 `constraints_json` 快照里有它），
+     *     而任务照排、`violations_json` 里连 `unsupported_constraint` 都没有。
+     *
+     * **修法落地时必须翻转第②支**（把 HARD_META 接到求解＝任务应当排不进；或把词表缩到三面之并＝
+     * 这条约束应在写入侧就被判 unsupported）。不翻转就让它红在这里——那正是登记行要的"知道闸长出来了"。
+     */
+    it('CSTR-01 对照臂：replan 带 LOCKED_DEVICE 会真把设备换成指定那台（请求通道带得动约束）', async () => {
+      // 每支自带一份新资源：前面 RJ-01/02/03 已经把夹具里那唯一一条任务消费掉了，
+      // 再开 run 会拿到空 plans（V355 实测：HTTP 201 但 plans=[] ⇒ 前置被消费，不是产品回归）。
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      const org = fixture.orgA.id;
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'MANUAL',
+            entityId: own.taskId,
+          }),
+        },
+      );
+      if (run.status !== 201) throw new Error('run 未 201：HTTP=' + run.status + ' body=' + JSON.stringify(run.body).slice(0, 320));
+      expect(run.status).toBe(201);
+      expect(run.body.plans?.length ?? 0).toBeGreaterThan(0);
+      const basePlanId = String(run.body.plans[0].planId);
+
+      const before = await owner`
+        SELECT task_id, device_id, person_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${basePlanId} AND status <> 'cancelled'`;
+      expect(before.length).toBeGreaterThan(0);
+      const b0 = before[0] as Record<string, unknown>;
+      const currentDevice = String(b0.device_id ?? '');
+      // 目标设备取本支自己夹具里的另一台（V355 实测踩过：拿上一支的 deviceIds 会锁到不属于该任务的设备，
+      // 结果新方案 0 条 assignment，看着像"通道失效"，其实是夹具错配）。
+      const other = own.deviceIds.map(String).find((d) => d !== currentDevice);
+      // 前提：夹具的两台设备里必须真有一台"不是当前那台"，否则对照臂无从谈起。
+      expect(other).toBeTruthy();
+
+      const replanned = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'e2e CSTR-01 对照臂：锁定到另一台设备',
+            lockedConstraints: [
+              { type: 'LOCKED_DEVICE', taskId: String(b0.task_id), deviceId: other },
+            ],
+          }),
+        },
+      );
+      expect(replanned.status).toBe(201);
+      const newPlanId = String((replanned.body as SchedulingPlanV2).planId);
+      expect(newPlanId).not.toBe(basePlanId);
+
+      const after = await owner`
+        SELECT task_id, device_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${newPlanId} AND status <> 'cancelled'`;
+      expect(after.length).toBeGreaterThan(0);
+      const got = new Set(after.map((r: Record<string, unknown>) => String(r.device_id)));
+      console.log(
+        `[CSTR-01 对照臂] LOCKED_DEVICE→${String(other)} 原设备=${currentDevice} `
+        + `新方案设备集=[${[...got].join(',')}]`,
+      );
+      // 有牙的一支：这条通道确实带得动约束。
+      expect(got.has(String(other))).toBe(true);
+    }, 120_000);
+
+    it('CSTR-01 现状臂：RESOURCE_TIME_WINDOW 写得进、落得了库、送得到求解，却不改变方案也不上报', async () => {
+      // 每支自带一份新资源：前面 RJ-01/02/03 已经把夹具里那唯一一条任务消费掉了，
+      // 再开 run 会拿到空 plans（V355 实测：HTTP 201 但 plans=[] ⇒ 前置被消费，不是产品回归）。
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      const org = fixture.orgA.id;
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            strategy: 'scheduling_v2',
+            trigger: 'MANUAL',
+            entityId: own.taskId,
+          }),
+        },
+      );
+      if (run.status !== 201) throw new Error('run 未 201：HTTP=' + run.status + ' body=' + JSON.stringify(run.body).slice(0, 320));
+      expect(run.status).toBe(201);
+      expect(run.body.plans?.length ?? 0).toBeGreaterThan(0);
+      const basePlanId = String(run.body.plans[0].planId);
+      const before = await owner`
+        SELECT task_id, person_id, device_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${basePlanId} AND status <> 'cancelled'`;
+      expect(before.length).toBeGreaterThan(0);
+      const b0 = before[0] as Record<string, unknown>;
+
+      // 窗口整个在过去：若这五类真被执行，这条任务应当排不进去（或至少报 unsupported）。
+      const now = Date.now();
+      const pastStart = now - 3 * 3_600_000;
+      const pastEnd = now - 2 * 3_600_000;
+
+      const replanned = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'e2e CSTR-01 现状臂：给一条不可能满足的时间窗约束',
+            lockedConstraints: [
+              {
+                type: 'RESOURCE_TIME_WINDOW',
+                taskId: String(b0.task_id),
+                personId: String(b0.person_id ?? ''),
+                startMs: pastStart,
+                endMs: pastEnd,
+              },
+            ],
+          }),
+        },
+      );
+      // ① 写得进：写入侧不校验取值域，这条约束被原样接受（V354 只有源码读数，此处补成实测）。
+      expect(replanned.status).toBe(201);
+      const newPlanId = String((replanned.body as SchedulingPlanV2).planId);
+
+      const facts = await owner`
+        SELECT
+          (SELECT count(*)::int FROM ewoh_scheduling_constraint c
+             WHERE c.org_id::text = ${org} AND c.plan_id = ${newPlanId}
+               AND c.type = 'RESOURCE_TIME_WINDOW') AS constraint_rows,
+          (SELECT count(*)::int FROM ewoh_scheduling_plan_assignment a
+             WHERE a.org_id::text = ${org} AND a.plan_id = ${newPlanId}
+               AND a.status <> 'cancelled'
+               AND a.person_id IS NOT NULL AND a.device_id IS NOT NULL) AS live_assigned,
+          (SELECT p.constraints_json::text FROM ewoh_schedule_plan p
+             WHERE p.org_id::text = ${org} AND p.plan_id = ${newPlanId}) AS constraints_json,
+          (SELECT p.violations_json::text FROM ewoh_schedule_plan p
+             WHERE p.org_id::text = ${org} AND p.plan_id = ${newPlanId}) AS violations_json`;
+      const f = facts[0] as Record<string, unknown>;
+      const cjson = String(f.constraints_json ?? '');
+      const vjson = String(f.violations_json ?? '');
+
+      console.log(
+        `[CSTR-01 现状臂] 约束行数=${Number(f.constraint_rows)} 仍被指派的行=${Number(f.live_assigned)} `
+        + `快照含该类型=${cjson.includes('RESOURCE_TIME_WINDOW')} `
+        + `违规含 unsupported=${/unsupported/i.test(vjson)}`,
+      );
+
+      // ② 落得了库。
+      expect(Number(f.constraint_rows)).toBeGreaterThan(0);
+      // ③ 送得到求解（方案的约束快照里有它，不是写入即弃）。
+      expect(cjson.includes('RESOURCE_TIME_WINDOW')).toBe(true);
+      // ④ 不改变方案：这条任务在重排前后拿到的是**同一个人＋同一台设备**——不可能窗口无人读。
+      const afterRows = await owner`
+        SELECT task_id, person_id, device_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${newPlanId} AND status <> 'cancelled'
+         ORDER BY task_id`;
+      // ④ 不改变方案的判据不能是"逐字相同"：重排会整批重算，设备本身就会漂（V355 实测：
+      // 人没变、设备从 A 换到 B）。真正能分辨"窗口有没有被读"的是**排出来的时刻落不落在窗口里**——
+      // 这条约束声明的窗口是整个在过去三小时到过去两小时，若被 honoring，这条任务不可能排到未来。
+      const target = await owner`
+        SELECT person_id, device_id, planned_start, planned_end
+          FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${newPlanId}
+           AND task_id = ${own.taskId} AND status <> 'cancelled'`;
+      const expectBase = await owner`
+        SELECT count(*)::int AS n FROM ewoh_scheduling_plan_assignment a
+         WHERE a.org_id::text = ${org} AND a.plan_id = ${basePlanId} AND a.task_id = ${own.taskId}
+           AND a.status <> 'cancelled'`;
+      const t0 = target[0] as Record<string, unknown> | undefined;
+      const psMs = t0 ? new Date(String(t0.planned_start)).getTime() : 0;
+      console.log(
+        `[CSTR-01 现状臂] 目标任务重排前是否存在指派行=${Number((expectBase[0] as Record<string, unknown>).n)} `
+        + `重排后=${t0 ? '有指派' : '无指派'} planned_start=${t0 ? String(t0.planned_start) : '-'} `
+        + `声明窗口=[${new Date(pastStart).toISOString()}, ${new Date(pastEnd).toISOString()}] `
+        + `落点在窗口之后=${psMs > pastEnd}`,
+      );
+      // 前提：这条任务在挂约束之前确实被排进去了。
+      expect(Number((expectBase[0] as Record<string, unknown>).n)).toBeGreaterThan(0);
+      // ④a 不可能窗口没让它落空——照排。
+      expect(t0).toBeTruthy();
+      // ④b 排出来的时刻**晚于**窗口右端 ⇒ 窗口参数被无视（若被 honoring，这一支必然红）。
+      expect(psMs > pastEnd).toBe(true);
+      // ⑤ 也不上报：它在注册表内 ⇒ checkConstraintSupported 判 supported ⇒ 连 violation 都不记。
+      expect(/unsupported/i.test(vjson)).toBe(false);
+    }, 120_000);
+
+    /**
+     * 归属：**CSTR-01** 的非恒真对照（V355 建）。
+     * 上面第④b 支比的是「排出来的时刻 > 窗口右端」。如果这条比较式在任何窗口下都成立，
+     * 那它就是在报"任务排在未来"这件与约束无关的事——恒真判据不能当证据。
+     * 这一支把同一个比较式喂一个**窗口右端排在计划时刻之后**的约束：若求解器真读窗口，
+     * 这条任务要么落空、要么被推到窗口内；而实测它是"照常排在窗口之前"⇒ 比较式翻 false。
+     * 期望值在这里是 **false**：本支存在的意义就是证明第④b 支会随窗口取值而翻转。
+     */
+    it('CSTR-01 反向对照：把窗口挪到计划时刻之后，同一比较式必须翻 false（证明④b 不是恒真）', async () => {
+      const org = fixture.orgA.id;
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'MANUAL', entityId: own.taskId }),
+        },
+      );
+      expect(run.status).toBe(201);
+      const basePlanId = String(run.body.plans[0].planId);
+      const baseRow = await owner`
+        SELECT task_id, person_id, planned_start FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${basePlanId} AND task_id = ${own.taskId}
+           AND status <> 'cancelled'`;
+      expect(baseRow.length).toBeGreaterThan(0);
+      const r0 = baseRow[0] as Record<string, unknown>;
+      const plannedMs = new Date(String(r0.planned_start)).getTime();
+
+      // 窗口整个排在计划时刻**之后**两小时起：honoring 的话任务不可能还落在现在这个位置。
+      const futureStart = plannedMs + 2 * 3_600_000;
+      const futureEnd = plannedMs + 3 * 3_600_000;
+      const replanned = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'e2e CSTR-01 反向对照：窗口挪到计划时刻之后',
+            lockedConstraints: [
+              {
+                type: 'RESOURCE_TIME_WINDOW',
+                taskId: String(r0.task_id),
+                personId: String(r0.person_id ?? ''),
+                startMs: futureStart,
+                endMs: futureEnd,
+              },
+            ],
+          }),
+        },
+      );
+      expect(replanned.status).toBe(201);
+      const newPlanId = String((replanned.body as SchedulingPlanV2).planId);
+      const target = await owner`
+        SELECT planned_start FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${newPlanId} AND task_id = ${own.taskId}
+           AND status <> 'cancelled'`;
+      const t0 = target[0] as Record<string, unknown> | undefined;
+      const psMs = t0 ? new Date(String(t0.planned_start)).getTime() : 0;
+      console.log(
+        `[CSTR-01 反向对照] planned_start=${t0 ? String(t0.planned_start) : '-'} `
+        + `窗口=[${new Date(futureStart).toISOString()}, ${new Date(futureEnd).toISOString()}] `
+        + `同一比较式(排出来晚于窗口右端)=${psMs > futureEnd}（期望 false）`,
+      );
+      expect(t0).toBeTruthy();
+      // 与第④b 支**同形而值相反**：这条读到 false 才说明那条的 true 是窗口带出来的，不是恒真。
+      expect(psMs > futureEnd).toBe(false);
+    }, 120_000);
   },
 );
