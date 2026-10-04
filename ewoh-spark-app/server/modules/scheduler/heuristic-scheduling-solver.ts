@@ -1238,6 +1238,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
                 stationCapacityById,
                 stationCapabilitiesById,
                 stationCapabilityRecordsById,
+                stationAvailableWindowsById,
                 bookedStationCounts,
                 // NO-05c / NO-05d：候选工位维护/质量封锁（fail-closed 拒派）。
                 stationMaintenanceBlockedById,
