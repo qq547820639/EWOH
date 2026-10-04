@@ -13,6 +13,8 @@
  * 结论口径：RJ-02 是「现状钉住」用例——它断言的是**实测到的现有行为**，
  * 如果将来判定该行为不对并修掉，必须同时翻转这条断言（与 S-03 在 RUN-01 修复时的手法一致）。
  */
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import type { SchedulingPlanV2 } from '../../shared/api.interface';
 import { resolveE2EConfig } from '../helpers/e2e-config';
 import {
@@ -641,6 +643,129 @@ let approvedPlanId = '';
       expect(t0).toBeTruthy();
       // 与第④b 支**同形而值相反**：这条读到 false 才说明那条的 true 是窗口带出来的，不是恒真。
       expect(psMs > futureEnd).toBe(false);
+    }, 120_000);
+
+    /**
+     * 归属：**VALDR-01**（V365 建，出处《基线》§5.3nm）。差分臂——同一个后端、同一份世界，
+     * 只换"这条约束从哪来"：
+     *  - A 遍在**请求里**带 `MIN_BATTERY value=101` ⇒ 求解读得到（对照方向：这条通道带得动数值参数）；
+     *  - B 遍不带任何请求约束，只能靠 `loadForPlan` 从库里继承 A 遍落下的那一行 ⇒ 门槛无声退回默认。
+     * 两支期望值方向相反，所以这不是恒真的"钉现状"。判据落在**设备腿个数**而不是派工总数：
+     * 先试过 `MAX_WORKLOAD value=0`，在演示世界上派工 15→0，但在本夹具世界上 4→4 不动
+     * （负载门槛在首次指派前没有累计量可比）⇒ 那把尺在这里没有鉴别力。电量门槛是直接过滤候选设备的
+     * （`heuristic-scheduling-solver.ts:1715` 的 `d.batteryPct >= minBatteryPct`，
+     * 而 `:395` 是 `effectiveMinBattery = minBatteryOverride ?? config.minBatteryPct`）⇒ 101% 必然清空设备腿。
+     */
+    it('VALDR-01 差分臂：MIN_BATTERY 的 value 请求内带得动，从库里继承回来即失效', async () => {
+      const org = fixture.orgA.id;
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'MANUAL', entityId: own.taskId }),
+        },
+      );
+      expect(run.status).toBe(201);
+      const basePlanId = String(run.body.plans[0].planId);
+      const legsOf = async (planId: string) => {
+        const rows = await owner`
+          SELECT task_id, device_id FROM ewoh_scheduling_plan_assignment
+           WHERE org_id::text = ${org} AND plan_id = ${planId} AND status <> 'cancelled'`;
+        const devices = new Set(
+          rows
+            .map((r: Record<string, unknown>) => String(r.device_id ?? ''))
+            .filter((s: string) => s !== ''),
+        );
+        return { n: rows.length, devices };
+      };
+      const base = await legsOf(basePlanId);
+      // 前提：基线既有派工也有设备腿——没有设备腿的世界测不了电量门槛（本支的鉴别力就来自这里）。
+      expect(base.n).toBeGreaterThan(0);
+      expect(base.devices.size).toBeGreaterThan(0);
+
+      const A = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'e2e VALDR-01 A 遍：请求内带 MIN_BATTERY value=101',
+            lockedConstraints: [{ type: 'MIN_BATTERY', taskId: own.taskId, value: 101 }],
+          }),
+        },
+      );
+      expect(A.status).toBe(201);
+      const planA = String((A.body as SchedulingPlanV2).planId);
+      const legsA = await legsOf(planA);
+      // 对照方向：门槛 101% 把有限电量的设备全排除 ⇒ 设备腿必然少于基线（求解读不到 value 这一支就先红）。
+      expect(legsA.devices.size).toBeLessThan(base.devices.size);
+
+      const persisted = await owner`
+        SELECT constraint_id, type, value_json FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND plan_id = ${planA} AND type = 'MIN_BATTERY' AND active`;
+      expect(persisted.length).toBeGreaterThan(0);
+      const vj = (persisted[0] as Record<string, unknown>).value_json as Record<string, unknown>;
+      // 落库那行没有 value ⇒ 数值参数在**写侧**就被丢掉（不是读侧解析不到）。
+      expect(Object.prototype.hasOwnProperty.call(vj, 'value')).toBe(false);
+
+      const B = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${planA}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({
+            reason: 'e2e VALDR-01 B 遍：不带请求约束，只靠库里继承',
+            lockedConstraints: [],
+          }),
+        },
+      );
+      expect(B.status).toBe(201);
+      const legsB = await legsOf(String((B.body as SchedulingPlanV2).planId));
+      console.log(
+        `[VALDR-01 差分臂] 基线派工=${base.n} 设备腿=${base.devices.size}；`
+        + `A 遍（value=101）派工=${legsA.n} 设备腿=${legsA.devices.size}；`
+        + `继承行=${persisted.length} 落库 value_json=[${Object.keys(vj).join(',')}]；`
+        + `B 遍（继承）派工=${legsB.n} 设备腿=${legsB.devices.size}`,
+      );
+      // 缺陷方向：同一条约束、同一份世界，只因改从库里读回来，门槛就无声退回默认。
+      // 断"B 多于 A"而不是"B 等于基线"：后者会把与本缺陷无关的时刻漂移也读成红。
+      expect(legsB.devices.size).toBeGreaterThan(legsA.devices.size);
+    }, 120_000);
+
+    /**
+     * 归属：**VALDR-01**（V365 建）。写侧名册臂——把"两处落库入口都不写 `value`"钉成文本面事实，
+     * 并把解码面缺同一个键也钉住：三者一起补上时这一支会红，那就是登记行要的"知道闸长出来了"。
+     * 断言的是**现状**（as-is），修法落地时必须与《基线》§5.4 的 VALDR-01 行一起翻转。
+     */
+    it('VALDR-01 写侧名册臂：两个落库入口的 valueJson 字面量都不写 value，解码器也不读它', async () => {
+      const writers = [
+        resolve(__dirname, '../../server/modules/scheduler/plan.service.ts'),
+        resolve(__dirname, '../../server/modules/scheduler/scheduler-plan-application.service.ts'),
+      ];
+      const blocks: string[] = [];
+      for (const f of writers) {
+        const src = readFileSync(f, 'utf8');
+        const m = src.match(/valueJson:\s*\{[^}]*\}/g) ?? [];
+        // 前提：每个入口都得有一个 valueJson 字面量（读不到就说明入口被改了，这一支该红）。
+        expect(m.length).toBeGreaterThan(0);
+        blocks.push(...m);
+      }
+      const loaderSrc = readFileSync(
+        resolve(__dirname, '../../server/modules/scheduler/constraint-loader.service.ts'),
+        'utf8',
+      );
+      const decodeBody = loaderSrc.slice(loaderSrc.indexOf('private rowToConstraint'));
+      console.log(
+        `[VALDR-01 写侧名册臂] 写入口 valueJson 块=${blocks.length} 个，其中含 value 键=${blocks.filter((b) => /\bvalue:/.test(b)).length} 个；`
+        + `解码器读 v.value=${/\bv\.value\b/.test(decodeBody)}`,
+      );
+      expect(blocks.filter((b) => /\bvalue:/.test(b)).length).toBe(0);
+      expect(/\bv\.value\b/.test(decodeBody)).toBe(false);
     }, 120_000);
   },
 );
