@@ -280,6 +280,10 @@ const FILES = {
   standalone_control_request_status_contract: path.join(root, 'db/migrations/standalone_107_control_request_status_contract.sql'),
   standalone_control_request_status_contract_rollback: path.join(root, 'db/migrations/standalone_107_control_request_status_contract.rollback.sql'),
   standalone_control_request_status_contract_verify: path.join(root, 'db/verify/standalone_107_control_request_status_contract.verify.sql'),
+  // SKW-01（V367）：种子约束行的键形／值域／值形状收敛到解码器同源。
+  standalone_seed_constraint_vocabulary: path.join(root, 'db/migrations/standalone_108_seed_constraint_vocabulary.sql'),
+  standalone_seed_constraint_vocabulary_rollback: path.join(root, 'db/migrations/standalone_108_seed_constraint_vocabulary.rollback.sql'),
+  standalone_seed_constraint_vocabulary_verify: path.join(root, 'db/verify/standalone_108_seed_constraint_vocabulary.verify.sql'),
   standalone_control_command_delivered_at: path.join(root, 'db/migrations/standalone_095_control_command_delivered_at.sql'),
   standalone_control_command_delivered_at_rollback: path.join(root, 'db/migrations/standalone_095_control_command_delivered_at.rollback.sql'),
   standalone_control_command_delivered_at_verify: path.join(root, 'db/verify/standalone_095_control_command_delivered_at.verify.sql'),
@@ -736,6 +740,9 @@ const EXECUTE_COMMANDS = new Set([
   '--apply-standalone-control-request-status-contract',
   '--rollback-standalone-control-request-status-contract',
   '--verify-standalone-control-request-status-contract',
+  '--apply-standalone-seed-constraint-vocabulary',
+  '--rollback-standalone-seed-constraint-vocabulary',
+  '--verify-standalone-seed-constraint-vocabulary',
 ]);
 
 /** 简单型 verify 命令表（审计 SQL-107 抽象，2026-08-17）：单行结果、
@@ -828,6 +835,7 @@ const SIMPLE_VERIFY_COMMANDS = {
   '--verify-standalone-users': ['standalone_users_verify', 'standalone_002_users_verified', 'standalone_002_users (ewoh_user fail-closed RLS + SECURITY DEFINER 函数受控读取)'],
   '--verify-standalone-runtime-role': ['standalone_runtime_role_verify', 'standalone_003_verified', 'standalone_003 runtime role (ewoh_api 最小权限 + service_role 成员 + search_path 固定)'],
   '--verify-standalone-scheduling-persistence': ['standalone_scheduling_persistence_verify', 'standalone_007_verified', 'standalone_007 scheduling persistence (plan/assignment V2 元数据列)'],
+  '--verify-standalone-seed-constraint-vocabulary': ['standalone_seed_constraint_vocabulary_verify', 'standalone_108_verified', 'standalone_108 seed constraint vocabulary (snake_case 键形清零 + task_id/personId 指向真实主键 + 窗口与 value 为数值 + per-device 第二行不回来)'],
   '--verify-standalone-phase2-realtime': ['standalone_phase2_realtime_verify', 'standalone_008_verified', 'standalone_008 phase2 realtime (outbox entity 列 + sequence 索引)'],
   '--verify-standalone-control-sent-state-pair': ['standalone_control_sent_state_pair_verify', 'standalone_106_verified', 'standalone_106 control sent state pair (status=sent requires sent_at)'],
   '--verify-standalone-control-request-status-contract': ['standalone_control_request_status_contract_verify', 'standalone_107_verified', 'standalone_107 control request status contract (draft 别名清零 + ck_control_request_status_contract 约束生效)'],
@@ -1879,6 +1887,9 @@ function main() {
       '--apply-standalone-control-request-status-contract': 'standalone_control_request_status_contract',
       '--rollback-standalone-control-request-status-contract': 'standalone_control_request_status_contract_rollback',
       '--verify-standalone-control-request-status-contract': 'standalone_control_request_status_contract_verify',
+      '--apply-standalone-seed-constraint-vocabulary': 'standalone_seed_constraint_vocabulary',
+      '--rollback-standalone-seed-constraint-vocabulary': 'standalone_seed_constraint_vocabulary_rollback',
+      '--verify-standalone-seed-constraint-vocabulary': 'standalone_seed_constraint_vocabulary_verify',
     }[command];
     if (!which) {
       throw new Error(`No migration file mapped for command: ${command}`);

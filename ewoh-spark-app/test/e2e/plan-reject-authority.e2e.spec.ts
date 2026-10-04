@@ -738,6 +738,24 @@ let approvedPlanId = '';
       // 断"B 等于 A 且低于基线"而不写死 0：前者不依赖夹具里设备的具体电量，也不把无关漂移读成红。
       expect(legsB.devices.size).toBe(legsA.devices.size);
       expect(legsB.devices.size).toBeLessThan(base.devices.size);
+      // 本例自己收：全局加载器只按 org+active+有效期筛、**不按 plan_id 筛**
+      // （constraint-loader.service.ts:39 loadGlobalActive 的谓词），所以这条 value=101
+      // 会以"org 级门槛"的身份渗进同一 org 后续任何一次 run（V367 实测：同文件内先跑本例、
+      // 再跑 SKW-01 正向对照时，那一次基线 run 的派工行从 1 变 0——所有设备都不过门槛）。
+      // 夹具级清盘在 afterAll，救不了同文件内的后序用例 ⇒ 谁写门槛谁自己摘。
+      const removed = await owner`
+        DELETE FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND type = 'MIN_BATTERY'
+           AND plan_id IN (${planA}, ${String((B.body as SchedulingPlanV2).planId)})
+        RETURNING constraint_id`;
+      const still = await owner`
+        SELECT 1 AS ok FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND type = 'MIN_BATTERY'`;
+      console.log(
+        `[VALDR-01 差分臂·自清] 摘掉本例写的门槛行=${removed.length}；`
+        + `org 内剩余 MIN_BATTERY 行=${still.length}`,
+      );
+      expect(still.length).toBe(0);
     }, 120_000);
 
     /**
@@ -778,6 +796,187 @@ let approvedPlanId = '';
       expect(withValue.length).toBe(blocks.length);
       expect(blocks.length).toBeGreaterThanOrEqual(writers.length);
       expect(/\bv\.value\b/.test(decodeBody)).toBe(true);
+    }, 120_000);
+
+    /**
+     * 归属：**SKW-01**（V363 立行，V367 闭合）。种子约束行的名册臂——四行演示约束此前写的是
+     * snake_case 键（`person_id`/`device_id`/`min_battery`/`start`/`end`），唯一解码器只认 camelCase
+     * ⇒ 全解成 undefined，既不生效也不记 violation。这一支不手抄名册：解码器认哪些键，
+     * 由 `rowToConstraint` 函数体现抽（`v.<key> as` 的全部键名），再要求每一行的键都落在名册内、
+     * 且该类型求解必需的字段真的解得出值、`task_id` 指得到 `ewoh_production_task` 的主键。
+     * 行数当下限断言（"零行所以全绿"不算通过）。V367 之前这一支是红的。
+     */
+    it('SKW-01 种子约束行：键形与值域都落在解码器名册内，锁不再在求解那一刻无声消失', async () => {
+      const loaderSrc = readFileSync(
+        resolve(__dirname, '../../server/modules/scheduler/constraint-loader.service.ts'),
+        'utf8',
+      );
+      const from = loaderSrc.indexOf('private rowToConstraint');
+      const to = loaderSrc.indexOf('\n  /** 稳定序列化', from);
+      expect(from).toBeGreaterThan(-1);
+      expect(to).toBeGreaterThan(from);
+      const roster = new Set(
+        [...loaderSrc.slice(from, to).matchAll(/\bv\.([A-Za-z][A-Za-z0-9]*)\s+as\b/g)].map((m) => m[1]),
+      );
+      expect(roster.size).toBeGreaterThanOrEqual(10);
+
+      const rows = await owner`
+        SELECT constraint_id, type, task_id, value_json
+          FROM ewoh_scheduling_constraint
+         WHERE constraint_id LIKE 'CONST-%'
+         ORDER BY constraint_id`;
+      // 下限：种子里这三类约束各一行（V367 起 …-003 那条 per-device 已并入全局一行）
+      expect(rows.length).toBeGreaterThanOrEqual(3);
+
+      const bad: string[] = [];
+      for (const r of rows as Array<Record<string, unknown>>) {
+        const id = String(r.constraint_id);
+        const v = (r.value_json ?? {}) as Record<string, unknown>;
+        const offRoster = Object.keys(v).filter((k) => !roster.has(k));
+        if (offRoster.length > 0) bad.push(`${id} 键形不在解码器名册内 [${offRoster.join(',')}]`);
+        if (r.task_id) {
+          const hit = await owner`SELECT 1 AS ok FROM ewoh_production_task WHERE id::text = ${String(r.task_id)} LIMIT 1`;
+          if (hit.length === 0) bad.push(`${id} task_id=${r.task_id} 指不到生产任务主键`);
+        }
+        if (r.type === 'LOCKED_PERSON') {
+          const pid = typeof v.personId === 'string' ? v.personId : '';
+          const hit = pid
+            ? await owner`SELECT 1 AS ok FROM ewoh_personnel WHERE id::text = ${pid} LIMIT 1`
+            : [];
+          if (hit.length === 0) bad.push(`${id} personId 解不出值或指不到人员档案主键`);
+        }
+        if (r.type === 'LOCKED_TIME' && (typeof v.startMs !== 'number' || typeof v.endMs !== 'number')) {
+          bad.push(`${id} 窗口不是数值毫秒（字符串窗口比较不了，等于没有窗口）`);
+        }
+        if (r.type === 'MIN_BATTERY' && typeof v.value !== 'number') {
+          bad.push(`${id} value 不是数值 ⇒ 门槛退回策略默认`);
+        }
+      }
+      console.log(
+        `[SKW-01 种子行名册臂] 解码器名册 ${roster.size} 键；种子约束 ${rows.length} 行；不合格 ${bad.length} 行`
+        + (bad.length ? ` [${bad.join(' | ')}]` : ''),
+      );
+      expect(bad).toEqual([]);
+    }, 120_000);
+
+    /**
+     * 归属：**SKW-01**（V367 建）。正向对照——把一条锁**只写进库里**（不经请求），
+     * 下一次重排必须认它。V364 量出"链级没有任何覆盖面"：七场景不派种子那批任务
+     * （近 20 分钟派工 54 行里 `device_id` 非空 0 行、被锁任务一次都没进过派工），
+     * 所以"注入修正形状后读数一字不差"是**没有覆盖面**而不是没有影响 ⇒ 这一支把覆盖面补出来。
+     * 故意锁定一个"快照里不存在的人员"：锁定人员不在候选集 ⇒ 该任务如实不派工，
+     * 于是"继承的锁到底进没进求解"有一个二元可观察量（该任务的派工从有到无）。
+     */
+    it('SKW-01 正向对照：只写进库里的 LOCKED_PERSON 会改变重排结果（继承的锁真的进了求解）', async () => {
+      const org = fixture.orgA.id;
+      const own = await seedSchedulerFixture(owner, fixture.orgA.id);
+      /**
+       * 前提（V367 实测定位）：起跑前本 org 不得留有 active 的**全局数值门槛**（MIN_BATTERY／MAX_WORKLOAD）。
+       * 这两类解码后在求解器里是 org 级覆盖（heuristic-scheduling-solver.ts 的
+       * `minBatteryOverride ?? config.minBatteryPct`），而全局加载器 `loadGlobalActive`
+       * （constraint-loader.service.ts:39）只按 org+active+有效期筛、**不按 plan_id 筛** ⇒ 前序用例
+       * 写在某一个方案上的门槛会渗进本例的基线 run：VALDR-01 那条 value=101 未自清时，本例
+       * 基线派工行从 1 变 0，"锁定的人不在候选集 ⇒ 不派工"这条可观察量就失去对照面。
+       * 其余类型带 task_id、别的用例的行碰不到本例新种的任务，故不进这条前提。
+       */
+      const leaky = await owner`
+        SELECT constraint_id, type, plan_id FROM ewoh_scheduling_constraint
+         WHERE org_id::text = ${org} AND active
+           AND type IN ('MIN_BATTERY', 'MAX_WORKLOAD')
+           AND (expires_at_ms IS NULL OR expires_at_ms >= ${Date.now()})`;
+      if (leaky.length > 0) {
+        console.log(
+          `[SKW-01 正向对照·前提塌陷] 起跑前本 org 残留全局门槛行=${JSON.stringify(leaky)}`,
+        );
+      }
+      expect(leaky.length).toBe(0);
+      const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
+        handle.baseUrl,
+        '/api/scheduler/runs',
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ strategy: 'scheduling_v2', trigger: 'MANUAL', entityId: own.taskId }),
+        },
+      );
+      expect(run.status).toBe(201);
+      const basePlanId = String(run.body.plans[0].planId);
+      const countTask = async (planId: string, taskId: string) => {
+        const rows = await owner`
+          SELECT task_id FROM ewoh_scheduling_plan_assignment
+           WHERE org_id::text = ${org} AND plan_id = ${planId} AND status <> 'cancelled'`;
+        return rows.filter((r: Record<string, unknown>) => String(r.task_id) === taskId).length;
+      };
+      // 前提：拿"基线里真被派出去的那个任务"当锁定对象——V367 第一版在这里写死了 own.taskId，
+      // 结果基线派工就是 0，正向对照退化成恒真（期望 >0 当场打回）。
+      const baseRows = await owner`
+        SELECT task_id FROM ewoh_scheduling_plan_assignment
+         WHERE org_id::text = ${org} AND plan_id = ${basePlanId}
+           AND status <> 'cancelled' AND task_id IS NOT NULL`;
+      if (baseRows.length === 0) {
+        console.log(
+          `[SKW-01 正向对照·前提塌陷] 基线方案=${basePlanId} 零派工（锁定对象无从选取）`,
+        );
+      }
+      expect(baseRows.length).toBeGreaterThan(0);
+      const lockTask = String((baseRows[0] as Record<string, unknown>).task_id);
+      const beforeCount = await countTask(basePlanId, lockTask);
+      expect(beforeCount).toBeGreaterThan(0);
+
+      const ghost = '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f';
+      const posCid = 'SKW01-POS-' + Date.now();
+      // 写侧形状要与生产同形（`${owner.json(obj)}`，V277 定案的写法；反例说明见
+      // test/e2e/concurrency-real-pg.e2e.spec.ts:212）：写成 `${JSON.stringify(vj)}::jsonb`
+      // 时 postgres.js 3.4.9 会把这串"长得像 JSON 的字符串"再编码一次，落库成**字符串标量**
+      // （V367 实测：jsonb_typeof=string、->> 'personId' 读成 null），于是这一行在库里的形状
+      // 不是解码器读的那个形状 ⇒ 正向对照退化成"锁没进求解也照样绿"的假阳性。
+      const ghostLockValueJson = {
+        personId: ghost, operator: 'e2e', reason: 'SKW-01 正向对照：只写进库里的锁',
+      };
+      await owner`
+        INSERT INTO ewoh_scheduling_constraint
+          (constraint_id, org_id, plan_id, task_id, type, value_json, active, created_by)
+        VALUES
+          (${posCid}, ${org}, ${basePlanId}, ${lockTask}, 'LOCKED_PERSON',
+           ${owner.json(ghostLockValueJson)},
+           true, 'e2e')`;
+
+      const B = await apiRequest<SchedulingPlanV2>(
+        handle.baseUrl,
+        `/api/scheduler/plans/${basePlanId}/replan`,
+        {
+          method: 'POST',
+          headers: jsonHeaders(dispatcherToken),
+          body: JSON.stringify({ reason: 'SKW-01 正向对照 B 遍：不带请求约束，只靠库里那一行', lockedConstraints: [] }),
+        },
+      );
+      expect(B.status).toBe(201);
+      const afterLock = await countTask(String((B.body as SchedulingPlanV2).planId), lockTask);
+
+      // 按 constraint_id 点名读回（不靠 JSON 谓词找自己的行），同时把"库里那一行的形状"读出来：
+      // personId 要能用解码器那套 `value_json ->> 'personId'` 取到，才算种下了一个可解的锁。
+      const mine = await owner`
+        SELECT constraint_id, plan_id, active, task_id, jsonb_typeof(value_json) AS v_kind,
+               value_json ->> 'personId' AS person_id
+        FROM ewoh_scheduling_constraint WHERE constraint_id = ${posCid}`;
+      console.log(
+        `[SKW-01 正向对照] 锁定任务=${lockTask} 基线派工=${beforeCount}；`
+        + `库里那一行=${mine.length} 条(value_json 形态=${mine[0]?.v_kind}/personId 可读=${mine[0]?.person_id === ghost})；`
+        + `只继承库里那一行时该任务派工=${afterLock}`,
+      );
+      // 清掉自己种的行（按 constraint_id 点名删，别按"最新一行"删）
+      await owner`DELETE FROM ewoh_scheduling_constraint WHERE constraint_id = ${posCid}`;
+      const left = await owner`
+        SELECT 1 AS ok FROM ewoh_scheduling_constraint WHERE constraint_id = ${posCid}`;
+      expect(left.length).toBe(0);
+      // 行确实在库里、且是解码器读得到的对象形状
+      expect(mine.length).toBe(1);
+      expect(mine[0].v_kind).toBe('object');
+      expect(mine[0].person_id).toBe(ghost);
+      expect(mine[0].active).toBe(true);
+      expect(String(mine[0].plan_id)).toBe(basePlanId);
+      // 锁进了求解 ⇒ 该任务不再被派给任何人（锁定的人不在候选集里，如实不派工）
+      expect(afterLock).toBe(0);
     }, 120_000);
   },
 );

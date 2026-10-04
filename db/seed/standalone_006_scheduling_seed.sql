@@ -14,9 +14,13 @@
 -- Business IDs are stable & human-readable (P001.., TASK-12x, DEV-0x,
 -- NODE-*, EDGE-*). All rows belong to the default tenant org_id
 -- '00000000-0000-4000-8000-000000000001'.
+-- 例外（SKW-01／V367）：第 10 段的调度约束行写的必须是**主键**——personId=ewoh_personnel.id、
+-- task_id=ewoh_production_task.id；解码器与求解器比的都是主键，工号只留在注释与 reason 里。
 --
--- Scenario highlight: TASK-128 is locked to person P008 (LOCKED_PERSON
--- constraint). LINE-B has 6 high-priority tasks with tight deadlines; under the
+-- Scenario highlight: LINE-B 外观装配（种子内号 TASK-128）锁定工号 P008 对应的**人员主键**
+-- （LOCKED_PERSON 约束，见第 10 段）。MIN_BATTERY 这个类型是全局阈值覆盖（策略默认 15%），
+-- 没有"每台设备一条阈值"的表达法 ⇒ 原先 DEV-02／DEV-05 两行 per-device 已合成一行全局 30%。
+-- LINE-B has 6 high-priority tasks with tight deadlines; under the
 -- keep_current baseline (busy/high-load persons P004/P005/P006 plus offline
 -- DEV-04 and low-battery DEV-05) the solver would show ~25 min delay —
 -- demonstrating the need for replanning.
@@ -213,7 +217,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.ewoh_scheduling_plan_assignment
   (id, assignment_id, plan_id, task_id, person_id, device_id, station_id, zone_id, planned_start, planned_end, route_id, status, explanation_json, version, reason, org_id, created_by)
 VALUES
-  -- TASK-128 locked to P008 (see LOCKED_PERSON constraint)
+  -- 种子内号 TASK-128 锁给工号 P008 的那名人员（约束行写的是主键，见第 10 段）
   ('68000000-0000-4000-8000-000000000001', 'ASG-OPT-128', 'PLAN-OPT-001', 'TASK-128', 'P008', 'DEV-06', 'ST-LB-02', 'LINE-B', now() + interval '15 minutes', now() + interval '50 minutes', 'ROUTE-LB-128', 'proposed',
    '{"reasons":["TASK-128 locked to P008","P008 available with DEV-06", "route via EDGE-WH-LB bypasses blocked EDGE-LB-00"]}'::jsonb,
    1, '锁定人员P008执行TASK-128', '00000000-0000-4000-8000-000000000001', 'operator-li'),
@@ -235,16 +239,53 @@ ON CONFLICT (id) DO NOTHING;
 -- 10) Scheduling constraints (LOCKED_PERSON / MIN_BATTERY / LOCKED_TIME)
 --     org_id 显式携带默认租户（审计 SQL-102 修复：023/025/057 后 org_id 为
 --     RLS 隔离边界且 NOT NULL，seed 行必须归属默认 org）
+--
+--     SKW-01（V367）：这一段的键形／值域／值形状必须与唯一解码器同源，否则行会在
+--     求解那一刻无声消失（解码器 constraint-loader.service.ts 的 rowToConstraint
+--     只认 camelCase 名册；unsupported 那道闸又只按 c.type 判 ⇒ 既不生效也不记 violation）：
+--       · 键名用 personId / value / startMs / endMs（旧写法 person_id / device_id /
+--         min_battery / start / end 全解成 undefined）；
+--       · personId 用 ewoh_personnel.id、task_id 用 ewoh_production_task.id（uuid）。
+--         工号 P008 属 employee_no 命名空间；'TASK-12x' 属
+--         ewoh_schedule_task.schedule_task_id（MES 镜像列，调度器不读那张表，且
+--         reset-scenario-data.js 的 PURGE_TABLES 每次场景复位清掉它）；
+--       · LOCKED_TIME 的窗口是数值毫秒（jsonb 里的 "now()+5min" 字符串不会被求值，
+--         而求解侧按数字比较：heuristic:358 → :790 lockedTimeByTask.get(task.id)）；
+--       · MIN_BATTERY 是全局阈值覆盖（heuristic:395 / cp-sat:258-259），没有
+--         "每台设备一条阈值"的表达法 ⇒ 原先两行 per-device 合成一行全局 30%。
+--     引用一律 JOIN 真实行解析：解析不到 ⇒ 这一行不写（宁可少一条演示锁，
+--     也不要留一条自称生效、实际永不生效也不记 violation 的锁）。
+--     存量库由迁移 standalone_108_seed_constraint_vocabulary 就地修成同一形状；
+--     id 保持 69000000-…-001/002/004 不变 ⇒ 修完之后重跑本种子不再插入任何行
+--     （…-003 只由该迁移删除，本段已不再包含它）。
 -- ===========================================================================
 INSERT INTO public.ewoh_scheduling_constraint
   (id, org_id, constraint_id, plan_id, task_id, type, value_json, active, created_by)
-VALUES
-  -- TASK-128 must be executed by P008
-  ('69000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'CONST-TASK128-LOCK', 'PLAN-OPT-001', 'TASK-128', 'LOCKED_PERSON', '{"person_id":"P008"}'::jsonb, true, 'operator-li'),
-  -- DEV-02 must not run below 30% battery
-  ('69000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'CONST-LB-002', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-02","min_battery":30}'::jsonb, true, 'operator-li'),
-  -- DEV-05 must not run below 30% battery
-  ('69000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'CONST-LB-005', 'PLAN-OPT-001', NULL, 'MIN_BATTERY', '{"device_id":"DEV-05","min_battery":30}'::jsonb, true, 'operator-li'),
-  -- TASK-126 locked to its time window
-  ('69000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'CONST-TASK126-TIME', 'PLAN-OPT-001', 'TASK-126', 'LOCKED_TIME', '{"start":"now()+5min","end":"now()+40min"}'::jsonb, true, 'operator-li')
+SELECT '69000000-0000-4000-8000-000000000001'::uuid, t.org_id, 'CONST-TASK128-LOCK', 'PLAN-OPT-001', t.id::text,
+       'LOCKED_PERSON',
+       jsonb_build_object('personId', p.id, 'operator', 'operator-li',
+                          'reason', 'LINE-B 外观装配（原叙述 TASK-128／P008）锁定该档案人员执行'),
+       true, 'operator-li'
+  FROM public.ewoh_production_task t
+  JOIN public.ewoh_personnel p ON p.employee_no = 'P008' AND p.org_id = t.org_id
+ WHERE t.title = 'LINE-B外观装配'
+UNION ALL
+SELECT '69000000-0000-4000-8000-000000000002'::uuid, d.org_id, 'CONST-LB-002', 'PLAN-OPT-001', NULL,
+       'MIN_BATTERY',
+       jsonb_build_object('value', 30, 'operator', 'operator-li',
+                          'reason', '演示：低于 30% 的设备一律不进候选（原两行 per-device 写法在本类型里不成立；工号 DEV-02）'),
+       true, 'operator-li'
+  FROM (SELECT DISTINCT org_id FROM public.ewoh_device
+         WHERE device_id IN ('DEV-02','DEV-05') AND battery_pct < 30) d
+UNION ALL
+SELECT '69000000-0000-4000-8000-000000000004'::uuid, t.org_id, 'CONST-TASK126-TIME', 'PLAN-OPT-001', t.id::text,
+       'LOCKED_TIME',
+       jsonb_build_object(
+         'startMs', floor(extract(epoch FROM now() + interval '5 minutes')  * 1000)::bigint,
+         'endMs',   floor(extract(epoch FROM now() + interval '40 minutes') * 1000)::bigint,
+         'operator', 'operator-li',
+         'reason', 'LINE-B 模组装配-1（原叙述 TASK-126）锁进 5–40 分钟窗口'),
+       true, 'operator-li'
+  FROM public.ewoh_production_task t
+ WHERE t.title = 'LINE-B模组装配-1'
 ON CONFLICT (id) DO NOTHING;
