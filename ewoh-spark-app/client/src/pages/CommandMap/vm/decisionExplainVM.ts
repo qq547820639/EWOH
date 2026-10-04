@@ -25,6 +25,8 @@ export interface DecisionExplainVM {
   selectedReason: string[];
   rejectedHard: RejectedHardItem[];
   hardConstraints: string[];
+  /** 声明为硬约束但该维度实例参数未参与求解的类型（服务端 CSTR-01 分档透传）。 */
+  hardConstraintsIgnored: string[];
   softCosts: Record<string, number>;
   weightsSnapshot: Record<string, number>;
   stationContribution: { stationId: string | null; queueLength: number; changeover: boolean } | null;
@@ -54,6 +56,7 @@ export function decisionExplainVM(trace: DecisionTrace | null | undefined): Deci
     selectedReason: trace.selectedReason ?? [],
     rejectedHard,
     hardConstraints: trace.hardConstraints ?? [],
+    hardConstraintsIgnored: trace.hardConstraintsIgnored ?? [],
     softCosts: trace.softCosts ?? {},
     weightsSnapshot: trace.weightsSnapshot ?? {},
     stationContribution: trace.stationContribution ?? null,

@@ -206,3 +206,15 @@ total_lines=612315 verified_lines=119328 未过校验行数=492987
 **另一半证据（同一问的另一根轴）**：边缘侧 `src/edge_platform/edge/storage.py` 里 `advisory` **0 命中** ⇒ advisory 结论只活进程内存、从不落边缘库，所以它连"边缘侧自己的权威读者"都没有。
 
 **因此对 roadmap/提示词的两处更正**：A4 的字段名单本身是错的（真丢的是 `is_rule`/`inference_ms`/`data_quality`/`level`/`ood_indicator`，见 PREM-01 第③条）；而即便按真名修，阶段 4 的产出也**没有下游消费者可读** ⇒ 它不是补漏，是新增一段能力＋新增一张读面，范围要按新能力谈。这一条只登记读数与定性，**不替产品决定要不要做**。
+
+---
+
+## §5 V357 对 §1.9 的一行更正（追踪面已收窄，执行面未动）
+
+§1.9 那条「决策追踪面恒报注册表 19 类」在 V357 被改掉：`heuristic-scheduling-solver.ts` 不再取 `[…SUPPORTED_HARD_CONSTRAINTS]`，
+改由 `constraints.ts` 里的 `HARD_CONSTRAINT_ENFORCEMENT`（`Record<SchedulingHardConstraintType, 'solver-consumed' | 'dimension-only'>`，9／10 分档）
+分两档报——执行档进 `DecisionTrace.hardConstraints`，维度档进新字段 `hardConstraintsIgnored`。两档都不记 violation：
+`solver.service.ts:338-342` 的 `feasible` 判据是「派工数量达标 ∧ violations 为空」，记违规会让可行方案凭空不可行。
+**§1.9 其余三条结论未动**：编译层 6 类／heuristic 9 类／CP-SAT 6 类的三面分叉仍在，十个维度的实例参数仍无人读，
+Worker 侧 `SolverRequest` 顶层未知键仍被无声吞掉（项内未知键才 TypeError→400→熔断）。落点与牙齿见《链级行为基线》§5.3ne；
+`CSTR-01` 因此在登记册上**保持开放**，只是它现在被钉的是"报告面已修、执行面未修"这个形状。

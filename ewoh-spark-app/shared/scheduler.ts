@@ -1306,8 +1306,11 @@ export interface DecisionTrace {
     stationId: string | null;
     rejectReasons: string[];
   }>;
-  /** 本次求解执行的硬约束集合。 */
+  /** 本次求解按实例参数实际执行的硬约束类型（不是注册表全量；V357 `CSTR-01`）。 */
   hardConstraints?: string[];
+  /** 本次请求声明为硬约束、但该维度的实例参数未被求解器读取的类型（V357 `CSTR-01`）。
+   *  这些类型不是违规：维度由快照数据侧或求解器构造保证，缺的是"按这条约束自带的参数执行"。 */
+  hardConstraintsIgnored?: string[];
   /** 选中候选的软成本明细。 */
   softCosts?: Record<string, number>;
   /** 目标权重快照（确定性 replay）。 */

@@ -31,8 +31,8 @@ import { TaskLifecycle } from './task-lifecycle';
 import { PriorityEngine } from './priority-engine';
 import {
   checkConstraintSupported,
+  classifyHardConstraints,
   detectDependencyCycle,
-  SUPPORTED_HARD_CONSTRAINTS,
 } from './constraints';
 import type { SchedulingSolver, SolveOptions } from './scheduling-solver.interface';
 import { SchedulingObjectiveEvaluator } from './scheduling-objective-evaluator.service';
@@ -1502,6 +1502,7 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
       const traceExt = decisionTrace as DecisionTrace & {
         rejectedHard: Array<{ personId: string | null; deviceId: string | null; stationId: string | null; rejectReasons: string[] }>;
         hardConstraints: string[];
+        hardConstraintsIgnored: string[];
         softCosts: Record<string, number>;
         weightsSnapshot: Record<string, number>;
         stationContribution: { stationId: string | null; queueLength: number; changeover: boolean };
@@ -1510,7 +1511,12 @@ export class HeuristicSchedulingSolver implements SchedulingSolver {
         reused?: boolean;
       };
       traceExt.rejectedHard = rejectedHard;
-      traceExt.hardConstraints = [...SUPPORTED_HARD_CONSTRAINTS];
+      // CSTR-01（V357）：执行档位由 `HARD_CONSTRAINT_ENFORCEMENT` 单点判定，不再按注册表恒报全量——
+      // 注册表 19 类里有 10 类的实例参数（`constraint-loader` 只认那几个键）无人读。
+      // 这两档都不是违规：记进 violations 会让 `solver.service.ts` 的 feasible 判据凭空翻负。
+      const hardEnforcement = classifyHardConstraints(constraints);
+      traceExt.hardConstraints = hardEnforcement.consumed;
+      traceExt.hardConstraintsIgnored = hardEnforcement.dimensionOnly;
       traceExt.softCosts = best.softCosts ?? {};
       traceExt.weightsSnapshot = { ...policy.weights };
       traceExt.stationContribution = {

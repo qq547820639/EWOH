@@ -58,8 +58,83 @@ export const SUPPORTED_SOFT_CONSTRAINTS: readonly SchedulingSoftConstraintType[]
   'FATIGUE_BALANCE',
 ];
 
-/** 启发式求解器暂未实现的硬约束（当前为空，为未来约束预留）。 */
-export const HEURISTIC_SOLVER_UNSUPPORTED: readonly SchedulingHardConstraintType[] = [];
+/**
+ * 硬约束的**执行档位**（V357，`CSTR-01` 的"声明与实现对齐"那一半）。
+ *
+ * 为什么写成 `Record<SchedulingHardConstraintType, …>` 而不是又一个数组：数组会和类型联合各抄一份、
+ * 谁都能漏抄一条（`SUPPORTED_HARD_CONSTRAINTS` 自称"真实执行"却没人核对三个消费面，就是这么来的）。
+ * 映射类型让编译器替你点名额——**类型联合加了成员而这里没归类，`type:check:server` 直接不过**。
+ *
+ * 两档的准确含义（不要读成"这一档没用"）：
+ *  - `solver-consumed`：求解器读这条约束**实例自带的参数**并据此改变解；
+ *  - `dimension-only`：该维度在解里确实是被保证的（候选层按资源数据过滤，或求解器构造上不会同时段重复占用），
+ *    但**实例自带的参数无人读**（`constraint-loader.service.ts:156-161` 只取 personId/deviceId/stationId/
+ *    zoneId/startMs/endMs 那几个键）。
+ *
+ * `dimension-only` **故意不进 `violations`**：`solver.service.ts:338-342` 的 `feasible` 判据是
+ * "assignment 数量达标 **且 violations 为空**"，把这两档记成违规会让本来可行的方案凭空不可行——
+ * 那是行为变更，不是报告修正。V357 因此只动"报什么"（决策追踪不再按注册表恒报 19 类），不动"怎么解"。
+ */
+export type HardConstraintEnforcement = 'solver-consumed' | 'dimension-only';
+
+export const HARD_CONSTRAINT_ENFORCEMENT: Record<
+  SchedulingHardConstraintType,
+  HardConstraintEnforcement
+> = {
+  // —— 实例参数被求解器读取（heuristic 本地 switch 有 case 的九类；CP-SAT 侧是那九类的子集）——
+  LOCKED_PERSON: 'solver-consumed',
+  LOCKED_DEVICE: 'solver-consumed',
+  LOCKED_STATION: 'solver-consumed',
+  LOCKED_TIME: 'solver-consumed',
+  LOCKED_ASSIGNMENT: 'solver-consumed',
+  FORBIDDEN_ZONE: 'solver-consumed',
+  EXCLUDED_RESOURCE: 'solver-consumed',
+  MIN_BATTERY: 'solver-consumed',
+  MAX_WORKLOAD: 'solver-consumed',
+  // —— 维度被数据侧/构造保证，但实例自带的参数无人读 ——
+  REQUIRED_SKILL: 'dimension-only', // 执行取的是 task.requiredSkills × person.skills（快照侧）
+  REQUIRED_CERTIFICATION: 'dimension-only',
+  PERSON_AVAILABLE: 'dimension-only',
+  DEVICE_AVAILABLE: 'dimension-only',
+  RESOURCE_TIME_WINDOW: 'dimension-only', // 候选层读的是快照里的资源窗口，不是这条约束的 startMs/endMs
+  NO_DOUBLE_BOOKING: 'dimension-only', // 构造性保证：同一资源同时段只排一件事
+  PREDECESSOR: 'dimension-only', // 编译层有 case，但只产命名/解释，不参与求解决策
+  SAFETY_BLOCK: 'dimension-only', // 走的是 safetyBlocked* 两份列表（数据侧）
+  STATION_CAPABILITY: 'dimension-only', // 执行取的是 task.requiredStationCapabilities × station.capabilities
+  STATION_CAPACITY: 'dimension-only',
+};
+
+/** 求解器真正按实例参数执行的硬约束类型（`HARD_CONSTRAINT_ENFORCEMENT` 的第一档）。 */
+export const SOLVER_CONSUMED_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[] =
+  (Object.keys(HARD_CONSTRAINT_ENFORCEMENT) as SchedulingHardConstraintType[]).filter(
+    (k) => HARD_CONSTRAINT_ENFORCEMENT[k] === 'solver-consumed',
+  );
+
+/** 维度成立、但实例参数无人读的硬约束类型（第二档）。 */
+export const DIMENSION_ONLY_HARD_CONSTRAINTS: readonly SchedulingHardConstraintType[] =
+  (Object.keys(HARD_CONSTRAINT_ENFORCEMENT) as SchedulingHardConstraintType[]).filter(
+    (k) => HARD_CONSTRAINT_ENFORCEMENT[k] === 'dimension-only',
+  );
+
+/**
+ * 把一批约束按执行档位分堆（纯函数，决策追踪与常驻用例共用）。
+ * 软约束类型不在硬约束表里，直接跳过——本函数只回答"这一批硬约束里，哪些真的按实例参数执行了"。
+ * 未知类型走不到这里：`checkConstraintSupported` 已在求解前把它记成 `unsupported_constraint` 违规。
+ */
+export function classifyHardConstraints(constraints: readonly SchedulingConstraint[]): {
+  consumed: SchedulingHardConstraintType[];
+  dimensionOnly: SchedulingHardConstraintType[];
+} {
+  const seen = new Set(constraints.map((c) => c.type as SchedulingHardConstraintType));
+  const consumed: SchedulingHardConstraintType[] = [];
+  const dimensionOnly: SchedulingHardConstraintType[] = [];
+  for (const t of [...seen].sort()) {
+    if (HARD_CONSTRAINT_ENFORCEMENT[t] === 'solver-consumed') consumed.push(t);
+    else if (HARD_CONSTRAINT_ENFORCEMENT[t] === 'dimension-only') dimensionOnly.push(t);
+  }
+  return { consumed, dimensionOnly };
+}
+
 
 /** 约束支持性检查结果。 */
 export interface ConstraintSupportResult {

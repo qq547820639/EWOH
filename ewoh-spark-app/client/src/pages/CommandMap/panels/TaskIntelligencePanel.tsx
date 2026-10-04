@@ -147,21 +147,36 @@ export function TaskIntelligencePanel({
         </section>
       )}
 
-      {/* Rejected Alternatives / Constraint Explanation（服务端透传） */}
-      {decision && decision.rejectedHard.length > 0 && (
+      {/* Rejected Alternatives / Constraint Explanation（服务端透传）
+          CSTR-02：两档约束不受"有没有拒绝候选"支配——零拒绝的干净方案同样要能看见执行了哪些硬约束。 */}
+      {decision && (decision.rejectedHard.length > 0
+        || decision.hardConstraints.length > 0
+        || decision.hardConstraintsIgnored.length > 0) && (
         <section className="rounded border border-slate-800 bg-slate-900/50 p-2">
-          <div className="text-xs font-semibold text-slate-300">拒绝候选与约束解释</div>
-          <ul className="mt-1 space-y-1 text-xs">
-            {decision.rejectedHard.slice(0, 5).map((r, i) => (
-              <li key={i} className="text-slate-400">
-                {r.personId ?? '—'} / {r.deviceId ?? '—'} / {r.stationId ?? '—'}：
-                {r.reasonLabels.join(', ')}
-              </li>
-            ))}
-          </ul>
+          {decision.rejectedHard.length > 0 ? (
+            <>
+              <div className="text-xs font-semibold text-slate-300">拒绝候选与约束解释</div>
+              <ul className="mt-1 space-y-1 text-xs">
+                {decision.rejectedHard.slice(0, 5).map((r, i) => (
+                  <li key={i} className="text-slate-400">
+                    {r.personId ?? '—'} / {r.deviceId ?? '—'} / {r.stationId ?? '—'}：
+                    {r.reasonLabels.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <div className="text-xs font-semibold text-slate-300">约束执行说明</div>
+          )}
           {decision.hardConstraints.length > 0 && (
             <div className="mt-1 text-xs text-slate-500">
               硬约束：{decision.hardConstraints.join(', ')}
+            </div>
+          )}
+          {decision.hardConstraintsIgnored.length > 0 && (
+            <div className="mt-1 text-xs text-slate-500">
+              声明为硬约束、实例参数未参与求解（维度由数据侧或构造保证）：
+              {decision.hardConstraintsIgnored.join(', ')}
             </div>
           )}
         </section>
