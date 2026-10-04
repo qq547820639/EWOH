@@ -646,17 +646,18 @@ let approvedPlanId = '';
     }, 120_000);
 
     /**
-     * 归属：**VALDR-01**（V365 建，出处《基线》§5.3nm）。差分臂——同一个后端、同一份世界，
-     * 只换"这条约束从哪来"：
-     *  - A 遍在**请求里**带 `MIN_BATTERY value=101` ⇒ 求解读得到（对照方向：这条通道带得动数值参数）；
-     *  - B 遍不带任何请求约束，只能靠 `loadForPlan` 从库里继承 A 遍落下的那一行 ⇒ 门槛无声退回默认。
-     * 两支期望值方向相反，所以这不是恒真的"钉现状"。判据落在**设备腿个数**而不是派工总数：
-     * 先试过 `MAX_WORKLOAD value=0`，在演示世界上派工 15→0，但在本夹具世界上 4→4 不动
-     * （负载门槛在首次指派前没有累计量可比）⇒ 那把尺在这里没有鉴别力。电量门槛是直接过滤候选设备的
-     * （`heuristic-scheduling-solver.ts:1715` 的 `d.batteryPct >= minBatteryPct`，
+     * 归属：**VALDR-01**（V365 建位点、V366 落地并反转极性，出处《基线》§5.3nm／§5.3nn）。差分臂——
+     * 同一个后端、同一份世界，只换"这条约束从哪来"：
+     *  - A 遍在**请求里**带 `MIN_BATTERY value=101` ⇒ 求解读得到；
+     *  - B 遍不带任何请求约束，只能靠 `loadForPlan` 从库里继承 A 遍落下的那一行。
+     * V366 之前 B 遍会无声退回默认阈值（落库那行没有 `value` 键）；现在两遍必须给出**同一个**结果，
+     * 且都低于基线 ⇒ 这一支同时钉住"写侧写得出"和"读侧读得回"，任何一侧被摘掉都会红。
+     * 判据落在**设备腿个数**而不是派工总数：先试过 `MAX_WORKLOAD value=0`，在演示世界上派工 15→0，
+     * 但在本夹具世界上 4→4 不动（负载门槛在首次指派前没有累计量可比）⇒ 那把尺在这里没有鉴别力。
+     * 电量门槛是直接过滤候选设备的（`heuristic-scheduling-solver.ts:1715` 的 `d.batteryPct >= minBatteryPct`，
      * 而 `:395` 是 `effectiveMinBattery = minBatteryOverride ?? config.minBatteryPct`）⇒ 101% 必然清空设备腿。
      */
-    it('VALDR-01 差分臂：MIN_BATTERY 的 value 请求内带得动，从库里继承回来即失效', async () => {
+    it('VALDR-01 差分臂：MIN_BATTERY 的 value 请求内带得动，从库里继承回来同样生效', async () => {
       const org = fixture.orgA.id;
       const own = await seedSchedulerFixture(owner, fixture.orgA.id);
       const run = await apiRequest<{ plans: SchedulingPlanV2[] }>(
@@ -701,7 +702,7 @@ let approvedPlanId = '';
       expect(A.status).toBe(201);
       const planA = String((A.body as SchedulingPlanV2).planId);
       const legsA = await legsOf(planA);
-      // 对照方向：门槛 101% 把有限电量的设备全排除 ⇒ 设备腿必然少于基线（求解读不到 value 这一支就先红）。
+      // 对照方向：门槛 101% 把有限电量的设备全排除 ⇒ 设备腿必然少于基线（请求内这一通道带得动数值参数）。
       expect(legsA.devices.size).toBeLessThan(base.devices.size);
 
       const persisted = await owner`
@@ -709,8 +710,9 @@ let approvedPlanId = '';
          WHERE org_id::text = ${org} AND plan_id = ${planA} AND type = 'MIN_BATTERY' AND active`;
       expect(persisted.length).toBeGreaterThan(0);
       const vj = (persisted[0] as Record<string, unknown>).value_json as Record<string, unknown>;
-      // 落库那行没有 value ⇒ 数值参数在**写侧**就被丢掉（不是读侧解析不到）。
-      expect(Object.prototype.hasOwnProperty.call(vj, 'value')).toBe(false);
+      // 写侧配套后：落库那行必须带 value，且数值原样存得住（不是字符串、不是 null）。
+      expect(Object.prototype.hasOwnProperty.call(vj, 'value')).toBe(true);
+      expect(vj.value).toBe(101);
 
       const B = await apiRequest<SchedulingPlanV2>(
         handle.baseUrl,
@@ -732,17 +734,18 @@ let approvedPlanId = '';
         + `继承行=${persisted.length} 落库 value_json=[${Object.keys(vj).join(',')}]；`
         + `B 遍（继承）派工=${legsB.n} 设备腿=${legsB.devices.size}`,
       );
-      // 缺陷方向：同一条约束、同一份世界，只因改从库里读回来，门槛就无声退回默认。
-      // 断"B 多于 A"而不是"B 等于基线"：后者会把与本缺陷无关的时刻漂移也读成红。
-      expect(legsB.devices.size).toBeGreaterThan(legsA.devices.size);
+      // 应然方向：同一条约束、同一份世界，从库里继承回来必须与请求内带到时给出**同一个门槛**。
+      // 断"B 等于 A 且低于基线"而不写死 0：前者不依赖夹具里设备的具体电量，也不把无关漂移读成红。
+      expect(legsB.devices.size).toBe(legsA.devices.size);
+      expect(legsB.devices.size).toBeLessThan(base.devices.size);
     }, 120_000);
 
     /**
-     * 归属：**VALDR-01**（V365 建）。写侧名册臂——把"两处落库入口都不写 `value`"钉成文本面事实，
-     * 并把解码面缺同一个键也钉住：三者一起补上时这一支会红，那就是登记行要的"知道闸长出来了"。
-     * 断言的是**现状**（as-is），修法落地时必须与《基线》§5.4 的 VALDR-01 行一起翻转。
+     * 归属：**VALDR-01**（V365 建位点、V366 反转极性）。写侧名册臂——把"两处落库入口都写 `value`、
+     * 解码面也读它"钉成文本面事实：这一支与上面差分臂各钉一侧（写侧名册／读侧名册），
+     * 任何一侧被摘掉都会红。V365 那一版断的是**现状**（三处都不含 `value`），落地那一轮一起翻成应然。
      */
-    it('VALDR-01 写侧名册臂：两个落库入口的 valueJson 字面量都不写 value，解码器也不读它', async () => {
+    it('VALDR-01 写侧名册臂：两个落库入口的 valueJson 字面量都写 value，解码器也读它', async () => {
       const writers = [
         resolve(__dirname, '../../server/modules/scheduler/plan.service.ts'),
         resolve(__dirname, '../../server/modules/scheduler/scheduler-plan-application.service.ts'),
@@ -759,13 +762,22 @@ let approvedPlanId = '';
         resolve(__dirname, '../../server/modules/scheduler/constraint-loader.service.ts'),
         'utf8',
       );
-      const decodeBody = loaderSrc.slice(loaderSrc.indexOf('private rowToConstraint'));
+      // 切片按结构边界收（到下一个方法的注释头为止），否则"函数后面随便一处提到 v.value"
+      // 就能把这条正向断言喂绿。
+      const from = loaderSrc.indexOf('private rowToConstraint');
+      const to = loaderSrc.indexOf('\n  /** 稳定序列化', from);
+      expect(from).toBeGreaterThan(-1);
+      expect(to).toBeGreaterThan(from);
+      const decodeBody = loaderSrc.slice(from, to);
+      const withValue = blocks.filter((b) => /\bvalue:/.test(b));
       console.log(
-        `[VALDR-01 写侧名册臂] 写入口 valueJson 块=${blocks.length} 个，其中含 value 键=${blocks.filter((b) => /\bvalue:/.test(b)).length} 个；`
-        + `解码器读 v.value=${/\bv\.value\b/.test(decodeBody)}`,
+        `[VALDR-01 写侧名册臂] 写入口 valueJson 块=${blocks.length} 个，其中含 value 键=${withValue.length} 个；`
+        + `解码器在 rowToConstraint 体内读 v.value=${/\bv\.value\b/.test(decodeBody)}`,
       );
-      expect(blocks.filter((b) => /\bvalue:/.test(b)).length).toBe(0);
-      expect(/\bv\.value\b/.test(decodeBody)).toBe(false);
+      // 每个落库入口都得写（缺一处就有"从那个入口进来的数值覆盖继续静默失效"）。
+      expect(withValue.length).toBe(blocks.length);
+      expect(blocks.length).toBeGreaterThanOrEqual(writers.length);
+      expect(/\bv\.value\b/.test(decodeBody)).toBe(true);
     }, 120_000);
   },
 );

@@ -170,6 +170,8 @@ export class ConstraintLoaderService {
       deactivatedAt: row.deactivatedAt ? row.deactivatedAt.toISOString() : null,
       deactivatedBy: row.deactivatedBy ?? null,
       snapshotVersion: v.snapshotVersion as string | undefined,
+      // VALDR-01（V366）：数值型参数要能跨请求存活；存量行没有该键或写的是 null，一律归 undefined。
+      value: (v.value as number | undefined) ?? undefined,
       // R2-SCH-010（2026-08-17）：按类型判定软约束——持久化软类型
       //（PREFERRED_RESOURCE/MANUAL_BOOST 等）hard=false，不再一律 hard:true。
       hard: !isSoftConstraintType(row.type),

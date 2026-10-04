@@ -1373,6 +1373,8 @@ export class PlanService {
                   validFrom: c.validFrom ?? null,
                   expiresAt: c.expiresAt ?? null,
                   snapshotVersion: c.snapshotVersion ?? snapshot.snapshotVersion,
+                  // VALDR-01（V366）：数值型参数此前不在名册里，落库即丢、下一次重排取不回阈值。
+                  value: c.value ?? null,
                 },
                 active: true,
                 createdBy: ctx.userId,

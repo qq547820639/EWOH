@@ -78,8 +78,11 @@ function writerKeys(files) {
 }
 
 /** 分类：一行约束在给定三面词表下会落到哪一档。decKeys 可注入（自测的反向对照要用掏空版）。
- *  一个 case 里多条腿 ⇒ 任一条腿的守卫可点着即判「可满足」；全点不着才判 inert，并报每条腿缺什么。 */
-function classify(row, decKeys, guards, readsValue) {
+ *  一个 case 里多条腿 ⇒ 任一条腿的守卫可点着即判「可满足」；全点不着才判 inert，并报每条腿缺什么。
+ *  V366：`value` 不再特殊处理——解码名册含它（`v.value as`）时它与其他字段同一条规则。
+ *  旧写法（`n === 'value' ? !readsValue`）是为"解码器不读 value"那一版判的，
+ *  修复后会反过来把「没写 value 的行」误读成可满足 ⇒ 一律按 survived 里有没有值判。 */
+function classify(row, decKeys, guards) {
   const vk = Object.keys(row.value_json || {});
   const survived = {};
   for (const k of decKeys) if (vk.includes(k)) survived[k] = row.value_json[k];
@@ -89,8 +92,7 @@ function classify(row, decKeys, guards, readsValue) {
   if (!preds) return { verdict: '该类型无 case（无声跳过）', survived: Object.keys(survived), written: vk, legs: [] };
   const legs = preds.map((p) => ({
     cond: p.cond,
-    missing: p.need.filter((n) => (n === 'value' ? !readsValue
-      : c[n] === undefined || c[n] === null || c[n] === '')),
+    missing: p.need.filter((n) => c[n] === undefined || c[n] === null || c[n] === ''),
   }));
   const fireable = legs.filter((l) => l.missing.length === 0);
   return {
@@ -118,23 +120,29 @@ function selfTest() {
   const okRow = { constraint_id: 'X-OK', type: 'LOCKED_PERSON', task_id: 'T1', value_json: { personId: 'P1' } };
   cases.push({
     name: '正向对照：camelCase 齐全的 LOCKED_PERSON 行 ⇒ 判「可满足」（这把尺不能见谁都报 inert）',
-    ok: classify(okRow, dec.keys, gu, dec.readsValue).verdict === '可满足',
+    ok: classify(okRow, dec.keys, gu).verdict === '可满足',
   });
   // 开火 1：种子形状（snake_case）
   const seedRow = { constraint_id: 'CONST-TASK128-LOCK', type: 'LOCKED_PERSON', task_id: 'TASK-128', value_json: { person_id: 'P008' } };
   cases.push({
     name: '开火 1：种子那行的键形（person_id）经解码器读出空字段 ⇒ 必须判不可满足（inert）',
-    ok: classify(seedRow, dec.keys, gu, dec.readsValue).verdict === '不可满足（inert）',
+    ok: classify(seedRow, dec.keys, gu).verdict === '不可满足（inert）',
   });
-  // 开火 2：即便有人把 value 写进 JSON，解码器不读 value ⇒ 数值参数仍取不到
+  // 开火 2（V366 反转极性）：解码面含 value ⇒ 写了 value 的 MIN_BATTERY 行应判可满足；
+  // 它的对偶臂把 readsValue 关掉，同一行必须翻回 inert——否则这条判据就成了恒真读数。
   const valRow = { constraint_id: 'CONST-V', type: 'MIN_BATTERY', task_id: null, value_json: { value: 30 } };
-  const v = classify(valRow, dec.keys, gu, dec.readsValue);
+  const v = classify(valRow, dec.keys, gu);
   cases.push({
-    name: '开火 2：value_json 里写了 value 的 MIN_BATTERY 行，判据仍必须落 inert（解码面不含 value）',
-    ok: v.verdict === '不可满足（inert）' && v.legs.some((l) => l.missing.includes('value')),
+    name: '开火 2：value_json 写了 value 的 MIN_BATTERY 行判可满足，且名册两面都含 value（解码器读、写入口写）',
+    ok: v.verdict === '可满足' && dec.keys.includes('value') && wr.includes('value'),
+  });
+  const vOff = classify(valRow, dec.keys.filter((k) => k !== 'value'), gu);
+  cases.push({
+    name: '开火 2 的对偶臂：把 value 从解码面摘掉，同一行必须翻回不可满足（可满足不是硬编码）',
+    ok: vOff.verdict === '不可满足（inert）' && vOff.legs.some((l) => l.missing.includes('value')),
   });
   // 反向对照：把解码器键表掏空 ⇒ 全部行翻成 inert（证明判决真的走解码面，不是硬编码名单）
-  const emptied = classify(okRow, [], gu, false);
+  const emptied = classify(okRow, [], gu);
   cases.push({
     name: '反向对照：把解码器键表掏空后，同一行必须从「可满足」翻成不可满足（掏空即失效才算判据在动）',
     ok: emptied.verdict === '不可满足（inert）',
@@ -144,28 +152,28 @@ function selfTest() {
   const legEmpty = { constraint_id: 'CONST-LEG0', type: 'EXCLUDED_RESOURCE', task_id: 'T1', value_json: {} };
   cases.push({
     name: '分支极性：EXCLUDED_RESOURCE 只带 stationId ⇒ 判可满足（三条腿点着一条即生效，不许全并要求）',
-    ok: classify(legRow, dec.keys, gu, dec.readsValue).verdict === '可满足',
+    ok: classify(legRow, dec.keys, gu).verdict === '可满足',
   });
   cases.push({
     name: '分支极性的对偶：同一类型三条腿都点不着（空 value_json）⇒ 必须判 inert（不许因『有 case』就放行）',
-    ok: classify(legEmpty, dec.keys, gu, dec.readsValue).verdict === '不可满足（inert）',
+    ok: classify(legEmpty, dec.keys, gu).verdict === '不可满足（inert）',
   });
   // 无 case 的类型单独一档，不折进 inert
   const softRow = { constraint_id: 'CONST-S', type: 'PREFERRED_RESOURCE', task_id: 'T1', value_json: { personId: 'P1' } };
   const softRow2 = { constraint_id: 'CONST-U', type: 'RESOURCE_TIME_WINDOW', task_id: 'T1', value_json: { startMs: 1, endMs: 2 } };
   cases.push({
     name: '档位边界：switch 里没有 case 的类型（RESOURCE_TIME_WINDOW）判「该类型无 case」，不折成 inert 也不折成可满足',
-    ok: classify(softRow2, dec.keys, gu, dec.readsValue).verdict === '该类型无 case（无声跳过）',
+    ok: classify(softRow2, dec.keys, gu).verdict === '该类型无 case（无声跳过）',
   });
   cases.push({
     name: '档位边界：有 case 且字段齐全的软类型（PREFERRED_RESOURCE）判可满足',
-    ok: classify(softRow, dec.keys, gu, dec.readsValue).verdict === '可满足',
+    ok: classify(softRow, dec.keys, gu).verdict === '可满足',
   });
   // 每条被检查的行都必须落三态之一
   const states = new Set(['可满足', '不可满足（inert）', '该类型无 case（无声跳过）']);
   cases.push({
     name: '分母自证 3：判决值域封闭（三态之一，别造出第四态或空判决）',
-    ok: [okRow, seedRow, valRow, softRow, softRow2].every((r) => states.has(classify(r, dec.keys, gu, dec.readsValue).verdict)),
+    ok: [okRow, seedRow, valRow, softRow, softRow2].every((r) => states.has(classify(r, dec.keys, gu).verdict)),
   });
   const bad = cases.filter((x) => !x.ok);
   console.log(`三面词表现取：解码器 ${dec.keys.length} 键 [${dec.keys.join(',')}]`);
@@ -201,7 +209,7 @@ async function main() {
   console.log(`约束行 ${rows.length} 条｜解码器键 ${dec.keys.length} 个｜求解 case ${Object.keys(gu).length} 个`);
   const tally = { '可满足': 0, '不可满足（inert）': 0, '该类型无 case（无声跳过）': 0 };
   for (const r of rows) {
-    const x = classify(r, dec.keys, gu, dec.readsValue);
+    const x = classify(r, dec.keys, gu);
     tally[x.verdict] = (tally[x.verdict] || 0) + 1;
     console.log(`  ${r.constraint_id} ${r.type}：${x.verdict}` +
       (x.verdict === '不可满足（inert）'

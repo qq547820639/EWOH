@@ -161,6 +161,37 @@ describe('T02 / P0-2 constraint-run-loading', () => {
       expect(merged.some((c) => c.type === 'EXCLUDED_RESOURCE' && c.deviceId === 'd9')).toBe(true);
     });
 
+    /**
+     * 归属：**VALDR-01**（V366 落地）。读侧名册的解码面位点：`value_json.value` 必须被解码出来，
+     * 否则经 API 设的 MIN_BATTERY／MAX_WORKLOAD 阈值在下一次重排（只能从库里继承）时无声退回默认。
+     * 两个反臂同样重要：`value: null`（写入口对无数值参数的行统一写 null）与「压根没这个键」
+     * （存量行）都必须归 undefined，不能被读成阈值 0。
+     * 最后一臂钉这次改动最坏的副作用：解码对象多挂一个 `value: undefined` 键，
+     * 历史 `hashConstraints` 不得因此漂移（replay 校验比的就是它）。
+     */
+    it('VALDR-01 数值参数随行往返：value_json.value 读得回，null 与缺键都归 undefined，且哈希不受空键影响', async () => {
+      const { loader } = makeLoader([
+        constraintRow({ constraintId: 'CON-V1', planId: 'PLAN-V', type: 'MIN_BATTERY', valueJson: { value: 30 } }),
+        constraintRow({ constraintId: 'CON-V2', planId: 'PLAN-V', type: 'MAX_WORKLOAD', valueJson: { value: null } }),
+        constraintRow({ constraintId: 'CON-V3', planId: 'PLAN-V', type: 'LOCKED_DEVICE', valueJson: { deviceId: 'd7' } }),
+      ]);
+      const merged = await loader.loadForPlan('PLAN-V', [], testOrgContext());
+      const found = ['CON-V1', 'CON-V2', 'CON-V3'].map((id) => merged.find((c) => c.id === id));
+      // 前提：三行都读回来了——否则下面的 undefined 断言是空转。
+      expect(found.every((c) => c !== undefined)).toBe(true);
+      expect(found[0]!.value).toBe(30);
+      expect(found[1]!.value).toBeUndefined();
+      expect(found[2]!.value).toBeUndefined();
+
+      const withKey: SchedulingConstraint[] = [
+        { type: 'LOCKED_PERSON', taskId: 't1', personId: 'p1', value: undefined },
+      ];
+      const withoutKey: SchedulingConstraint[] = [
+        { type: 'LOCKED_PERSON', taskId: 't1', personId: 'p1' },
+      ];
+      expect(loader.hashConstraints(withKey)).toBe(loader.hashConstraints(withoutKey));
+    });
+
     it('hashConstraints 对相同约束（键序不同）产出相同哈希；不同约束不同哈希', async () => {
       const { loader } = makeLoader([]);
       const a: SchedulingConstraint[] = [

@@ -601,6 +601,8 @@ export class SchedulerPlanApplicationService {
                 validFrom: c.validFrom ?? null,
                 expiresAt: c.expiresAt ?? null,
                 snapshotVersion: c.snapshotVersion ?? null,
+                // VALDR-01（V366）：与 plan.service 同一张名册，数值型参数不写就落库即丢。
+                value: c.value ?? null,
               },
               active: true,
               createdBy: ctx.userId,
